@@ -263,6 +263,20 @@ public class IngestDlqController {
             if (dlq.isGapRecord()) {
                 return gapRecordRefusal(dlqId);
             }
+            // A record row written before record rows carried their mark (the 3.4 builds that first
+            // wrote them — never released) has no mark and an item's id: it is known by the shape
+            // those builds wrote — never read, nothing held, the record's type. Replayed, it would be
+            // an empty document and the only record deleted (review, P1 / P2). A webhook record has
+            // its source id too: the type alone is also a Box or Dropbox item's, which the re-fetch
+            // can give again — and a Box record row would be "fetched again" by an id naming no file.
+            String sourceId = request.getSourceObjectId() == null ? "" : request.getSourceObjectId();
+            boolean heldNothing = dlq.isSourceNeverRead() && !dlq.isHasContent();
+            if (heldNothing && "webhook_event".equals(request.getSourceObjectType()) && sourceId.startsWith("webhook-deliveries:")) {
+                return webhookRecordRefusal(dlqId);
+            }
+            if (heldNothing && jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())) {
+                return gapRecordRefusal(dlqId);
+            }
             // Whether the item's bytes can come back from its source instead of from the row:
             // a FILE_SHARE item of a system the re-fetch knows (Box, Dropbox). For such a row
             // the stored payload is not needed and its defects — never confirmed, dropped,
@@ -279,19 +293,6 @@ public class IngestDlqController {
                     && (fileShareConnector.getSourceArchetype() == SourceArchetype.FILE_SHARE
                             || "attachment".equals(request.getSourceObjectType()));
             boolean refetchable = fileShare && refetch.canRefetch(fileShareConnector, request);
-
-            // A record row written before record rows carried their mark (the 3.4 builds that first
-            // wrote them — never released) has the record's type, was never read, holds nothing and
-            // cannot be fetched again: replayed, it would be an empty document and the only record
-            // deleted (review, P1 / P2). Refused by that shape, which a genuine item of the type does
-            // not have: one that holds its bytes, or whose source can give them again, is replayed.
-            boolean nothingToReplay = dlq.isSourceNeverRead() && !dlq.isHasContent() && !refetchable;
-            if (nothingToReplay && "webhook_event".equals(request.getSourceObjectType())) {
-                return webhookRecordRefusal(dlqId);
-            }
-            if (nothingToReplay && jp.aegif.nemaki.rest.ingest.chat.ChatworkFetchOrchestrator.GAP_TYPE.equals(request.getSourceObjectType())) {
-                return gapRecordRefusal(dlqId);
-            }
 
             if (dlq.getPayloadWriteToken() != null && !refetchable) {
                 // A payload write for this attempt was started and never confirmed. The row's

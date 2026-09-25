@@ -611,8 +611,25 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     }
 
     /**
-     * The record's shape is refused only when nothing can be replayed: an item of the record's type
-     * whose source can give its bytes again — a Box file, by its id — is fetched and replayed.
+     * A Box webhook record row from before the mark: the Box re-fetch would take it for a file and
+     * download by an id that names none — the answer a failed download, not what the row is.
+     */
+    @Test
+    @DisplayName("a Box webhook record row written before record rows were marked is refused, not fetched")
+    void aBoxWebhookRecordFromBeforeTheMarkIsNotFetched() throws Exception {
+        String row = "{\"connectorId\":\"c1\",\"repositoryId\":\"bedroom\",\"sourceObjectId\":\"webhook-deliveries:p1:c1\","
+                + "\"sourceObjectType\":\"webhook_event\",\"executionMode\":\"webhook\"}";
+        ResponseEntity<?> res = retry("box", false, row, id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(String.valueOf(res.getBody()).contains("records webhook deliveries"), String.valueOf(res.getBody()));
+        assertTrue(downloaded.isEmpty(), "a webhook record row was fetched as a file: " + downloaded);
+        assertTrue(executed.isEmpty(), "a webhook record row was replayed: " + executed);
+    }
+
+    /**
+     * The record's shape is refused only as a whole: an item of the record's type with an item's own
+     * id — a Box file, whose source can give its bytes again — is fetched and replayed.
      */
     @Test
     @DisplayName("an item of a record's type that its source can give again is fetched and replayed")
