@@ -68,7 +68,9 @@ import static org.junit.jupiter.api.Assertions.fail;
  * by the calls made on it, and a parenthesised receiver or an array holding it escaped (review, P1):
  * now EVERY use of the list — and of the holder it lives in — is placed by the tree around it, and a
  * use this lock does not know is red. The records that carry a link's or a capture's words are made
- * only in their own class, by factories this lock reads, never through a reference.
+ * only in their own class, by factories this lock reads, never through a reference. A result's
+ * lists cannot be changed through it ({@code ExternalIngestResultKeepsItsOwnListsTest}): a filter
+ * written on a result's warnings fails when it runs, not here (review, P1).
  *
  * <p>Not read: reflection, and code made or loaded at run time — no source to read. And what this
  * lock is FOR: a change made the ordinary way — a warning reworded or added, a call written over
@@ -245,6 +247,14 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                                 }
 
                                 @Override
+                                public Void visitClass(ClassTree nested, Void unused) {
+                                    // A class inside the constructor has its own this and its own names: its
+                                    // this.warning is not the record's, and neither record's field nor parameter
+                                    // can be written from it (review, P2 — a helper's own field was refused).
+                                    return null;
+                                }
+
+                                @Override
                                 public Void visitMethodInvocation(MethodInvocationTree call, Void unused) {
                                     if (call.getMethodSelect() instanceof IdentifierTree self && self.getName().contentEquals("this")) {
                                         // A constructor of its own that hands on to another is read as a factory
@@ -327,6 +337,11 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         List<ExpressionTree> out = new ArrayList<>();
         new TreeScanner<Void, Void>() {
             @Override
+            public Void visitClass(ClassTree nested, Void unused) {
+                return null; // a local cannot be written from a class inside; a name there is that class's own (review, P2)
+            }
+
+            @Override
             public Void visitAssignment(AssignmentTree assignment, Void unused) {
                 if (target(assignment.getVariable()) instanceof IdentifierTree name && name.getName().contentEquals(local)) out.add(assignment);
                 return super.visitAssignment(assignment, unused);
@@ -353,16 +368,37 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
     private static List<Tree> writesOfWords(Tree root, String name) {
         List<Tree> out = new ArrayList<>();
         new TreeScanner<Void, Void>() {
+            /** How deep inside classes nested in the file's own; how many of those declare their own member of the name. */
+            private int nested = -1, owning = 0;
+
+            @Override
+            public Void visitClass(ClassTree type, Void unused) {
+                // A nested class's this.x is its own member, and so is its bare x when it declares
+                // one: neither is the field this lock reads (review, P2 — a helper's own field was
+                // refused). Outer.this.x and other.x are read wherever they are.
+                boolean owns = nested >= 0 && type.getMembers().stream()
+                        .anyMatch(member -> member instanceof VariableTree field && field.getName().contentEquals(name));
+                nested++;
+                if (owns) owning++;
+                try {
+                    return super.visitClass(type, unused);
+                } finally {
+                    nested--;
+                    if (owns) owning--;
+                }
+            }
+
             @Override
             public Void visitVariable(VariableTree declared, Void unused) {
-                if (declared.getName().contentEquals(name) && declared.getInitializer() != null) out.add(declared);
+                if (declared.getName().contentEquals(name) && declared.getInitializer() != null && owning == 0) out.add(declared);
                 return super.visitVariable(declared, unused);
             }
 
             private boolean named(ExpressionTree written) {
                 ExpressionTree at = target(written);
-                return (at instanceof IdentifierTree local && local.getName().contentEquals(name))
-                        || (at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(name));
+                if (at instanceof IdentifierTree bare) return bare.getName().contentEquals(name) && owning == 0;
+                return at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(name)
+                        && !(nested > 0 && field.getExpression() instanceof IdentifierTree self && self.getName().contentEquals("this"));
             }
 
             @Override

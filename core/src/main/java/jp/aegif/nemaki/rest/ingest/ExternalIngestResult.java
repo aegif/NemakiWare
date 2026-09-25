@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.rest.ingest;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -26,6 +28,22 @@ public record ExternalIngestResult(
          * (external review). Anything that cannot establish the answer must leave it unrecorded.
          */
         boolean createdObject) {
+
+    /**
+     * The lists are the result's own: copied when it is made, and not changeable through it.
+     *
+     * <p>A result used to keep the very list its maker had been adding to, and hand that list
+     * out as it was: a wrapper could filter the mail's warnings in place —
+     * {@code result.warnings().removeIf(…)} — and drop the warning that says an attachment is
+     * missing, with every lock that reads the import's source still green, since nothing it reads
+     * had changed (review, P1). Now a change made through a result fails when it runs, and a list
+     * its maker changes after the result was made does not change the result. {@code null} stays
+     * {@code null}, and a {@code null} element is kept, as before.
+     */
+    public ExternalIngestResult {
+        errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
+        warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
+    }
 
     /**
      * Legacy arity, defaulting {@code createdObject} to false.
