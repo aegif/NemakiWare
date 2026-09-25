@@ -189,10 +189,14 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                     // The words a factory puts in: none, or the ones it was given — never its own.
                     TreePath factory = getCurrentPath();
                     while (factory != null && !(factory.getLeaf() instanceof MethodTree)) factory = factory.getParentPath();
-                    ExpressionTree words = creation.getArguments().get(creation.getArguments().size() - 1);
+                    ExpressionTree words = creation.getArguments().isEmpty() ? null : creation.getArguments().get(creation.getArguments().size() - 1);
+                    // …its parameter as it was given: a factory that rewrote the parameter first
+                    // put in words of its own under the parameter's name (review).
                     boolean given = factory != null && words instanceof IdentifierTree name && ((MethodTree) factory.getLeaf()).getParameters()
-                            .stream().anyMatch(parameter -> parameter.getName().contentEquals(name.getName()));
-                    assertTrue(words.toString().equals("null") || given,
+                            .stream().anyMatch(parameter -> parameter.getName().contentEquals(name.getName()))
+                            && writesTo(((MethodTree) factory.getLeaf()).getBody(), name.getName().toString()).isEmpty();
+                    // (No words at all: a constructor of its own supplies them, and is read below.)
+                    assertTrue(words == null || words.toString().equals("null") || given,
                             "a " + record + " factory puts in words of its own, which this lock does not read: " + creation);
                 }
                 return super.visitNewClass(creation, unused);
@@ -210,24 +214,51 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                         if (method.getName().contentEquals("<init>")) {
                             // To the parameter, to this.<words>, to Record.this.<words> (review, P1): any target of that name.
                             new TreeScanner<Void, Void>() {
-                                private void target(ExpressionTree assigned, Tree assignment) {
+                                /** 0 — not the record's words; 1 — the parameter; 2 — the record's own field. */
+                                private int which(ExpressionTree assigned) {
                                     ExpressionTree at = assigned;
                                     while (at instanceof ParenthesizedTree parenthesized) at = parenthesized.getExpression();
-                                    boolean ofWords = (at instanceof IdentifierTree name && name.getName().contentEquals(words))
-                                            || (at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(words));
-                                    assertFalse(ofWords, record + "'s constructor rewrites " + words + ", which this lock does not read: " + assignment);
+                                    if (at instanceof IdentifierTree name && name.getName().contentEquals(words)) return 1;
+                                    if (at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(words)) {
+                                        String owner = field.getExpression().toString();
+                                        if (owner.equals("this") || owner.endsWith(".this")) return 2;
+                                    }
+                                    return 0; // another object's field of that name is not the record's (review, P2)
                                 }
 
                                 @Override
                                 public Void visitAssignment(AssignmentTree assignment, Void unused) {
-                                    target(assignment.getVariable(), assignment);
+                                    int target = which(assignment.getVariable());
+                                    // The canonical constructor stores the words as given — this.<words> = <words> — and nothing else.
+                                    boolean storedAsGiven = target == 2 && assignment.getExpression() instanceof IdentifierTree given
+                                            && given.getName().contentEquals(words);
+                                    assertFalse(target != 0 && !storedAsGiven, record + "'s constructor rewrites " + words
+                                            + ", which this lock does not read: " + assignment);
                                     return super.visitAssignment(assignment, unused);
                                 }
 
                                 @Override
                                 public Void visitCompoundAssignment(CompoundAssignmentTree assignment, Void unused) {
-                                    target(assignment.getVariable(), assignment);
+                                    assertFalse(which(assignment.getVariable()) != 0, record + "'s constructor rewrites " + words
+                                            + ", which this lock does not read: " + assignment);
                                     return super.visitCompoundAssignment(assignment, unused);
+                                }
+
+                                @Override
+                                public Void visitMethodInvocation(MethodInvocationTree call, Void unused) {
+                                    if (call.getMethodSelect() instanceof IdentifierTree self && self.getName().contentEquals("this")) {
+                                        // A constructor of its own that hands on to another is read as a factory
+                                        // is: the words it hands on are none, or its own parameter as given — a
+                                        // new Record(w) through one that prefixed w passed (review).
+                                        List<? extends ExpressionTree> handed = call.getArguments();
+                                        ExpressionTree last = handed.isEmpty() ? null : handed.get(handed.size() - 1);
+                                        boolean given = last instanceof IdentifierTree name
+                                                && method.getParameters().stream().anyMatch(parameter -> parameter.getName().contentEquals(name.getName()))
+                                                && writesTo(method.getBody(), name.getName().toString()).isEmpty();
+                                        assertTrue(last == null || last.toString().equals("null") || given,
+                                                record + "'s constructor hands on words of its own, which this lock does not read: " + call);
+                                    }
+                                    return super.visitMethodInvocation(call, unused);
                                 }
                             }.scan(method.getBody(), null);
                         }
@@ -280,15 +311,70 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         return out;
     }
 
-    /** Every assignment to the named variable under the tree. */
-    private static List<AssignmentTree> assignments(Tree root, String variable) {
-        List<AssignmentTree> out = new ArrayList<>();
+    /** An assignment's target with its parentheses taken off: {@code (w) = …} writes {@code w}. */
+    private static ExpressionTree target(ExpressionTree written) {
+        ExpressionTree at = written;
+        while (at instanceof ParenthesizedTree parenthesized) at = parenthesized.getExpression();
+        return at;
+    }
+
+    /**
+     * Every write — {@code =}, and {@code +=} and the like — to the local or parameter of that name
+     * under the tree. A local is written only by its name, parenthesised or not: comparing the
+     * target's spelling let {@code (w) = …} through (review).
+     */
+    private static List<ExpressionTree> writesTo(Tree root, String local) {
+        List<ExpressionTree> out = new ArrayList<>();
         new TreeScanner<Void, Void>() {
             @Override
             public Void visitAssignment(AssignmentTree assignment, Void unused) {
-                String target = assignment.getVariable().toString();
-                if (target.equals(variable) || target.equals("this." + variable)) out.add(assignment);
+                if (target(assignment.getVariable()) instanceof IdentifierTree name && name.getName().contentEquals(local)) out.add(assignment);
                 return super.visitAssignment(assignment, unused);
+            }
+
+            @Override
+            public Void visitCompoundAssignment(CompoundAssignmentTree assignment, Void unused) {
+                if (target(assignment.getVariable()) instanceof IdentifierTree name && name.getName().contentEquals(local)) out.add(assignment);
+                return super.visitCompoundAssignment(assignment, unused);
+            }
+        }.scan(root, null);
+        return out;
+    }
+
+    /**
+     * Every write of words to that name under the tree: a local by its name, a field however it is
+     * reached — {@code this.x}, {@code Outer.this.x}, {@code other.x} — each parenthesised or not;
+     * and a declaration of that name with an initial value. Only the bare name and {@code this.x}
+     * were read, so {@code (x) = …}, {@code CaptureScope.this.x = …} and a field given its words
+     * where it is declared were words this lock never saw (review). An append ({@code +=}) is
+     * returned as well: the words it leaves are not read whole anywhere, and one started empty
+     * then appended to reads, whole, like a missing part.
+     */
+    private static List<Tree> writesOfWords(Tree root, String name) {
+        List<Tree> out = new ArrayList<>();
+        new TreeScanner<Void, Void>() {
+            @Override
+            public Void visitVariable(VariableTree declared, Void unused) {
+                if (declared.getName().contentEquals(name) && declared.getInitializer() != null) out.add(declared);
+                return super.visitVariable(declared, unused);
+            }
+
+            private boolean named(ExpressionTree written) {
+                ExpressionTree at = target(written);
+                return (at instanceof IdentifierTree local && local.getName().contentEquals(name))
+                        || (at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(name));
+            }
+
+            @Override
+            public Void visitAssignment(AssignmentTree assignment, Void unused) {
+                if (named(assignment.getVariable())) out.add(assignment);
+                return super.visitAssignment(assignment, unused);
+            }
+
+            @Override
+            public Void visitCompoundAssignment(CompoundAssignmentTree assignment, Void unused) {
+                if (named(assignment.getVariable())) out.add(assignment);
+                return super.visitCompoundAssignment(assignment, unused);
             }
         }.scan(root, null);
         return out;
@@ -366,7 +452,23 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
     }
 
     /** The variable of that name in the method is set, once, from a call of that name. */
-    private static void takenFrom(MethodTree method, String variable, String call) {
+    private static void takenFrom(CompilationUnitTree unit, MethodTree method, String variable, String call) {
+        // Objects.requireNonNull is the JDK's only where the file says so: a single-type import of
+        // java.util.Objects, and no type of that name of its own — a same-package or nested Objects
+        // would otherwise be the one called (review, P2). The full name is always the JDK's.
+        boolean importsTheJdks = unit.getImports().stream().anyMatch(imported -> !imported.isStatic()
+                && imported.getQualifiedIdentifier().toString().equals("java.util.Objects"));
+        boolean[] declaresItsOwn = {false};
+        new TreeScanner<Void, Void>() {
+            @Override
+            public Void visitClass(ClassTree type, Void unused) {
+                if (type.getSimpleName().contentEquals("Objects")) declaresItsOwn[0] = true;
+                return super.visitClass(type, unused);
+            }
+        }.scan(unit, null);
+        Set<String> theJdksNullCheck = importsTheJdks && !declaresItsOwn[0]
+                ? Set.of("java.util.Objects.requireNonNull", "Objects.requireNonNull")
+                : Set.of("java.util.Objects.requireNonNull");
         List<String> found = new ArrayList<>();
         new TreeScanner<Void, Void>() {
             @Override
@@ -375,7 +477,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                     ExpressionTree value = declared.getInitializer();
                     // A null check changes nothing about where the value comes from (review, P3).
                     while (value instanceof MethodInvocationTree check && check.getArguments().size() == 1
-                            && Set.of("Objects.requireNonNull", "java.util.Objects.requireNonNull").contains(check.getMethodSelect().toString())) {
+                            && theJdksNullCheck.contains(check.getMethodSelect().toString())) {
                         value = check.getArguments().get(0); // the JDK's, by its name as written — a method of our own named so is not looked through (review, P1)
                     }
                     found.add(value instanceof MethodInvocationTree made ? nameOf(made) : String.valueOf(value));
@@ -384,7 +486,13 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             }
         }.scan(method.getBody(), null);
         assertEquals(List.of(call), found, method.getName() + "'s " + variable + " does not come from " + call + " alone");
-        assertTrue(assignments(method.getBody(), variable).isEmpty(), method.getName() + "'s " + variable + " is set again");
+        assertTrue(writesTo(method.getBody(), variable).isEmpty(), method.getName() + "'s " + variable + " is set again");
+    }
+
+    /** The words a write of words puts in; an append ({@code +=}) is red — its words are not read whole. */
+    private static ExpressionTree wordsWritten(Tree write, String what) {
+        assertFalse(write instanceof CompoundAssignmentTree, what + " is appended to, and this lock reads it whole: " + write);
+        return write instanceof VariableTree declared ? declared.getInitializer() : ((AssignmentTree) write).getExpression();
     }
 
     // ── the wordings the connectors recognise ─────────────────────
@@ -430,10 +538,11 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             }
         }
         assertTrue(refusals > 0 && links > 0, "this lock found " + refusals + " refusals and " + links + " links in " + IMPORT);
-        for (AssignmentTree assignment : assignments(unit, "unansweredCheck")) {
-            String words = leadingWords(assignment.getExpression());
-            assertTrue(words != null && !MailImportWarnings.saysAPartIsMissing(words + "x"),
-                    "a link's note is worded like a missing part, or in words this lock cannot read: " + assignment);
+        for (Tree write : writesOfWords(unit, "unansweredCheck")) {
+            ExpressionTree note = wordsWritten(write, "a link's note");
+            String words = leadingWords(note);
+            assertTrue(note.toString().equals("null") || (words != null && !MailImportWarnings.saysAPartIsMissing(words + "x")),
+                    "a link's note is worded like a missing part, or in words this lock cannot read: " + write);
         }
         madeOnlyByItsFactories(unit, "LinkOutcome", Set.of("linked", "notLinked"), "message");
     }
@@ -556,7 +665,17 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 assertTrue(loop != null && ((EnhancedForLoopTree) loop.getLeaf()).getVariable().getName().contentEquals("w")
                                 && ((EnhancedForLoopTree) loop.getLeaf()).getExpression().toString().equals("childResult.warnings()"),
                         "mergeChildWarnings adds its w from somewhere other than the child's own warnings");
+                // …and w stays the child's words: not reassigned in the loop (review, P1).
+                assertTrue(writesTo(((EnhancedForLoopTree) loop.getLeaf()).getStatement(), "w").isEmpty(),
+                        "mergeChildWarnings changes a child's warning before it adds it");
                 merged++;
+            }
+            // Nor what it was handed: a label reworded, or another result put in the child's place,
+            // inside the helper passed with the call sites' labels read and the added expression
+            // unchanged (review).
+            for (VariableTree parameter : helper.getParameters()) {
+                assertTrue(writesTo(helper.getBody(), parameter.getName().toString()).isEmpty(),
+                        "mergeChildWarnings changes its " + parameter.getName() + " before it adds a child's warning under it");
             }
         }
         assertTrue(merged > 0, "this lock found no warning mergeChildWarnings adds");
@@ -603,6 +722,82 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             }
         }
         assertEquals(1, captureAdds, "withCaptureOutcome adds " + captureAdds + " warnings; this lock reads the capture record's one");
+        // …where the list starts from the result's own warnings, and every result it returns carries
+        // the result's own list or this one: a list started or built on the way out was words this
+        // lock never saw (review).
+        for (MethodTree method : methods(unit, "withCaptureOutcome")) {
+            // The result it returns as `result` is the one it was given: rewritten on the way —
+            // result = result.withWarnings(…) — it passed as the result's own (self-review).
+            for (VariableTree parameter : method.getParameters()) {
+                assertTrue(writesTo(method.getBody(), parameter.getName().toString()).isEmpty(),
+                        "withCaptureOutcome changes its " + parameter.getName() + " before it returns it");
+            }
+            int started = 0;
+            for (Tree statement : method.getBody().getStatements()) {
+                if (statement instanceof VariableTree declared && declared.getName().contentEquals("warnings")) {
+                    started++;
+                    assertEquals("new ArrayList<>(result.warnings() == null ? List.of() : result.warnings())", String.valueOf(declared.getInitializer()),
+                            "withCaptureOutcome starts its list from something other than the result's own warnings");
+                }
+            }
+            assertEquals(1, started, "withCaptureOutcome declares " + started + " lists named warnings; this lock reads one");
+            assertEquals(1, declarations(method.getBody(), "warnings"), "withCaptureOutcome declares the name 'warnings' again");
+            int returned = 0;
+            for (ExpressionTree value : returnedBy(method)) {
+                returned++;
+                carriesItsOwnWarnings(value);
+            }
+            assertTrue(returned > 0, "withCaptureOutcome returns nothing this lock can read");
+        }
+    }
+
+    /**
+     * A result withCaptureOutcome returns: the one it was given, that one with the list read above,
+     * or the refusal carrying the given one's own warnings — through parentheses and each arm of a
+     * choice.
+     */
+    private static void carriesItsOwnWarnings(ExpressionTree value) {
+        ExpressionTree at = value;
+        while (at instanceof ParenthesizedTree parenthesized) at = parenthesized.getExpression();
+        if (at instanceof ConditionalExpressionTree choice) {
+            carriesItsOwnWarnings(choice.getTrueExpression());
+            carriesItsOwnWarnings(choice.getFalseExpression());
+            return;
+        }
+        if (at instanceof SwitchExpressionTree choice) {
+            for (CaseTree arm : choice.getCases()) {
+                assertTrue(arm.getBody() instanceof ExpressionTree, "withCaptureOutcome returns from a switch arm this lock cannot read: " + arm);
+                carriesItsOwnWarnings((ExpressionTree) arm.getBody());
+            }
+            return;
+        }
+        boolean theirOwn = at.toString().equals("result") || at.toString().equals("result.withWarnings(warnings)")
+                || (at instanceof MethodInvocationTree refusal && nameOf(refusal).equals("error") && !refusal.getArguments().isEmpty()
+                && refusal.getArguments().get(refusal.getArguments().size() - 1).toString().equals("result == null ? List.of() : result.warnings()"));
+        assertTrue(theirOwn, "withCaptureOutcome returns a result whose warnings this lock does not read: " + value);
+    }
+
+    /** Every value the method itself returns — not a lambda's, not an inner class's. */
+    private static List<ExpressionTree> returnedBy(MethodTree method) {
+        List<ExpressionTree> out = new ArrayList<>();
+        new TreeScanner<Void, Void>() {
+            @Override
+            public Void visitReturn(ReturnTree value, Void unused) {
+                if (value.getExpression() != null) out.add(value.getExpression());
+                return super.visitReturn(value, unused);
+            }
+
+            @Override
+            public Void visitLambdaExpression(LambdaExpressionTree lambda, Void unused) {
+                return null;
+            }
+
+            @Override
+            public Void visitClass(ClassTree type, Void unused) {
+                return null;
+            }
+        }.scan(method.getBody(), null);
+        return out;
     }
 
     /** How many variables of that name the tree declares — locals, parameters, lambda parameters, fields of inner classes. */
@@ -654,16 +849,18 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         }
         for (MethodTree chain : methods(capture, "chain")) {
             returnsOnlyWhatIsMadeBy(chain, captureFactories);
-            takenFrom(chain, "recorded", "recordCaptureCompleted");
+            takenFrom(capture, chain, "recorded", "recordCaptureCompleted");
         }
-        for (MethodTree wrapper : methods(parse(IMPORT), "withCaptureOutcome")) takenFrom(wrapper, "outcome", "complete");
+        CompilationUnitTree mailImport = parse(IMPORT);
+        for (MethodTree wrapper : methods(mailImport, "withCaptureOutcome")) takenFrom(mailImport, wrapper, "outcome", "complete");
 
         int reasons = 0;
-        for (AssignmentTree assignment : assignments(capture, "undeterminedReason")) {
+        for (Tree write : writesOfWords(capture, "undeterminedReason")) {
             reasons++;
-            String words = leadingWords(assignment.getExpression());
+            ExpressionTree reason = wordsWritten(write, "the capture's undetermined reason");
+            String words = leadingWords(reason);
             if (words == null) {
-                assertEquals("null", assignment.getExpression().toString(), "the capture's undetermined reason is held in words this lock cannot read: " + assignment);
+                assertEquals("null", reason.toString(), "the capture's undetermined reason is held in words this lock cannot read: " + write);
             } else {
                 assertFalse(MailImportWarnings.saysAPartIsMissing(words + "x"), "the capture's reason \"" + words + "…\" is read as a missing part");
             }
