@@ -4,7 +4,9 @@ import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
+import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.SwitchExpressionTree;
@@ -68,7 +70,12 @@ import static org.junit.jupiter.api.Assertions.fail;
  * use this lock does not know is red. The records that carry a link's or a capture's words are made
  * only in their own class, by factories this lock reads, never through a reference.
  *
- * <p>Not read: reflection, and code made or loaded at run time — no source to read.
+ * <p>Not read: reflection, and code made or loaded at run time — no source to read. And what this
+ * lock is FOR: a change made the ordinary way — a warning reworded or added, a call written over
+ * lines, a list handed to a new helper — turns it red until the change is classified. A construct
+ * built to satisfy it while breaking what it guards (a method of its own named like a JDK one that
+ * swaps the value, an assignment through an outer {@code this}) is caught where each is named below;
+ * past those, code review is the guard, not this lock.
  */
 class MailImportWarningsNameTheImportsOwnWordingTest {
 
@@ -201,8 +208,28 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                         assertFalse(method.getName().contentEquals(words) && method.getParameters().isEmpty(),
                                 record + "." + words + "() is written out, and may answer words this lock does not read");
                         if (method.getName().contentEquals("<init>")) {
-                            assertTrue(assignments(method, words).isEmpty(), record + "'s constructor rewrites " + words
-                                    + ", which this lock does not read");
+                            // To the parameter, to this.<words>, to Record.this.<words> (review, P1): any target of that name.
+                            new TreeScanner<Void, Void>() {
+                                private void target(ExpressionTree assigned, Tree assignment) {
+                                    ExpressionTree at = assigned;
+                                    while (at instanceof ParenthesizedTree parenthesized) at = parenthesized.getExpression();
+                                    boolean ofWords = (at instanceof IdentifierTree name && name.getName().contentEquals(words))
+                                            || (at instanceof MemberSelectTree field && field.getIdentifier().contentEquals(words));
+                                    assertFalse(ofWords, record + "'s constructor rewrites " + words + ", which this lock does not read: " + assignment);
+                                }
+
+                                @Override
+                                public Void visitAssignment(AssignmentTree assignment, Void unused) {
+                                    target(assignment.getVariable(), assignment);
+                                    return super.visitAssignment(assignment, unused);
+                                }
+
+                                @Override
+                                public Void visitCompoundAssignment(CompoundAssignmentTree assignment, Void unused) {
+                                    target(assignment.getVariable(), assignment);
+                                    return super.visitCompoundAssignment(assignment, unused);
+                                }
+                            }.scan(method.getBody(), null);
                         }
                     }
                     for (Tree member : type.getMembers()) {
@@ -347,8 +374,10 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 if (declared.getName().contentEquals(variable)) {
                     ExpressionTree value = declared.getInitializer();
                     // A null check changes nothing about where the value comes from (review, P3).
-                    while (value instanceof MethodInvocationTree check && nameOf(check).equals("requireNonNull")
-                            && check.getArguments().size() == 1) value = check.getArguments().get(0);
+                    while (value instanceof MethodInvocationTree check && check.getArguments().size() == 1
+                            && Set.of("Objects.requireNonNull", "java.util.Objects.requireNonNull").contains(check.getMethodSelect().toString())) {
+                        value = check.getArguments().get(0); // the JDK's, by its name as written — a method of our own named so is not looked through (review, P1)
+                    }
                     found.add(value instanceof MethodInvocationTree made ? nameOf(made) : String.valueOf(value));
                 }
                 return super.visitVariable(declared, unused);
@@ -446,7 +475,10 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 }
                 if (around instanceof VariableTree variable) {
                     // List<String> warnings = failureState.warnings — the list's own name.
-                    assertTrue(variable.getName().contentEquals("warnings") && occurrence.toString().equals("failureState.warnings"),
+                    // The list's own name, taken from its holder however that is spelled (review, P3).
+                    ExpressionTree holder = occurrence instanceof MemberSelectTree field ? field.getExpression() : null;
+                    while (holder instanceof ParenthesizedTree parenthesized) holder = parenthesized.getExpression();
+                    assertTrue(variable.getName().contentEquals("warnings") && holder != null && isTheHolder(holder),
                             "the mail import's warnings list is held as '" + variable.getName() + "', which this lock does not read");
                 } else if (around instanceof MemberSelectTree member && around(at).getLeaf() instanceof MethodInvocationTree call
                         && call.getMethodSelect() == member) {
@@ -516,7 +548,14 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 assertTrue(at.getLeaf() instanceof MemberSelectTree member && member.getIdentifier().contentEquals("add")
                         && around(at).getLeaf() instanceof MethodInvocationTree, "mergeChildWarnings uses the mail's warnings in a way this lock does not read: " + at.getLeaf());
                 ExpressionTree added = ((MethodInvocationTree) around(at).getLeaf()).getArguments().get(0);
-                assertEquals("childLabel", String.valueOf(leftmost(added)), "mergeChildWarnings adds a warning that does not begin with the child's label: " + added);
+                // Each of the child's own warnings, whole, after its label: dropping or replacing the
+                // child's words kept the label and passed (review, P1).
+                assertEquals("childLabel + \": \" + w", String.valueOf(added), "mergeChildWarnings adds something other than a child warning under its label: " + added);
+                TreePath loop = at;
+                while (loop != null && !(loop.getLeaf() instanceof EnhancedForLoopTree)) loop = loop.getParentPath();
+                assertTrue(loop != null && ((EnhancedForLoopTree) loop.getLeaf()).getVariable().getName().contentEquals("w")
+                                && ((EnhancedForLoopTree) loop.getLeaf()).getExpression().toString().equals("childResult.warnings()"),
+                        "mergeChildWarnings adds its w from somewhere other than the child's own warnings");
                 merged++;
             }
         }
