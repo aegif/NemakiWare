@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * copy that stays changeable and a view that follows its source are each caught. A warning
  * without words is kept on every path that takes a list: {@code withWarnings} and the
  * {@code error} that carries warnings copied theirs with {@code List.copyOf}, which throws on one
- * (review, P2) — each path has its own test too.
+ * (review, P2) — each path has its own test too. So is a failure without words: both
+ * {@code error} factories put the message in with {@code List.of}, and a failure whose exception
+ * had no message threw instead of being reported (review, P2).
  */
 class ExternalIngestResultKeepsItsOwnListsTest {
 
@@ -96,5 +98,25 @@ class ExternalIngestResultKeepsItsOwnListsTest {
                 "a failure could not carry warnings holding one without words");
         assertEquals(Arrays.asList(MISSING, null), result.warnings());
         assertFalse(result.isSuccess());
+    }
+
+    @Test
+    @DisplayName("a failure without words is still reported as a failure")
+    void aFailureWithoutWordsIsReported() {
+        ExternalIngestResult result = assertDoesNotThrow(() -> ExternalIngestResult.error("request", null),
+                "a failure whose exception had no message could not be reported");
+        assertFalse(result.isSuccess());
+        assertEquals(Arrays.asList((String) null), result.errors());
+    }
+
+    @Test
+    @DisplayName("a failure after entry without words is still reported as a failure, with its warnings")
+    void aFailureAfterEntryWithoutWordsIsReported() {
+        ExternalIngestResult result = assertDoesNotThrow(
+                () -> ExternalIngestResult.error("request", "object", null, List.of(MISSING)),
+                "a failure after entry whose exception had no message could not be reported");
+        assertFalse(result.isSuccess());
+        assertEquals(Arrays.asList((String) null), result.errors());
+        assertEquals(List.of(MISSING), result.warnings());
     }
 }

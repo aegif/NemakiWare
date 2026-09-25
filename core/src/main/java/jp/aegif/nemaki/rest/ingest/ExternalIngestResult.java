@@ -37,11 +37,15 @@ public record ExternalIngestResult(
      * {@code result.warnings().removeIf(…)} — and drop the warning that says an attachment is
      * missing, with every lock that reads the import's source still green, since nothing it reads
      * had changed (review, P1). Now a change made through a result fails when it runs, and a list
-     * its maker changes after the result was made does not change the result. {@code null} stays
-     * {@code null}, and a {@code null} element is kept — here and in {@link #withWarnings} and the
-     * {@code error} that carries warnings, which hand their list to this constructor: they copied it
-     * with {@code List.copyOf} first, which throws on a {@code null} element, so a result carrying
-     * one could not be given the capture's warning (review, P2).
+     * its maker changes after the result was made does not change the result.
+     *
+     * <p>An absent list stays absent here; {@link #withWarnings} and the {@code error} that carries
+     * warnings make an absent warning list empty, as they did before. A {@code null} element is
+     * kept on every path: those two hand their list to this constructor — they copied it with
+     * {@code List.copyOf} first, which throws on a {@code null} element, so a result carrying one
+     * could not be given the capture's warning — and both {@code error} factories put their message
+     * in a list that takes {@code null}: with {@code List.of}, a failure whose exception had no
+     * message threw instead of being reported as a failure (review, P2 ×2).
      */
     public ExternalIngestResult {
         errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
@@ -108,7 +112,7 @@ public record ExternalIngestResult(
 
     public static ExternalIngestResult error(String requestId, String errorMessage) {
         return new ExternalIngestResult(requestId, null, null, false,
-                false, false, null, null, List.of(errorMessage), List.of());
+                false, false, null, null, Collections.singletonList(errorMessage), List.of());
     }
 
     /**
@@ -126,7 +130,7 @@ public record ExternalIngestResult(
     public static ExternalIngestResult error(String requestId, String objectId,
                                              String errorMessage, List<String> warnings) {
         return new ExternalIngestResult(requestId, objectId, null, false,
-                false, false, null, null, List.of(errorMessage),
+                false, false, null, null, Collections.singletonList(errorMessage),
                 warnings == null ? List.of() : warnings);
     }
 }
