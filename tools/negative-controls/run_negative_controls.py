@@ -10011,8 +10011,14 @@ CONTROLS = [
         # after it goes unrun — 106 of them, on a run that costs ten hours. The sabotage now
         # removes an UNREFERENCED constant, which models the same defect (a write path loses
         # its WriteKind and the enumeration shrinks) and still compiles.
-        find='        /** W10 archive on delete. */ ARCHIVE,\n',
-        replace='',
+        # Re-pointed 2026-09-26 (the sixth sweep died here, at 827 of 1551): ContentServiceImpl
+        # had come to reference WriteKind.ARCHIVE too, and every constant is referenced now, so
+        # no deletion compiles. The constant is removed and its name kept as a static field
+        # aliasing another kind — the archive path records under DESTROY_ARCHIVE, which is the
+        # defect itself (a write path loses its own kind; E1 covers fewer kinds than the
+        # inventory), and every WriteKind.ARCHIVE reference still compiles.
+        find='        /** W10 archive on delete. */ ARCHIVE,\n        /** W11 restore from archive. */ RESTORE,\n        /** W12 move or copy to cold storage. */ COLD_TRANSFER,\n        /** W13 destroy an archived row. */ DESTROY_ARCHIVE,\n        /** W14 destroy a row whose bytes are in cold storage — the blob is left behind. */\n        DESTROY_ARCHIVE_LEAVING_COLD_BLOB,\n        /** deleteContentStream — the transition to "there is no content". */ CONTENT_REMOVED\n    }',
+        replace='        /** W11 restore from archive. */ RESTORE,\n        /** W12 move or copy to cold storage. */ COLD_TRANSFER,\n        /** W13 destroy an archived row. */ DESTROY_ARCHIVE,\n        /** W14 destroy a row whose bytes are in cold storage — the blob is left behind. */\n        DESTROY_ARCHIVE_LEAVING_COLD_BLOB,\n        /** deleteContentStream — the transition to "there is no content". */ CONTENT_REMOVED;\n\n        /** The archive path records under another kind — it has lost its own. */\n        public static final WriteKind ARCHIVE = DESTROY_ARCHIVE;\n    }',
         test='E1LeavesNoSilentGapTest',
         expect_fail=['everyEnumeratedWritePathIsCovered'],
     ),
