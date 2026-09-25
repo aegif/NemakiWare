@@ -30,6 +30,12 @@ public record ExternalIngestResult(
         boolean createdObject) {
 
     /**
+     * What a result says in place of a message it was handed as {@code null}: a failure whose
+     * exception had no message, a warning added from a variable that held none.
+     */
+    public static final String NO_MESSAGE = "(no message was given)";
+
+    /**
      * The lists are the result's own: copied when it is made, and not changeable through it.
      *
      * <p>A result used to keep the very list its maker had been adding to, and hand that list
@@ -39,17 +45,32 @@ public record ExternalIngestResult(
      * had changed (review, P1). Now a change made through a result fails when it runs, and a list
      * its maker changes after the result was made does not change the result.
      *
-     * <p>An absent list stays absent here; {@link #withWarnings} and the {@code error} that carries
-     * warnings make an absent warning list empty, as they did before. A {@code null} element is
-     * kept on every path: those two hand their list to this constructor — they copied it with
-     * {@code List.copyOf} first, which throws on a {@code null} element, so a result carrying one
-     * could not be given the capture's warning — and both {@code error} factories put their message
+     * <p>No element of either list is {@code null}: a {@code null} message becomes
+     * {@link #NO_MESSAGE}. Readers call string methods on the elements — the cloud-drive import
+     * reads the first error with {@code contains}, the Notion and IMAP pollers read each warning —
+     * and throw on a {@code null} one; the cloud-drive import met one as soon as the {@code error}
+     * factories stopped throwing on a {@code null} message (review, P2). {@link #withWarnings} and
+     * the {@code error} that carries warnings hand their list to this constructor: they copied it
+     * with {@code List.copyOf}, which throws on a {@code null} element, so a result carrying one
+     * could not be given the capture's warning; and both {@code error} factories put their message
      * in a list that takes {@code null}: with {@code List.of}, a failure whose exception had no
-     * message threw instead of being reported as a failure (review, P2 ×2).
+     * message threw instead of being reported as a failure (review, P2 ×2). An absent list stays
+     * absent here; {@link #withWarnings} and the {@code error} that carries warnings make an absent
+     * warning list empty, as they did before.
      */
     public ExternalIngestResult {
-        errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
-        warnings = warnings == null ? null : Collections.unmodifiableList(new ArrayList<>(warnings));
+        errors = ownCopy(errors);
+        warnings = ownCopy(warnings);
+    }
+
+    /** The list as the result keeps it: its own copy, no element {@code null}, not changeable. */
+    private static List<String> ownCopy(List<String> messages) {
+        if (messages == null) {
+            return null;
+        }
+        List<String> copy = new ArrayList<>(messages);
+        copy.replaceAll(message -> message == null ? NO_MESSAGE : message);
+        return Collections.unmodifiableList(copy);
     }
 
     /**
