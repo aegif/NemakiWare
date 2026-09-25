@@ -170,7 +170,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
      * The record is made only inside its own class, by factories: every factory that takes words
      * is one this lock reads, and none is used through a method reference.
      */
-    private static void madeOnlyByItsFactories(CompilationUnitTree unit, String record, Set<String> wordedFactories) {
+    private static void madeOnlyByItsFactories(CompilationUnitTree unit, String record, Set<String> wordedFactories, String words) {
         new TreePathScanner<Void, Void>() {
             @Override
             public Void visitNewClass(NewClassTree creation, Void unused) {
@@ -194,6 +194,17 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             @Override
             public Void visitClass(ClassTree type, Void unused) {
                 if (type.getSimpleName().contentEquals(record)) {
+                    // The words it answers are the ones it was made with: no accessor of its own, and
+                    // not rewritten by its constructor (review, P1).
+                    for (Tree member : type.getMembers()) {
+                        if (!(member instanceof MethodTree method)) continue;
+                        assertFalse(method.getName().contentEquals(words) && method.getParameters().isEmpty(),
+                                record + "." + words + "() is written out, and may answer words this lock does not read");
+                        if (method.getName().contentEquals("<init>")) {
+                            assertTrue(assignments(method, words).isEmpty(), record + "'s constructor rewrites " + words
+                                    + ", which this lock does not read");
+                        }
+                    }
                     for (Tree member : type.getMembers()) {
                         // Its constructor is read where it is called: only inside the record (above).
                         if (member instanceof MethodTree factory && !factory.getName().contentEquals("<init>") && factory.getParameters().stream()
@@ -264,6 +275,16 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         return select.toString();
     }
 
+    /** The leftmost operand of a concatenation (the expression itself when it is not one). */
+    private static ExpressionTree leftmost(ExpressionTree expression) {
+        ExpressionTree at = expression;
+        while (true) {
+            if (at instanceof ParenthesizedTree parenthesized) at = parenthesized.getExpression();
+            else if (at instanceof BinaryTree binary && binary.getKind() == Tree.Kind.PLUS) at = binary.getLeftOperand();
+            else return at;
+        }
+    }
+
     /** The words a warning starts with: its literal, or the leftmost literal of a concatenation; null when they are not literal. */
     private static String leadingWords(ExpressionTree expression) {
         if (expression instanceof ParenthesizedTree parenthesized) return leadingWords(parenthesized.getExpression());
@@ -323,7 +344,13 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         new TreeScanner<Void, Void>() {
             @Override
             public Void visitVariable(VariableTree declared, Void unused) {
-                if (declared.getName().contentEquals(variable)) found.add(declared.getInitializer() instanceof MethodInvocationTree made ? nameOf(made) : String.valueOf(declared.getInitializer()));
+                if (declared.getName().contentEquals(variable)) {
+                    ExpressionTree value = declared.getInitializer();
+                    // A null check changes nothing about where the value comes from (review, P3).
+                    while (value instanceof MethodInvocationTree check && nameOf(check).equals("requireNonNull")
+                            && check.getArguments().size() == 1) value = check.getArguments().get(0);
+                    found.add(value instanceof MethodInvocationTree made ? nameOf(made) : String.valueOf(value));
+                }
                 return super.visitVariable(declared, unused);
             }
         }.scan(method.getBody(), null);
@@ -379,16 +406,25 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             assertTrue(words != null && !MailImportWarnings.saysAPartIsMissing(words + "x"),
                     "a link's note is worded like a missing part, or in words this lock cannot read: " + assignment);
         }
-        madeOnlyByItsFactories(unit, "LinkOutcome", Set.of("linked", "notLinked"));
+        madeOnlyByItsFactories(unit, "LinkOutcome", Set.of("linked", "notLinked"), "message");
     }
 
     // ── every warning of the mail import ──────────────────────────
 
-    /** The mail import's warnings list, at an occurrence: the local, or the holder's field. */
+    /**
+     * The mail import's warnings list, at an occurrence: the name, or any field of that name however
+     * it is reached ({@code failureState.warnings}, {@code this.failureState.warnings}). Reading only
+     * the holder's own spelling let a list reached through another qualifier escape (review, P1).
+     */
     private static boolean isTheList(ExpressionTree expression) {
         if (expression instanceof IdentifierTree identifier) return identifier.getName().contentEquals("warnings");
-        return expression instanceof MemberSelectTree member && member.getIdentifier().contentEquals("warnings")
-                && member.getExpression().toString().equals("failureState");
+        return expression instanceof MemberSelectTree member && member.getIdentifier().contentEquals("warnings");
+    }
+
+    /** The holder the list lives in, however it is reached. */
+    private static boolean isTheHolder(ExpressionTree expression) {
+        if (expression instanceof IdentifierTree identifier) return identifier.getName().contentEquals("failureState");
+        return expression instanceof MemberSelectTree member && member.getIdentifier().contentEquals("failureState");
     }
 
     @Test
@@ -405,6 +441,9 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 ExpressionTree occurrence = (ExpressionTree) use.getLeaf();
                 TreePath at = around(use);
                 Tree around = at.getLeaf();
+                if (around instanceof MethodInvocationTree called && called.getMethodSelect() == occurrence) {
+                    continue; // a call of a method named warnings — messageResult.warnings() — not the list
+                }
                 if (around instanceof VariableTree variable) {
                     // List<String> warnings = failureState.warnings — the list's own name.
                     assertTrue(variable.getName().contentEquals("warnings") && occurrence.toString().equals("failureState.warnings"),
@@ -449,14 +488,14 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 }
             }
             // The holder the list lives in: only its two fields are used — a holder passed on could have the list written elsewhere.
-            for (TreePath use : usesIn(unit, body, expression -> expression instanceof IdentifierTree identifier
-                    && identifier.getName().contentEquals("failureState"))) {
+            for (TreePath use : usesIn(unit, body, MailImportWarningsNameTheImportsOwnWordingTest::isTheHolder)) {
                 Tree around = around(use).getLeaf();
                 assertTrue(around instanceof MemberSelectTree member && Set.of("warnings", "committedObjectId").contains(member.getIdentifier().toString()),
                         "the mail import uses the holder of its warnings in a way this lock does not read: " + around);
             }
             for (MethodInvocationTree call : calls(body)) {
                 if (!nameOf(call).equals("mergeChildWarnings")) continue;
+                // (the helper itself is read below: it adds each child warning under the label, and nothing else)
                 children++;
                 String label = leadingWords(call.getArguments().get(1));
                 assertNotNull(label, "a child's warnings are merged under a label this lock cannot read: " + call);
@@ -467,6 +506,21 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         assertTrue(literals >= MISSING.size() + EVIDENCE.size() && passedOn >= PASSED_ON.size() && lists >= 1 && children > 0,
                 "this lock found " + literals + " written, " + passedOn + " passed-on, " + lists + " listed and " + children
                         + " merged warnings in the mail import");
+
+        // mergeChildWarnings: each child warning under the label it was given — the label is read at each call above.
+        int merged = 0;
+        for (MethodTree helper : methods(unit, "mergeChildWarnings")) {
+            for (TreePath use : usesIn(unit, helper, expression -> expression instanceof IdentifierTree identifier
+                    && identifier.getName().contentEquals("parentWarnings"))) {
+                TreePath at = around(use);
+                assertTrue(at.getLeaf() instanceof MemberSelectTree member && member.getIdentifier().contentEquals("add")
+                        && around(at).getLeaf() instanceof MethodInvocationTree, "mergeChildWarnings uses the mail's warnings in a way this lock does not read: " + at.getLeaf());
+                ExpressionTree added = ((MethodInvocationTree) around(at).getLeaf()).getArguments().get(0);
+                assertEquals("childLabel", String.valueOf(leftmost(added)), "mergeChildWarnings adds a warning that does not begin with the child's label: " + added);
+                merged++;
+            }
+        }
+        assertTrue(merged > 0, "this lock found no warning mergeChildWarnings adds");
 
         // emitReimportEvent: its list is used only to add evidence about a re-import.
         int reimport = 0;
@@ -550,7 +604,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             }
         }
         assertTrue(warned > 0, "this lock found no warning of the capture");
-        madeOnlyByItsFactories(capture, "CaptureResult", Set.of("notEstablished", "capturedWithGap"));
+        madeOnlyByItsFactories(capture, "CaptureResult", Set.of("notEstablished", "capturedWithGap"), "warning");
         // What the mail's list takes is outcome.warning(); outcome is what complete returns, and
         // complete — through chain — returns only what these factories make.
         Set<String> captureFactories = Set.of("success", "notOpened", "alreadyCompleted", "notEstablished", "capturedWithGap");
@@ -591,7 +645,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             }
         }
         assertTrue(gaps > 0, "this lock found no gap the evidence ledger reports");
-        madeOnlyByItsFactories(ledger, "Recorded", Set.of("gap"));
+        madeOnlyByItsFactories(ledger, "Recorded", Set.of("gap"), "warning");
         for (MethodTree recorded : methods(ledger, "recordCaptureCompleted")) returnsOnlyWhatIsMadeBy(recorded, Set.of("chained", "gap"));
     }
 
