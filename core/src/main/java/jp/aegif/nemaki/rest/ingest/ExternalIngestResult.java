@@ -38,7 +38,10 @@ public record ExternalIngestResult(
      * missing, with every lock that reads the import's source still green, since nothing it reads
      * had changed (review, P1). Now a change made through a result fails when it runs, and a list
      * its maker changes after the result was made does not change the result. {@code null} stays
-     * {@code null}, and a {@code null} element is kept, as before.
+     * {@code null}, and a {@code null} element is kept — here and in {@link #withWarnings} and the
+     * {@code error} that carries warnings, which hand their list to this constructor: they copied it
+     * with {@code List.copyOf} first, which throws on a {@code null} element, so a result carrying
+     * one could not be given the capture's warning (review, P2).
      */
     public ExternalIngestResult {
         errors = errors == null ? null : Collections.unmodifiableList(new ArrayList<>(errors));
@@ -66,7 +69,7 @@ public record ExternalIngestResult(
     public ExternalIngestResult withWarnings(List<String> warnings) {
         return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion, dryRun,
                 skipped, skipReason, lineageEventId, errors,
-                warnings == null ? List.of() : List.copyOf(warnings), createdObject);
+                warnings == null ? List.of() : warnings, createdObject);
     }
 
     public ExternalIngestResult(String requestId, String objectId, String versionLabel,
@@ -124,6 +127,6 @@ public record ExternalIngestResult(
                                              String errorMessage, List<String> warnings) {
         return new ExternalIngestResult(requestId, objectId, null, false,
                 false, false, null, null, List.of(errorMessage),
-                warnings == null ? List.of() : List.copyOf(warnings));
+                warnings == null ? List.of() : warnings);
     }
 }

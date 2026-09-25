@@ -390,7 +390,10 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
 
             @Override
             public Void visitVariable(VariableTree declared, Void unused) {
-                if (declared.getName().contentEquals(name) && declared.getInitializer() != null && owning == 0) out.add(declared);
+                // A declaration inside a nested class — its field, its local, its parameter — is that
+                // class's own (review, P2: a nested class's unrelated local of the name was refused).
+                // Its words cannot reach the mail by the name: see where the name is taken as words.
+                if (declared.getName().contentEquals(name) && declared.getInitializer() != null && nested <= 0) out.add(declared);
                 return super.visitVariable(declared, unused);
             }
 
@@ -580,6 +583,26 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
             assertTrue(note.toString().equals("null") || (words != null && !MailImportWarnings.saysAPartIsMissing(words + "x")),
                     "a link's note is worded like a missing part, or in words this lock cannot read: " + write);
         }
+        // The note is taken as words by its name only where the name is the link step's own: outside
+        // a class nested in the import. The reading of the note's words above leaves a nested class's
+        // own variables of that name to it — and a nested class that made its link from its own field
+        // of the name passed with words no one read (self-review: the round before opened this by
+        // loosening the reading alone).
+        new TreePathScanner<Void, Void>() {
+            @Override
+            public Void visitMethodInvocation(MethodInvocationTree call, Void unused) {
+                if (nameOf(call).equals("linked") && call.getArguments().size() == 1
+                        && call.getArguments().get(0).toString().equals("unansweredCheck")) {
+                    int classes = 0;
+                    for (TreePath at = getCurrentPath(); at != null; at = at.getParentPath()) {
+                        if (at.getLeaf() instanceof ClassTree) classes++;
+                    }
+                    assertEquals(1, classes, "a link is made with the note 'unansweredCheck' inside a class nested in the import,"
+                            + " where the name is not the link step's: " + call);
+                }
+                return super.visitMethodInvocation(call, unused);
+            }
+        }.scan(new TreePath(unit), null);
         madeOnlyByItsFactories(unit, "LinkOutcome", Set.of("linked", "notLinked"), "message");
     }
 

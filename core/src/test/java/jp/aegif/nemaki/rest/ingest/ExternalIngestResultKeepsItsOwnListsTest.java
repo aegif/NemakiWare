@@ -5,8 +5,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -17,7 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * place — {@code result.warnings().removeIf(…)} — would drop the warning that says an attachment
  * is missing, and a connector would checkpoint an incomplete mail as a complete one, with every
  * lock that reads the import's source green (review, P1). Each property has its own test, so a
- * copy that stays changeable and a view that follows its source are each caught.
+ * copy that stays changeable and a view that follows its source are each caught. A warning
+ * without words is kept on every path that takes a list: {@code withWarnings} and the
+ * {@code error} that carries warnings copied theirs with {@code List.copyOf}, which throws on one
+ * (review, P2) — each path has its own test too.
  */
 class ExternalIngestResultKeepsItsOwnListsTest {
 
@@ -63,5 +68,33 @@ class ExternalIngestResultKeepsItsOwnListsTest {
         ExternalIngestResult result = madeFrom(kept, List.of());
         kept.clear();
         assertFalse(result.isSuccess(), "a failed result read as a success once its maker's list was cleared");
+    }
+
+    @Test
+    @DisplayName("a warning without words is kept when a result is made")
+    void aWarningWithoutWordsIsKeptWhenAResultIsMade() {
+        ExternalIngestResult result = assertDoesNotThrow(() -> madeFrom(List.of(), Arrays.asList(MISSING, null)),
+                "a result could not be made from warnings holding one without words");
+        assertEquals(Arrays.asList(MISSING, null), result.warnings());
+    }
+
+    @Test
+    @DisplayName("a warning without words is kept when a result's warnings are replaced")
+    void aWarningWithoutWordsIsKeptWhenItsWarningsAreReplaced() {
+        ExternalIngestResult made = madeFrom(List.of(), List.of(MISSING));
+        ExternalIngestResult result = assertDoesNotThrow(
+                () -> made.withWarnings(Arrays.asList(MISSING, null, "the capture was not recorded")),
+                "a result's warnings could not be replaced by a list holding one without words");
+        assertEquals(Arrays.asList(MISSING, null, "the capture was not recorded"), result.warnings());
+    }
+
+    @Test
+    @DisplayName("a warning without words is kept when a result fails after entry")
+    void aWarningWithoutWordsIsKeptWhenItFailsAfterEntry() {
+        ExternalIngestResult result = assertDoesNotThrow(
+                () -> ExternalIngestResult.error("request", "object", "the import failed", Arrays.asList(MISSING, null)),
+                "a failure could not carry warnings holding one without words");
+        assertEquals(Arrays.asList(MISSING, null), result.warnings());
+        assertFalse(result.isSuccess());
     }
 }
