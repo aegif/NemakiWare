@@ -131,7 +131,7 @@
 
 | できること | どこまで | 測り方 |
 |---|---|---|
-| 内容の digest を**受け取った時点で**台帳に結び付ける | 内容を持つ書き込み経路 9 本。**残る 6 本（アーカイブ・cold 移送・物理削除・内容の削除）は記録していない** | `E1LeavesNoSilentGapTest`、control HI3〜HY3 |
+| 内容の digest を**受け取った時点で**台帳に結び付ける | 内容を持つ書き込み経路 9 本。~~**残る 6 本（アーカイブ・cold 移送・物理削除・内容の削除）は記録していない**~~ 残る 6 本（アーカイブ・復元・cold 移送・アーカイブの物理削除 2 本・内容の削除）も 2026-09-22 から記録する — 復元は `RESTORED` の state statement、他の 5 本は `RECORD_CONTENT_TRANSITION` | `E1LeavesNoSilentGapTest`、control HI3〜HY3 |
 | 記録できなかったことを**耐久的に残す** | 開いた intent 行として列挙できる。ただし**journal 自体が落ちていた場合の gap は列挙できない**（別の値で報告する） | 同上 |
 | 台帳の entry を Merkle checkpoint に封じる | checkpoint 間隔が「書き換えても痕跡が残らない窓」である | `EvidenceLedgerServiceTest` ほか |
 | checkpoint を外部 anchor に出す | RFC 3161 / OpenTimestamps / カタログ。**anchor が commit しているのは Merkle root であって checkpoint hash ではない** | `AnchorServiceTest` ほか |

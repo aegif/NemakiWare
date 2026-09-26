@@ -10,7 +10,7 @@
 
 | 段 | 結果 |
 |---|---|
-| 投入 | 製品の golden `product-sip-v1-section.zip`（v1 evidence section 付き、P0/P1 とも `VERIFIED`）を transfer source に置き、`POST /api/v2beta/package`（type `zipfile`、processing config `automated`）→ transfer `COMPLETE` → ingest `COMPLETE` → SS `UPLOADED`（AIP `48d85655-…`、7z 46,008 bytes） |
+| 投入 | 製品の golden `product-sip-v1-section.zip`（v1 evidence section 付き、P0/P1 とも `VERIFIED`。evidence bundle は test が実 bytes から組んだもので、製品の台帳の出力ではない）を transfer source に置き、`POST /api/v2beta/package`（type `zipfile`、processing config `automated`）→ transfer `COMPLETE` → ingest `COMPLETE` → SS `UPLOADED`（AIP `48d85655-…`、7z 46,008 bytes） |
 | AIP の中身 | **SIP の 22 ファイル全部が byte 同一**（golden の各 entry と AIP 内の sha256 が 1:1 で一致。payload `bc6ad68e…` は statement の `contentDigest` と一致）。ただし **2 つの変形**がある（下記） |
 | 変形 1 — SIP zip は残らない | `automated` は package を展開し、**元の zip は AIP に残らない**（RODA が `submission/` に SIP ごと残すのと違う）。AIP の `data/objects/nemaki-bedroom-doc-1/` に SIP のツリーが入る |
 | 変形 2 — 非 ASCII の名前が変わる | payload `契約書 v2.txt` が **`Qi_Yue_Shu__v2.txt` に改名**される（AM の filename cleanup）。記録は AIP 内 `data/logs/transfers/<transfer>/logs/filenameChanges.log` の `Changed name: … -> …`。METS が名指す名前と実ファイルの名前が食い違うので、**ツリーをそのまま zip に組み直して CLI にかけると `mets closure` FAILED（exit 2）** — 検証器が正しく食い違いを見つけている |

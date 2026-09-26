@@ -7,7 +7,7 @@
 
 | 段 | 結果 |
 |---|---|
-| 投入 | 製品の golden `product-sip-v1-section.zip`（v1 evidence section 付き、P0/P1 とも `VERIFIED`）を transfer として投入 → 201 |
+| 投入 | 製品の golden `product-sip-v1-section.zip`（v1 evidence section 付き、P0/P1 とも `VERIFIED`。evidence bundle は test が実 bytes から組んだもので、製品の台帳の出力ではない）を transfer として投入 → 201 |
 | transfer の bytes | `/api/v2/transfers/{uuid}/download` で取り戻した bytes の sha256 が送った物と**一致** |
 | SIP→AIP（単体） | `EARKSIP2ToAIPPlugin` → `pluginState = SUCCESS`、AIP `28d2d324-…`（`INGEST_PROCESSING`。8 月の測定と同じ段） |
 | **full ingest（承認まで）** | `ConfigurableIngestPlugin`（RODA が "Default ingest workflow" と表示）に `EARKSIP2ToAIPPlugin` を指定 → **`SUCCESS`、AIP `2de47d2b-…` が `ACTIVE`**。PREMIS event 9 本すべて SUCCESS: ingest start / unpacking (E-ARK SIP 2) / wellformedness ×2（SIP、descriptive metadata）/ **virus check (ClamAV)** / **format identification (Siegfried: `x-fmt/111` Plain Text)** / message digest (SHA-256) / accession / ingest end |
