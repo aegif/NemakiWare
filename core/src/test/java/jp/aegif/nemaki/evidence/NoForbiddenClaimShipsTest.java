@@ -110,12 +110,21 @@ class NoForbiddenClaimShipsTest {
      */
     private static final Map<Path, List<String>> RULE_STATED_IN = Map.of(
             Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"), List.of(
-                    "電帳法対応/JIIMA認証済み/認定タイムスタンプである（製品の自動判定）/改ざん防止/"
+                    "###4.2言ってはいけないこと"
+                            + "電帳法対応/JIIMA認証済み/認定タイムスタンプである（製品の自動判定）/改ざん防止/"
                             + "管理者でも変更できない/取込前の内容が真実/全て漏れなく取り込まれた/"
                             + "提示checkpointが最新/未提示の記録が存在しない/ERSが個別PDFの長期署名/"
                             + "CSIPvalidatorやRODAを一度通ったことをE-ARK全般や全archiveとの相互運用と主張する"),
             Path.of("../docs/design/authenticity-report/README.md"), List.of(
-                    "**「InterPARES準拠」「OAIS認証」「ISO16363認証済み」「電帳法対応」を一切主張しない**"));
+                    "##禁じ手の遵守[`../authenticity-roadmap.md`](../authenticity-roadmap.md)§5に従い、"
+                            + "本モックは**「InterPARES準拠」「OAIS認証」「ISO16363認証済み」「電帳法対応」を一切主張しない**"));
+
+    /**
+     * Whitespace a reader does not see as a break between two characters: ASCII space, the
+     * ideographic space (U+3000), no-break and zero-width spaces. {@code \\s} alone let
+     * 「改ざん　防止」 through with a full-width space in it (subagent review, P3).
+     */
+    private static final String INVISIBLE = "[\\s\\p{Z}\\u200B\\uFEFF]+";
 
     /** How many times a phrase occurs in whitespace-squeezed text. */
     private static int count(String squeezed, String phrase) {
@@ -124,7 +133,7 @@ class NoForbiddenClaimShipsTest {
 
     /** The file's text, whitespace removed, with the passages that state the rule taken out. */
     private static String claimsIn(Path file, String text) {
-        String squeezed = text.replaceAll("\\s+", "");
+        String squeezed = text.replaceAll(INVISIBLE, "");
         for (String passage : RULE_STATED_IN.getOrDefault(file, List.of())) {
             squeezed = squeezed.replace(passage, "");
         }
@@ -326,7 +335,7 @@ class NoForbiddenClaimShipsTest {
             assertTrue(read.contains(home.getKey()), "an allowance names " + home.getKey()
                     + ", which this lint does not read");
             String squeezed = Files.readString(home.getKey(), StandardCharsets.UTF_8)
-                    .replaceAll("\\s+", "");
+                    .replaceAll(INVISIBLE, "");
             for (String passage : home.getValue()) {
                 assertEquals(1, count(squeezed, passage), home.getKey() + " no longer states the "
                         + "rule in the passage this lint allows (or states it twice): 「" + passage

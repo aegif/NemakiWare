@@ -16,7 +16,9 @@
  */
 package jp.aegif.nemaki.evidence;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,14 +31,30 @@ import java.util.regex.Pattern;
  * one compared every sweep figure with the latest sweep, the other with the sweep its sentence
  * named; one counted a path's quoted occurrences anywhere in the workflow, which a comment or a
  * duplicate in one trigger satisfied (both reviews, fourth round of the parallel-review batch).
+ *
+ * <h2>One written form for a sweep figure</h2>
+ *
+ * <p>Outside the canon's own record lines, a document states what a sweep ran in exactly one
+ * form: {@link #SWEEP_FIGURE} — 「6 回目の通し（1551 本）」. Every other four-digit figure is
+ * today's total. This replaced three rounds of reading free text for which round a figure
+ * belonged to (the first round in the sentence, then the nearest before, then the nearest either
+ * side), each of which a reviewer broke with a sentence the documents could plausibly contain:
+ * two records in one sentence, a round after its figure, 「6 回目の通しの後に足した分」, a line
+ * break before 「以後」 (both reviews, fifth and sixth rounds). A form that names its round in
+ * the same token as its figure cannot be misattributed, and a figure written any other way is
+ * read as the total — refused if it is not, with the form to use named in the failure.
  */
 public final class LedgerText {
 
     private LedgerText() {
     }
 
+    /** The canon's record of a completed sweep: 「6 回目 2026-09-25〜26（1551 本、…」. */
     private static final Pattern SWEEP_RECORD =
             Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本");
+
+    /** How any document other than the canon's record lines states what a sweep ran. */
+    public static final Pattern SWEEP_FIGURE = Pattern.compile("(\\d+) 回目の通し（(\\d+) 本）");
 
     /** The sweeps the canon records, round to the number of controls that round ran. */
     public static Map<Integer, Integer> sweptInRound(String canon) {
@@ -49,13 +67,14 @@ public final class LedgerText {
     }
 
     /**
-     * Rounds the canon records more than once with different numbers. Each map above kept the
-     * LAST record, so a second, wrong record written after the right one replaced it without a
-     * word — and one written before it was silently overruled (Codex, P3).
+     * Rounds the canon records more than once with different numbers. The map above keeps the
+     * FIRST record; before this check a later, different record was silently overruled, and the
+     * version before that kept the last one, so a wrong record written after the right one won
+     * (Codex, P3).
      */
-    public static java.util.List<String> conflictingSweeps(String canon) {
+    public static List<String> conflictingSweeps(String canon) {
         Map<Integer, Integer> first = new HashMap<>();
-        java.util.List<String> conflicts = new java.util.ArrayList<>();
+        List<String> conflicts = new ArrayList<>();
         Matcher sweeps = SWEEP_RECORD.matcher(canon);
         while (sweeps.find()) {
             int round = Integer.parseInt(sweeps.group(1));
@@ -69,85 +88,26 @@ public final class LedgerText {
     }
 
     /**
-     * The sentence around a position: back to the last 。, blank line, list item or table row
-     * before it, and on to the next. Markdown wraps a sentence across lines, so a line-bounded
-     * sentence lost the round named on the line above.
-     */
-    public static String sentenceAround(String text, int at) {
-        int start = sentenceStart(text, at);
-        int stop = text.length();
-        for (String closer : new String[] {"。", "\n\n", "\n- ", "\n|"}) {
-            int found = text.indexOf(closer, at);
-            if (found >= 0) {
-                stop = Math.min(stop, found);
-            }
-        }
-        return text.substring(start, stop);
-    }
-
-    /** Where the sentence around a position starts (see {@link #sentenceAround}). */
-    public static int sentenceStart(String text, int at) {
-        int start = 0;
-        for (String opener : new String[] {"。", "\n\n", "\n- ", "\n|"}) {
-            int found = text.lastIndexOf(opener, at - 1);
-            if (found >= 0) {
-                start = Math.max(start, found + opener.length());
-            }
-        }
-        return start;
-    }
-
-    /**
-     * What may follow 「N 回目」 when it names a time AROUND a round rather than the round:
-     * 「6 回目以後の分を含め、現行は 1551 本すべて」 is not a record of the sixth sweep (subagent
-     * review), and neither is 「6 回目の後に足した分」 or 「5 回目まで」.
-     */
-    public static final java.util.List<String> NOT_A_ROUND =
-            java.util.List.of("以後", "以降", "の後", "の前", "まで", "より");
-
-    /**
-     * The round a figure (from {@code start} to {@code end} in {@code sentence}) belongs to: the
-     * 「N 回目」 NEAREST to it, before or after, or {@code null} if the sentence names none. The
-     * documents write both 「6 回目（…、1551 本すべて」 and 「1551 本で完走した（6 回目、」.
-     * Taking the first round in the sentence checked 「6 回目と比べ、7 回目は 1558 本」 against the
-     * sixth (Codex, P3); preferring any round BEFORE the figure did the same to
-     * 「1551 本を流した（6 回目）、1566 本を流した（7 回目）」 (Codex, P2).
-     */
-    public static Integer roundNamedNear(String sentence, int start, int end) {
-        StringBuilder notARound = new StringBuilder();
-        for (String span : NOT_A_ROUND) {
-            notARound.append(notARound.length() == 0 ? "" : "|").append(Pattern.quote(span));
-        }
-        Matcher round = Pattern.compile("(\\d+) 回目(?!" + notARound + ")").matcher(sentence);
-        Integer nearest = null;
-        int distance = Integer.MAX_VALUE;
-        while (round.find()) {
-            int away = round.end() <= start ? start - round.end()
-                    : round.start() >= end ? round.start() - end
-                    : 0;
-            // On a tie the round AFTER the figure wins: a parenthesis right after a figure
-            // annotates that figure — 「（6 回目）、1566 本を流した（7 回目）」.
-            if (away < distance || (away == distance && round.start() >= end)) {
-                distance = away;
-                nearest = Integer.parseInt(round.group(1));
-            }
-        }
-        return nearest;
-    }
-
-    /**
      * Whether {@code path} is an entry of the {@code paths:} list of BOTH the push and the
-     * pull_request trigger. Counting the quoted path anywhere in the file was satisfied by a
-     * comment, or by one trigger listing it twice while the other did not list it at all (Codex,
-     * P2); taking any list line inside a trigger was satisfied by {@code paths-ignore:} or a
-     * block-style {@code branches:} (Codex, P2, and subagent review).
+     * pull_request trigger, and neither list carries a negated pattern ({@code '!…'}).
+     *
+     * <p>Counting the quoted path anywhere in the file was satisfied by a comment, or by one
+     * trigger listing it twice while the other did not list it at all (Codex, P2); taking any
+     * list line inside a trigger was satisfied by {@code paths-ignore:} or a block-style
+     * {@code branches:} (Codex, P2, and subagent review). A negated pattern later in the list
+     * cancels an earlier match in GitHub's evaluation, and working out WHICH paths it cancels is
+     * glob matching this helper does not do — so a list that carries one answers "not listed"
+     * for every path, rather than "listed" for paths it may exclude (subagent review, P2).
+     * An entry may be single-quoted, double-quoted or bare, as YAML allows (Codex, P2).
      */
     public static boolean listedInBothTriggers(String yaml, String path) {
-        Pattern entry = Pattern.compile("(?m)^\\s*-\\s*'" + Pattern.quote(path) + "'\\s*$");
+        Pattern entry = Pattern.compile("(?m)^\\s*-\\s*(['\"]?)" + Pattern.quote(path)
+                + "\\1\\s*(#.*)?$");
+        Pattern negated = Pattern.compile("(?m)^\\s*-\\s*['\"]?!");
         for (String trigger : new String[] {"push", "pull_request"}) {
             String paths = block(block(yaml, "\n  " + trigger + ":", "\n  [a-z_]+:|\n[a-z_]+:"),
                     "\n    paths:", "\n    [a-z_-]+:");
-            if (!entry.matcher(paths).find()) {
+            if (negated.matcher(paths).find() || !entry.matcher(paths).find()) {
                 return false;
             }
         }

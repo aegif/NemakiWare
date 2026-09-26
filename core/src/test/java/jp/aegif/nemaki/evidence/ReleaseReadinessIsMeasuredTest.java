@@ -168,47 +168,43 @@ class ReleaseReadinessIsMeasuredTest {
         // not a closed gap, and saying otherwise was the third repeat of the same over-claim
         // (both reviewers, twenty-ninth review, P2). A four-digit "N 本" in this document is
         // a control count; the unit totals are written with a comma.
-        // The TOTAL, unless the sentence says it is what a sweep RAN ("… 本を流し", "… 本すべて",
-        // "… 本で完走", "… 本が通った"): that figure is the canon's sweep record, not today's
-        // count. The two were the same number from the sixth sweep (1551 of 1551) until a
-        // control was added after it — then every true record of the sixth sweep read as a stale
-        // total and failed here (2026-09-26). A sweep figure is compared with the sweep record
-        // instead, so a stale one is still caught.
-        // Each sweep the canon records, by round. A sweep figure is compared with the sweep its
-        // sentence names ("6 回目"), and a figure whose sentence names no round is a TOTAL.
-        // Comparing every sweep figure with the latest would reject the true record of the sixth
-        // sweep the moment a seventh is written (subagent review, P3); taking the ending alone
-        // as the mark of a sweep let 「現行の control は 1551 本すべて」 hide a stale total (Codex,
-        // P3). What still passes: a stale total in a sentence that names a round AND equals that
-        // round's record — a figure cannot be told from that round's record by its words.
+        // The TOTAL, unless it is written in the one form a sweep figure takes —
+        // 「N 回目の通し（M 本）」 (LedgerText.SWEEP_FIGURE) — which is compared with the canon's
+        // record of THAT round. The two were the same number from the sixth sweep (1551 of 1551)
+        // until a control was added after it, and then every true record of the sixth sweep read
+        // as a stale total (2026-09-26). Three readings of free text for which round a figure
+        // belonged to were each broken in review (the ending alone, the nearest round, a line
+        // break before 「以後」); a form whose token carries its round cannot be misattributed, and
+        // a figure written any other way is the total.
         java.util.Map<Integer, Integer> sweptInRound = LedgerText.sweptInRound(read(CANON));
         assertFalse(sweptInRound.isEmpty(), "the canon records no completed sweep");
         assertEquals(List.of(), LedgerText.conflictingSweeps(read(CANON)),
                 "the canon records a sweep round twice with different numbers, so which one a "
                         + "figure is checked against depends on the order they are written in");
-        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本(を流し|すべて|で完走|が通った)?")
-                .matcher(readiness);
         int exits = 0;
+        StringBuilder totals = new StringBuilder(readiness);
+        Matcher sweep = LedgerText.SWEEP_FIGURE.matcher(readiness);
+        while (sweep.find()) {
+            exits++;
+            int round = Integer.parseInt(sweep.group(1));
+            assertTrue(sweptInRound.containsKey(round), "the readiness document records a sweep "
+                    + "for round " + round + ", which the canon does not: 「" + sweep.group() + "」");
+            assertEquals(sweptInRound.get(round), Integer.parseInt(sweep.group(2)),
+                    "the readiness document says " + sweep.group() + " and the canon's record of "
+                            + "round " + round + " says " + sweptInRound.get(round));
+            for (int i = sweep.start(); i < sweep.end(); i++) {
+                totals.setCharAt(i, ' ');
+            }
+        }
+        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本").matcher(totals);
         while (everywhere.find()) {
             exits++;
-            String sentence = LedgerText.sentenceAround(readiness, everywhere.start());
-            int offset = everywhere.start() - LedgerText.sentenceStart(readiness, everywhere.start());
-            Integer round = everywhere.group(2) == null ? null
-                    : LedgerText.roundNamedNear(sentence, offset, offset + everywhere.group().length());
-            if (round != null) {
-                assertTrue(sweptInRound.containsKey(round), "the readiness document records a "
-                        + "sweep for round " + round + ", which the canon does not: 「"
-                        + sentence.trim() + "」");
-                assertEquals(sweptInRound.get(round), Integer.parseInt(everywhere.group(1)),
-                        "the readiness document says sweep " + round + " ran " + everywhere.group(1)
-                                + " controls and the canon's record of it says "
-                                + sweptInRound.get(round) + ": 「" + sentence.trim() + "」");
-                continue;
-            }
+            int at = everywhere.start();
             assertEquals(declared.size(), Integer.parseInt(everywhere.group(1)),
-                    "the readiness document states " + everywhere.group(1) + " controls "
-                            + "somewhere and the runner declares " + declared.size() + ": 「"
-                            + sentence.trim() + "」");
+                    "the readiness document states " + everywhere.group(1) + " controls and the "
+                            + "runner declares " + declared.size() + ": 「"
+                            + readiness.substring(Math.max(0, at - 40), Math.min(readiness.length(), at + 20))
+                            + "」. If this is what a sweep ran, write it as 「N 回目の通し（M 本）」");
         }
         // The CANON states it too, in its own wording, and was not read here — so updating the
         // readiness document alone left the two disagreeing with every lock green (both

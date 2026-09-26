@@ -20,47 +20,34 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.regex.Matcher;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The readings {@link LedgerText} gives the count locks, on sentences that tell a right reading
- * from a wrong one. The documents today do not contain these shapes, so the locks that read the
- * documents cannot show which rule is in force; these can (subagent review, P3: "KB4〜KE4 fire
- * the same under nearest-before, nearest-after and last-in-sentence").
+ * The readings {@link LedgerText} gives the count and CI locks, on inputs that tell a right
+ * reading from a wrong one. The documents and the workflow today contain none of these shapes,
+ * so the locks that read them cannot show which rule is in force; these can.
  */
 class LedgerTextTest {
 
-    private static Integer roundOf(String sentence, String figure) {
-        int start = sentence.indexOf(figure);
-        return LedgerText.roundNamedNear(sentence, start, start + figure.length());
-    }
-
     @Test
-    @DisplayName("a figure belongs to the round named nearest it, on either side")
-    void aFigureBelongsToTheRoundNearestIt() {
-        String two = "1551 本を流した（6 回目）、1566 本を流した（7 回目）";
-        assertEquals(6, roundOf(two, "1551 本を流し"));
-        assertEquals(7, roundOf(two, "1566 本を流し"),
-                "a round named BEFORE the figure is not the figure's round when another is nearer "
-                        + "after it (Codex, P2)");
-        assertEquals(7, roundOf("6 回目の記録を踏まえ、7 回目は 1551 本を流した", "1551 本を流し"),
-                "the first round in the sentence is not every figure's round (Codex, P3)");
-        assertEquals(6, roundOf("通し negative-control は 1551 本で完走した（6 回目、2026-09-25〜26",
-                "1551 本で完走"));
-    }
-
-    @Test
-    @DisplayName("a span around a round names no round")
-    void aSpanAroundARoundNamesNoRound() {
-        // The spans the documents write, listed HERE rather than read from the helper: a span
-        // dropped from the helper's list must fail this, not shrink what it walks.
-        for (String span : List.of("以後", "以降", "の後", "の前", "まで", "より")) {
-            assertNull(roundOf("6 回目" + span + "の分を含め、現行は 1551 本すべて", "1551 本すべて"),
-                    "「6 回目" + span + "」 names a time around the sixth sweep, not the sixth sweep");
+    @DisplayName("a sweep figure is read only in its one written form, with the round in the token")
+    void aSweepFigureIsReadOnlyInItsForm() {
+        Matcher figure = LedgerText.SWEEP_FIGURE.matcher(
+                "6 回目の通し（1551 本）が完走し、7 回目の通し（1566 本）も完走した");
+        assertTrue(figure.find());
+        assertEquals("6", figure.group(1));
+        assertEquals("1551", figure.group(2));
+        assertTrue(figure.find());
+        assertEquals("7", figure.group(1));
+        assertEquals("1566", figure.group(2), "two records in one sentence each keep their own round");
+        for (String prose : List.of("6 回目は 1551 本を流した", "1551 本で完走した（6 回目、",
+                "6 回目の通しの後に足した分を含め 1551 本すべて", "6 回目\n以後の分を含め 1551 本")) {
+            assertFalse(LedgerText.SWEEP_FIGURE.matcher(prose).find(),
+                    "「" + prose + "」 is prose, not the form — its figure is read as the total");
         }
     }
 
@@ -79,6 +66,10 @@ class LedgerTextTest {
         String both = "on:\n  push:\n    branches: [ master ]\n    paths:\n      - 'README.md'\n"
                 + "  pull_request:\n    branches: [ master ]\n    paths:\n      - 'README.md'\n\njobs:\n";
         assertTrue(LedgerText.listedInBothTriggers(both, "README.md"));
+        assertTrue(LedgerText.listedInBothTriggers(both.replace("- 'README.md'", "- \"README.md\""),
+                "README.md"), "a double-quoted entry starts the workflow as a single-quoted one does");
+        assertTrue(LedgerText.listedInBothTriggers(both.replace("- 'README.md'", "- README.md"),
+                "README.md"), "a bare entry starts the workflow as a quoted one does");
         assertFalse(LedgerText.listedInBothTriggers(
                 both.replace("  pull_request:\n    branches: [ master ]\n    paths:\n      - 'README.md'\n",
                         "  pull_request:\n    branches: [ master ]\n    paths:\n      - 'x'\n"
@@ -95,5 +86,9 @@ class LedgerTextTest {
         assertFalse(LedgerText.listedInBothTriggers(
                 both.replace("      - 'README.md'\n\njobs:", "      # 'README.md' is started by push\n\njobs:"),
                 "README.md"), "a comment is not an entry");
+        assertFalse(LedgerText.listedInBothTriggers(
+                both.replace("      - 'README.md'\n\njobs:", "      - 'README.md'\n      - '!README.md'\n\njobs:"),
+                "README.md"), "a negated pattern after the entry cancels it, and this helper does not "
+                        + "work out which paths a negation cancels");
     }
 }

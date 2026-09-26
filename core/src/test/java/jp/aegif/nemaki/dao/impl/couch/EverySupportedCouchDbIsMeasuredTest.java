@@ -268,8 +268,9 @@ class EverySupportedCouchDbIsMeasuredTest {
         List<String> totalForms = List.of("コントロール \\*\\*(\\d+)\\*\\*",
                 "負のコントロール \\*\\*(\\d+) 本\\*\\*",
                 "(?m)^\\| 通し negative-control \\|[^|]*\\| (\\d+) 本 \\|");
-        List<String> sweptForms = List.of("通し negative-control は (\\d+) 本で完走した",
-                "(\\d+) 本すべて", "「(\\d+) 本が通った」", "\\*\\*(\\d+)/\\d+ 発火");
+        // A sweep figure has one written form, 「N 回目の通し（M 本）」, compared with the canon's
+        // record of that round (LedgerText). The four phrasings this used to read each needed a
+        // guess at which round the figure belonged to once two sweeps had four-digit counts.
         // Bold either way: the number alone (**1 本**) or the whole phrase (**…は 1 本**) —
         // the documents use both, and a regex that accepted one silently dropped the other
         // two sites out of reach (the guard below is what caught it).
@@ -281,33 +282,15 @@ class EverySupportedCouchDbIsMeasuredTest {
         for (Path carrier : carriers) {
             assertTrue(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
             String text = Files.readString(carrier, StandardCharsets.UTF_8);
-            for (String form : sweptForms) {
-                Matcher m = Pattern.compile(form).matcher(text);
-                while (m.find()) {
-                    sweptSeen++;
-                    // The sweep the SENTENCE names, not always the latest: once a seventh sweep is
-                    // recorded, the plan's true 「6 回目…1551 本すべて」 would otherwise be compared
-                    // with the seventh and fail (Codex, P2). A sentence that names no round is
-                    // TODAY'S TOTAL, as the readiness lock reads it — the two locks read the same
-                    // round-less 「N 本すべて」 oppositely, so whatever N was, one of them refused it
-                    // (subagent review, P3). A sweep figure names its round.
-                    String sentence = jp.aegif.nemaki.evidence.LedgerText.sentenceAround(text, m.start(1));
-                    int offset = m.start(1)
-                            - jp.aegif.nemaki.evidence.LedgerText.sentenceStart(text, m.start(1));
-                    Integer round = jp.aegif.nemaki.evidence.LedgerText.roundNamedNear(
-                            sentence, offset, offset + m.group(1).length());
-                    int expected = declared;
-                    if (round != null) {
-                        assertTrue(sweptInRound.containsKey(round), carrier + " records a sweep for "
-                                + "round " + round + ", which the canon does not: 「" + sentence.trim() + "」");
-                        expected = sweptInRound.get(round);
-                    }
-                    assertEquals(expected, Integer.parseInt(m.group(1)),
-                            carrier + (round == null ? " states a figure without naming its round, "
-                                    + "so it is today's total " : " says sweep " + round + " ran ")
-                                    + m.group(1) + " and the record says " + expected
-                                    + ": 「" + sentence.trim() + "」");
-                }
+            Matcher figure = jp.aegif.nemaki.evidence.LedgerText.SWEEP_FIGURE.matcher(text);
+            while (figure.find()) {
+                sweptSeen++;
+                int round = Integer.parseInt(figure.group(1));
+                assertTrue(sweptInRound.containsKey(round), carrier + " records a sweep for round "
+                        + round + ", which the canon does not: 「" + figure.group() + "」");
+                assertEquals(sweptInRound.get(round).intValue(), Integer.parseInt(figure.group(2)),
+                        carrier + " says " + figure.group() + " and the canon's record of round "
+                                + round + " says " + sweptInRound.get(round));
             }
             for (String form : totalForms) {
                 Matcher m = Pattern.compile(form).matcher(text);
