@@ -1296,7 +1296,8 @@ RODA 6.3.0 と Archivematica 1.18.0 に実際に投入して測りました。**
   `Qi_Yue_Shu__v2.txt` になり、記録は AIP 内の `filenameChanges.log` に残ります。METS が
   名指す名前と食い違うので、**ツリーをそのまま zip に組み直して検証器にかけると
   `mets closure` が FAILED（exit 2）になります。** 記録どおりに名前を戻して組み直すと、
-  往復前と同じ verdict（P0 / P1 とも exit 0）になります。受け取る側の手順に、この再構成を
+  往復前と同じ verdict（P0 / P1 とも exit 0）になります（測った package の evidence bundle は
+  テストが実 bytes から組んだもので、製品の証拠台帳が組んだものではありません）。受け取る側の手順に、この再構成を
   入れてください（[手順](docs/operations/archivematica-round-trip-runbook.md)）
 
 - **RODA には SIP を直接渡してください。bag ではありません。**
