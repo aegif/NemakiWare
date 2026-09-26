@@ -216,6 +216,8 @@ class EverySupportedCouchDbIsMeasuredTest {
         }
         assertTrue(latestRound > 0, "the canon records no completed sweep");
         java.util.Map<Integer, Integer> sweptInRound = jp.aegif.nemaki.evidence.LedgerText.sweptInRound(canon);
+        assertEquals(List.of(), jp.aegif.nemaki.evidence.LedgerText.conflictingSweeps(canon),
+                "the canon records a sweep round twice with different numbers");
         // EVERY statement of the boundary. It is written in §1 and in §5, and reading only the
         // first let the second drift unread — the same one-arm defect as the counts.
         Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
@@ -286,20 +288,24 @@ class EverySupportedCouchDbIsMeasuredTest {
                     // The sweep the SENTENCE names, not always the latest: once a seventh sweep is
                     // recorded, the plan's true 「6 回目…1551 本すべて」 would otherwise be compared
                     // with the seventh and fail (Codex, P2). A sentence that names no round is
-                    // about the latest.
+                    // TODAY'S TOTAL, as the readiness lock reads it — the two locks read the same
+                    // round-less 「N 本すべて」 oppositely, so whatever N was, one of them refused it
+                    // (subagent review, P3). A sweep figure names its round.
                     String sentence = jp.aegif.nemaki.evidence.LedgerText.sentenceAround(text, m.start(1));
                     int offset = m.start(1)
                             - jp.aegif.nemaki.evidence.LedgerText.sentenceStart(text, m.start(1));
-                    Integer round = jp.aegif.nemaki.evidence.LedgerText.roundNamedNear(sentence, offset);
-                    int expected = sweptThen;
+                    Integer round = jp.aegif.nemaki.evidence.LedgerText.roundNamedNear(
+                            sentence, offset, offset + m.group(1).length());
+                    int expected = declared;
                     if (round != null) {
                         assertTrue(sweptInRound.containsKey(round), carrier + " records a sweep for "
                                 + "round " + round + ", which the canon does not: 「" + sentence.trim() + "」");
                         expected = sweptInRound.get(round);
                     }
                     assertEquals(expected, Integer.parseInt(m.group(1)),
-                            carrier + " says sweep " + (round == null ? latestRound : round) + " ran "
-                                    + m.group(1) + " and the sweep record says " + expected
+                            carrier + (round == null ? " states a figure without naming its round, "
+                                    + "so it is today's total " : " says sweep " + round + " ran ")
+                                    + m.group(1) + " and the record says " + expected
                                     + ": 「" + sentence.trim() + "」");
                 }
             }

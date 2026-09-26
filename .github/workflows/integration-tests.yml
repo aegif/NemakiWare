@@ -14,8 +14,8 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
-      # Every document under docs/. The forbidden-claim lint reads docs/ whole except design/
-      # and history/, so a claim in any of them has to start this workflow (review, P2).
+      # Every document under docs/. The forbidden-claim lint reads every .md and .json under
+      # docs/, so a claim in any of them has to start this workflow (review, P2).
       - 'docs/**'
       # The unit job counts the controls and checks the canon's number against them.
       # Without these, retiring a control or editing that number does not start this
@@ -74,8 +74,8 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
-      # Every document under docs/. The forbidden-claim lint reads docs/ whole except design/
-      # and history/, so a claim in any of them has to start this workflow (review, P2).
+      # Every document under docs/. The forbidden-claim lint reads every .md and .json under
+      # docs/, so a claim in any of them has to start this workflow (review, P2).
       - 'docs/**'
       # The unit job counts the controls and checks the canon's number against them.
       # Without these, retiring a control or editing that number does not start this

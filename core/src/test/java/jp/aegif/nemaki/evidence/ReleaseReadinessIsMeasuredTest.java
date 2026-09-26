@@ -183,6 +183,9 @@ class ReleaseReadinessIsMeasuredTest {
         // round's record — a figure cannot be told from that round's record by its words.
         java.util.Map<Integer, Integer> sweptInRound = LedgerText.sweptInRound(read(CANON));
         assertFalse(sweptInRound.isEmpty(), "the canon records no completed sweep");
+        assertEquals(List.of(), LedgerText.conflictingSweeps(read(CANON)),
+                "the canon records a sweep round twice with different numbers, so which one a "
+                        + "figure is checked against depends on the order they are written in");
         Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本(を流し|すべて|で完走|が通った)?")
                 .matcher(readiness);
         int exits = 0;
@@ -191,7 +194,7 @@ class ReleaseReadinessIsMeasuredTest {
             String sentence = LedgerText.sentenceAround(readiness, everywhere.start());
             int offset = everywhere.start() - LedgerText.sentenceStart(readiness, everywhere.start());
             Integer round = everywhere.group(2) == null ? null
-                    : LedgerText.roundNamedNear(sentence, offset);
+                    : LedgerText.roundNamedNear(sentence, offset, offset + everywhere.group().length());
             if (round != null) {
                 assertTrue(sweptInRound.containsKey(round), "the readiness document records a "
                         + "sweep for round " + round + ", which the canon does not: 「"

@@ -50,13 +50,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * release deliverable (the profile spec goes to the receiving organisation) and one made the
  * claim outright (「署名検証により改ざん防止」, review, P2) — and the UI's translation files.
  *
- * <p>The documents whose job is to STATE the rule quote the phrases in order to forbid them. They
- * are allowed exactly the quotes they carry today, by count ({@link #QUOTES}), not by directory:
- * excluding the whole of design/ let a claim anywhere in it through.
+ * <p>The documents whose job is to STATE the rule quote the phrases in order to forbid them. The
+ * passages that state it are allowed, verbatim ({@link #RULE_STATED_IN}) — not a directory
+ * (excluding the whole of design/ let a claim anywhere in it through) and not a count per file (a
+ * quote could be swapped for a claim elsewhere in the same file with the count unchanged).
  *
  * <p>Negated or not. A reader who skims keeps the phrase and loses the negation, so a limitation
  * is written without it — the release notes say 「改ざんされていない」とは言いません and
- * 「管理者による変更の防止を証明しません」, neither of which contains a phrase below.
+ * 「管理者による変更の防止を証明しません」, neither of which contains a phrase below. A lint that
+ * let negations through could not tell 「改ざん防止を保証しない」 from 「改ざん防止を損なわない」,
+ * and the second asserts the property: refusing a sentence that can be reworded loses nothing,
+ * passing one that asserts the claim ships it. The rule's home (plan §4.2) says so.
  */
 class NoForbiddenClaimShipsTest {
 
@@ -71,6 +75,7 @@ class NoForbiddenClaimShipsTest {
             "電帳法対応", "法令適合は製品が判定できるものではない（運用・組織統制・外部サービスを含む）",
             "JIIMA認証済", "認証は申請と審査の結果であって、暗号から推論できない",
             "改ざん防止", "検出であって防止ではない。管理者は書き換えられる",
+            "改竄防止", "検出であって防止ではない。管理者は書き換えられる（漢字の表記でも同じ主張）",
             "管理者でも変更できない", "台帳も checkpoint も同じ管理者の手の内にある。独立性は外部 anchor が与える",
             "全て漏れなく取り込まれ", "取り込めなかったものを数える方法が無い以上、言えない",
             "常に最新のcheckpoint", "提示された checkpoint が最新であることは package からは分からない");
@@ -97,19 +102,33 @@ class NoForbiddenClaimShipsTest {
             new Shipped(Path.of("../docker"), List.of(".md")));
 
     /**
-     * The documents that state the rule, and exactly how many times each quotes each phrase.
-     * A quote more — a claim written into the document that forbids it — is an offence, and a
-     * quote fewer means this table is stale ({@link #theRuleIsQuotedOnlyWhereItIsStated}).
+     * The passages that STATE the rule, verbatim with whitespace removed. A phrase inside one is
+     * the rule being stated; the same phrase anywhere else is a claim — in the same file too.
+     * Each passage has to occur exactly once ({@link #theRuleIsQuotedOnlyWhereItIsStated}): one
+     * that no longer matches means the statement of the rule changed, and the change is reviewed
+     * here rather than let through.
      */
-    private static final Map<Path, Map<String, Integer>> QUOTES = Map.of(
-            Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"), Map.of(
-                    "電帳法対応", 1, "JIIMA認証済", 1, "改ざん防止", 1,
-                    "管理者でも変更できない", 1, "全て漏れなく取り込まれ", 1),
-            Path.of("../docs/design/authenticity-report/README.md"), Map.of("電帳法対応", 1));
+    private static final Map<Path, List<String>> RULE_STATED_IN = Map.of(
+            Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"), List.of(
+                    "電帳法対応/JIIMA認証済み/認定タイムスタンプである（製品の自動判定）/改ざん防止/"
+                            + "管理者でも変更できない/取込前の内容が真実/全て漏れなく取り込まれた/"
+                            + "提示checkpointが最新/未提示の記録が存在しない/ERSが個別PDFの長期署名/"
+                            + "CSIPvalidatorやRODAを一度通ったことをE-ARK全般や全archiveとの相互運用と主張する"),
+            Path.of("../docs/design/authenticity-report/README.md"), List.of(
+                    "**「InterPARES準拠」「OAIS認証」「ISO16363認証済み」「電帳法対応」を一切主張しない**"));
 
     /** How many times a phrase occurs in whitespace-squeezed text. */
     private static int count(String squeezed, String phrase) {
         return squeezed.split(java.util.regex.Pattern.quote(phrase), -1).length - 1;
+    }
+
+    /** The file's text, whitespace removed, with the passages that state the rule taken out. */
+    private static String claimsIn(Path file, String text) {
+        String squeezed = text.replaceAll("\\s+", "");
+        for (String passage : RULE_STATED_IN.getOrDefault(file, List.of())) {
+            squeezed = squeezed.replace(passage, "");
+        }
+        return squeezed;
     }
 
     /**
@@ -173,10 +192,9 @@ class NoForbiddenClaimShipsTest {
                 String text = Files.readString(file, StandardCharsets.UTF_8);
                 // Whitespace removed before matching: "電帳法 対応" and "電帳法対応" are the
                 // same claim to a reader, and a lint a line break can defeat protects nothing.
-                String squeezed = text.replaceAll("\\s+", "");
-                Map<String, Integer> allowed = QUOTES.getOrDefault(file, Map.of());
+                String claims = claimsIn(file, text);
                 FORBIDDEN.forEach((phrase, why) -> {
-                    if (count(squeezed, phrase) > allowed.getOrDefault(phrase, 0)) {
+                    if (claims.contains(phrase)) {
                         offences.add(file + " says 「" + phrase + "」 — " + why);
                     }
                 });
@@ -212,14 +230,14 @@ class NoForbiddenClaimShipsTest {
         }
         // And the documents, in English where they are written in English. Only the three
         // sources above were read, so a guide saying "tamper-proof" shipped with both tests
-        // green (review, P2). The same roots as the Japanese list, the same exclusions.
+        // green (review, P2). The same roots and the same passages that state the rule as the
+        // Japanese list, compared without spaces so a line break cannot split a phrase.
         for (Shipped shipped : SHIPPED) {
             for (Path file : readerText(shipped)) {
-                String text = Files.readString(file, StandardCharsets.UTF_8)
-                        .replaceAll("\\s+", " ")
+                String claims = claimsIn(file, Files.readString(file, StandardCharsets.UTF_8))
                         .toLowerCase(Locale.ROOT);
                 FORBIDDEN_EN.forEach((phrase, why) -> {
-                    if (text.contains(phrase)) {
+                    if (claims.contains(phrase.replace(" ", ""))) {
                         offences.add(file + " says \"" + phrase + "\" — " + why);
                     }
                 });
@@ -292,26 +310,36 @@ class NoForbiddenClaimShipsTest {
     }
 
     @Test
-    @DisplayName("the rule is quoted only where it is stated, and exactly as often")
+    @DisplayName("the rule is stated where the allowance says, once, in a file this lint reads")
     void theRuleIsQuotedOnlyWhereItIsStated() throws IOException {
         // The plan states the forbidden claims, and a lint that could not let it would make the
-        // rule unwritable — so the documents that state it are allowed their quotes, by count.
-        // Exact both ways: a quote fewer means the allowance outlived the text it describes, and
-        // an allowance for a file this lint does not read would permit nothing and prove nothing.
+        // rule unwritable — so the passages that state it are allowed, verbatim. Each has to be
+        // found exactly once in a file this lint reads: a passage that no longer matches means the
+        // statement of the rule was edited, and an allowance for a file nothing reads permits
+        // nothing and proves nothing. Neither is fixed by editing this table to match; the
+        // edit to the rule is what has to be looked at.
         List<Path> read = new ArrayList<>();
         for (Shipped shipped : SHIPPED) {
             read.addAll(readerText(shipped));
         }
-        for (Map.Entry<Path, Map<String, Integer>> home : QUOTES.entrySet()) {
+        for (Map.Entry<Path, List<String>> home : RULE_STATED_IN.entrySet()) {
             assertTrue(read.contains(home.getKey()), "an allowance names " + home.getKey()
                     + ", which this lint does not read");
             String squeezed = Files.readString(home.getKey(), StandardCharsets.UTF_8)
                     .replaceAll("\\s+", "");
-            home.getValue().forEach((phrase, times) -> assertEquals(times.intValue(),
-                    count(squeezed, phrase), home.getKey() + " quotes 「" + phrase + "」 "
-                            + count(squeezed, phrase) + " time(s) and is allowed " + times
-                            + ". The allowance has to be the text's own count"));
+            for (String passage : home.getValue()) {
+                assertEquals(1, count(squeezed, passage), home.getKey() + " no longer states the "
+                        + "rule in the passage this lint allows (or states it twice): 「" + passage
+                        + "」. The statement of the rule changed; review the change before this table");
+            }
         }
+        // And the rule is still stated at all: a plan that dropped §4.2 would leave the lint
+        // enforcing a list nobody wrote down.
+        String plan = Files.readString(Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"),
+                StandardCharsets.UTF_8).replaceAll("\\s+", "");
+        assertTrue(FORBIDDEN.keySet().stream().anyMatch(plan::contains),
+                "the plan no longer states the forbidden claims, so either they moved or this "
+                        + "lint's list has drifted from the rule it enforces");
     }
 
     @Test

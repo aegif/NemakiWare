@@ -35,15 +35,37 @@ public final class LedgerText {
     private LedgerText() {
     }
 
+    private static final Pattern SWEEP_RECORD =
+            Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本");
+
     /** The sweeps the canon records, round to the number of controls that round ran. */
     public static Map<Integer, Integer> sweptInRound(String canon) {
         Map<Integer, Integer> swept = new HashMap<>();
-        Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
-                .matcher(canon);
+        Matcher sweeps = SWEEP_RECORD.matcher(canon);
         while (sweeps.find()) {
-            swept.put(Integer.parseInt(sweeps.group(1)), Integer.parseInt(sweeps.group(2)));
+            swept.putIfAbsent(Integer.parseInt(sweeps.group(1)), Integer.parseInt(sweeps.group(2)));
         }
         return swept;
+    }
+
+    /**
+     * Rounds the canon records more than once with different numbers. Each map above kept the
+     * LAST record, so a second, wrong record written after the right one replaced it without a
+     * word — and one written before it was silently overruled (Codex, P3).
+     */
+    public static java.util.List<String> conflictingSweeps(String canon) {
+        Map<Integer, Integer> first = new HashMap<>();
+        java.util.List<String> conflicts = new java.util.ArrayList<>();
+        Matcher sweeps = SWEEP_RECORD.matcher(canon);
+        while (sweeps.find()) {
+            int round = Integer.parseInt(sweeps.group(1));
+            int ran = Integer.parseInt(sweeps.group(2));
+            Integer earlier = first.putIfAbsent(round, ran);
+            if (earlier != null && earlier != ran) {
+                conflicts.add("round " + round + ": " + earlier + " and " + ran);
+            }
+        }
+        return conflicts;
     }
 
     /**
@@ -76,41 +98,70 @@ public final class LedgerText {
     }
 
     /**
-     * The round a figure at {@code offset} in {@code sentence} belongs to: the nearest 「N 回目」
-     * before it, else the nearest after it, else {@code null}. 「N 回目以後 / 以降」 names a span
-     * after a round, not a round — 「6 回目以後の分を含め、現行は 1551 本すべて」 is not a record
-     * of the sixth sweep (subagent review). The FIRST round in the sentence was used before, so
-     * 「6 回目と比べ、7 回目は 1558 本を流した」 was checked against the sixth (Codex, P3).
+     * What may follow 「N 回目」 when it names a time AROUND a round rather than the round:
+     * 「6 回目以後の分を含め、現行は 1551 本すべて」 is not a record of the sixth sweep (subagent
+     * review), and neither is 「6 回目の後に足した分」 or 「5 回目まで」.
      */
-    public static Integer roundNamedNear(String sentence, int offset) {
-        Matcher round = Pattern.compile("(\\d+) 回目(?!以後|以降)").matcher(sentence);
-        Integer before = null;
-        Integer after = null;
+    public static final java.util.List<String> NOT_A_ROUND =
+            java.util.List.of("以後", "以降", "の後", "の前", "まで", "より");
+
+    /**
+     * The round a figure (from {@code start} to {@code end} in {@code sentence}) belongs to: the
+     * 「N 回目」 NEAREST to it, before or after, or {@code null} if the sentence names none. The
+     * documents write both 「6 回目（…、1551 本すべて」 and 「1551 本で完走した（6 回目、」.
+     * Taking the first round in the sentence checked 「6 回目と比べ、7 回目は 1558 本」 against the
+     * sixth (Codex, P3); preferring any round BEFORE the figure did the same to
+     * 「1551 本を流した（6 回目）、1566 本を流した（7 回目）」 (Codex, P2).
+     */
+    public static Integer roundNamedNear(String sentence, int start, int end) {
+        StringBuilder notARound = new StringBuilder();
+        for (String span : NOT_A_ROUND) {
+            notARound.append(notARound.length() == 0 ? "" : "|").append(Pattern.quote(span));
+        }
+        Matcher round = Pattern.compile("(\\d+) 回目(?!" + notARound + ")").matcher(sentence);
+        Integer nearest = null;
+        int distance = Integer.MAX_VALUE;
         while (round.find()) {
-            if (round.start() < offset) {
-                before = Integer.parseInt(round.group(1));
-            } else if (after == null) {
-                after = Integer.parseInt(round.group(1));
+            int away = round.end() <= start ? start - round.end()
+                    : round.start() >= end ? round.start() - end
+                    : 0;
+            // On a tie the round AFTER the figure wins: a parenthesis right after a figure
+            // annotates that figure — 「（6 回目）、1566 本を流した（7 回目）」.
+            if (away < distance || (away == distance && round.start() >= end)) {
+                distance = away;
+                nearest = Integer.parseInt(round.group(1));
             }
         }
-        return before != null ? before : after;
+        return nearest;
     }
 
     /**
-     * Whether {@code path} is a LIST ENTRY of both triggers' paths. Counting the quoted path
-     * anywhere in the file was satisfied by a comment, or by one trigger listing it twice while
-     * the other did not list it at all (Codex, P2).
+     * Whether {@code path} is an entry of the {@code paths:} list of BOTH the push and the
+     * pull_request trigger. Counting the quoted path anywhere in the file was satisfied by a
+     * comment, or by one trigger listing it twice while the other did not list it at all (Codex,
+     * P2); taking any list line inside a trigger was satisfied by {@code paths-ignore:} or a
+     * block-style {@code branches:} (Codex, P2, and subagent review).
      */
     public static boolean listedInBothTriggers(String yaml, String path) {
-        int push = yaml.indexOf("\n  push:");
-        int pullRequest = yaml.indexOf("\n  pull_request:");
-        if (push < 0 || pullRequest < push) {
-            return false;
-        }
-        Matcher nextKey = Pattern.compile("\n[a-z_]+:").matcher(yaml);
-        int end = nextKey.find(pullRequest + 1) ? nextKey.start() : yaml.length();
         Pattern entry = Pattern.compile("(?m)^\\s*-\\s*'" + Pattern.quote(path) + "'\\s*$");
-        return entry.matcher(yaml.substring(push, pullRequest)).find()
-                && entry.matcher(yaml.substring(pullRequest, end)).find();
+        for (String trigger : new String[] {"push", "pull_request"}) {
+            String paths = block(block(yaml, "\n  " + trigger + ":", "\n  [a-z_]+:|\n[a-z_]+:"),
+                    "\n    paths:", "\n    [a-z_-]+:");
+            if (!entry.matcher(paths).find()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The text after {@code opener} up to the next match of {@code closer}, or "" if absent. */
+    private static String block(String text, String opener, String closer) {
+        int at = text.indexOf(opener);
+        if (at < 0) {
+            return "";
+        }
+        int from = at + opener.length();
+        Matcher next = Pattern.compile(closer).matcher(text);
+        return text.substring(from, next.find(from) ? next.start() : text.length());
     }
 }
