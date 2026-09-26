@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -74,6 +75,23 @@ class NoForbiddenClaimShipsTest {
             Path.of("../docs/compliance"));
 
     /**
+     * The operator guides at the top of docs/ — deployment, integration, administration.
+     *
+     * <p>One level deep only: the design notes and the history under docs/ quote the forbidden
+     * phrases in order to forbid them, and the threat model names another product's claim. The
+     * AWS deployment guide said 「改ざん防止保存が可能」 about S3 Object Lock and nothing read it,
+     * because the list above stopped at docs/operations (review, P2).
+     */
+    private static List<Path> topLevelGuides() throws IOException {
+        try (Stream<Path> listing = Files.list(Path.of("../docs"))) {
+            return listing.filter(Files::isRegularFile)
+                    .filter(p -> p.toString().endsWith(".md"))
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    /**
      * The same claims in English, for the text that ships in English.
      *
      * <p>The authenticity report has no React screen — plan §12 says the UI IS its HTML — and
@@ -105,7 +123,12 @@ class NoForbiddenClaimShipsTest {
     @DisplayName("no forbidden claim appears in anything that ships to a reader")
     void noForbiddenClaimShips() throws IOException {
         List<String> offences = new ArrayList<>();
-        for (Path root : SHIPPED) {
+        List<Path> guides = topLevelGuides();
+        assertFalse(guides.isEmpty(), "no guide was found at the top of docs/, so this lint "
+                + "would pass by reading none of them");
+        List<Path> roots = new ArrayList<>(SHIPPED);
+        roots.addAll(guides);
+        for (Path root : roots) {
             if (!Files.exists(root)) {
                 continue;
             }

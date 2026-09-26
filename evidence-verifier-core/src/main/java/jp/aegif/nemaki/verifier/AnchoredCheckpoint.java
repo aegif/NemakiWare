@@ -229,8 +229,9 @@ public final class AnchoredCheckpoint {
      * so (2026-09-22). Until 2026-09-22
      * the material was only checked for presence and the outcome was always UNAVAILABLE
      * ({@code ANCHOR_NOT_PARSED}), so no package could reach VERIFIED at P2 (release condition
-     * 3). OTS and ERS material stays unread here — their own profiles read them — and a package
-     * whose only material is of those kinds is still UNAVAILABLE, not passed. P3 repeats the
+     * 3). OTS and ERS material stays unread here — their own profiles read them — and so does
+     * an Atlas catalogue reference, which commits to nothing; a package whose only material is
+     * of those kinds is still UNAVAILABLE, not passed. P3 repeats the
      * imprint comparison under its own name because P3 also checks WHO signed; the two agree
      * by construction.
      */

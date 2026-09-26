@@ -168,10 +168,35 @@ class ReleaseReadinessIsMeasuredTest {
         // not a closed gap, and saying otherwise was the third repeat of the same over-claim
         // (both reviewers, twenty-ninth review, P2). A four-digit "N 本" in this document is
         // a control count; the unit totals are written with a comma.
-        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本").matcher(readiness);
+        // The TOTAL, unless the sentence says it is what a sweep RAN ("… 本を流し", "… 本すべて",
+        // "… 本で完走", "… 本が通った"): that figure is the canon's sweep record, not today's
+        // count. The two were the same number from the sixth sweep (1551 of 1551) until a
+        // control was added after it — then every true record of the sixth sweep read as a stale
+        // total and failed here (2026-09-26). A sweep figure is compared with the sweep record
+        // instead, so a stale one is still caught.
+        int sweptThen = 0;
+        int latestRound = 0;
+        Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
+                .matcher(read(CANON));
+        while (sweeps.find()) {
+            if (Integer.parseInt(sweeps.group(1)) >= latestRound) {
+                latestRound = Integer.parseInt(sweeps.group(1));
+                sweptThen = Integer.parseInt(sweeps.group(2));
+            }
+        }
+        assertTrue(latestRound > 0, "the canon records no completed sweep");
+        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本(を流し|すべて|で完走|が通った)?")
+                .matcher(readiness);
         int exits = 0;
         while (everywhere.find()) {
             exits++;
+            if (everywhere.group(2) != null) {
+                assertEquals(sweptThen, Integer.parseInt(everywhere.group(1)),
+                        "the readiness document says a sweep ran " + everywhere.group(1)
+                                + " controls and the canon's record of the last sweep says "
+                                + sweptThen + ": 「" + everywhere.group() + "」");
+                continue;
+            }
             assertEquals(declared.size(), Integer.parseInt(everywhere.group(1)),
                     "the readiness document states " + everywhere.group(1) + " controls "
                             + "somewhere and the runner declares " + declared.size());
