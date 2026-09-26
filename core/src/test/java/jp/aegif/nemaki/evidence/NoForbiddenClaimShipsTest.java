@@ -45,10 +45,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>What it looks at, and what it deliberately does not</h2>
  *
- * <p>Text that reaches a reader OUTSIDE this repository: release notes, user-facing
- * documentation, and the UI's translation files. It does NOT scan the design documents or this
- * branch's own residual register, because those exist precisely to discuss the forbidden claims
- * — a lint that could not tell "do not say X" from "X" would make the rule unwritable.
+ * <p>Text that reaches a reader OUTSIDE this repository: release notes, the READMEs, every
+ * document under docs/, and the UI's translation files. It does NOT scan docs/design/ (the plan,
+ * this branch's residual register, the readiness record) or docs/history/, because those exist
+ * precisely to discuss the forbidden claims — a lint that could not tell "do not say X" from "X"
+ * would make the rule unwritable. A record that has to quote one belongs there.
  */
 class NoForbiddenClaimShipsTest {
 
@@ -67,28 +68,54 @@ class NoForbiddenClaimShipsTest {
             "全て漏れなく取り込まれ", "取り込めなかったものを数える方法が無い以上、言えない",
             "常に最新のcheckpoint", "提示された checkpoint が最新であることは package からは分からない");
 
-    /** Where reader-facing text lives. */
-    private static final List<Path> SHIPPED = List.of(
-            Path.of("../RELEASE_NOTES.md"),
-            Path.of("src/main/webapp/ui/src/i18n"),
-            Path.of("../docs/operations"),
-            Path.of("../docs/compliance"));
+    /** A root of reader-facing text and the kinds of file under it that a reader is shown. */
+    private record Shipped(Path root, List<String> extensions) { }
 
     /**
-     * The operator guides at the top of docs/ — deployment, integration, administration.
+     * Where reader-facing text lives.
      *
-     * <p>One level deep only: the design notes and the history under docs/ quote the forbidden
-     * phrases in order to forbid them, and the threat model names another product's claim. The
-     * AWS deployment guide said 「改ざん防止保存が可能」 about S3 Object Lock and nothing read it,
-     * because the list above stopped at docs/operations (review, P2).
+     * <p>It was docs/operations and docs/compliance by name, and the AWS deployment guide at the
+     * top of docs/ said 「改ざん防止保存が可能」 with nothing reading it (review, P2). Widening to
+     * the top of docs/ alone then left docs/soc-templates/, which operators read, and the READMEs
+     * outside docs/ where they were (both reviews, P2 / P3). So docs/ is read WHOLE — a directory
+     * added tomorrow is read by default rather than forgotten — minus the two directories that
+     * discuss the claims ({@link #DISCUSSES_THE_CLAIMS}).
      */
-    private static List<Path> topLevelGuides() throws IOException {
-        try (Stream<Path> listing = Files.list(Path.of("../docs"))) {
-            return listing.filter(Files::isRegularFile)
-                    .filter(p -> p.toString().endsWith(".md"))
-                    .sorted()
-                    .toList();
+    private static final List<Shipped> SHIPPED = List.of(
+            new Shipped(Path.of("../RELEASE_NOTES.md"), List.of(".md")),
+            new Shipped(Path.of("../README.md"), List.of(".md")),
+            new Shipped(Path.of("src/main/webapp/ui/src/i18n"), List.of(".json", ".ts")),
+            new Shipped(Path.of("../docs"), List.of(".md", ".json")),
+            new Shipped(Path.of("../deploy"), List.of(".md")),
+            new Shipped(Path.of("../docker"), List.of(".md")));
+
+    /** The two directories under docs/ that quote the forbidden claims in order to forbid them. */
+    private static final List<Path> DISCUSSES_THE_CLAIMS =
+            List.of(Path.of("../docs/design"), Path.of("../docs/history"));
+
+    /**
+     * The reader-facing files under one root. A root that yields none FAILS — it used to be
+     * skipped, so a missing or renamed root made the lint pass by reading nothing there, and a
+     * check that the whole set was non-empty was satisfied by any other root (review, P2 / P3).
+     */
+    private static List<Path> readerText(Shipped shipped) throws IOException {
+        List<Path> files = new ArrayList<>();
+        if (Files.isRegularFile(shipped.root())) {
+            files.add(shipped.root());
+        } else if (Files.isDirectory(shipped.root())) {
+            try (Stream<Path> walk = Files.walk(shipped.root())) {
+                walk.filter(Files::isRegularFile)
+                        .filter(p -> DISCUSSES_THE_CLAIMS.stream().noneMatch(p::startsWith))
+                        .filter(p -> shipped.extensions().stream()
+                                .anyMatch(e -> p.toString().endsWith(e)))
+                        .sorted()
+                        .forEach(files::add);
+            }
         }
+        assertFalse(files.isEmpty(), "this lint reads " + shipped.root() + " and found no "
+                + "reader-facing text there — missing, moved, or filtered to nothing. It would "
+                + "pass by reading none of it rather than by the text being clean");
+        return files;
     }
 
     /**
@@ -123,28 +150,8 @@ class NoForbiddenClaimShipsTest {
     @DisplayName("no forbidden claim appears in anything that ships to a reader")
     void noForbiddenClaimShips() throws IOException {
         List<String> offences = new ArrayList<>();
-        List<Path> guides = topLevelGuides();
-        assertFalse(guides.isEmpty(), "no guide was found at the top of docs/, so this lint "
-                + "would pass by reading none of them");
-        List<Path> roots = new ArrayList<>(SHIPPED);
-        roots.addAll(guides);
-        for (Path root : roots) {
-            if (!Files.exists(root)) {
-                continue;
-            }
-            List<Path> files = new ArrayList<>();
-            if (Files.isRegularFile(root)) {
-                files.add(root);
-            } else {
-                try (Stream<Path> walk = Files.walk(root)) {
-                    walk.filter(Files::isRegularFile)
-                            .filter(p -> p.toString().endsWith(".md")
-                                    || p.toString().endsWith(".json")
-                                    || p.toString().endsWith(".ts"))
-                            .forEach(files::add);
-                }
-            }
-            for (Path file : files) {
+        for (Shipped shipped : SHIPPED) {
+            for (Path file : readerText(shipped)) {
                 String text = Files.readString(file, StandardCharsets.UTF_8);
                 // Whitespace removed before matching: "電帳法 対応" and "電帳法対応" are the
                 // same claim to a reader, and a lint a line break can defeat protects nothing.
@@ -183,6 +190,21 @@ class NoForbiddenClaimShipsTest {
                     offences.add(file + " says \"" + phrase + "\" — " + why);
                 }
             });
+        }
+        // And the documents, in English where they are written in English. Only the three
+        // sources above were read, so a guide saying "tamper-proof" shipped with both tests
+        // green (review, P2). The same roots as the Japanese list, the same exclusions.
+        for (Shipped shipped : SHIPPED) {
+            for (Path file : readerText(shipped)) {
+                String text = Files.readString(file, StandardCharsets.UTF_8)
+                        .replaceAll("\\s+", " ")
+                        .toLowerCase(Locale.ROOT);
+                FORBIDDEN_EN.forEach((phrase, why) -> {
+                    if (text.contains(phrase)) {
+                        offences.add(file + " says \"" + phrase + "\" — " + why);
+                    }
+                });
+            }
         }
         // NOT asserted here. The first version asserted the source scan before rendering
         // anything, so a phrase the scan caught stopped the method — and the render check
@@ -265,10 +287,14 @@ class NoForbiddenClaimShipsTest {
                 "the plan no longer states the forbidden claims, so either they moved or this "
                         + "lint's list has drifted from the rule it enforces");
 
-        for (Path scanned : SHIPPED) {
-            assertTrue(!scanned.toString().contains("docs/design"),
-                    "a design document is in the lint's scope: " + scanned
-                            + ". It would fail on the very document that states the rule");
+        // The FILES read, not the roots named: docs/ is now a root, and its design/ and history/
+        // are kept out by exclusion — so what has to hold is that no excluded file is read.
+        for (Shipped shipped : SHIPPED) {
+            for (Path scanned : readerText(shipped)) {
+                assertTrue(DISCUSSES_THE_CLAIMS.stream().noneMatch(scanned::startsWith),
+                        "a design or history document is in the lint's scope: " + scanned
+                                + ". It would fail on the very document that states the rule");
+            }
         }
     }
 

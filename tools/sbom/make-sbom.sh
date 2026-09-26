@@ -6,8 +6,9 @@
 #   target/nemakiware-<version>-ui-sbom.json       core/src/main/webapp/ui の npm 依存
 #
 # 前提
-#   - 網が要る (plugin と cyclonedx-npm を取り寄せる)。offline (-o) では最初の 1 回は落ちる。
-#     2026-09-23 に取り寄せた版を固定してある。
+#   - 網が要る (plugin と cyclonedx-npm を取り寄せる)。取り寄せるまでは、網の無い機械では毎回落ちる。
+#     版を固定しているのは Maven の plugin (2.9.3) だけ。npm 側の道具は npx がそのときの版を取り寄せる
+#     — SBOM を 09-23 の数と比べるなら、道具の版も記録すること。
 #   - 署名はしない。detached signature は鍵を持つリリース担当者の作業で、この script の外。
 #   - リリース成果物は git worktree で切った tagged tree から作ること (CLAUDE.md)。
 #     この作業コピーで作った SBOM は「今の HEAD の依存」であって「タグの依存」ではない。

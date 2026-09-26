@@ -14,6 +14,9 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
+      # Every document under docs/. The forbidden-claim lint reads docs/ whole except design/
+      # and history/, so a claim in any of them has to start this workflow (review, P2).
+      - 'docs/**'
       # The unit job counts the controls and checks the canon's number against them.
       # Without these, retiring a control or editing that number does not start this
       # workflow, so the check exists and never gates (Codex review, P2).
@@ -52,6 +55,13 @@ on:
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
       - 'scripts/ci-seed-odata-docs.sh'
+      # Reader-facing text outside docs/ that the forbidden-claim lint reads, and the release
+      # notes two locks read. Only docs/ paths were ever checked, so these never had to start
+      # this workflow (subagent review, P2).
+      - 'README.md'
+      - 'RELEASE_NOTES.md'
+      - 'deploy/**'
+      - 'docker/**'
   pull_request:
     branches: [ master, main, develop ]
     paths:
@@ -64,6 +74,9 @@ on:
       # UI-only revert does not start this workflow at all, so the lock is on the list
       # and the list never runs for the change it guards.
       - 'core/src/main/webapp/ui/src/**'
+      # Every document under docs/. The forbidden-claim lint reads docs/ whole except design/
+      # and history/, so a claim in any of them has to start this workflow (review, P2).
+      - 'docs/**'
       # The unit job counts the controls and checks the canon's number against them.
       # Without these, retiring a control or editing that number does not start this
       # workflow, so the check exists and never gates (Codex review, P2).
@@ -102,6 +115,11 @@ on:
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
       - 'scripts/ci-seed-odata-docs.sh'
+      # The same reader-facing text outside docs/ as the push trigger.
+      - 'README.md'
+      - 'RELEASE_NOTES.md'
+      - 'deploy/**'
+      - 'docker/**'
 
 permissions:
   contents: read

@@ -174,15 +174,18 @@ class ReleaseReadinessIsMeasuredTest {
         // control was added after it — then every true record of the sixth sweep read as a stale
         // total and failed here (2026-09-26). A sweep figure is compared with the sweep record
         // instead, so a stale one is still caught.
-        int sweptThen = 0;
+        // Each sweep the canon records, by round. A sweep figure is compared with the sweep its
+        // sentence names ("6 回目"), or with the latest when it names none — comparing every one
+        // with the latest would reject the true record of the sixth sweep the moment a seventh is
+        // written (subagent review, P3).
+        java.util.Map<Integer, Integer> sweptInRound = new java.util.HashMap<>();
         int latestRound = 0;
         Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
                 .matcher(read(CANON));
         while (sweeps.find()) {
-            if (Integer.parseInt(sweeps.group(1)) >= latestRound) {
-                latestRound = Integer.parseInt(sweeps.group(1));
-                sweptThen = Integer.parseInt(sweeps.group(2));
-            }
+            int round = Integer.parseInt(sweeps.group(1));
+            sweptInRound.put(round, Integer.parseInt(sweeps.group(2)));
+            latestRound = Math.max(latestRound, round);
         }
         assertTrue(latestRound > 0, "the canon records no completed sweep");
         Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本(を流し|すべて|で完走|が通った)?")
@@ -190,16 +193,28 @@ class ReleaseReadinessIsMeasuredTest {
         int exits = 0;
         while (everywhere.find()) {
             exits++;
-            if (everywhere.group(2) != null) {
-                assertEquals(sweptThen, Integer.parseInt(everywhere.group(1)),
-                        "the readiness document says a sweep ran " + everywhere.group(1)
-                                + " controls and the canon's record of the last sweep says "
-                                + sweptThen + ": 「" + everywhere.group() + "」");
+            // A sweep figure only where the SENTENCE is about a sweep — it names the round or
+            // the sweep itself. The ending alone was not enough: 「現行の control は 1551 本すべて」
+            // would have read as a record of the sixth sweep and hidden a stale total (Codex, P3).
+            String sentence = sentenceAround(readiness, everywhere.start());
+            Matcher named = Pattern.compile("(\\d+) 回目").matcher(sentence);
+            boolean namesARound = named.find();
+            if (everywhere.group(2) != null
+                    && (namesARound || sentence.contains("通し negative-control"))) {
+                int round = namesARound ? Integer.parseInt(named.group(1)) : latestRound;
+                assertTrue(sweptInRound.containsKey(round), "the readiness document records a "
+                        + "sweep for round " + round + ", which the canon does not: 「"
+                        + sentence.trim() + "」");
+                assertEquals(sweptInRound.get(round), Integer.parseInt(everywhere.group(1)),
+                        "the readiness document says sweep " + round + " ran " + everywhere.group(1)
+                                + " controls and the canon's record of it says "
+                                + sweptInRound.get(round) + ": 「" + sentence.trim() + "」");
                 continue;
             }
             assertEquals(declared.size(), Integer.parseInt(everywhere.group(1)),
                     "the readiness document states " + everywhere.group(1) + " controls "
-                            + "somewhere and the runner declares " + declared.size());
+                            + "somewhere and the runner declares " + declared.size() + ": 「"
+                            + sentence.trim() + "」");
         }
         // The CANON states it too, in its own wording, and was not read here — so updating the
         // readiness document alone left the two disagreeing with every lock green (both
@@ -1116,21 +1131,34 @@ class ReleaseReadinessIsMeasuredTest {
         Path workflow = Path.of("../.github/workflows/integration-tests.yml");
         String yaml = read(workflow);
 
+        // EVERY file a lock opens outside core, not only docs/. The pattern was "../docs/…", so a
+        // lock reading ../RELEASE_NOTES.md, or docs/ itself as a root, was invisible here and its
+        // input never had to start the workflow (subagent review, P2). A literal that does not
+        // name an existing file inside the repository — the path-traversal fixtures, "../x" — is
+        // not a document anything reads.
         SortedSet<String> read = new TreeSet<>();
+        Path repo = Path.of("..").toAbsolutePath().normalize();
         Path tests = Path.of("src/test/java");
         try (java.util.stream.Stream<Path> walk = Files.walk(tests)) {
             for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {
-                Matcher opened = Pattern.compile("\"\\.\\./(docs/[^\"]+)\"")
+                Matcher opened = Pattern.compile("\"\\.\\./([^\"]+)\"")
                         .matcher(Files.readString(file, java.nio.charset.StandardCharsets.UTF_8));
                 while (opened.find()) {
-                    read.add(opened.group(1));
+                    Path target = repo.resolve(opened.group(1)).normalize();
+                    if (!target.startsWith(repo) || target.equals(repo) || !Files.exists(target)) {
+                        continue;
+                    }
+                    read.add(repo.relativize(target).toString().replace('\\', '/'));
                 }
             }
         }
         assertFalse(read.isEmpty(),
-                "no lock appears to open a document under docs/. Either the tests moved or this "
+                "no lock appears to open a file outside core. Either the tests moved or this "
                         + "check's pattern no longer matches how they name a path, and it would "
                         + "pass by finding nothing");
+        assertTrue(read.contains("RELEASE_NOTES.md") && read.contains("docs"),
+                "the locks that read the release notes and docs/ as a root are not seen here, so "
+                        + "this check no longer sees files outside docs/ or directory roots: " + read);
 
         SortedSet<String> ungated = new TreeSet<>();
         for (String document : read) {
@@ -1234,5 +1262,20 @@ class ReleaseReadinessIsMeasuredTest {
             assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "
                     + "added-since-sweep count anywhere, so nothing here can be checked");
         }
+    }
+
+    /** The sentence around a position: within its line, from the last 。 before it to the next. */
+    private static String sentenceAround(String text, int at) {
+        int lineStart = text.lastIndexOf('\n', at) + 1;
+        int lineEnd = text.indexOf('\n', at);
+        if (lineEnd < 0) {
+            lineEnd = text.length();
+        }
+        int start = Math.max(lineStart, text.lastIndexOf('。', at) + 1);
+        int stop = text.indexOf('。', at);
+        if (stop < 0 || stop > lineEnd) {
+            stop = lineEnd;
+        }
+        return text.substring(start, stop);
     }
 }
