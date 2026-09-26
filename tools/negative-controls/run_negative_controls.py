@@ -9473,7 +9473,16 @@ CONTROLS = [
         find='            candidates.sort(OLDEST_FIRST);',
         replace='            candidates.sort(OLDEST_FIRST.reversed());',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['aTruncatedListingIsNotComplete', 'aLimitInsideAPageIsStillTruncation', 'theListingStopsAtTheCheckpointMinute', 'aBudgetInsideAMinuteGroupIsResumedByTheNextPoll', 'aRefusedSortIsRetriedWithoutIt', 'aLegacyCheckpointImportsItsMinuteOnceMore', 'anUnorderedListingIsReadToItsEndNotToTheCheckpoint'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aTruncatedListingIsNotComplete',
+                     'aLimitInsideAPageIsStillTruncation',
+                     'theListingStopsAtTheCheckpointMinute',
+                     'aBudgetInsideAMinuteGroupIsResumedByTheNextPoll',
+                     'aRefusedSortIsRetriedWithoutIt',
+                     'aLegacyCheckpointImportsItsMinuteOnceMore',
+                     'anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
+                     'theAttemptsOfOneRunAreBoundedByFourTimesTheLimit'],
     ),
     dict(
         id='FL3',
@@ -9644,14 +9653,14 @@ CONTROLS = [
     ),
     dict(
         id='GD3',
-        what='the unswept boundary count stops matching the runner, so the next full sweep is planned against a smaller set than exists',
+        what="the canon's first statement of the sweep boundary drifts from the second, so the next full sweep is scoped from whichever one a reader finds",
         file='docs/design/fail-closed-reads.md',
         # Same reason as FZ3: the span brackets the number so the anchor survives the next
         # batch that adds a control.
         # Re-pointed after the fifth sweep: the boundary in §1 (KQ3 takes the one in §5 — two
         # sites, one control each, so a lock reading only the first would be caught).
-        find='（境界 LM3 — 5 回目時点の最大 ID。',
-        replace='（境界 LA3 — 5 回目時点の最大 ID。',
+        find='（境界 JP4 — 6 回目時点の最大 ID。',
+        replace='（境界 JO4 — 6 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9675,10 +9684,10 @@ CONTROLS = [
     ),
     dict(
         id='GG3',
-        what="controls disappear from the ledger's enumeration while the numbers still agree, so the next full sweep treats them as already covered",
+        what="the canon records the sixth sweep as running fewer controls than it did, so ids that it ran read as never run together",
         file='docs/design/fail-closed-reads.md',
-        find='LP3〜LX3 result schema、',
-        replace='',
+        find='**6 回目 2026-09-25〜26（1551 本、',
+        replace='**6 回目 2026-09-25〜26（1549 本、',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9744,10 +9753,10 @@ CONTROLS = [
     ),
     dict(
         id='GN3',
-        what='the ledger names a control the runner does not declare, so the next sweep is planned against a set that does not exist',
+        what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='（LN3 / LO3 通しの記録の錠',
-        replace='（LN3 / LO3 / ZZ4 通しの記録の錠',
+        find='**6 回目以後に足した control は 0 本**（境界 JP4）。',
+        replace='**6 回目以後に足した control は 0 本**（境界 JO4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9864,10 +9873,10 @@ CONTROLS = [
     ),
     dict(
         id='GY3',
-        what="the readiness document stops saying the control added since the fifth sweep is unswept, so a finished sweep of 938 reads as a measurement of today's tree",
+        what="after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept",
         file='docs/design/v3.4-release-readiness.md',
-        find='**その 613 本は通し未実施**',
-        replace='**その 613 本も通し済み**',
+        find='**6 回目以後に足した control は 0 本**（境界 JP4、正典 §5）。',
+        replace='**6 回目以後に足した control は 0 本**（通し未実施）（境界 JP4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10301,8 +10310,12 @@ CONTROLS = [
         id='IP3',
         what='the verifier goes back to taking the FIRST premis.xml, so a package with two is checked against whichever the zip order reached first',
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
-        find='                if (found != null) {\n                    return null;\n                }\n                found = new String(entry.getValue(), StandardCharsets.UTF_8);',
-        replace='                return new String(entry.getValue(), StandardCharsets.UTF_8);',
+        # Re-pointed 2026-09-26: the sixth full sweep found it not firing. textOf is read only for
+        # nemaki-evidence.json now; the payload-digest check counts premis.xml itself and reads it
+        # only when there is exactly one, so the sabotage in textOf no longer reached the lock.
+        # The same defect, where the premis.xml is chosen today: take the first of two.
+        find='        byte[] premis = premisPaths.size() == 1 ? entries.get(premisPaths.get(0)) : null;',
+        replace='        byte[] premis = premisPaths.isEmpty() ? null : entries.get(premisPaths.get(0));',
         test='SipVerifierTest',
         expect_fail=['twoPremisDocumentsAreAmbiguous'],
     ),
@@ -10357,7 +10370,15 @@ CONTROLS = [
         find='        if (!unnamed.isEmpty()) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anUnnamedPayloadFails'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anUnnamedPayloadFails',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aLocTypeIsNormalisedAndANonUrlIsExternal',
+                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aUncXmlBaseIsAnAuthorityToo',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage'],
     ),
     dict(
         id='IV3',
@@ -10367,7 +10388,21 @@ CONTROLS = [
         find='        if (!missing.isEmpty()) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aMissingNamedFileFails'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aMissingNamedFileFails',
+                     'aBaseIsMergedOnItsPathNotItsQuery',
+                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aMetsAtTheTopDoesNotOwnEveryPath',
+                     'aPayloadCopyDoesNotCloseTheMets',
+                     'aReferenceOutOfThePackageIsRefused',
+                     'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
+                     'anEmptyPathReferenceNamesTheBase',
+                     'anEncodedSeparatorDoesNotWalkOutOfThePackage',
+                     'notEvaluatedIsStatedOnEveryArm',
+                     'oneMetssReferenceIsNotResolvedByAnothersDirectory'],
     ),
     dict(
         id='IW3',
@@ -10459,7 +10494,11 @@ CONTROLS = [
         find='            case INDETERMINATE -> EXIT_INDETERMINATE;',
         replace='            case INDETERMINATE -> EXIT_VERIFIED;',
         test='TheExitCodeIsTheInterfaceTest',
-        expect_fail=['anIndeterminatePackageExitsThree', 'anUnreadablePackageIsIndeterminate'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anIndeterminatePackageExitsThree',
+                     'anUnreadablePackageIsIndeterminate',
+                     'theJsonConformsToThePublishedSchema'],
     ),
     dict(
         id='JF3',
@@ -10558,7 +10597,10 @@ CONTROLS = [
         find='                if (!hasFile(entries, String.valueOf(path))) {',
         replace='                if (false) {',
         test='TheChainIsWalkedNotAssumedTest',
-        expect_fail=['aPresentRungWithNoFileFails'],
+        # The RFC 3161 example is refused again where the token is read, so its lock stays green
+        # without this check (the sixth full sweep found JN3 not firing). The OpenTimestamps example
+        # is refused here or nowhere.
+        expect_fail=['aPresentRungThisCheckDoesNotReadWithNoFileFails'],
     ),
     dict(
         id='JO3',
@@ -10827,22 +10869,22 @@ CONTROLS = [
     ),
     dict(
         id='KP3',
-        what='a second statement of the unswept count drifts from the locked one, so the document contradicts itself about how many controls have never been run together',
+        what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **5 回目以後に足した control は 613 本**（境界 LM3 — 5 回目時点の最大 ID。',
-        replace='  **5 回目以後に足した control は 0 本**（境界 LM3 — 5 回目時点の最大 ID。',
+        find='  **6 回目以後に足した control は 0 本**（境界 JP4 — 6 回目時点の最大 ID。',
+        replace='  **6 回目以後に足した control は 5 本**（境界 JP4 — 6 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
     dict(
         id='KQ3',
-        what="the 'these do not add up' sentence keeps a number that does add up, teaching the next reader to derive the unswept count by subtraction",
+        what="the canon's measurement section states a never-swept count the runner does not have",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
         # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
-        find='**5 回目以後に足した control は 613 本**（境界 LM3）: ',
-        replace='**5 回目以後に足した control は 5 本**（境界 LA3）: ',
+        find='**6 回目以後に足した control は 0 本**（境界 JP4）。',
+        replace='**6 回目以後に足した control は 5 本**（境界 JP4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -10895,19 +10937,19 @@ CONTROLS = [
     ),
     dict(
         id='LN3',
-        what="the canon stops saying the control added since the fifth sweep is unswept — the canon-side twin of GY3 — and, being itself the first control after the sweep, the one that forces the ledger back from 0 to 1",
+        what="after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding",
         file='docs/design/fail-closed-reads.md',
-        find='**その 613 本は通し未実施**',
-        replace='**その 613 本も通し済み**',
+        find='  **6 回目以後に足した control は 0 本**（境界 JP4 — 6 回目時点の最大 ID。',
+        replace='  **6 回目以後に足した control は 0 本**（通し未実施）（境界 JP4 — 6 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
     dict(
         id='LO3',
-        what="the readiness document's §4 stops saying the added controls are unswept while §1.4 still does — the second exit, which a once-per-file check let through (GY3 did not fire)",
+        what="after a sweep that ran every control, the readiness document's second statement still marks the count unswept — the site a single contains() let through",
         file='docs/design/v3.4-release-readiness.md',
-        find='5 回目以後に足した control は **613 本**（通し未実施）。',
-        replace='5 回目以後に足した control は **613 本**（通し済み）。',
+        find='6 回目以後に足した control は **0 本**。',
+        replace='6 回目以後に足した control は **0 本**（通し未実施）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11306,7 +11348,11 @@ CONTROLS = [
         find='            if (!imprint.equals(expected)) {\n                return Outcome.Check.failed("anchor commits root",\n',
         replace='            if (false) {\n                return Outcome.Check.failed("anchor commits root",\n',
         test='TheAnchorIsReadNotAssumedTest',
-        expect_fail=['aTokenOverSomethingElseFails'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aTokenOverSomethingElseFails',
+                     'aPayloadCopyIsNotReadByTheAnchorChecks',
+                     'aTargetWithASubstitutedRootFailsTheWalk'],
     ),
     dict(
         id='NC3',
@@ -11392,7 +11438,11 @@ CONTROLS = [
         test='TheAnchorIsReadNotAssumedTest',
         # Both arms of chainEnds' document recompute: a target that omits merkleRoot cannot be
         # recomputed either, so removing the call takes that one with it (measured).
-        expect_fail=['aTargetWithASubstitutedRootFailsTheWalk', 'aTargetWithoutARootFailsTheWalk'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aTargetWithASubstitutedRootFailsTheWalk',
+                     'aTargetWithoutARootFailsTheWalk',
+                     'aCheckpointWithNoHashOfItsOwnIsAGap'],
     ),
     dict(
         id='NO3',
@@ -11493,7 +11543,11 @@ CONTROLS = [
         find='    public static byte[] imprintForFirst(byte[] dataObjectHash) {\n        require(dataObjectHash, "dataObjectHash");\n        return dataObjectHash.clone();',
         replace='    public static byte[] imprintForFirst(byte[] dataObjectHash) {\n        require(dataObjectHash, "dataObjectHash");\n        return digest(SHA256_OID, dataObjectHash);',
         test='AStandardReaderAcceptsOurEvidenceRecordTest',
-        expect_fail=['aForeignReaderAgreesItCoversOurDataObject', 'bothReadersAgree'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aForeignReaderAgreesItCoversOurDataObject',
+                     'bothReadersAgree',
+                     'aForeignReaderAgreesAboutTheOneElementNodeHash'],
     ),
     # Fourth review (Codex and subagent, 2026-09-22). Both named the writer's side.
     dict(
@@ -11512,7 +11566,7 @@ CONTROLS = [
     ),
     dict(
         id='NY3',
-        what='a PREMIS with two message digests is read by taking the first, so a package whose second digest contradicts the payload passes P0',
+        what='a PREMIS recording several digests, one per object and none contradicting another, is compared with the payload as if one of them described it — the verifier reads no object-to-file linkage, so it cannot say which',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed: the count moved from a text scan to Premis.read's parsed elements,
@@ -11520,10 +11574,11 @@ CONTROLS = [
         find='        if (fixity.digests().size() > 1) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        # Both digest-ambiguity locks go through this one arm now that neither fixture
-        # carries a second ALGORITHM to be caught by (measured).
-        expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
-                     'aSecondDigestUnderAnotherPrefixIsFound'],
+        # Re-declared 2026-09-26: the sixth full sweep found this arm no longer reached by the two
+        # locks above — two digests in ONE object under one algorithm are refused first by the
+        # contradiction arm (FAILED), which three other controls sabotage. What this arm still
+        # decides is several digests that do not contradict (one object per file): UNAVAILABLE.
+        expect_fail=['equalCountsAreUnavailableNotFailed'],
     ),
     dict(
         id='NZ3',
@@ -11559,8 +11614,13 @@ CONTROLS = [
         test='PresenceIsNotVerificationTest',
         # The chain lock's fixture also asserts the FIRST timestamp still covers the root,
         # so a sabotage of what that is compared against reddens it too (measured).
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anEvidenceRecordOverTheAnchorTargetPasses',
-                     'aRenewalThatCoversNothingFails'],
+                     'aRenewalThatCoversNothingFails',
+                     'aChainStartedWithNoTreeIsRead',
+                     'aOneNodeTreeOverTheRootPasses',
+                     'anAbsentDigestAlgorithmIsReadFromTheToken'],
     ),
     dict(
         id='NE3',
@@ -11582,7 +11642,10 @@ CONTROLS = [
         find='        Outcome.Check c14n = priorCanonicalForm(entries, name,\n                "prior/record-content-statement.c14n", priorStatementJson);',
         replace='        Outcome.Check c14n = null;\n        if (false) {\n            c14n = priorCanonicalForm(entries, name,\n                    "prior/record-content-statement.c14n", priorStatementJson);\n        }',
         test='TransitionPackagesAreReadTest',
-        expect_fail=['aPriorWhoseCanonicalFormIsWrongIsFailed'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aPriorWhoseCanonicalFormIsWrongIsFailed',
+                     'anOmittedFieldStillLetsTheCanonicalFormsBeChecked'],
     ),
     dict(
         id='NG3',
@@ -11720,10 +11783,10 @@ CONTROLS = [
     ),
     dict(
         id='LB3',
-        what='the PLAN\'s copy of the never-swept count drifts, so whoever scopes the overdue full sweep from the plan runs half the set',
+        what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **613 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
-        replace='5 回目以後に足した control は **0 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='6 回目以後に足した control は **0 本**。\n1 本ずつの ID 指定実測は',
+        replace='6 回目以後に足した control は **5 本**。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -11870,15 +11933,22 @@ CONTROLS = [
         find='        checks.add(v1Layout(entries));',
         replace='        checks.add(Outcome.Check.passed("v1 layout"));',
         test='TheV1LayoutIsCheckedTest',
-        expect_fail=['aSectionWithoutAProfileFails', 'aSectionWithoutAManifestFails',
-                     'bothLayoutsInOnePackageFails', 'aDigestMismatchFails',
-                     'anUnlistedFileFails', 'aNamedFileThatIsNotThereFails',
-                     'aDuplicatedSectionFileFails', 'theCheckIsRequired',
-                     'aManifestEntryWithoutADigestIsAGapNotAPass', 'aFindingOutranksAGap',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aSectionWithoutAProfileFails',
+                     'aSectionWithoutAManifestFails',
+                     'bothLayoutsInOnePackageFails',
+                     'aDigestMismatchFails',
+                     'anUnlistedFileFails',
+                     'aNamedFileThatIsNotThereFails',
+                     'aDuplicatedSectionFileFails',
+                     'theCheckIsRequired',
+                     'aManifestEntryWithoutADigestIsAGapNotAPass',
+                     'aFindingOutranksAGap',
                      'theVersionSeparatesUnstatedFromUnsupported',
-                     # The stub passes with no detail, and the legacy lock requires the pass
-                     # to say WHY there was nothing to check (measured).
-                     'aLegacyPackageIsNotRefused'],
+                     'aLegacyPackageIsNotRefused',
+                     'aNestedCompletePackageCannotBeToldApart',
+                     'aSectionSplitAcrossTwoRootsFails'],
     ),
     dict(
         id='OD3',
@@ -11916,7 +11986,10 @@ CONTROLS = [
         find='        doc.put("files", listed);',
         replace='        doc.put("files", new ArrayList<Map<String, Object>>());',
         test='TheWriterWritesWhatTheLayoutRequiresTest',
-        expect_fail=['theManifestCoversTheSection'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['theManifestCoversTheSection',
+                     'thePriorPairIsShippedAsFourFiles'],
     ),
     dict(
         id='OH3',
@@ -11930,8 +12003,12 @@ CONTROLS = [
         replace='        byte[] imprint;\n        try {\n            imprint = new byte[32];',
         test='PresenceIsNotVerificationTest',
         # Same reason as OB3: the chain lock asserts the first timestamp covers the root.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anEvidenceRecordOverTheAnchorTargetPasses',
-                     'aRenewalThatCoversNothingFails'],
+                     'aRenewalThatCoversNothingFails',
+                     'aOneNodeTreeOverTheRootPasses',
+                     'anAbsentDigestAlgorithmIsReadFromTheToken'],
     ),
     # There is NO control for "a DER that merely carries the digest is accepted", and the
     # reason is measurable rather than an omission. That lock
@@ -12156,7 +12233,10 @@ CONTROLS = [
         find='        if (payloads.size() > 1) {',
         replace='        if (false) {',
         test='SipVerifierTest',
-        expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo',
+                     'aPayloadCopyOfThePremisIsNotASecondOne'],
     ),
     dict(
         id='PD3',
@@ -12179,18 +12259,19 @@ CONTROLS = [
     ),
     dict(
         id='PK3',
-        what='a known one-to-one violation is diluted into "could not tell", so a package carrying a payload nobody committed to exits 3 instead of 2',
+        what='several digests that do not contradict one another — one premis:object per file, as CSIP and Archivematica write — are reported as a finding, so an ordinary package exits 2, checked and wrong, with nothing wrong in it',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed 2026-09-22 (8 巡目): the count rule was withdrawn after measurement —
         # ordinary CSIP packages record a digest for the METS too. What is protected now is
         # the UNAVAILABLE answer itself.
+        # Re-declared 2026-09-26 (the sixth full sweep): two digests in ONE object under one
+        # algorithm are the contradiction arm's now, so the two locks first declared here stay
+        # green; what this arm decides is several digests that do not contradict.
         find='            return Outcome.Check.unavailable("payload fixity", "AMBIGUOUS_PREMIS",\n                    "the PREMIS records " + fixity.digests().size() + " message digests and "',
         replace='            return Outcome.Check.failed("payload fixity",\n                    "the PREMIS records " + fixity.digests().size() + " message digests and "',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['twoFixitiesInOnePremisAreAmbiguous',
-                     'aSecondDigestUnderAnotherPrefixIsFound',
-                     'equalCountsAreUnavailableNotFailed'],
+        expect_fail=['equalCountsAreUnavailableNotFailed', 'twoAlgorithmsForOneFileIsNotAContradiction'],
     ),
     # PL3 retired 2026-09-22 (8 巡目). It measured the "equal counts are UNAVAILABLE" arm,
     # which existed only while the count comparison did. The comparison was withdrawn after
@@ -12261,7 +12342,10 @@ CONTROLS = [
         find='            return new Check("payload digest", Outcome.UNAVAILABLE,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
         replace='            return new Check("payload digest", Outcome.PASSED,\n                    "the package carries " + payloads.size() + " payload files and PREMIS "',
         test='SipVerifierTest',
-        expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['twoPayloadsAndOneDigestIsAmbiguousHereToo',
+                     'aPayloadCopyOfThePremisIsNotASecondOne'],
     ),
 
     # ---- Sixth review (Codex, 2026-09-22) ----
@@ -12301,7 +12385,10 @@ CONTROLS = [
         find='        if (roots.size() > 1) {',
         replace='        if (false) {',
         test='TheV1LayoutIsCheckedTest',
-        expect_fail=['aSectionSplitAcrossTwoRootsFails'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aSectionSplitAcrossTwoRootsFails',
+                     'aNestedCompletePackageCannotBeToldApart'],
     ),
     dict(
         id='PJ3',
@@ -12445,13 +12532,17 @@ CONTROLS = [
     ),
     dict(
         id='QF3',
-        what="the PREMIS and METS lookups count a nested package's own copies, so a CSIP AIP that keeps the original SIP as content cannot reach P0",
+        what='the PREMIS lookup counts files inside the payload, so a package whose own PREMIS is gone is checked against a copy carried as content — while the METS closure refuses that copy, the two checks disagreeing about one name',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
+        # Re-declared 2026-09-26 (the sixth full sweep): a nested package's own PREMIS is also
+        # dropped by packageLevel (the package's metadata over a representation's), so the
+        # nested-package lock is held by two arms and no single-point sabotage fires it. The
+        # payload exclusion alone decides the other half of aPayloadCopyDoesNotCloseTheMets.
         find='            if (!isPayload(key) && key.endsWith(suffix)) {',
         replace='            if (key.endsWith(suffix)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNestedPackagesOwnMetadataIsNotCounted'],
+        expect_fail=['aPayloadCopyDoesNotCloseTheMets'],
     ),
 
     dict(
@@ -12503,15 +12594,17 @@ CONTROLS = [
     ),
     dict(
         id='QK3',
-        what="the product's own /verify counts a payload copy of the PREMIS, so it disagrees with the CLI about one file",
+        what='the product\'s own /verify counts a PREMIS carried as content, so a package whose own PREMIS is absent is checked against a copy inside its payload — the twin of QF3',
         file='core/src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java',
         # textOf, which is the lookup the lock exercises: countMatching only builds the message
         # once textOf has already returned null (measured — sabotaging countMatching alone left
         # the lock green).
-        find='            if (!isPayloadPath(entry.getKey()) && entry.getKey().endsWith(suffix)) {',
-        replace='            if (entry.getKey().endsWith(suffix)) {',
+        # Re-pointed 2026-09-26 (the sixth full sweep): textOf no longer reads the PREMIS; the
+        # payload-digest check finds it through pathsEndingWith, which excludes the payload.
+        find='            if (!isPayloadPath(key) && key.endsWith(suffix)) {\n                paths.add(key);',
+        replace='            if (key.endsWith(suffix)) {\n                paths.add(key);',
         test='SipVerifierTest',
-        expect_fail=['aPayloadCopyOfThePremisIsNotASecondOne'],
+        expect_fail=['aPremisOnlyInsideThePayloadIsNotThePackages'],
     ),
 
     dict(
@@ -12585,9 +12678,15 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Collateral, measured: every lock whose fixture puts the payload reference in the
         # representation's own METS goes red with it.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aRepresentationsMetsIsReadToo',
                      'aFragmentAndAnAbsoluteReferenceAreResolved',
-                     'anEncodedHrefResolves'],
+                     'anEncodedHrefResolves',
+                     'aNameOutsideTheBmpResolvesAndAnInvalidEscapeDoesNot',
+                     'aReferenceFromTheZipRootResolvesFromAnyMets',
+                     'aStrayFileBesideThePackageDoesNotChangeTheAnswer',
+                     'anAbsoluteReferenceIgnoresTheMetssOwnDirectory'],
     ),
     dict(
         id='QS3',
@@ -12632,7 +12731,15 @@ CONTROLS = [
         find='            if (!claimed.contains(path)) {',
         replace='            if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anUnnamedPayloadFails'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anUnnamedPayloadFails',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aLocTypeIsNormalisedAndANonUrlIsExternal',
+                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aUncXmlBaseIsAnAuthorityToo',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage'],
     ),
     dict(
         id='QV3',
@@ -12692,8 +12799,14 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Collateral, measured: with no decoding at all the literal spelling is the only
         # one left, which is the defect RH3 is about.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anEncodedHrefResolves',
-                     'anEscapedHrefIsNotSatisfiedByItsLiteralSpelling'],
+                     'anEscapedHrefIsNotSatisfiedByItsLiteralSpelling',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aRefusedReferenceIsRefusedTheSameWayHoweverSpelled',
+                     'aRefusedTraversalDoesNotFallBackToItsLiteralSpelling',
+                     'anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
     dict(
         id='RA3',
@@ -12703,7 +12816,13 @@ CONTROLS = [
         find='        return scheme.group(1).equalsIgnoreCase("file") && localPathOfFileUri(href) != null;',
         replace='        return !href.startsWith("http://") && !href.startsWith("https://");',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNonLocalLocatorIsNotAMissingFile'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aNonLocalLocatorIsNotAMissingFile',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases',
+                     'notEvaluatedIsStatedOnEveryArm',
+                     'skippedLocatorsAreCountedInTheAnswer'],
     ),
     dict(
         id='RB3',
@@ -12717,8 +12836,16 @@ CONTROLS = [
         # localPathOfFileUri return the href unchanged lets the foreign URI be collected,
         # and it then fails to resolve — which is the FAILED that lock already expects
         # (subagent, fourteenth review, P2). RY3 measures that lock.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aNonLocalLocatorIsNotAMissingFile',
-                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
+                     'aFileUrlIsLocalAndADriveLetterIsNotAScheme',
+                     'aBaseIsMergedOnItsPathNotItsQuery',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases',
+                     'aRefusedReferenceIsRefusedTheSameWayHoweverSpelled',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
+                     'anAuthorityMeansSomewhereElse'],
     ),
     dict(
         id='RC3',
@@ -12728,8 +12855,11 @@ CONTROLS = [
         find='        if (owner == null || metsPath.startsWith(owner)) {\n            return true;\n        }',
         replace='        if (true) {\n            return true;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aReferenceOutOfThePackageIsRefused',
-                     'aMetsAtTheTopDoesNotOwnEveryPath'],
+                     'aMetsAtTheTopDoesNotOwnEveryPath',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='RD3',
@@ -12750,8 +12880,11 @@ CONTROLS = [
         find='        return localPathOfFileUri(withoutFragmentOrQuery(normalisedSlashes(href)));',
         replace='        return localPathOfFileUri(normalisedSlashes(href));',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aFragmentAndAnAbsoluteReferenceAreResolved',
-                     'anEmptyPathReferenceNamesTheBase'],
+                     'anEmptyPathReferenceNamesTheBase',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     dict(
         id='RF3',
@@ -12765,7 +12898,10 @@ CONTROLS = [
         find='            List<String> bases = spelling.startsWith("/") ? List.of(ipRoot)',
         replace='            List<String> bases = false ? List.of(ipRoot)',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anAbsoluteReferenceIgnoresTheMetssOwnDirectory'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
     ),
     dict(
         id='RG3',
@@ -12789,8 +12925,13 @@ CONTROLS = [
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Both literal-spelling locks, measured: adding it first satisfies a reference with
         # a different file, and also revives it after a refusal.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anEscapedHrefIsNotSatisfiedByItsLiteralSpelling',
-                     'aRefusedTraversalDoesNotFallBackToItsLiteralSpelling'],
+                     'aRefusedTraversalDoesNotFallBackToItsLiteralSpelling',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aRefusedReferenceIsRefusedTheSameWayHoweverSpelled',
+                     'anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
     dict(
         id='RI3',
@@ -12800,9 +12941,13 @@ CONTROLS = [
         find='        if (locType == null || locType.isEmpty()) {\n            return true;\n        }',
         replace='        if (true) {\n            return true;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aRelativeExternalLocatorIsNotAMissingFile',
                      'aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord',
-                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
+                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aLocTypeIsNormalisedAndANonUrlIsExternal'],
     ),
     dict(
         id='RJ3',
@@ -12813,12 +12958,16 @@ CONTROLS = [
         find='        if (declared != null && !declared.isEmpty()\n                && !withoutFragmentOrQuery(declared).isEmpty()) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anXmlBaseIsHonoured',
                      'aUncXmlBaseIsAnAuthorityToo',
                      'anAbsoluteXmlBaseUnderAnAuthorityKeepsIt',
                      'anAuthorityMeansSomewhereElse',
                      'anEmptyPathReferenceNamesTheBase',
-                     'anXmlBaseIsMergedAndJudgedOnTheResult'],
+                     'anXmlBaseIsMergedAndJudgedOnTheResult',
+                     'aBaseIsMergedOnItsPathNotItsQuery',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage'],
     ),
     # NO CONTROL for the null arm of anOrdinaryKeyOfTheSameKindInitialises ("this build could
     # not put the question at all" -> UNAVAILABLE rather than a finding). Codex named it at the
@@ -12837,7 +12986,10 @@ CONTROLS = [
         find='                        && (decoded.indexOf(\'/\') >= 0 || decoded.equals("..")',
         replace='                        && (false || decoded.equals("..")',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anEncodedSeparatorDoesNotWalkOutOfThePackage',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='RL3',
@@ -12859,7 +13011,10 @@ CONTROLS = [
         find='                    && (owner == null || directory.length() > owner.length())) {',
         replace='                    && (owner == null || directory.length() < owner.length())) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aMetsAtTheTopDoesNotOwnEveryPath'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aMetsAtTheTopDoesNotOwnEveryPath',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='RN3',
@@ -12872,12 +13027,19 @@ CONTROLS = [
         replace='        String root = directoryOf(metsPath);\n        for (String ignored : metsPaths) { root = ""; }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Everything whose reference needs a package root goes with it, measured.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aStrayFileBesideThePackageDoesNotChangeTheAnswer',
                      'aFileUrlIsLocalAndADriveLetterIsNotAScheme',
                      'aFragmentAndAnAbsoluteReferenceAreResolved',
                      'aSubMetsMayWritePackageRootRelativePaths',
                      'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
-                     'twoPackagesEachResolveAtTheirOwnRoot'],
+                     'twoPackagesEachResolveAtTheirOwnRoot',
+                     'aBaseIsMergedOnItsPathNotItsQuery',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
+                     'anAuthorityMeansSomewhereElse',
+                     'anEmptyPathReferenceNamesTheBase'],
     ),
     dict(
         id='RO3',
@@ -12901,8 +13063,13 @@ CONTROLS = [
         find='        if (!authority.isEmpty() && !authority.equals(".") && !authority.equalsIgnoreCase("localhost")) {',
         replace='        if (!authority.equals(".")) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aFileUrlIsLocalAndADriveLetterIsNotAScheme',
-                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
+                     'aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aBaseIsMergedOnItsPathNotItsQuery',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases',
+                     'anAuthorityMeansSomewhereElse'],
     ),
     dict(
         id='RQ3',
@@ -12914,7 +13081,10 @@ CONTROLS = [
         find='        if (href.matches("^[A-Za-z][:|][/\\\\\\\\].*")) {\n            return true;\n        }',
         replace='        if (false) {\n            return true;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aFileUrlIsLocalAndADriveLetterIsNotAScheme'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aFileUrlIsLocalAndADriveLetterIsNotAScheme',
+                     'anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage'],
     ),
     dict(
         id='RR3',
@@ -12939,13 +13109,20 @@ CONTROLS = [
         replace='        return false;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         # Everything that resolves DOWNWARD goes with it, measured.
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['aRepresentationsMetsIsReadToo',
                      'aFragmentAndAnAbsoluteReferenceAreResolved',
                      'aReferenceFromTheZipRootResolvesFromAnyMets',
                      'aStrayFileBesideThePackageDoesNotChangeTheAnswer',
                      'aSubMetsMayWritePackageRootRelativePaths',
                      'anAbsoluteReferenceIgnoresTheMetssOwnDirectory',
-                     'anEncodedHrefResolves'],
+                     'anEncodedHrefResolves',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aNameOutsideTheBmpResolvesAndAnInvalidEscapeDoesNot',
+                     'anAbsoluteXmlBaseUnderAnAuthorityKeepsIt',
+                     'anAuthorityMeansSomewhereElse',
+                     'anXmlBaseIsMergedAndJudgedOnTheResult'],
     ),
 
     # The three below repeat sabotages that already have controls, against a DIFFERENT test
@@ -12960,7 +13137,10 @@ CONTROLS = [
         find='        List<String> metsPaths = pathsEndingWith(entries, "METS.xml");',
         replace='        List<String> metsPaths = packageLevel(pathsEndingWith(entries, "METS.xml"));',
         test='TheProductsOwnPackageIsVerifiedTest',
-        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks',
+                     'theV1GoldenVerifiesAtP1'],
     ),
     dict(
         id='RU3',
@@ -12970,7 +13150,10 @@ CONTROLS = [
         find='    private static String percentDecoded(String reference, boolean plusIsSpace) {',
         replace='    private static String percentDecoded(String reference, boolean plusIsSpace) {\n        if (true) { return reference; }',
         test='TheProductsOwnPackageIsVerifiedTest',
-        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['theProductsOwnPackagePassesTheStructuralChecks',
+                     'theV1GoldenVerifiesAtP1'],
     ),
     dict(
         id='RV3',
@@ -13003,7 +13186,10 @@ CONTROLS = [
         find='            return StandardCharsets.UTF_8.newDecoder()',
         replace='            if (true) { return new String(bytes, StandardCharsets.UTF_8); }\n            return StandardCharsets.UTF_8.newDecoder()',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNameOutsideTheBmpResolvesAndAnInvalidEscapeDoesNot'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aNameOutsideTheBmpResolvesAndAnInvalidEscapeDoesNot',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload'],
     ),
     dict(
         id='RY3',
@@ -13013,7 +13199,10 @@ CONTROLS = [
         find='        if (!authority.isEmpty() && !authority.equals(".") && !authority.equalsIgnoreCase("localhost")) {\n            return null;\n        }',
         replace='        if (false) {\n            return null;\n        }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aForeignFileUriIsNotLocalAndAnEmptyAuthorityIsAbsolute',
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases'],
     ),
     dict(
         id='RZ3',
@@ -13034,7 +13223,10 @@ CONTROLS = [
         find='            return other != null && A_PATH.contains(normalised(other));',
         replace='            return false;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anOtherLocTypeIsReadBeforeDroppingTheReference'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anOtherLocTypeIsReadBeforeDroppingTheReference',
+                     'aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord'],
     ),
     dict(
         id='SB3',
@@ -13045,7 +13237,10 @@ CONTROLS = [
         find='        String merged = slash < 0 ? (authority.isEmpty() ? "" : "/") + reference\n                : path.substring(0, slash + 1) + reference;',
         replace='        String merged = path.endsWith("/") ? path + reference : path + "/" + reference;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anXmlBaseIsMergedAndJudgedOnTheResult'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anXmlBaseIsMergedAndJudgedOnTheResult',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     dict(
         id='SC3',
@@ -13131,7 +13326,10 @@ CONTROLS = [
         find='        String merged = slash < 0 ? (authority.isEmpty() ? "" : "/") + reference',
         replace='        String merged = slash < 0 ? "" + reference',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anAuthorityMeansSomewhereElse'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anAuthorityMeansSomewhereElse',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     dict(
         id='SJ3',
@@ -13141,7 +13339,11 @@ CONTROLS = [
         find='        // Anything else the producer DECLARED is not a URL. Listing the kinds that are not a\n        // path instead let an unlisted one — "URI", which producers write — be read as a\n        // package path, and a legitimate external identifier became a missing file (subagent,\n        // fourteenth review, P2). §9 says "not URL, not counted"; this now says the same.\n        return false;',
         replace='        return !java.util.Set.of("URN", "HANDLE", "DOI", "PURL", "ARK")\n                .contains(locType.toUpperCase(java.util.Locale.ROOT));',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord',
+                     'aLocTypeIsNormalisedAndANonUrlIsExternal',
+                     'aPayloadNamedOnlyByAnExternalLocatorIsNotEstablished'],
     ),
     dict(
         id='SK3',
@@ -13151,7 +13353,10 @@ CONTROLS = [
         find='        return value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(java.util.Locale.ROOT);',
         replace='        return value.toUpperCase(java.util.Locale.ROOT);',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aNonUrlLocTypeIsExternalAndOtherLocTypeMatchesOnTheWord',
+                     'aLocTypeIsNormalisedAndANonUrlIsExternal'],
     ),
     dict(
         id='SL3',
@@ -13184,7 +13389,12 @@ CONTROLS = [
         find='            // Refused outright: no decoded spelling, and no literal one either.\n            return spellings;',
         replace='            spellings.add(reference);\n            return spellings;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aRefusedTraversalDoesNotFallBackToItsLiteralSpelling'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aRefusedTraversalDoesNotFallBackToItsLiteralSpelling',
+                     'aDeclinedLocatorIsAmbiguousOnlyIfItWouldNameThePayload',
+                     'aRefusedReferenceIsRefusedTheSameWayHoweverSpelled',
+                     'anEncodedSeparatorDoesNotWalkOutOfThePackage'],
     ),
     dict(
         id='SO3',
@@ -13324,7 +13534,10 @@ CONTROLS = [
         find='        if (reference != null && reference.isEmpty()) {',
         replace='        if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anEmptyPathReferenceNamesTheBase',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     dict(
         id='TB3',
@@ -13350,7 +13563,10 @@ CONTROLS = [
         find='            return metsPath;',
         replace='            return null;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['anEmptyPathReferenceNamesTheBase'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anEmptyPathReferenceNamesTheBase',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     # TD3 was retired 2026-09-23 (17 巡目). It sabotaged the path-less xml:base guard at
     # collection time, and that arm is GONE: the rewrite answers a path-less reference in
@@ -13389,8 +13605,11 @@ CONTROLS = [
         find='            return scheme + authority + drive + reference;',
         replace='            return authority + drive + reference;',
         test='PackageIntegrityIsCheckedNotAssumedTest',
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anAbsoluteReferenceUnderASchemeOnlyBaseIsNotThisPackage',
-                     'aReferenceWithItsOwnAuthorityReplacesTheBases'],
+                     'aReferenceWithItsOwnAuthorityReplacesTheBases',
+                     'aBaseIsMergedOnItsPathNotItsQuery'],
     ),
     dict(
         id='TI3',
@@ -13534,20 +13753,20 @@ CONTROLS = [
     ),
     dict(
         id='TW3',
-        what="the canon's count of retired control ids stops being compared with the runner, so a retired or resurrected control leaves a stale figure reading as a measurement",
+        what="the canon states a gap count for a range above the sweep boundary when nothing sits above it — a count for a range that does not exist",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='この範囲には欠番が 14 ある',
-        replace='この範囲には欠番が 13 ある',
+        find='**5 回目以後の範囲（LN3〜JP4）には欠番が 14 あった**',
+        replace='この範囲には欠番が 0 ある。**5 回目以後の範囲（LN3〜JP4）には欠番が 14 あった**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
     dict(
         id='TX3',
-        what="the readiness document's verifier-core test count stops being compared with the verifier's own sources, so a number nobody can run from this module drifts",
+        what="the readiness document states a verifier test count the verifier does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='verifier-core 195 / cli 12 を別に',
+        find='verifier-core 196 / cli 12 を別に',
         replace='verifier-core 190 / cli 12 を別に',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessVerifierCountIsTheVerifiers'],
@@ -13604,11 +13823,11 @@ CONTROLS = [
     ),
     dict(
         id='UC3',
-        what="the SECOND reader of the readiness document's table row stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest's totalForms has read it since 3538ac296 on 2026-09-21, when the form stopped requiring the number to be bold — this control measures the redundant check, not a gap)",
+        what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1551 本 |',
-        replace='| 通し negative-control | **938/938 発火・exit 0（8 時間 52 分、2026-09-21〜22）** | 1139 本 |',
+        find='| 通し negative-control | **1551 本を流し 1545 発火（計 14 時間 29 分（8 時間 34 分 + 5 時間 55 分）、2026-09-25〜26、2 回の起動）— 不発 6・宣言漏れ 60 control は直して ID 指定で測り直した** | 1551 本 |',
+        replace='| 通し negative-control | **1551 本を流し 1545 発火（計 14 時間 29 分（8 時間 34 分 + 5 時間 55 分）、2026-09-25〜26、2 回の起動）— 不発 6・宣言漏れ 60 control は直して ID 指定で測り直した** | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
     ),
@@ -13650,7 +13869,7 @@ CONTROLS = [
         what="the readiness document's unit total drops below what the sources declare and no lock notices, so a figure left behind while the suite grew reads as a measurement",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**7,705 本 green**',
+        find='**7,706 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
@@ -13689,11 +13908,11 @@ CONTROLS = [
     # cannot fire is not evidence. Same reason as UI3.
     dict(
         id='UL3',
-        what="the SECOND reader of the plan document's added-since-sweep count stops reading it (EverySupportedCouchDbIsMeasuredTest has read it all along — this control measures the redundant check, not a gap)",
+        what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='5 回目以後に足した control は **613 本**（通し未実施）',
-        replace='5 回目以後に足した control は **213 本**（通し未実施）',
+        find='6 回目以後に足した control は **0 本**。',
+        replace='6 回目以後に足した control は **213 本**。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -13755,9 +13974,14 @@ CONTROLS = [
         find='        if (sorted) {\n            bodyNode.putObject("sort").put("direction", "descending")\n                    .put("timestamp", "last_edited_time");\n        }',
         replace='        if (false) {\n            bodyNode.putObject("sort").put("direction", "descending")\n                    .put("timestamp", "last_edited_time");\n        }',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['theSearchAsksForLastEditedOrder', 'aRefusedSortIsRetriedWithoutIt', 'anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
-                     # 33rd round: locks added since that this sabotage also fails
-                     'anUnorderedListingCutShortHoldsTheCheckpoint', 'theSortFallbackCountsTowardTheRequestCap'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['theSearchAsksForLastEditedOrder',
+                     'aRefusedSortIsRetriedWithoutIt',
+                     'anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
+                     'anUnorderedListingCutShortHoldsTheCheckpoint',
+                     'theSortFallbackCountsTowardTheRequestCap',
+                     'aPageThatFailedAtAnOlderMinuteIsPassedByTheCheckpoint'],
     ),
     dict(
         id='US3',
@@ -13767,9 +13991,13 @@ CONTROLS = [
         find='            if (response.statusCode() == 400 && sorted) {',
         replace='            if (false) {',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['aRefusedSortIsRetriedWithoutIt', 'anUnorderedListingCutShortHoldsTheCheckpoint', 'anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
-                     # 33rd round: locks added since that this sabotage also fails
-                     'theSortFallbackCountsTowardTheRequestCap'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aRefusedSortIsRetriedWithoutIt',
+                     'anUnorderedListingCutShortHoldsTheCheckpoint',
+                     'anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
+                     'theSortFallbackCountsTowardTheRequestCap',
+                     'aPageThatFailedAtAnOlderMinuteIsPassedByTheCheckpoint'],
     ),
     dict(
         id='UT3',
@@ -13779,7 +14007,10 @@ CONTROLS = [
         find='                if (sorted && since != null && lastEdited.compareTo(since) < 0) {',
         replace='                if (since != null && lastEdited.compareTo(since) < 0) {',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['anUnorderedListingIsReadToItsEndNotToTheCheckpoint'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['anUnorderedListingIsReadToItsEndNotToTheCheckpoint',
+                     'aPageThatFailedAtAnOlderMinuteIsPassedByTheCheckpoint'],
     ),
     dict(
         id='UU3',
@@ -13846,7 +14077,11 @@ CONTROLS = [
         find='            return order < 0 || (order == 0 && idsAtThatMinute.contains(page.id()));',
         replace='            return order < 0;',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['theListingStopsAtTheCheckpointMinute', 'aBudgetInsideAMinuteGroupIsResumedByTheNextPoll'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['theListingStopsAtTheCheckpointMinute',
+                     'aBudgetInsideAMinuteGroupIsResumedByTheNextPoll',
+                     'aPageThatFailedAtAnOlderMinuteIsPassedByTheCheckpoint'],
     ),
     dict(
         id='VA3',
@@ -13856,7 +14091,10 @@ CONTROLS = [
         find='            if (value >= minimum && value <= maximum) return value;',
         replace='            if (value >= minimum) return value;',
         test='NotionPartialReadsAreNotCompleteTest',
-        expect_fail=['aLagParameterBeyondTheBoundIsReportedNotUsed'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['aLagParameterBeyondTheBoundIsReportedNotUsed',
+                     'theTwoParameterBoundsAreNotConfused'],
     ),
     dict(
         id='VB3',
@@ -14018,7 +14256,10 @@ CONTROLS = [
         find='        return new FileListing(allFiles, false, "the cap of " + maxRequests + " listing request(s) was reached with "\n                + allFiles.size() + " file(s) read and more items still in the folder (raise the profile\'s "\n                + "boxListMaxRequests parameter)");',
         replace='        return new FileListing(allFiles, true, null);',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['boxAListingCutAtTheCapImportsNothing'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['boxAListingCutAtTheCapImportsNothing',
+                     'boxACutListingDoesNotClaimUnplaceableFilesWereImported'],
     ),
     dict(
         id='VR3',
@@ -14078,7 +14319,10 @@ CONTROLS = [
         find='        return new FileListing(allFiles, false, "the cap of " + maxRequests + " listing request(s) was reached with "\n                + allFiles.size() + " file(s) read and more entries still in the folder (raise the profile\'s "\n                + "dropboxListMaxRequests parameter)");',
         replace='        return new FileListing(allFiles, true, null);',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['dropboxAListingCutAtTheCapImportsNothing'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['dropboxAListingCutAtTheCapImportsNothing',
+                     'dropboxACutListingDoesNotClaimUnplaceableFilesWereImported'],
     ),
     dict(
         id='VX3',
@@ -14118,7 +14362,10 @@ CONTROLS = [
         find='            String next = unrecordedFailures > 0 ? null : checkpoint.after(nameable).encode();',
         replace='            String next = checkpoint.after(nameable).encode();',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['boxAnUnrecordedFailureHoldsTheCheckpoint'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['boxAnUnrecordedFailureHoldsTheCheckpoint',
+                     'boxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds'],
     ),
     dict(
         id='WB3',
@@ -14128,7 +14375,13 @@ CONTROLS = [
         find='            String nextMarker = root.path("next_marker").asText("");\n            if (nextMarker.isEmpty()) {\n                return new FileListing(allFiles, true, null);\n            }',
         replace='            String nextMarker = root.path("next_marker").asText("");\n            if (true) {\n                return new FileListing(allFiles, true, null);\n            }',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['boxListsTheWholeFolderAndTakesTheOldestFirst', 'boxAListingCutAtTheCapImportsNothing', 'boxAMarkerThatMovesButAddsNothingIsACut', 'boxARepeatedItemIsListedOnce'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['boxListsTheWholeFolderAndTakesTheOldestFirst',
+                     'boxAListingCutAtTheCapImportsNothing',
+                     'boxAMarkerThatMovesButAddsNothingIsACut',
+                     'boxARepeatedItemIsListedOnce',
+                     'boxACutListingDoesNotClaimUnplaceableFilesWereImported'],
     ),
     dict(
         id='WC3',
@@ -14158,7 +14411,10 @@ CONTROLS = [
         find='            String next = unrecordedFailures > 0 ? null : checkpoint.after(nameable).encode();',
         replace='            String next = checkpoint.after(nameable).encode();',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['dropboxAnUnrecordedFailureHoldsTheCheckpoint'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['dropboxAnUnrecordedFailureHoldsTheCheckpoint',
+                     'dropboxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds'],
     ),
     dict(
         id='WF3',
@@ -14308,7 +14564,15 @@ CONTROLS = [
         find='                if (at == null) {\n                    unplaceable.add(file);\n                    continue;\n                }',
         replace='                if (at == null) {\n                    at = "0000-01-01T00:00:00.000000000Z";\n                }',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['boxAFileWithoutAReadableTimestampIsImportedEveryPollAndNeverNamed', 'boxAYearBeyondFourDigitsIsNotPlaced', 'boxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes', 'boxUnplaceableFilesBeyondTheTryBoundAreStillReached'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['boxAFileWithoutAReadableTimestampIsImportedEveryPollAndNeverNamed',
+                     'boxAYearBeyondFourDigitsIsNotPlaced',
+                     'boxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes',
+                     'boxUnplaceableFilesBeyondTheTryBoundAreStillReached',
+                     'boxUnplaceableFilesBehindTheTryBoundAreReportedNotClaimed',
+                     'boxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds',
+                     'boxUntriedUnplaceableFilesAreNotBlamedOnFailuresThatDidNotHappen'],
     ),
     dict(
         id='WY3',
@@ -14358,7 +14622,15 @@ CONTROLS = [
         find='                if (at == null) {\n                    unplaceable.add(file);\n                    continue;\n                }',
         replace='                if (at == null) {\n                    at = "0000-01-01T00:00:00.000000000Z";\n                }',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['dropboxAFileWithoutAReadableTimestampIsImportedEveryPollAndNeverNamed', 'dropboxAYearBeyondFourDigitsIsNotPlaced', 'dropboxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes', 'dropboxUnplaceableFilesBeyondTheTryBoundAreStillReached'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['dropboxAFileWithoutAReadableTimestampIsImportedEveryPollAndNeverNamed',
+                     'dropboxAYearBeyondFourDigitsIsNotPlaced',
+                     'dropboxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes',
+                     'dropboxUnplaceableFilesBeyondTheTryBoundAreStillReached',
+                     'dropboxUnplaceableFilesBehindTheTryBoundAreReportedNotClaimed',
+                     'dropboxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds',
+                     'dropboxUntriedUnplaceableFilesAreNotBlamedOnFailuresThatDidNotHappen'],
     ),
     dict(
         id='WZ3',
@@ -14448,7 +14720,10 @@ CONTROLS = [
         find='                if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {',
         replace='                if (settled.size() + unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['dropboxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['dropboxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes',
+                     'dropboxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds'],
     ),
     dict(
         id='XL3',
@@ -14558,7 +14833,11 @@ CONTROLS = [
         find='                content = dropbox.downloadFile(file.id());',
         replace='                content = dropbox.downloadFile(file.pathDisplay());',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['dropboxTheDownloadIsByFileIdNotPath'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['dropboxTheDownloadIsByFileIdNotPath',
+                     'dropboxUnplaceableFilesBehindTheTryBoundAreReportedNotClaimed',
+                     'dropboxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds'],
     ),
     dict(
         id='XW3',
@@ -17643,7 +17922,10 @@ CONTROLS = [
         find='                if (unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {',
         replace='                if (settled.size() + unplaceableImported >= limit || unplaceableTried >= limit * ATTEMPTS_PER_BUDGET) {',
         test='FileShareFoldersAreReadWholeTest',
-        expect_fail=['boxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes'],
+        # Completed 2026-09-26 from the sixth full sweep's log: these locks failed under this
+        # sabotage too, undeclared — locks added to the same test class after it was last measured.
+        expect_fail=['boxAnUnplaceableFileDoesNotTakeTheBudgetOfPlaceableOnes',
+                     'boxUntriedUnplaceableFilesAfterUnrecordedFailuresSayTheCheckpointHolds'],
     ),
     dict(
         id='XK3',

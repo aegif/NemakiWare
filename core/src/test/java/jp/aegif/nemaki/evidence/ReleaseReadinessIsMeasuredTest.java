@@ -416,8 +416,11 @@ class ReleaseReadinessIsMeasuredTest {
         while (ids.find()) {
             declared.add(ids.group(1));
         }
-        Matcher boundary = Pattern.compile("境界 LM3").matcher(canon);
+        // The boundary the canon names — the highest id when the last full sweep ran. It was
+        // "境界 LM3" written into this lock, which the sixth sweep (to JP4) left behind.
+        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
         assertTrue(boundary.find(), "the canon no longer names the sweep boundary");
+        String last = boundary.group(1);
 
         // The three-letter sequence the ids run through, from the boundary to the newest: the
         // "3" generation AA3…ZZ3 and then the "4" generation AA4… that follows it (the first id
@@ -432,20 +435,29 @@ class ReleaseReadinessIsMeasuredTest {
         }
         String newest = declared.stream().filter(sequence::contains)
                 .max((a, b) -> sequence.indexOf(a) - sequence.indexOf(b)).orElseThrow();
-        int from = sequence.indexOf("LN3");
+        int at = sequence.indexOf(last);
         int to = sequence.indexOf(newest);
-        assertTrue(from >= 0 && to > from, "the sweep boundary is not in the id sequence");
+        assertTrue(at >= 0 && to >= at, "the sweep boundary " + last + " is not in the id sequence at or below "
+                + "the newest id " + newest);
+        Matcher stated = Pattern.compile("この範囲には欠番が (\\d+) ある").matcher(canon);
+        boolean statesACount = stated.find();
+        if (to == at) {
+            // Nothing was added after the last full sweep: there is no range above the boundary,
+            // and a gap count for one would be invented (the sixth sweep emptied it, 2026-09-26).
+            assertFalse(statesACount, "nothing sits above the sweep boundary " + last + ", and the canon "
+                    + "still states a gap count for a range above it: 「" + (statesACount ? stated.group() : "") + "」");
+            return;
+        }
         int gaps = 0;
-        for (String id : sequence.subList(from, to + 1)) {
+        for (String id : sequence.subList(at + 1, to + 1)) {
             if (!declared.contains(id)) {
                 gaps++;
             }
         }
 
-        Matcher stated = Pattern.compile("この範囲には欠番が (\\d+) ある").matcher(canon);
-        assertTrue(stated.find(), "the canon no longer states a gap count");
+        assertTrue(statesACount, "the canon no longer states a gap count");
         assertEquals(gaps, Integer.parseInt(stated.group(1)),
-                "the canon says " + stated.group(1) + " gaps between LN3 and " + newest
+                "the canon says " + stated.group(1) + " gaps between " + last + " and " + newest
                         + " and the runner leaves " + gaps + ". A retired or resurrected "
                         + "control moves this, and a stale figure reads as a measurement");
     }

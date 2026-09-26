@@ -480,6 +480,33 @@ class SipVerifierTest {
                         + "the package's own metadata went unread: " + result.asMap());
     }
 
+    /**
+     * A PREMIS carried ONLY inside the payload is content, not the package's PREMIS.
+     *
+     * <p>The lock above is held twice — the payload exclusion and the preference for the
+     * package's own metadata both drop the copy while the package's own PREMIS is there too — so
+     * it stayed green with the exclusion gone, and the sixth full sweep found its control (QK3)
+     * not firing. With the package's own PREMIS absent, the exclusion alone decides: counting
+     * content would check the bytes against a digest the package carries as content. The twin of
+     * the independent verifier's {@code aPayloadCopyDoesNotCloseTheMets}, second half.
+     */
+    @Test
+    @DisplayName("a PREMIS carried only inside the payload is not the package's")
+    void aPremisOnlyInsideThePayloadIsNotThePackages(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(2);
+        Path sip = zip(tmp, "premis-only-in-payload.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/representations/rep2/data/inner/metadata/preservation/premis.xml",
+                premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.NOT_PRESENT, outcomeOf(result, "payload digest"),
+                "a PREMIS carried as content was read as the package's own: " + result.asMap());
+    }
+
     @Test
     @DisplayName("a payload edited after packaging FAILS the digest check")
     void anEditedPayloadFails(@TempDir Path tmp) throws Exception {

@@ -335,4 +335,31 @@ class TheChainIsWalkedNotAssumedTest {
                 "the manifest asserts material the package does not carry, which is the "
                         + "package contradicting itself");
     }
+
+    /**
+     * The same contradiction on a rung whose material this check does not go on to read. On an
+     * RFC 3161 rung the missing token is refused a second time where the token is read, so the
+     * lock above stayed green with the presence check gone — the sixth full sweep found it not
+     * firing (JN3). An OpenTimestamps rung's bytes are read by its own profile, not here: only the
+     * presence check stands between a missing file and "unread material", which is UNAVAILABLE.
+     */
+    @Test
+    void aPresentRungThisCheckDoesNotReadWithNoFileFails() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("bundleId", "b");
+        manifest.put("createdAt", "2026-09-20T01:00:00Z");
+        manifest.put("files", List.of());
+        Map<String, Object> rung = new LinkedHashMap<>();
+        rung.put("kind", "OPENTIMESTAMPS");
+        rung.put("state", "PRESENT");
+        rung.put("path", "anchors/checkpoint.ots");
+        manifest.put("anchors", List.of(rung));
+        entries.put(DIR + "bundle-manifest.json", json(manifest).getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(Outcome.FAILED,
+                named(AnchoredCheckpoint.check(entries, null), "anchor commits root").outcome(),
+                "the manifest asserts OpenTimestamps material the package does not carry — a "
+                        + "contradiction, not material left for another profile to read");
+    }
 }

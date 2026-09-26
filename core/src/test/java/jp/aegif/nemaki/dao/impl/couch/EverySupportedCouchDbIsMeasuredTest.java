@@ -200,8 +200,8 @@ class EverySupportedCouchDbIsMeasuredTest {
         // then retired. So nothing here derives one figure from the others. What is checked is
         // that the enumeration covers exactly the controls declared from CK3 onward.
         // The set that has NEVER run together is "everything added after the last FULL sweep".
-        // Until the fifth sweep that was "CK3 onward"; the fifth ran all 938, so today it is
-        // empty and the boundary is the highest id that existed then (LM3). The canon names the
+        // Until the fifth sweep that was "CK3 onward"; the fifth ran all 938 and the boundary became
+        // the highest id that existed then (LM3); the sixth ran all 1551 and moved it to JP4. The canon names the
         // boundary and the count; both are checked against the runner, and the count is also
         // cross-checked against the sweep record itself (declared − swept), so an id added
         // BELOW the boundary — invisible to the id filter — still shows up as a mismatch.
@@ -217,7 +217,7 @@ class EverySupportedCouchDbIsMeasuredTest {
         assertTrue(latestRound > 0, "the canon records no completed sweep");
         // EVERY statement of the boundary. It is written in §1 and in §5, and reading only the
         // first let the second drift unread — the same one-arm defect as the counts.
-        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}3)").matcher(canon);
+        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
         String from = null;
         int boundaries = 0;
         while (boundary.find()) {
@@ -230,14 +230,16 @@ class EverySupportedCouchDbIsMeasuredTest {
         }
         assertTrue(boundaries >= 2, "the canon used to name the sweep boundary in more than one "
                 + "place and now names it " + boundaries + " time(s)");
-        // The "3" generation above the boundary, and the whole "4" generation that follows it
-        // (AA4 came after ZZ3; every "4" id is newer than any "3" id, whatever the letters say),
-        // in that order: the generation digit first, then the letters.
+        // Ids of the "3" and "4" generations, ordered the generation digit first, then the
+        // letters (AA4 came after ZZ3; every "4" id is newer than any "3" id, whatever the letters
+        // say). Unswept is everything above the boundary in that order, whichever generation the
+        // boundary is in: the sixth sweep ran everything up to JP4, and the filter that took every
+        // "4" id as unswept would have counted all of them (2026-09-26).
         java.util.Comparator<String> byGeneration = java.util.Comparator
                 .comparing((String id) -> id.charAt(2)).thenComparing(id -> id.substring(0, 2));
         java.util.SortedSet<String> unswept = new java.util.TreeSet<>(byGeneration);
         for (String id : seen) {
-            if ((id.compareTo(from) > 0 && id.matches("[A-Z]{2}3")) || id.matches("[A-Z]{2}4")) {
+            if (id.matches("[A-Z]{2}[34]") && byGeneration.compare(id, from) > 0) {
                 unswept.add(id);
             }
         }
