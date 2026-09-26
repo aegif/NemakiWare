@@ -12532,17 +12532,20 @@ CONTROLS = [
     ),
     dict(
         id='QF3',
-        what='the PREMIS lookup counts files inside the payload, so a package whose own PREMIS is gone is checked against a copy carried as content — while the METS closure refuses that copy, the two checks disagreeing about one name',
+        what='a nested package\'s own PREMIS is counted as a second package PREMIS — the payload exclusion and the package-over-representation preference both lost — so a CSIP AIP that keeps the original SIP as content cannot reach P0',
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
-        # Re-declared 2026-09-26 (the sixth full sweep): a nested package's own PREMIS is also
-        # dropped by packageLevel (the package's metadata over a representation's), so the
-        # nested-package lock is held by two arms and no single-point sabotage fires it. The
-        # payload exclusion alone decides the other half of aPayloadCopyDoesNotCloseTheMets.
-        find='            if (!isPayload(key) && key.endsWith(suffix)) {',
-        replace='            if (key.endsWith(suffix)) {',
+        # Re-pointed 2026-09-26 after the sixth full sweep (Codex P2): the nested-package lock is held
+        # by two adjacent arms — the payload exclusion (pathsEndingWith) and the preference for the
+        # package's own metadata (packageLevel) — so neither this control on the one nor QJ3 on the
+        # other fired it, and it was declared by none. The sabotage takes both away in one span:
+        # the protection the lock is about, lost.
+        find='        return top.isEmpty() ? paths : top;\n    }\n\n    /**\n     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.\n     *\n     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP\'s METS and PREMIS\n     * under a representation\'s own data directory. Counting them made the AIP "2 PREMIS documents"\n     * and {@code payload fixity} UNAVAILABLE: the nested-package over-refusal, surviving in the\n     * one lookup that was not moved (subagent, eighth review, P3).\n     */\n    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {\n        List<String> paths = new ArrayList<>();\n        for (String key : entries.keySet()) {\n            if (!isPayload(key) && key.endsWith(suffix)) {',
+        replace='        return paths;\n    }\n\n    /**\n     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.\n     *\n     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP\'s METS and PREMIS\n     * under a representation\'s own data directory. Counting them made the AIP "2 PREMIS documents"\n     * and {@code payload fixity} UNAVAILABLE: the nested-package over-refusal, surviving in the\n     * one lookup that was not moved (subagent, eighth review, P3).\n     */\n    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {\n        List<String> paths = new ArrayList<>();\n        for (String key : entries.keySet()) {\n            if (key.endsWith(suffix)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aPayloadCopyDoesNotCloseTheMets'],
+        expect_fail=['aNestedPackagesOwnMetadataIsNotCounted',
+                     'aPayloadCopyDoesNotCloseTheMets',
+                     'aRepresentationsOwnMetadataIsNotThePackages'],
     ),
 
     dict(
@@ -12700,7 +12703,8 @@ CONTROLS = [
         # there — the sabotage no longer compiled, and a compile failure stops a sweep. Found by
         # compiling every .java sabotage before the sweep. Same looseness, over each spelling.
         # The lookup is handed the DECODED spellings, so the looseness no longer reaches the
-        # literal one: the escaped-href lock stays green here (three other controls declare it),
+        # literal one: the escaped-href lock stays green here (two other controls declare it, QZ3 and
+        # RH3 — the commit said three, counting this one; subagent P3),
         # and the foreign file-URI lock fails instead (measured).
         find='        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
         replace='        for (String spelling : spellings) {\n            for (String path : entries.keySet()) {\n                if (path.endsWith(spelling)) {\n                    return path;\n                }\n            }\n        }\n        return null;\n    }\n\n    /**\n     * Is this candidate inside the package',
