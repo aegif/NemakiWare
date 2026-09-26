@@ -41,14 +41,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>Why this exists</h2>
  *
- * <p>Four of the six profiles cannot return {@code VERIFIED} in this version. Not because
- * anything is broken — each refusal is deliberate: the version does not parse anchor DER, does
- * not evaluate revocation material, and has no block header source for OpenTimestamps. But a
- * required check with no {@code PASSED} branch makes the whole profile structurally
- * unreachable, and profiles compose upward, so one such check sinks every profile above it.
+ * <p>Some of the six profiles cannot return {@code VERIFIED} in this version. Not because
+ * anything is broken — each refusal is deliberate: a required check this version does not
+ * perform has no {@code PASSED} branch, and the runbook names each such check. But that makes
+ * the whole profile structurally unreachable, and profiles compose upward, so one such check
+ * sinks every profile above it. Which profiles, and which checks, are computed below and held
+ * against the runbook — not listed here: this comment said "four of the six" and "does not
+ * parse anchor DER" after the anchor check had started reading RFC 3161 tokens and P2 could
+ * pass (review, P2).
  *
  * <p>Nobody had written that down. The release runbook told the operator that exit 3 is not
- * success without saying that for four profiles exit 3 is the ONLY outcome — so an operator who
+ * success without saying that for some profiles exit 3 is the ONLY outcome — so an operator who
  * requires P3 would tune a trust profile forever, or fold exit 3 into success in a script,
  * which is the one thing that turns all of this version's careful refusals into nothing.
  *
