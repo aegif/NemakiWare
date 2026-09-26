@@ -215,6 +215,7 @@ class EverySupportedCouchDbIsMeasuredTest {
             }
         }
         assertTrue(latestRound > 0, "the canon records no completed sweep");
+        java.util.Map<Integer, Integer> sweptInRound = jp.aegif.nemaki.evidence.LedgerText.sweptInRound(canon);
         // EVERY statement of the boundary. It is written in §1 and in §5, and reading only the
         // first let the second drift unread — the same one-arm defect as the counts.
         Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
@@ -282,9 +283,24 @@ class EverySupportedCouchDbIsMeasuredTest {
                 Matcher m = Pattern.compile(form).matcher(text);
                 while (m.find()) {
                     sweptSeen++;
-                    assertEquals(sweptThen, Integer.parseInt(m.group(1)),
-                            carrier + " says the last sweep ran " + m.group(1) + " and the "
-                                    + "sweep record says " + sweptThen);
+                    // The sweep the SENTENCE names, not always the latest: once a seventh sweep is
+                    // recorded, the plan's true 「6 回目…1551 本すべて」 would otherwise be compared
+                    // with the seventh and fail (Codex, P2). A sentence that names no round is
+                    // about the latest.
+                    String sentence = jp.aegif.nemaki.evidence.LedgerText.sentenceAround(text, m.start(1));
+                    int offset = m.start(1)
+                            - jp.aegif.nemaki.evidence.LedgerText.sentenceStart(text, m.start(1));
+                    Integer round = jp.aegif.nemaki.evidence.LedgerText.roundNamedNear(sentence, offset);
+                    int expected = sweptThen;
+                    if (round != null) {
+                        assertTrue(sweptInRound.containsKey(round), carrier + " records a sweep for "
+                                + "round " + round + ", which the canon does not: 「" + sentence.trim() + "」");
+                        expected = sweptInRound.get(round);
+                    }
+                    assertEquals(expected, Integer.parseInt(m.group(1)),
+                            carrier + " says sweep " + (round == null ? latestRound : round) + " ran "
+                                    + m.group(1) + " and the sweep record says " + expected
+                                    + ": 「" + sentence.trim() + "」");
                 }
             }
             for (String form : totalForms) {
@@ -369,12 +385,10 @@ class EverySupportedCouchDbIsMeasuredTest {
                 "core/src/main/webapp/ui/src/**",      // the screens a lock reads
                 "tools/negative-controls/**",          // the controls this class counts
                 "docs/design/fail-closed-reads.md")) { // the ledger it compares them with
-            int occurrences =
-                    yaml.split(java.util.regex.Pattern.quote("'" + needed + "'"), -1).length - 1;
-            assertEquals(2, occurrences,
-                    "'" + needed + "' should appear in BOTH the push and pull_request paths of "
-                            + WORKFLOW + " and appears " + occurrences + " time(s). A change to "
-                            + "it would not start the workflow that checks it");
+            assertTrue(jp.aegif.nemaki.evidence.LedgerText.listedInBothTriggers(yaml, needed),
+                    "'" + needed + "' is not a path entry of BOTH the push and pull_request "
+                            + "triggers of " + WORKFLOW + ". A change to it would not start the "
+                            + "workflow that checks it");
         }
     }
 

@@ -175,33 +175,24 @@ class ReleaseReadinessIsMeasuredTest {
         // total and failed here (2026-09-26). A sweep figure is compared with the sweep record
         // instead, so a stale one is still caught.
         // Each sweep the canon records, by round. A sweep figure is compared with the sweep its
-        // sentence names ("6 回目"), or with the latest when it names none — comparing every one
-        // with the latest would reject the true record of the sixth sweep the moment a seventh is
-        // written (subagent review, P3).
-        java.util.Map<Integer, Integer> sweptInRound = new java.util.HashMap<>();
-        int latestRound = 0;
-        Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
-                .matcher(read(CANON));
-        while (sweeps.find()) {
-            int round = Integer.parseInt(sweeps.group(1));
-            sweptInRound.put(round, Integer.parseInt(sweeps.group(2)));
-            latestRound = Math.max(latestRound, round);
-        }
-        assertTrue(latestRound > 0, "the canon records no completed sweep");
+        // sentence names ("6 回目"), and a figure whose sentence names no round is a TOTAL.
+        // Comparing every sweep figure with the latest would reject the true record of the sixth
+        // sweep the moment a seventh is written (subagent review, P3); taking the ending alone
+        // as the mark of a sweep let 「現行の control は 1551 本すべて」 hide a stale total (Codex,
+        // P3). What still passes: a stale total in a sentence that names a round AND equals that
+        // round's record — a figure cannot be told from that round's record by its words.
+        java.util.Map<Integer, Integer> sweptInRound = LedgerText.sweptInRound(read(CANON));
+        assertFalse(sweptInRound.isEmpty(), "the canon records no completed sweep");
         Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本(を流し|すべて|で完走|が通った)?")
                 .matcher(readiness);
         int exits = 0;
         while (everywhere.find()) {
             exits++;
-            // A sweep figure only where the SENTENCE is about a sweep — it names the round or
-            // the sweep itself. The ending alone was not enough: 「現行の control は 1551 本すべて」
-            // would have read as a record of the sixth sweep and hidden a stale total (Codex, P3).
-            String sentence = sentenceAround(readiness, everywhere.start());
-            Matcher named = Pattern.compile("(\\d+) 回目").matcher(sentence);
-            boolean namesARound = named.find();
-            if (everywhere.group(2) != null
-                    && (namesARound || sentence.contains("通し negative-control"))) {
-                int round = namesARound ? Integer.parseInt(named.group(1)) : latestRound;
+            String sentence = LedgerText.sentenceAround(readiness, everywhere.start());
+            int offset = everywhere.start() - LedgerText.sentenceStart(readiness, everywhere.start());
+            Integer round = everywhere.group(2) == null ? null
+                    : LedgerText.roundNamedNear(sentence, offset);
+            if (round != null) {
                 assertTrue(sweptInRound.containsKey(round), "the readiness document records a "
                         + "sweep for round " + round + ", which the canon does not: 「"
                         + sentence.trim() + "」");
@@ -1102,11 +1093,10 @@ class ReleaseReadinessIsMeasuredTest {
         for (String needed : List.of(
                 "docs/design/v3.4.0-evidence-and-residuals-plan.md",
                 "docs/design/v3.4-release-readiness.md")) {
-            int occurrences = yaml.split(Pattern.quote("'" + needed + "'"), -1).length - 1;
-            assertEquals(2, occurrences,
-                    "'" + needed + "' should appear in BOTH the push and pull_request paths of "
-                            + workflow + " and appears " + occurrences + " time(s). Editing a "
-                            + "count in it would not start the workflow that checks the count");
+            assertTrue(LedgerText.listedInBothTriggers(yaml, needed),
+                    "'" + needed + "' is not a path entry of BOTH the push and pull_request "
+                            + "triggers of " + workflow + ". Editing a count in it would not start "
+                            + "the workflow that checks the count");
         }
     }
 
@@ -1169,11 +1159,11 @@ class ReleaseReadinessIsMeasuredTest {
             // docs/operations and docs/compliance as directories, and a check that only walked
             // upwards from the last slash asked for 'docs/**' and missed the entry that covers
             // them — then climb.
-            boolean gated = occurrences(yaml, document) == 2
-                    || occurrences(yaml, document + "/**") == 2;
+            boolean gated = LedgerText.listedInBothTriggers(yaml, document)
+                    || LedgerText.listedInBothTriggers(yaml, document + "/**");
             for (int cut = document.lastIndexOf('/'); cut > 0 && !gated;
                     cut = document.lastIndexOf('/', cut - 1)) {
-                gated = occurrences(yaml, document.substring(0, cut) + "/**") == 2;
+                gated = LedgerText.listedInBothTriggers(yaml, document.substring(0, cut) + "/**");
             }
             if (!gated) {
                 ungated.add(document);
@@ -1186,9 +1176,6 @@ class ReleaseReadinessIsMeasuredTest {
                         + "ran: " + ungated);
     }
 
-    private static int occurrences(String yaml, String path) {
-        return yaml.split(Pattern.quote("'" + path + "'"), -1).length - 1;
-    }
 
     @Test
     @DisplayName("a finished sweep of fewer controls does not read as a sweep of today's")
@@ -1262,20 +1249,5 @@ class ReleaseReadinessIsMeasuredTest {
             assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "
                     + "added-since-sweep count anywhere, so nothing here can be checked");
         }
-    }
-
-    /** The sentence around a position: within its line, from the last 。 before it to the next. */
-    private static String sentenceAround(String text, int at) {
-        int lineStart = text.lastIndexOf('\n', at) + 1;
-        int lineEnd = text.indexOf('\n', at);
-        if (lineEnd < 0) {
-            lineEnd = text.length();
-        }
-        int start = Math.max(lineStart, text.lastIndexOf('。', at) + 1);
-        int stop = text.indexOf('。', at);
-        if (stop < 0 || stop > lineEnd) {
-            stop = lineEnd;
-        }
-        return text.substring(start, stop);
     }
 }

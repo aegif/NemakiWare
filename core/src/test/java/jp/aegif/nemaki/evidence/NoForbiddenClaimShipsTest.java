@@ -45,11 +45,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>What it looks at, and what it deliberately does not</h2>
  *
- * <p>Text that reaches a reader OUTSIDE this repository: release notes, the READMEs, every
- * document under docs/, and the UI's translation files. It does NOT scan docs/design/ (the plan,
- * this branch's residual register, the readiness record) or docs/history/, because those exist
- * precisely to discuss the forbidden claims — a lint that could not tell "do not say X" from "X"
- * would make the rule unwritable. A record that has to quote one belongs there.
+ * <p>Text that reaches a reader OUTSIDE this repository: release notes, the READMEs, every .md
+ * and .json under docs/ — design/ and history/ included, because a design document can be a
+ * release deliverable (the profile spec goes to the receiving organisation) and one made the
+ * claim outright (「署名検証により改ざん防止」, review, P2) — and the UI's translation files.
+ *
+ * <p>The documents whose job is to STATE the rule quote the phrases in order to forbid them. They
+ * are allowed exactly the quotes they carry today, by count ({@link #QUOTES}), not by directory:
+ * excluding the whole of design/ let a claim anywhere in it through.
+ *
+ * <p>Negated or not. A reader who skims keeps the phrase and loses the negation, so a limitation
+ * is written without it — the release notes say 「改ざんされていない」とは言いません and
+ * 「管理者による変更の防止を証明しません」, neither of which contains a phrase below.
  */
 class NoForbiddenClaimShipsTest {
 
@@ -77,9 +84,9 @@ class NoForbiddenClaimShipsTest {
      * <p>It was docs/operations and docs/compliance by name, and the AWS deployment guide at the
      * top of docs/ said 「改ざん防止保存が可能」 with nothing reading it (review, P2). Widening to
      * the top of docs/ alone then left docs/soc-templates/, which operators read, and the READMEs
-     * outside docs/ where they were (both reviews, P2 / P3). So docs/ is read WHOLE — a directory
-     * added tomorrow is read by default rather than forgotten — minus the two directories that
-     * discuss the claims ({@link #DISCUSSES_THE_CLAIMS}).
+     * outside docs/ where they were (both reviews, P2 / P3). So every .md and .json under docs/
+     * is read — a directory added tomorrow is read by default rather than forgotten. Other kinds
+     * of file under docs/ (an HTML report, SIEM templates) are not read.
      */
     private static final List<Shipped> SHIPPED = List.of(
             new Shipped(Path.of("../RELEASE_NOTES.md"), List.of(".md")),
@@ -89,9 +96,21 @@ class NoForbiddenClaimShipsTest {
             new Shipped(Path.of("../deploy"), List.of(".md")),
             new Shipped(Path.of("../docker"), List.of(".md")));
 
-    /** The two directories under docs/ that quote the forbidden claims in order to forbid them. */
-    private static final List<Path> DISCUSSES_THE_CLAIMS =
-            List.of(Path.of("../docs/design"), Path.of("../docs/history"));
+    /**
+     * The documents that state the rule, and exactly how many times each quotes each phrase.
+     * A quote more — a claim written into the document that forbids it — is an offence, and a
+     * quote fewer means this table is stale ({@link #theRuleIsQuotedOnlyWhereItIsStated}).
+     */
+    private static final Map<Path, Map<String, Integer>> QUOTES = Map.of(
+            Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"), Map.of(
+                    "電帳法対応", 1, "JIIMA認証済", 1, "改ざん防止", 1,
+                    "管理者でも変更できない", 1, "全て漏れなく取り込まれ", 1),
+            Path.of("../docs/design/authenticity-report/README.md"), Map.of("電帳法対応", 1));
+
+    /** How many times a phrase occurs in whitespace-squeezed text. */
+    private static int count(String squeezed, String phrase) {
+        return squeezed.split(java.util.regex.Pattern.quote(phrase), -1).length - 1;
+    }
 
     /**
      * The reader-facing files under one root. A root that yields none FAILS — it used to be
@@ -105,7 +124,6 @@ class NoForbiddenClaimShipsTest {
         } else if (Files.isDirectory(shipped.root())) {
             try (Stream<Path> walk = Files.walk(shipped.root())) {
                 walk.filter(Files::isRegularFile)
-                        .filter(p -> DISCUSSES_THE_CLAIMS.stream().noneMatch(p::startsWith))
                         .filter(p -> shipped.extensions().stream()
                                 .anyMatch(e -> p.toString().endsWith(e)))
                         .sorted()
@@ -156,8 +174,9 @@ class NoForbiddenClaimShipsTest {
                 // Whitespace removed before matching: "電帳法 対応" and "電帳法対応" are the
                 // same claim to a reader, and a lint a line break can defeat protects nothing.
                 String squeezed = text.replaceAll("\\s+", "");
+                Map<String, Integer> allowed = QUOTES.getOrDefault(file, Map.of());
                 FORBIDDEN.forEach((phrase, why) -> {
-                    if (squeezed.contains(phrase)) {
+                    if (count(squeezed, phrase) > allowed.getOrDefault(phrase, 0)) {
                         offences.add(file + " says 「" + phrase + "」 — " + why);
                     }
                 });
@@ -273,28 +292,25 @@ class NoForbiddenClaimShipsTest {
     }
 
     @Test
-    @DisplayName("the design documents are deliberately NOT linted")
-    void theDesignDocumentsAreNotLinted() throws IOException {
-        // The plan itself lists the forbidden claims, and the residual register discusses them.
-        // A lint that scanned those could not tell "do not say X" from "X", and the rule would
-        // become unwritable — so the scope above excludes them ON PURPOSE, and this records it
-        // so nobody "fixes" the scope later.
-        Path plan = Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md");
-        assertTrue(Files.exists(plan), "the plan is not at " + plan);
-        String text = Files.readString(plan, StandardCharsets.UTF_8).replaceAll("\\s+", "");
-        boolean mentionsAtLeastOne = FORBIDDEN.keySet().stream().anyMatch(text::contains);
-        assertTrue(mentionsAtLeastOne,
-                "the plan no longer states the forbidden claims, so either they moved or this "
-                        + "lint's list has drifted from the rule it enforces");
-
-        // The FILES read, not the roots named: docs/ is now a root, and its design/ and history/
-        // are kept out by exclusion — so what has to hold is that no excluded file is read.
+    @DisplayName("the rule is quoted only where it is stated, and exactly as often")
+    void theRuleIsQuotedOnlyWhereItIsStated() throws IOException {
+        // The plan states the forbidden claims, and a lint that could not let it would make the
+        // rule unwritable — so the documents that state it are allowed their quotes, by count.
+        // Exact both ways: a quote fewer means the allowance outlived the text it describes, and
+        // an allowance for a file this lint does not read would permit nothing and prove nothing.
+        List<Path> read = new ArrayList<>();
         for (Shipped shipped : SHIPPED) {
-            for (Path scanned : readerText(shipped)) {
-                assertTrue(DISCUSSES_THE_CLAIMS.stream().noneMatch(scanned::startsWith),
-                        "a design or history document is in the lint's scope: " + scanned
-                                + ". It would fail on the very document that states the rule");
-            }
+            read.addAll(readerText(shipped));
+        }
+        for (Map.Entry<Path, Map<String, Integer>> home : QUOTES.entrySet()) {
+            assertTrue(read.contains(home.getKey()), "an allowance names " + home.getKey()
+                    + ", which this lint does not read");
+            String squeezed = Files.readString(home.getKey(), StandardCharsets.UTF_8)
+                    .replaceAll("\\s+", "");
+            home.getValue().forEach((phrase, times) -> assertEquals(times.intValue(),
+                    count(squeezed, phrase), home.getKey() + " quotes 「" + phrase + "」 "
+                            + count(squeezed, phrase) + " time(s) and is allowed " + times
+                            + ". The allowance has to be the text's own count"));
         }
     }
 
