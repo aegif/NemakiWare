@@ -41,8 +41,14 @@ import java.util.regex.Pattern;
  * side), each of which a reviewer broke with a sentence the documents could plausibly contain:
  * two records in one sentence, a round after its figure, 「6 回目の通しの後に足した分」, a line
  * break before 「以後」 (both reviews, fifth and sixth rounds). A form that names its round in
- * the same token as its figure cannot be misattributed, and a figure written any other way is
- * read as the total — refused if it is not, with the form to use named in the failure.
+ * the same token as its figure cannot be misattributed, and a four-digit figure written any other
+ * way is read as the total — refused if it is not, with the form to use named in the failure.
+ *
+ * <p>What the form cannot stop: a sentence that uses it to say something else —
+ * 「現行の総数は 6 回目の通し（1551 本）と同じ」 reads as a true record of the sixth sweep, and the
+ * false claim about the total is in words this does not parse (Codex, seventh round). The total
+ * itself is carried by the documents' own total statements, which the locks compare with the
+ * runner; a sentence that restates it through a sweep figure is a review matter.
  */
 public final class LedgerText {
 
@@ -87,6 +93,63 @@ public final class LedgerText {
         return conflicts;
     }
 
+    /** A four-digit 「N 本」 — with the bold or the space a writer may leave out — and where it is. */
+    public record Figure(int value, int at, String context) { }
+
+    private static final Pattern FOUR_DIGIT_COUNT = Pattern.compile("(?<![0-9,])([0-9]{4})\\*{0,2} ?本");
+
+    /**
+     * The four-digit 「N 本」 figures in {@code text} that are NOT a sweep figure in its form nor
+     * a line of the canon's sweep record — each of which, in these documents, is today's control
+     * total. Comma-grouped numbers (「7,706 本」) are the unit and verifier test totals by this
+     * tree's convention and are not read.
+     */
+    public static List<Figure> figuresOutsideSweeps(String text) {
+        StringBuilder rest = new StringBuilder(text);
+        for (Pattern sweep : new Pattern[] {SWEEP_FIGURE, SWEEP_RECORD}) {
+            Matcher m = sweep.matcher(text);
+            while (m.find()) {
+                for (int i = m.start(); i < m.end(); i++) {
+                    rest.setCharAt(i, ' ');
+                }
+            }
+        }
+        List<Figure> figures = new ArrayList<>();
+        Matcher count = FOUR_DIGIT_COUNT.matcher(rest);
+        while (count.find()) {
+            figures.add(new Figure(Integer.parseInt(count.group(1)), count.start(),
+                    text.substring(Math.max(0, count.start() - 40),
+                            Math.min(text.length(), count.end() + 10)).replace('\n', ' ')));
+        }
+        return figures;
+    }
+
+    /**
+     * The lines of either trigger's {@code paths:} list that this helper cannot read as a plain
+     * entry: a negated pattern ({@code '!…'}, anywhere on a non-comment line — a folded scalar
+     * puts the {@code !} on the line after the dash, Codex seventh round) and a block-scalar item
+     * ({@code - >} / {@code - |}). Reported separately from "not listed" so a failure names what
+     * is actually there (subagent review, P3).
+     */
+    public static List<String> unreadablePathLines(String yaml) {
+        List<String> unreadable = new ArrayList<>();
+        for (String trigger : new String[] {"push", "pull_request"}) {
+            String paths = pathsOf(yaml, trigger);
+            for (String line : paths.split("\n")) {
+                String code = line.replaceFirst("\\s#.*$", "").replaceFirst("^\\s*#.*$", "");
+                if (code.contains("!") || code.matches("^\\s*-\\s*[>|].*")) {
+                    unreadable.add(trigger + ": " + line.trim());
+                }
+            }
+        }
+        return unreadable;
+    }
+
+    private static String pathsOf(String yaml, String trigger) {
+        return block(block(yaml, "\n  " + trigger + ":", "\n  [a-z_]+:|\n[a-z_]+:"),
+                "\n    paths:", "\n    [a-z_-]+:");
+    }
+
     /**
      * Whether {@code path} is an entry of the {@code paths:} list of BOTH the push and the
      * pull_request trigger, and neither list carries a negated pattern ({@code '!…'}).
@@ -103,11 +166,11 @@ public final class LedgerText {
     public static boolean listedInBothTriggers(String yaml, String path) {
         Pattern entry = Pattern.compile("(?m)^\\s*-\\s*(['\"]?)" + Pattern.quote(path)
                 + "\\1\\s*(#.*)?$");
-        Pattern negated = Pattern.compile("(?m)^\\s*-\\s*['\"]?!");
+        if (!unreadablePathLines(yaml).isEmpty()) {
+            return false;
+        }
         for (String trigger : new String[] {"push", "pull_request"}) {
-            String paths = block(block(yaml, "\n  " + trigger + ":", "\n  [a-z_]+:|\n[a-z_]+:"),
-                    "\n    paths:", "\n    [a-z_-]+:");
-            if (negated.matcher(paths).find() || !entry.matcher(paths).find()) {
+            if (!entry.matcher(pathsOf(yaml, trigger)).find()) {
                 return false;
             }
         }

@@ -58,6 +58,13 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
  */
 class EverySupportedCouchDbIsMeasuredTest {
 
+    /** How many sweep figures each progress document states in the one written form, today. */
+    private static final java.util.Map<String, Integer> SWEEP_FORMS_AT_LEAST = java.util.Map.of(
+            "fail-closed-reads.md", 5,
+            "v3.4.0-evidence-and-residuals-plan.md", 2,
+            "v3.4-release-readiness.md", 5);
+
+
     private static final Path WORKFLOW = Path.of("../.github/workflows/integration-tests.yml");
 
     /** The job that does the measuring. Named here once; every assertion below scopes to it. */
@@ -259,12 +266,11 @@ class EverySupportedCouchDbIsMeasuredTest {
         List<Path> carriers = List.of(canonFile,
                 Path.of("../docs/design/v3.4-release-readiness.md"),
                 Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"));
-        // Phrasings, by meaning. Each is a way one of these documents states one of the two
-        // numbers; the minimum counts below catch a rephrase that escapes them all.
-        // TWO numbers, two families. "The total today" and "what the last sweep ran" were one
-        // family until the fifth sweep made them differ by design: the moment a control is
-        // added, the sweep count stays 938 and the total moves. One family would fail on the
-        // historical sentence; no family would let it go stale.
+        // Phrasings, by meaning. The total's own statements are read below; a sweep figure has
+        // one written form; and any other four-digit 「N 本」 is the total. TWO numbers: "the
+        // total today" and "what a sweep ran" were one until the fifth sweep made them differ by
+        // design — the moment a control is added, the sweep's count stays and the total moves.
+        // The per-document floors of the form catch a figure rewritten into prose.
         List<String> totalForms = List.of("コントロール \\*\\*(\\d+)\\*\\*",
                 "負のコントロール \\*\\*(\\d+) 本\\*\\*",
                 "(?m)^\\| 通し negative-control \\|[^|]*\\| (\\d+) 本 \\|");
@@ -282,9 +288,20 @@ class EverySupportedCouchDbIsMeasuredTest {
         for (Path carrier : carriers) {
             assertTrue(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
             String text = Files.readString(carrier, StandardCharsets.UTF_8);
+            // Any other four-digit 「N 本」 in these documents is today's total — the readiness
+            // lock applied this to the readiness document only, so a sweep figure written back
+            // into prose in the canon or the plan went unread (both reviews, seventh round).
+            for (jp.aegif.nemaki.evidence.LedgerText.Figure total
+                    : jp.aegif.nemaki.evidence.LedgerText.figuresOutsideSweeps(text)) {
+                assertEquals(declared, total.value(), carrier + " states " + total.value()
+                        + " controls and the runner declares " + declared + ": 「" + total.context()
+                        + "」. If this is what a sweep ran, write it as 「N 回目の通し（M 本）」");
+            }
+            int formsHere = 0;
             Matcher figure = jp.aegif.nemaki.evidence.LedgerText.SWEEP_FIGURE.matcher(text);
             while (figure.find()) {
                 sweptSeen++;
+                formsHere++;
                 int round = Integer.parseInt(figure.group(1));
                 assertTrue(sweptInRound.containsKey(round), carrier + " records a sweep for round "
                         + round + ", which the canon does not: 「" + figure.group() + "」");
@@ -292,6 +309,14 @@ class EverySupportedCouchDbIsMeasuredTest {
                         carrier + " says " + figure.group() + " and the canon's record of round "
                                 + round + " says " + sweptInRound.get(round));
             }
+            // Per document, at least as many as it states today: a figure written back into prose
+            // leaves the form, and a three-digit one is not a total either, so only this count
+            // notices it went (both reviews, seventh round: 8 forms against a floor of 5 across
+            // all three documents let three go).
+            int floor = SWEEP_FORMS_AT_LEAST.get(carrier.getFileName().toString());
+            assertTrue(formsHere >= floor, carrier + " states " + formsHere + " sweep figures in the "
+                    + "form 「N 回目の通し（M 本）」 and stated " + floor + " — one was rewritten into "
+                    + "prose, where no lock reads it");
             for (String form : totalForms) {
                 Matcher m = Pattern.compile(form).matcher(text);
                 while (m.find()) {
@@ -317,8 +342,8 @@ class EverySupportedCouchDbIsMeasuredTest {
                 + "least three times between them and now state it " + totalsSeen + " time(s). "
                 + "Either a statement went away or its wording drifted out of this check's "
                 + "reach, which is exactly how the plan's copy went stale");
-        assertTrue(sweptSeen >= 5, "the three documents used to state what the last sweep ran "
-                + "at least five times and now state it " + sweptSeen + " time(s)");
+        assertTrue(sweptSeen >= 12, "the three documents state sweep figures in the form "
+                + sweptSeen + " time(s) between them and stated 12");
         assertTrue(unsweptSeen >= 4, "the three documents used to state the added-since-sweep "
                 + "count at least four times between them and now state it " + unsweptSeen
                 + " time(s), so a statement has drifted out of reach");
@@ -370,6 +395,9 @@ class EverySupportedCouchDbIsMeasuredTest {
         // (Codex, round 3). Nothing then measured the three lines — so the same hole could be
         // reopened, one line at a time, in the file that fixed it (subagent review, P2).
         String yaml = workflow();
+        assertEquals(List.of(), jp.aegif.nemaki.evidence.LedgerText.unreadablePathLines(yaml),
+                "the workflow's paths carry a negated pattern or a block scalar, so which files "
+                        + "start it cannot be read from the list — this is not a missing entry");
         for (String needed : List.of(
                 "core/src/main/webapp/ui/src/**",      // the screens a lock reads
                 "tools/negative-controls/**",          // the controls this class counts

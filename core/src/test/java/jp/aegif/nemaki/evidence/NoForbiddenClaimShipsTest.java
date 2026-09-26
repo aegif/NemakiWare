@@ -120,11 +120,16 @@ class NoForbiddenClaimShipsTest {
                             + "本モックは**「InterPARES準拠」「OAIS認証」「ISO16363認証済み」「電帳法対応」を一切主張しない**"));
 
     /**
-     * Whitespace a reader does not see as a break between two characters: ASCII space, the
-     * ideographic space (U+3000), no-break and zero-width spaces. {@code \\s} alone let
-     * 「改ざん　防止」 through with a full-width space in it (subagent review, P3).
+     * What a reader does not see between two characters: whitespace of any script (the
+     * ideographic space U+3000, no-break spaces — Unicode Z) and invisible format characters
+     * (zero-width spaces and joiners, the word joiner U+2060, the BOM — Unicode Cf).
+     * {@code \\s} alone let 「改ざん　防止」 through with a full-width space in it (subagent
+     * review, P3), and the first widening still let a word joiner through (Codex, P3).
      */
-    private static final String INVISIBLE = "[\\s\\p{Z}\\u200B\\uFEFF]+";
+    private static final String INVISIBLE = "[\\s\\p{Z}\\p{Cf}]+";
+
+    /** Markdown's HTML comments: in the file, not on the page. */
+    private static final String HTML_COMMENT = "(?s)<!--.*?-->";
 
     /** How many times a phrase occurs in whitespace-squeezed text. */
     private static int count(String squeezed, String phrase) {
@@ -134,8 +139,14 @@ class NoForbiddenClaimShipsTest {
     /** The file's text, whitespace removed, with the passages that state the rule taken out. */
     private static String claimsIn(Path file, String text) {
         String squeezed = text.replaceAll(INVISIBLE, "");
+        String shown = text.replaceAll(HTML_COMMENT, "").replaceAll(INVISIBLE, "");
         for (String passage : RULE_STATED_IN.getOrDefault(file, List.of())) {
-            squeezed = squeezed.replace(passage, "");
+            // Only a passage a reader is shown states the rule. The same words inside an HTML
+            // comment are in the file and not on the page, so they are not allowed as the
+            // rule's statement (Codex, seventh round) — and are still read as claims.
+            if (shown.contains(passage)) {
+                squeezed = squeezed.replace(passage, "");
+            }
         }
         return squeezed;
     }
@@ -335,7 +346,7 @@ class NoForbiddenClaimShipsTest {
             assertTrue(read.contains(home.getKey()), "an allowance names " + home.getKey()
                     + ", which this lint does not read");
             String squeezed = Files.readString(home.getKey(), StandardCharsets.UTF_8)
-                    .replaceAll(INVISIBLE, "");
+                    .replaceAll(HTML_COMMENT, "").replaceAll(INVISIBLE, "");
             for (String passage : home.getValue()) {
                 assertEquals(1, count(squeezed, passage), home.getKey() + " no longer states the "
                         + "rule in the passage this lint allows (or states it twice): 「" + passage

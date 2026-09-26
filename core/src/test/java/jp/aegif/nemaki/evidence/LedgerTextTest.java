@@ -52,6 +52,18 @@ class LedgerTextTest {
     }
 
     @Test
+    @DisplayName("a four-digit figure outside the form is today's total, whichever way it is spaced")
+    void aFigureOutsideTheFormIsATotal() {
+        List<Integer> totals = LedgerText.figuresOutsideSweeps(
+                "6 回目の通し（1551 本）が流れた。総数は 1578 本、**1578** 本、1578本。"
+                        + "6 回目 2026-09-25〜26（1551 本、…）。単体は 7,706 本。")
+                .stream().map(LedgerText.Figure::value).toList();
+        assertEquals(List.of(1578, 1578, 1578), totals, "the form and the canon's record line are "
+                + "sweep figures, comma-grouped test totals are not control counts, and the rest is "
+                + "the total however it is spaced or bolded");
+    }
+
+    @Test
     @DisplayName("a round recorded twice with different numbers is a conflict")
     void aRoundRecordedTwiceIsAConflict() {
         String canon = "6 回目 2026-09-25〜26（1500 本、下書き）\n6 回目 2026-09-25〜26（1551 本、…）";
@@ -70,6 +82,15 @@ class LedgerTextTest {
                 "README.md"), "a double-quoted entry starts the workflow as a single-quoted one does");
         assertTrue(LedgerText.listedInBothTriggers(both.replace("- 'README.md'", "- README.md"),
                 "README.md"), "a bare entry starts the workflow as a quoted one does");
+        assertTrue(LedgerText.listedInBothTriggers(both.replace("- 'README.md'", "- 'README.md'  # the readme"),
+                "README.md"), "an entry with a comment after it starts the workflow");
+        String folded = both.replace("      - 'README.md'\n\njobs:",
+                "      - 'README.md'\n      - >-\n        !README.md\n\njobs:");
+        assertFalse(LedgerText.listedInBothTriggers(folded, "README.md"),
+                "a folded scalar puts the negation on the line after the dash (Codex, seventh round)");
+        assertEquals(List.of("pull_request: - >-", "pull_request: !README.md"),
+                LedgerText.unreadablePathLines(folded),
+                "the lines that cannot be read as plain entries are reported as what they are");
         assertFalse(LedgerText.listedInBothTriggers(
                 both.replace("  pull_request:\n    branches: [ master ]\n    paths:\n      - 'README.md'\n",
                         "  pull_request:\n    branches: [ master ]\n    paths:\n      - 'x'\n"

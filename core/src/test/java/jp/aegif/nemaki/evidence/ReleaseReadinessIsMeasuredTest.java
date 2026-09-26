@@ -182,7 +182,6 @@ class ReleaseReadinessIsMeasuredTest {
                 "the canon records a sweep round twice with different numbers, so which one a "
                         + "figure is checked against depends on the order they are written in");
         int exits = 0;
-        StringBuilder totals = new StringBuilder(readiness);
         Matcher sweep = LedgerText.SWEEP_FIGURE.matcher(readiness);
         while (sweep.find()) {
             exits++;
@@ -192,18 +191,12 @@ class ReleaseReadinessIsMeasuredTest {
             assertEquals(sweptInRound.get(round), Integer.parseInt(sweep.group(2)),
                     "the readiness document says " + sweep.group() + " and the canon's record of "
                             + "round " + round + " says " + sweptInRound.get(round));
-            for (int i = sweep.start(); i < sweep.end(); i++) {
-                totals.setCharAt(i, ' ');
-            }
         }
-        Matcher everywhere = Pattern.compile("(?<![0-9,])([0-9]{4}) 本").matcher(totals);
-        while (everywhere.find()) {
+        for (LedgerText.Figure total : LedgerText.figuresOutsideSweeps(readiness)) {
             exits++;
-            int at = everywhere.start();
-            assertEquals(declared.size(), Integer.parseInt(everywhere.group(1)),
-                    "the readiness document states " + everywhere.group(1) + " controls and the "
-                            + "runner declares " + declared.size() + ": 「"
-                            + readiness.substring(Math.max(0, at - 40), Math.min(readiness.length(), at + 20))
+            assertEquals(declared.size(), total.value(),
+                    "the readiness document states " + total.value() + " controls and the runner "
+                            + "declares " + declared.size() + ": 「" + total.context()
                             + "」. If this is what a sweep ran, write it as 「N 回目の通し（M 本）」");
         }
         // The CANON states it too, in its own wording, and was not read here — so updating the
@@ -1089,6 +1082,9 @@ class ReleaseReadinessIsMeasuredTest {
         // widened by hand for a fourth time is the wrong shape. Each class guards its own inputs.
         Path workflow = Path.of("../.github/workflows/integration-tests.yml");
         String yaml = read(workflow);
+        assertEquals(List.of(), LedgerText.unreadablePathLines(yaml), "the workflow's paths carry "
+                + "a negated pattern or a block scalar, so which files start it cannot be read "
+                + "from the list — this is not a missing entry");
         for (String needed : List.of(
                 "docs/design/v3.4.0-evidence-and-residuals-plan.md",
                 "docs/design/v3.4-release-readiness.md")) {
@@ -1149,6 +1145,9 @@ class ReleaseReadinessIsMeasuredTest {
                 "the locks that read the release notes and docs/ as a root are not seen here, so "
                         + "this check no longer sees files outside docs/ or directory roots: " + read);
 
+        assertEquals(List.of(), LedgerText.unreadablePathLines(yaml), "the workflow's paths carry "
+                + "a negated pattern or a block scalar, so which files start it cannot be read "
+                + "from the list — this is not a missing entry");
         SortedSet<String> ungated = new TreeSet<>();
         for (String document : read) {
             // Either the file itself is listed, or a directory above it is listed with /**.
