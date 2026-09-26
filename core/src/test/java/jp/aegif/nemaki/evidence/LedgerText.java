@@ -100,9 +100,10 @@ public final class LedgerText {
 
     /**
      * The four-digit 「N 本」 figures in {@code text} that are NOT a sweep figure in its form nor
-     * a line of the canon's sweep record — each of which, in these documents, is today's control
-     * total. Comma-grouped numbers (「7,706 本」) are the unit and verifier test totals by this
-     * tree's convention and are not read.
+     * inside text shaped like a line of the canon's sweep record (「6 回目 2026-09-25〜26（1551 本」
+     * — masked in whichever document it appears, not only the canon) — each of which, in these
+     * documents, is today's control total. Comma-grouped numbers (「7,706 本」) are the unit and
+     * verifier test totals by this tree's convention and are not read.
      */
     public static List<Figure> figuresOutsideSweeps(String text) {
         StringBuilder rest = new StringBuilder(text);

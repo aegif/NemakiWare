@@ -342,8 +342,10 @@ class EverySupportedCouchDbIsMeasuredTest {
                 + "least three times between them and now state it " + totalsSeen + " time(s). "
                 + "Either a statement went away or its wording drifted out of this check's "
                 + "reach, which is exactly how the plan's copy went stale");
-        assertTrue(sweptSeen >= 12, "the three documents state sweep figures in the form "
-                + sweptSeen + " time(s) between them and stated 12");
+        // No total floor for the form: the per-document floors above sum to it, so a total floor
+        // was satisfied whenever they were and hid whether they were there at all (subagent
+        // review, eighth round — KS4 fired through the total with the per-document floors gone).
+        assertTrue(sweptSeen > 0, "no sweep figure is stated in the form in any document");
         assertTrue(unsweptSeen >= 4, "the three documents used to state the added-since-sweep "
                 + "count at least four times between them and now state it " + unsweptSeen
                 + " time(s), so a statement has drifted out of reach");
