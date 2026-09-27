@@ -25,8 +25,11 @@ bean が無ければ 503）:
 
 `closeCheckpoint` の戻りは `status` = `success` / `noop`（新しい entry が無い）/ `error`（未確定の
 backlog などで封じられない）で、controller は `noop` を 200、`error` を 409 で返し、封入は
-`success` のときだけ（:103-208）。`AnchorService.anchor` の `refusedReason` は 2 つ（`evidence/anchor/AnchorService.java:240-258`）: **receipt を保存できなかった**
-（commitment は成立しており、再送は回復ではなく新しい commitment を作る — `lost`）と、**構成された段が全部 FAILED**。
+`success` のときだけ（:103-208）。`AnchorService.anchor` の `refusedReason`（`evidence/anchor/AnchorService.java:209-261`）は**送る前**と**送った後**に分かれる。送る前（`refusalFor` :574-605、
+何も送っていない）: checkpoint が null、Merkle root が無い、自分の内容に hash しない（改変か別版）、台帳が未配線、台帳の head が読めない、
+台帳が checkpoint の先へ進んでいる。送った後の 2 つ: **receipt を保存できなかった**（`lost`）と、**構成された段が全部 FAILED**。`lost` は `persist()` が false を返した段の集合で（:494-530 — 保存の例外は FAILED 以外の receipt を全部
+`lost` にする）、構成された段の CONFIRMED / PENDING なら commitment は成立しており再送は回復ではなく新しい commitment を作る。
+**未構成の段の `NOT_CONFIGURED` receipt の保存失敗も `lost` に入る**（外部の commitment は無い — c35 Codex P3）。
 
 ### 1.2 定期実行は意図して無い
 
@@ -146,8 +149,12 @@ for each repositoryId（既存の repository 設定にあるもの）:
     success  → 何もしない（次の tick で件数 0 になる）
     noop     → 記録だけ（件数 ≥ 1 なのに noop なら WARN — 台帳と checkpoint の読みが食い違っている）
     error    → 記録。次に試すのは minInterval 後（拒否を 60 秒ごとに繰り返さない）
-    refused  → 記録。全段 FAILED なら retryUnsettled の timer に任せる。receipt を保存できなかった（lost）
-               なら再送しない — 再送は回復ではなく新しい commitment を作る（AnchorService の注記。手順は着手時に決める）
+    refused  → 記録。理由で分ける（AnchorService の腕ごと。手順は着手時に確定）:
+               送る前の拒否（root 無し／自分の内容に hash しない／台帳未配線／head が読めない／台帳が進んだ）は
+               何も送っていないので、次の tick で再判定するだけ（「台帳が進んだ」は次の checkpoint で解消する）。
+               全段 FAILED なら retryUnsettled の timer に任せる。lost に構成された段の receipt が含まれるなら
+               再送しない — 再送は回復ではなく新しい commitment を作る。lost が NOT_CONFIGURED の保存失敗だけなら
+               store の障害として記録し、次の tick の判定に任せる
 ```
 
 - **`upgrade-pending`**: 段 2（OTS）が構成されていて、`receiptStore.pending(domain, 1)` が空でないとき、

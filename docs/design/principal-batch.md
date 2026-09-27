@@ -102,7 +102,7 @@ POST /core/api/v1/cmis/repositories/{repo}/principals/batch/execute
 | `kind` | `users` / `groups` / `memberships` | 必須 |
 | `operation` | `create` / `update` / `delete`（users, groups）、`add` / `remove` / `replace`（memberships） | 必須 |
 | `onUnexpected` | `abort`（既定）/ `skip` | execute の即実行だけ |
-| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外の kind / operation で `file` が付いていれば 400 |
+| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外（`passwordPresent` でない plan）で `file` が付いていれば 400 |
 
 ### 3.2 preview の応答
 
@@ -141,7 +141,7 @@ POST /core/api/v1/cmis/repositories/{repo}/principals/batch/execute
 | 全部適用（skip / forbidden を含んでよい） | 200 | `applied` |
 | `abort` で想定外が 1 行でもある | 409 | `refused`（**0 件書いた**、`counts.applied = 0`） |
 | 適用中に失敗した | 500 | `partial`。`stoppedAt` に止まった行、`rows` は `applied` / `notApplied` / `failed` を行ごとに |
-| `planId` の期限切れ・snapshot 不一致・別ノードの plan | 409 | `refused`、`reason` = `PLAN_EXPIRED` / `SNAPSHOT_CHANGED` / `PLAN_UNKNOWN` |
+| `planId` の期限切れ・snapshot 不一致・別ノードの plan・再送ファイルの不一致 | 409 | `refused`、`reason` = `PLAN_EXPIRED` / `SNAPSHOT_CHANGED` / `PLAN_UNKNOWN` / `FILE_DIGEST_CHANGED` |
 | 上限超過 | 413 | |
 | CSV が読めない（列不足・重複 ID・不正 UTF-8） | 400 | 行番号つきの理由 |
 
@@ -218,6 +218,7 @@ preview は `Plan`（kind / operation / 行の正規化結果 / `snapshotHash` /
 `(id, 更新時刻または _rev)` を並べた digest。execute は
 
 1. `planId` が無い・期限切れ → 409 `PLAN_UNKNOWN` / `PLAN_EXPIRED`
+1'. `passwordPresent` の plan で `file` が無い → 400。あって `fileDigest` が plan と違う → 409 `FILE_DIGEST_CHANGED`（**0 件書く**）
 2. 対象を読み直して `snapshotHash` を再計算、不一致 → 409 `SNAPSHOT_CHANGED`（**0 件書く**）
 3. 一致 → 行を順に適用
 
@@ -270,7 +271,7 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
   3. **preview 表**（`verdict` で色分け、`reason` と `message`、`counts`、`adminGrants`、
      `passwordPresent`）。想定外が 1 行でもあれば「確認して実行」ボタンは有効のまま、ただし
      実行時に `abort` で跳ねることを段に書く
-  4. 「確認して実行」（`planId`。users の create / update は §6.1 のとおり同じファイルを再送）
+  4. 「確認して実行」（`planId`。`passwordPresent` の plan だけは §6.1 のとおり同じファイルを再送し、それ以外は `planId` のみ）
 - 「想定外を飛ばして実行」は**別ボタン**で、確認ダイアログ付き、既定にしない。
 - 結果表: 行ごとの `outcome`。`partial` のときは `stoppedAt` を先頭に。
 - 呼び出しは新しい `core/src/main/webapp/ui/src/services/principalBatch.ts`（`AuthService.getAuthHeaders()` を付ける —
