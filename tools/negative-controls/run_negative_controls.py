@@ -17927,7 +17927,7 @@ CONTROLS = [
         module='core',
         file='docs/design/v3.4-release-readiness.md',
         find='**6 回目の通し（1551 本）が 2026-09-25〜26 に 2 回の起動で、',
-        replace='**6 回目の通し（1586 本）が 2026-09-25〜26 に 2 回の起動で、',
+        replace='**6 回目の通し（1592 本）が 2026-09-25〜26 に 2 回の起動で、',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
     ),
