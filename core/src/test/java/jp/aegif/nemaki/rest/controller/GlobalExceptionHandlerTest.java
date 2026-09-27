@@ -32,11 +32,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * What a 5xx from {@code /core/api/v1/**} tells the client, and what it does not.
  *
  * <p>The handler used to copy {@code ex.getMessage()} into the {@code error} field of every 500
- * — CodeQL java/error-message-exposure #1410, reached through AuthenticityReportController but
- * true of every controller under {@code rest.controller}. An unexpected exception's message is
- * whatever the failing layer put there: a JDBC URL, a file path, a class name. The client gets
- * a fixed text and an incident id; the message goes to the log under that id (owner decision,
- * 2026-09-28).
+ * under {@code rest.controller}. That is the HANDLER path. CodeQL java/error-message-exposure
+ * #1410 itself points at a different path: AuthenticityReportController.reportHtml (line 111)
+ * rendering the assembler's UNAVAILABLE reasons, which carried the store exception's message —
+ * fixed in AuthenticityReportAssembler and locked by AuthenticityReportDoesNotLeakExceptionsTest.
+ * Both paths follow the same rule: an unexpected exception's message is whatever the failing
+ * layer put there (a JDBC URL, a file path, a class name), so the client gets a fixed text and
+ * an incident id, and the message goes to the log under that id (owner decision, 2026-09-28).
  *
  * <p>Both directions, because over-suppressing is the other defect this branch is about: a 400
  * for an IllegalArgumentException is the product answering "your request is wrong, here is

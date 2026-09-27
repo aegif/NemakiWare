@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Gathers one document's evidence into an {@link AuthenticityReport} (P1-4).
@@ -134,10 +135,8 @@ public class AuthenticityReportAssembler {
         try {
             sections.add(contentSection(repositoryId, content));
         } catch (RuntimeException e) {
-            logger.warn("The content section of the authenticity report for {} failed: {}",
-                    repositoryId, e.getMessage());
             sections.add(new Section("content", Verdict.UNAVAILABLE,
-                    Map.of("reason", String.valueOf(e.getMessage())),
+                    couldNotRead("content", "the stored bytes could not be examined", e),
                     "The stored bytes could not be examined, so they were not checked. This is "
                             + "NOT a finding that they are damaged, and the other sections of "
                             + "this report were built normally."));
@@ -275,9 +274,8 @@ public class AuthenticityReportAssembler {
             rows = maintenanceStore.listCapturedForObject(repositoryId, objectId,
                     CUSTODY_ROW_LIMIT);
         } catch (Exception e) {
-            logger.warn("Authenticity report could not read custody rows for {}/{}: {}",
-                    repositoryId, objectId, e.getMessage());
-            return new Section("custody", Verdict.UNAVAILABLE, Map.of("reason", e.getMessage()),
+            return new Section("custody", Verdict.UNAVAILABLE,
+                    couldNotRead("custody", "the custody rows could not be read", e),
                     "The custody rows could not be read. " + silenceIsNotAbsence);
         }
         if (rows == null || rows.isEmpty()) {
@@ -365,9 +363,8 @@ public class AuthenticityReportAssembler {
                     : ledgerStore.range(domain, Math.max(0, highest - LEDGER_ENTRY_LIMIT + 1),
                             highest, LEDGER_ENTRY_LIMIT + 1);
         } catch (Exception e) {
-            logger.warn("Authenticity report could not read the ledger for {}: {}", repositoryId,
-                    e.getMessage());
-            return new Section("ledger", Verdict.UNAVAILABLE, Map.of("reason", e.getMessage()),
+            return new Section("ledger", Verdict.UNAVAILABLE,
+                    couldNotRead("ledger", "the ledger could not be read", e),
                     "The ledger could not be read, so it was not checked. " + notIndependent);
         }
         // Rows the store returned and could not decode are NOT in `entries`. With all of them
@@ -449,7 +446,7 @@ public class AuthenticityReportAssembler {
             entries = ledgerStore.findBySubject(repositoryId, objectId, LEDGER_ENTRY_LIMIT);
         } catch (RuntimeException e) {
             return new Section("duplications", Verdict.UNAVAILABLE,
-                    Map.of("reason", String.valueOf(e.getMessage())),
+                    couldNotRead("duplications", "the evidence ledger could not be read", e),
                     "The evidence ledger could not be read, so it is unknown whether copies of "
                             + "this record exist in other formats. This is NOT a statement that "
                             + "none do.");
@@ -652,11 +649,10 @@ public class AuthenticityReportAssembler {
         try {
             renditions = contentService.getRenditions(repositoryId, objectId);
         } catch (RuntimeException e) {
-            logger.warn("The renditions of {}/{} could not be read for the report: {}",
-                    repositoryId, objectId, e.getMessage());
+            String incidentId = logCouldNotRead("renditions", e);
             return new RenditionsNow(List.of(), "the copies this object carries now could not "
-                    + "be read (" + e.getMessage() + "). That is NOT a finding that it carries "
-                    + "none");
+                    + "be read (incident " + incidentId + "). That is NOT a finding that it "
+                    + "carries none");
         }
         if (renditions == null) {
             // A null answer is the service declining to say, not a statement that there are
@@ -725,11 +721,41 @@ public class AuthenticityReportAssembler {
             body.put("binaryDigest", binaryDigest.digest());
             body.put("domain", LineageBinaryDigest.DOMAIN);
         } catch (Exception e) {
-            return new Section("environment", Verdict.UNAVAILABLE, Map.of(),
-                    "The running distribution could not be measured (" + e.getMessage() + "), "
-                            + "so this report cannot say which binary produced it. "
+            String incidentId = logCouldNotRead("environment", e);
+            return new Section("environment", Verdict.UNAVAILABLE, Map.of("incidentId", incidentId),
+                    "The running distribution could not be measured (incident " + incidentId
+                            + "), so this report cannot say which binary produced it. "
                             + selfReported);
         }
         return new Section("environment", Verdict.REPORTED, body, selfReported);
+    }
+
+    /**
+     * What a section says when a dependency could not be READ: a fixed sentence and an incident
+     * id — never the exception's own text.
+     *
+     * <p>The message used to be copied into the section's {@code reason} (CodeQL
+     * java/error-message-exposure #1410; the sink is this report's {@code asHtml()} and
+     * {@code asMap()} through AuthenticityReportController). An infrastructure exception's text
+     * is whatever the failing layer wrote — a database URL, a path, a class name — and a report
+     * is read by people who are not this deployment's operators. The verdict stays UNAVAILABLE:
+     * "could not read" is still said, and said as itself rather than as ABSENT. The text goes to
+     * the log under the id so an operator can find it (owner decision, 2026-09-28: fix, do not
+     * accept). The 400-class validation messages elsewhere in the product are not touched by
+     * this; those are the product's own words.
+     */
+    private Map<String, Object> couldNotRead(String section, String fixedReason, Exception e) {
+        String incidentId = logCouldNotRead(section, e);
+        Map<String, Object> reason = new LinkedHashMap<>();
+        reason.put("reason", fixedReason + ". The details were logged under incidentId.");
+        reason.put("incidentId", incidentId);
+        return reason;
+    }
+
+    private String logCouldNotRead(String section, Exception e) {
+        String incidentId = UUID.randomUUID().toString();
+        logger.warn("Authenticity report: the {} section could not be read [incident {}]: {}",
+                section, incidentId, e.getMessage());
+        return incidentId;
     }
 }
