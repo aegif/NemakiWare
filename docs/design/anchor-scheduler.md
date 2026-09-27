@@ -25,8 +25,8 @@ bean が無ければ 503）:
 
 `closeCheckpoint` の戻りは `status` = `success` / `noop`（新しい entry が無い）/ `error`（未確定の
 backlog などで封じられない）で、controller は `noop` を 200、`error` を 409 で返し、封入は
-`success` のときだけ（:103-208）。`AnchorService.anchor` は**構成された段が 1 つ以上あって全部
-失敗したとき**だけ `refusedReason` を返す（`evidence/anchor/AnchorService.java:230, 257`）。
+`success` のときだけ（:103-208）。`AnchorService.anchor` の `refusedReason` は 2 つ（`evidence/anchor/AnchorService.java:240-258`）: **receipt を保存できなかった**
+（commitment は成立しており、再送は回復ではなく新しい commitment を作る — `lost`）と、**構成された段が全部 FAILED**。
 
 ### 1.2 定期実行は意図して無い
 
@@ -146,7 +146,8 @@ for each repositoryId（既存の repository 設定にあるもの）:
     success  → 何もしない（次の tick で件数 0 になる）
     noop     → 記録だけ（件数 ≥ 1 なのに noop なら WARN — 台帳と checkpoint の読みが食い違っている）
     error    → 記録。次に試すのは minInterval 後（拒否を 60 秒ごとに繰り返さない）
-    refused  → 記録（全段失敗）。retryUnsettled の timer に任せる
+    refused  → 記録。全段 FAILED なら retryUnsettled の timer に任せる。receipt を保存できなかった（lost）
+               なら再送しない — 再送は回復ではなく新しい commitment を作る（AnchorService の注記。手順は着手時に決める）
 ```
 
 - **`upgrade-pending`**: 段 2（OTS）が構成されていて、`receiptStore.pending(domain, 1)` が空でないとき、
@@ -259,7 +260,7 @@ PUT は §4.1 の検査を全部通してから `IntegrationSettingsService.writ
   **編集欄は無い**（system property で設定する旨と、その理由の 1 行）
 - 「今すぐ 1 回」= 既存 `POST /checkpoint-and-anchor`（結果をそのまま表示）
 - 最後の実行時刻と結果、leader かどうかと nodeId、election が無効で複数レプリカのときの注意文
-- 呼び出しは新しい `ui/src/services/anchorSchedule.ts`（`AuthService.getAuthHeaders()`）
+- 呼び出しは新しい `core/src/main/webapp/ui/src/services/anchorSchedule.ts`（`AuthService.getAuthHeaders()`）
 - Playwright: `tests/admin/evidence-anchoring.spec.ts` — 間隔空で保存できない、保存後に GET が同じ値を
   返す、段 0 のとき「動かない」と出る、を UI から
 

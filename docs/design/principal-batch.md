@@ -35,7 +35,7 @@
 | Spring MVC | `rest/controller/UserController.java`（`/v1/repo/{repositoryId}/users`）、`GroupController.java`（`…/groups`、`/{groupId}/members`） | `/core/api/v1/repo/{repo}/…` | `CsrfInterceptor`（`spring-mvc-context.xml` の `/v1/**`） |
 | Jersey api/v1 | `api/v1/resource/UserResource.java`（`/repositories/{repositoryId}/users`）、`GroupResource.java`（`…/groups`、`/{groupId}/members`） | `/core/api/v1/cmis/repositories/{repo}/…` | `api/v1/filter/ApiCsrfFilter`（`ApiV1Application.java:123` で登録） |
 
-UI は legacy 層を呼ぶ（`ui/src/services/cmis.ts:363, 1832-2203`）。`UserManagement.tsx:218-219` は
+UI は legacy 層を呼ぶ（`core/src/main/webapp/ui/src/services/cmis.ts:363, 1832-2203`）。`UserManagement.tsx:218-219` は
 「No bulk operations」と明記している。**一括・CSV の取込は server にも UI にも無い**（唯一の一括
 書き手は LDAP / クラウド同期）。`principals` という path も無い。
 
@@ -102,7 +102,7 @@ POST /core/api/v1/cmis/repositories/{repo}/principals/batch/execute
 | `kind` | `users` / `groups` / `memberships` | 必須 |
 | `operation` | `create` / `update` / `delete`（users, groups）、`add` / `remove` / `replace`（memberships） | 必須 |
 | `onUnexpected` | `abort`（既定）/ `skip` | execute の即実行だけ |
-| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** |
+| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外の kind / operation で `file` が付いていれば 400 |
 
 ### 3.2 preview の応答
 
@@ -223,8 +223,8 @@ preview は `Plan`（kind / operation / 行の正規化結果 / `snapshotHash` /
 
 plan はノードローカルなので、複数レプリカで別ノードに当たると `PLAN_UNKNOWN`（§12 の限界 3）。
 パスワードは plan に**平文でも hash でも保存しない** — 確認あり経路では execute に同じ CSV を
-もう一度渡す（`planId` + `file`。§3.1 の「両方は 400」は**確認あり経路の users / create・update
-だけ例外**として `file` を要求し、`snapshotHash` に加えて `fileDigest` の一致も見る）。
+もう一度渡す（`planId` + `file`。§3.1 の表に書いたとおり、`passwordPresent` の plan では `file` を**要求**し、
+`snapshotHash` に加えて `fileDigest` の一致も見る。無ければ 400、違えば 409）。
 
 ### 6.2 即実行（`onUnexpected`）
 
@@ -273,7 +273,7 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
   4. 「確認して実行」（`planId`。users の create / update は §6.1 のとおり同じファイルを再送）
 - 「想定外を飛ばして実行」は**別ボタン**で、確認ダイアログ付き、既定にしない。
 - 結果表: 行ごとの `outcome`。`partial` のときは `stoppedAt` を先頭に。
-- 呼び出しは新しい `ui/src/services/principalBatch.ts`（`AuthService.getAuthHeaders()` を付ける —
+- 呼び出しは新しい `core/src/main/webapp/ui/src/services/principalBatch.ts`（`AuthService.getAuthHeaders()` を付ける —
   `X-Requested-With` が CSRF の条件）。legacy `cmis.ts` には足さない。
 - i18n は `ja.json` / `en.json` の `principalBatch.*`。
 - Playwright: `tests/admin/principal-batch.spec.ts` — preview が書かないこと（preview 後に一覧が
