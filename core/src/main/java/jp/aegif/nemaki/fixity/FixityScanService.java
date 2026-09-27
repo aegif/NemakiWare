@@ -142,9 +142,18 @@ public class FixityScanService {
         try {
             attachment = contentService.getAttachment(repositoryId, attachmentId);
         } catch (Exception e) {
+            // The exception's own text stays in the log. This reason reaches clients — the
+            // authenticity report's content section and the fixity scan findings copy it as
+            // written — and a store exception's message is whatever the failing layer wrote
+            // (CodeQL java/error-message-exposure #1410, the report path; owner decision
+            // 2026-09-28). The class name says what kind of failure it was; the incident id
+            // finds the rest.
+            String incidentId = java.util.UUID.randomUUID().toString();
+            logger.warn("Fixity: the attachment {} of {}/{} could not be read [incident {}]: {}",
+                    attachmentId, repositoryId, content.getId(), incidentId, e.getMessage());
             return FixityVerifier.Result.unverifiable(recorded,
-                    "the attachment could not be read: " + e.getClass().getSimpleName()
-                            + ": " + e.getMessage());
+                    "the attachment could not be read (" + e.getClass().getSimpleName()
+                            + "); the details were logged under incident " + incidentId);
         }
         if (attachment == null) {
             return FixityVerifier.Result.unverifiable(recorded,

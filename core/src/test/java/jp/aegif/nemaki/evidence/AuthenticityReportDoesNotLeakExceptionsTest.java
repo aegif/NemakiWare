@@ -185,4 +185,77 @@ class AuthenticityReportDoesNotLeakExceptionsTest {
         assertTrue(environment.limits().contains("incident "),
                 "the environment limits must carry the incident id: " + environment.limits());
     }
+
+    // ---- the production failure path: the fixity check itself catches and REPORTS ----
+
+    /** A document with a recorded digest and an attachment, as the ingest leaves it. */
+    private static jp.aegif.nemaki.model.Document documentWithDigestAndAttachment() {
+        jp.aegif.nemaki.model.Document doc = new jp.aegif.nemaki.model.Document();
+        doc.setId("doc-1");
+        doc.setAttachmentNodeId("att-1");
+        jp.aegif.nemaki.model.Aspect integration = new jp.aegif.nemaki.model.Aspect();
+        integration.setName(jp.aegif.nemaki.fixity.FixityVerifier.INTEGRATION_ASPECT);
+        integration.setProperties(new java.util.ArrayList<>(java.util.List.of(
+                new jp.aegif.nemaki.model.Property(
+                        jp.aegif.nemaki.fixity.FixityVerifier.CONTENT_HASH_PROPERTY, "a".repeat(64)))));
+        doc.setAspects(new java.util.ArrayList<>(java.util.List.of(integration)));
+        return doc;
+    }
+
+    private static AuthenticityReportAssembler assemblerWithRealFixity(ContentService contentService) {
+        FixityScanService fixity = new FixityScanService();
+        fixity.setContentService(contentService);
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        assembler.setContentService(contentService);
+        assembler.setFixityScanService(fixity);
+        return assembler;
+    }
+
+    @Test
+    @DisplayName("the content reason names no exception text when the attachment store fails inside the fixity check")
+    void theContentReasonNamesNoExceptionTextWhenTheAttachmentCannotBeRead() {
+        // FixityScanService.verifyOne CATCHES the store failure and answers UNVERIFIABLE with a
+        // reason — it does not throw. The reason used to carry e.getMessage(), and the assembler
+        // copies the reason into the section as written (Codex, c37, P1). This lock follows that
+        // path with the real FixityScanService, not a mock that throws.
+        ContentService contentService = mock(ContentService.class);
+        when(contentService.getContent(anyString(), anyString())).thenReturn(documentWithDigestAndAttachment());
+        when(contentService.getAttachment(anyString(), anyString())).thenThrow(infrastructure());
+
+        AuthenticityReport report = assemblerWithRealFixity(contentService)
+                .assemble("bedroom", "doc-1", "t", false);
+
+        nothingLeaks(report);
+        Section content = section(report, "content");
+        assertEquals(Verdict.UNAVAILABLE, content.verdict(), "the check could not be carried out: " + content.asMap());
+        String reason = String.valueOf(content.content().get("reason"));
+        assertTrue(reason.contains("could not be read") && reason.contains("incident "),
+                "the reason must still say the attachment could not be read, with an incident id: " + reason);
+    }
+
+    @Test
+    @DisplayName("the content reason names no exception text when the stored bytes cannot be hashed")
+    void theContentReasonNamesNoExceptionTextWhenTheBytesCannotBeHashed() throws Exception {
+        ContentService contentService = mock(ContentService.class);
+        when(contentService.getContent(anyString(), anyString())).thenReturn(documentWithDigestAndAttachment());
+        jp.aegif.nemaki.model.AttachmentNode attachment = mock(jp.aegif.nemaki.model.AttachmentNode.class);
+        java.io.InputStream failing = new java.io.InputStream() {
+            @Override
+            public int read() throws java.io.IOException {
+                throw new java.io.IOException(MARKER);
+            }
+        };
+        when(attachment.getInputStream()).thenReturn(failing);
+        when(contentService.getAttachment(anyString(), anyString())).thenReturn(attachment);
+
+        AuthenticityReport report = assemblerWithRealFixity(contentService)
+                .assemble("bedroom", "doc-1", "t", false);
+
+        nothingLeaks(report);
+        Section content = section(report, "content");
+        assertEquals(Verdict.UNAVAILABLE, content.verdict(), "the check could not be carried out: " + content.asMap());
+        String reason = String.valueOf(content.content().get("reason"));
+        assertTrue(reason.contains("could not be hashed") && reason.contains("incident "),
+                "the reason must still say the bytes could not be hashed, with an incident id: " + reason);
+    }
 }
