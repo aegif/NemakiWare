@@ -16,9 +16,10 @@ import org.dom4j.io.SAXReader;
  * divergent copy-paste recipes that previously coexisted (a 6-feature JAXP
  * variant and a 3-feature dom4j variant) and the associated drift risk, where
  * a new sink could copy the weaker template or drop a {@code setFeature} call.
- * A CI grep gate ({@code scripts/validate-soc-templates.sh}) forbids the raw
- * constructors outside this class so the guarantee is enforced at build time,
- * not left to reviewer diligence.
+ * A CI grep gate (the {@code xml-hardening} job in {@code .github/workflows/security-scan.yml},
+ * restated as the unit lock {@code XmlParsersAreConstructedViaSecureXmlTest}) forbids the raw
+ * constructors outside this class so the guarantee is enforced at build time, not left to
+ * reviewer diligence.
  *
  * <p>The feature sets below are byte-equivalent to the previously inlined,
  * production-proven hardening: {@code disallow-doctype-decl=true} (which alone
