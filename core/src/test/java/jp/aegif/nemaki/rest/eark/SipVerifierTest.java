@@ -1627,4 +1627,55 @@ class SipVerifierTest {
         }
         return null;
     }
+
+    @Test
+    @DisplayName("a PREMIS carrying an internal DOCTYPE is still read — the twin of the CLI's rule")
+    void aPremisWithAnInternalDoctypeIsStillRead(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> proof = realProofFor(1);
+        // The independent verifier (PackageIntegrityIsCheckedNotAssumedTest) reads this; the
+        // product's /verify must too, or one package gets two answers. The DOCTYPE arrives
+        // through SecureXml.newDocumentBuilderFactoryAllowingInternalDoctype — the one factory
+        // that admits one — so a factory that went back to disallowing it fails HERE, at the
+        // product's entry point, not only in a unit test of the factory.
+        Path sip = zip(tmp, "doctype.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml",
+                "<?xml version=\"1.0\"?><!DOCTYPE premis:premis [ ]>"
+                        + premisWithDigest(SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8))),
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
+                "a PREMIS carrying an internal DOCTYPE was refused, so a legitimate package from "
+                        + "another organisation cannot reach P0 here while the CLI reads it: "
+                        + result.asMap());
+    }
+
+    @Test
+    @DisplayName("a digest written as an internal entity is read, not 'records no digest'")
+    void aDigestWrittenAsAnInternalEntityIsRead(@TempDir Path tmp) throws Exception {
+        String payload = "the minutes";
+        String digest = SipVerifier.sha256Hex(payload.getBytes(StandardCharsets.UTF_8));
+        Map<String, String> proof = realProofFor(1);
+        // Expansion off while a DOCTYPE is allowed reads this as a PREMIS with an empty digest —
+        // "read and absent" for text that was never read (subagent, seventh and eighth reviews).
+        String premis = "<?xml version=\"1.0\"?><!DOCTYPE premis:premis [ <!ENTITY d \"" + digest + "\"> ]>"
+                + "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                + "<premis:messageDigestAlgorithm>SHA-256</premis:messageDigestAlgorithm>"
+                + "<premis:messageDigest>&d;</premis:messageDigest>"
+                + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                + "</premis:premis>";
+        Path sip = zip(tmp, "entity-digest.zip", Map.of(
+                "sip/representations/rep1/data/minutes.txt", payload,
+                "sip/metadata/preservation/premis.xml", premis,
+                "sip/metadata/other/nemaki-evidence.json", proof.get("json")));
+
+        SipVerifier.Result result = SipVerifier.verify(sip);
+
+        assertEquals(SipVerifier.Outcome.PASSED, outcomeOf(result, "payload digest"),
+                "the digest was written as an internal entity and was not read: " + result.asMap());
+    }
 }

@@ -230,26 +230,16 @@ public final class SipVerifier {
         List<String> algorithms;
         String contradiction;
         try {
-            javax.xml.parsers.DocumentBuilderFactory factory =
-                    javax.xml.parsers.DocumentBuilderFactory.newInstance();
+            // Built by SecureXml, so the CI gate ("XML parser hardening", security-scan.yml)
+            // sees every parser construction in one class. This is the ONE factory in the
+            // product that admits an internal DOCTYPE: a package is untrusted input, but the
+            // profile does not forbid a DOCTYPE, and refusing one turned a legitimate third-party
+            // PREMIS into "could not read". External resolution off, XInclude off, secure
+            // processing on, INTERNAL entities expanded — feature for feature the twin of
+            // evidence-verifier-core's Premis.read; the reasons for each are on the factory.
+            javax.xml.parsers.DocumentBuilderFactory factory = jp.aegif.nemaki.util.xml.SecureXml
+                    .newDocumentBuilderFactoryAllowingInternalDoctype();
             factory.setNamespaceAware(true);
-            factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            // No EXTERNAL entity resolution: a package is untrusted input and this runs inside
-            // the product. An internal DOCTYPE is allowed — the twin of Premis.read, and for
-            // the same reason: the profile does not forbid one.
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setFeature(
-                    "http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-            factory.setXIncludeAware(false);
-            // INTERNAL entities are expanded. External resolution is off above, and secure
-            // processing REFUSES a document whose expansion runs away — measured on a
-            // billion-laughs document: rejected as JAXP00010001 in about 74 ms, answered as
-            // "could not read", never as "read and empty". Leaving expansion off while allowing
-            // a DOCTYPE made a digest written as an internal entity read as "records no message
-            // digest" — "read and absent" for something that was not read (subagent, seventh
-            // and eighth reviews, P3).
-            factory.setExpandEntityReferences(true);
             // From BYTES, not from a String. Decoding as UTF-8 first threw away the
             // document's own encoding declaration, so a UTF-16 PREMIS the independent
             // verifier read fine was "could not be read as XML" here (subagent, tenth
