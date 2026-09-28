@@ -2,8 +2,10 @@
 
 2026-09-28。計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md)
 §20 トラック C の C-1（API）と C-2（管理画面）。旧「3.4.1」に置いていた機能を、2026-09-28 の
-オーナー判断で 3.4.0 に入れる。**この文書は設計であって、製品コードはまだ無い。**
-「現行コードの事実」は 2026-09-28 に読んで確かめた行番号で書く（着手時に再確認する）。
+オーナー判断で 3.4.0 に入れる。**C-1（API）は 2026-09-29 に実装した** — `api/v1/resource/PrincipalBatchResource` と
+`api/v1/principals/`（`PrincipalBatchEngine` / planner / applier / `PrincipalCsv` / plan store）。C-2（画面）は未着手。
+「現行コードの事実」は 2026-09-28 に読んで確かめた行番号で書き、着手時（09-29）に再読して一致を確かめた。
+実装で設計から動いた点は **§13** にまとめた。
 
 ---
 
@@ -330,3 +332,30 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
 3. **plan はノードローカル**（§6.1）。複数レプリカでは同じノードに当たらないと 409。
 4. **行単位の適用でトランザクションが無い**（§6.3）。`partial` の後始末は再 preview。
 5. パスワードを持つ確認あり経路は**ファイルの再送**が要る（§6.1）。
+
+---
+
+## 13. 実装で設計から動いた点（2026-09-29、C-1）
+
+- **§2.2 の訂正**: 3 層の所属の入口は `applyGroupUpdate` ではなく `update()` を直接呼ぶ（修正印を自分で押す）。尾は同じなので、
+  バッチは `GroupMembershipEditor.edit` → `applyGroupUpdate` で書く。正準の検索は `getUserItemById` / `getGroupItemByIdFresh`
+  （欠落は null、store が答えられないときは例外 — バッチはそれを 503 `STORE_UNAVAILABLE` にする。§2.3 の `User` / `Group` は
+  deprecated で、正準は `UserItem` / `GroupItem`）。
+- **§7 の訂正**: 既存の principal の書き込みは監査ログを出していない（AOP の pointcut は `cmis.service..*Impl` だけ）。
+  「各メソッドが今しているとおり」は無い。バッチは 1 ジョブ 1 行（`AuditOperation.PRINCIPAL_BATCH`、kind / operation / mode / counts。
+  行の cell は書かない）を `AuditEmitSupport.safeEmit` で出す。
+- **`groups / create` の ID がユーザーの ID と同じ**: `createGroupItem` が拒む（`validateNewGroup` は見ない）ので、preview で
+  `ALREADY_EXISTS`（「a user with this id exists」）にした。逆（`users / create` にグループの ID）も同じ。
+- **JSON の `fileDigest`**: 確認あり実行の JSON は `planId` を運ぶので、本文全体の digest では前後で一致しない。digest は
+  `rows` 配列を再直列化した bytes に取る（CSV は file の bytes）。
+- **plan は 400 で消費しない**: `planId` を渡して `file` が無い／違う（400 / 409 `FILE_DIGEST_CHANGED`）とき plan は残り、
+  同じファイルで再送できる。消費するのは適用したとき（1 回だけ）と `SNAPSHOT_CHANGED` のとき（世界が動いたので捨てる）。
+  期限切れは `PLAN_EXPIRED`、知らない id は `PLAN_UNKNOWN`（別ノードの plan もこれ）。
+- **multipart**: jersey-media-multipart は api/v1 に登録済みなので `@FormDataParam("file")` で受ける。JSON は `rows` 配列で受け、
+  配列の値は `;` 区切りに畳む（空配列は空文字 = 「空にする」は `memberships / replace` の `members` だけが読む）。
+- **500 の規則**: リソースが全部の応答を自分で組む。`PrincipalBatchRequestException` は 400 / 409 / 413 / 503 の本文に、
+  それ以外の `RuntimeException` は 500 `{status:error, message: 固定文, incidentId}`（`ApiExceptionMapper` に届かせない —
+  届けば `getMessage()` が写る）。適用中の失敗は行の outcome `FAILED`、reason `INCIDENT_<id>`、全体は 500 `partial`。
+- **plan の記録**: 既知の限界 §12 の 1〜5 は正典の残件表 R115〜R119 に写した（R115 は P2、他は P3）。
+- **admin=true の create は 2 書き**: `buildAndCreateUser` は admin=false で書くので、読み直して `setAdmin(true)` → `applyUserUpdate`。
+- **実行者**: `CallContext.getUsername()`（`HttpServletRequest.getUserPrincipal()` は常に null なので使わない）。
