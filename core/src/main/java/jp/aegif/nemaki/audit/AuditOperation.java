@@ -106,6 +106,9 @@ public enum AuditOperation {
     DELETE_USER("deleteUser", "User deleted"),
     GET_USER("getUser", "User retrieved"),
     CHANGE_PASSWORD("changePassword", "Password changed"),
+    /** One bulk principal correction job (api/v1 principals/batch/execute): kind, operation and
+     *  counts only — never a row's cells (one of them may be a password). */
+    PRINCIPAL_BATCH("principalBatch", "Bulk principal correction executed"),
 
     // Group management operations
     CREATE_GROUP("createGroup", "Group created"),

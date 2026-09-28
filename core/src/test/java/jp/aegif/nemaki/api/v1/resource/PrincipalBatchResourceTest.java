@@ -1,0 +1,422 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.api.v1.resource;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.core.Response;
+import jp.aegif.nemaki.api.v1.exception.ApiException;
+import jp.aegif.nemaki.audit.AuditLogger;
+import jp.aegif.nemaki.audit.AuditOperation;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.model.GroupItem;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PasswordPolicyService;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.constant.PropertyKey;
+import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.io.ByteArrayInputStream;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * The gates of design §20 C-1, measured at the product's entry: the JAX-RS methods of
+ * {@link PrincipalBatchResource} with the real planner and applier behind them and a mocked
+ * {@link ContentService} that answers what the store would.
+ *
+ * <p>Nothing here calls a collaborator class directly. A lock on the planner alone would not
+ * notice a resource that forgot to consult it (the entry-point rule of this branch).
+ */
+class PrincipalBatchResourceTest {
+
+    private static final String REPO = "bedroom";
+    private static final String ACTOR = "root";
+
+    /** The seven canonical write methods and the raw update — preview must touch none of them. */
+    private static void verifyNoWrites(ContentService cs) {
+        verify(cs, never()).buildAndCreateUser(anyString(), anyString(), any(), any(), any(), any(), any(), any());
+        verify(cs, never()).applyUserUpdate(anyString(), any(), any());
+        verify(cs, never()).deleteUser(anyString(), anyString());
+        verify(cs, never()).buildAndCreateGroup(anyString(), anyString(), any(), any(), any(), any());
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), any());
+        verify(cs, never()).deleteGroup(anyString(), anyString());
+        verify(cs, never()).update(any(), anyString(), any());
+    }
+
+    private static PrincipalBatchResource resourceWith(ContentService cs, boolean admin, AuditLogger audit)
+            throws Exception {
+        PrincipalBatchResource resource = new PrincipalBatchResource();
+        set(resource, "contentService", cs);
+        PasswordPolicyService policy = mock(PasswordPolicyService.class);
+        when(policy.validate(anyString(), anyString())).thenReturn(PasswordPolicyService.PasswordPolicyResult.ok());
+        set(resource, "passwordPolicyService", policy);
+        PropertyManager props = mock(PropertyManager.class);
+        when(props.readValue(PropertyKey.SOLR_NEMAKI_USERID)).thenReturn("solr");
+        when(props.readValue(PropertyKey.DIRECTORY_SYNC_GROUP_PREFIX)).thenReturn("ldap_");
+        when(props.readValue(PropertyKey.DIRECTORY_SYNC_USER_PREFIX)).thenReturn("");
+        set(resource, "propertyManager", props);
+        set(resource, "auditLogger", audit);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        CallContext ctx = mock(CallContext.class);
+        when(ctx.get(CallContextKey.IS_ADMIN)).thenReturn(admin);
+        when(ctx.getUsername()).thenReturn(ACTOR);
+        when(request.getAttribute("CallContext")).thenReturn(ctx);
+        set(resource, "httpRequest", request);
+        return resource;
+    }
+
+    private static PrincipalBatchResource resourceWith(ContentService cs) throws Exception {
+        return resourceWith(cs, true, null);
+    }
+
+    private static void set(Object target, String name, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static UserItem user(String id, String revision) {
+        UserItem item = new UserItem();
+        item.setUserId(id);
+        item.setName(id);
+        item.setRevision(revision);
+        item.setSubTypeProperties(new ArrayList<>());
+        return item;
+    }
+
+    private static GroupItem group(String id, List<String> users, List<String> groups) {
+        GroupItem item = new GroupItem();
+        item.setGroupId(id);
+        item.setName(id);
+        item.setRevision("1-g");
+        item.setUsers(new ArrayList<>(users));
+        item.setGroups(new ArrayList<>(groups));
+        return item;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> body(Response response) {
+        return (Map<String, Object>) response.getEntity();
+    }
+
+    private static String json(String kind, String operation, String extra, String rows) {
+        return "{\"kind\":\"" + kind + "\",\"operation\":\"" + operation + "\"" + extra + ",\"rows\":" + rows + "}";
+    }
+
+    // ---- gate: preview writes nothing ----
+
+    @Test
+    @DisplayName("preview calls none of the canonical write methods")
+    void previewWritesNothing() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("g1"))).thenReturn(group("g1", List.of(), List.of()));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response users = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u2\",\"name\":\"Two\",\"password\":\"S3cret!!\"},{\"userId\":\"u1\",\"password\":\"x\"}]"));
+        Response memberships = resource.previewJson(REPO, json("memberships", "add", "",
+                "[{\"groupId\":\"g1\",\"memberId\":\"u1\",\"memberType\":\"user\"}]"));
+
+        assertEquals(200, users.getStatus(), String.valueOf(users.getEntity()));
+        assertEquals(200, memberships.getStatus(), String.valueOf(memberships.getEntity()));
+        verifyNoWrites(cs);
+        Map<String, Object> counts = (Map<String, Object>) body(users).get("counts");
+        assertEquals(1L, counts.get("expected"));
+        assertEquals(1L, counts.get("unexpected"), "u1 exists, so creating it is unexpected: " + body(users));
+    }
+
+    // ---- gate: abort + unexpected → 409, nothing written ----
+
+    @Test
+    @DisplayName("abort with one unexpected row writes nothing and answers 409")
+    void abortRefusesWhenAnyRowIsUnexpected() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getUserItemById(eq(REPO), eq("ghost"))).thenReturn(null);
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response response = resource.executeJson(REPO, json("users", "update", "",
+                "[{\"userId\":\"u1\",\"name\":\"One\"},{\"userId\":\"ghost\",\"name\":\"X\"}]"));
+
+        assertEquals(409, response.getStatus(), String.valueOf(response.getEntity()));
+        assertEquals("refused", body(response).get("status"));
+        assertEquals("UNEXPECTED_ROWS", body(response).get("reason"));
+        verifyNoWrites(cs);
+    }
+
+    // ---- gate: forbidden is not applied even with skip ----
+
+    @Test
+    @DisplayName("the built-in admin is never deleted, not even with onUnexpected=skip")
+    void forbiddenIsNotAppliedEvenWithSkip() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("admin"))).thenReturn(user("admin", "1-a"));
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-b"));
+        when(cs.deleteUser(eq(REPO), anyString())).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response response = resource.executeJson(REPO, json("users", "delete", ",\"onUnexpected\":\"skip\"",
+                "[{\"userId\":\"admin\"},{\"userId\":\"u1\"}]"));
+
+        assertEquals(200, response.getStatus(), String.valueOf(response.getEntity()));
+        verify(cs, never()).deleteUser(REPO, "admin");
+        verify(cs, times(1)).deleteUser(REPO, "u1");
+        Map<String, Object> counts = (Map<String, Object>) body(response).get("counts");
+        assertEquals(1L, counts.get("forbidden"), String.valueOf(body(response)));
+        assertEquals(1L, counts.get("applied"));
+    }
+
+    // ---- gate: a changed snapshot is 409 and writes nothing ----
+
+    @Test
+    @DisplayName("a plan whose targets changed since the preview is 409 and writes nothing")
+    void aChangedSnapshotIs409AndWritesNothing() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.deleteUser(eq(REPO), anyString())).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+        Response preview = resource.previewJson(REPO, json("users", "delete", "", "[{\"userId\":\"u1\"}]"));
+        String planId = (String) body(preview).get("planId");
+
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "2-b")); // someone wrote it
+        Response execute = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(409, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertEquals("SNAPSHOT_CHANGED", body(execute).get("reason"));
+        verifyNoWrites(cs);
+    }
+
+    @Test
+    @DisplayName("an unchanged snapshot lets the plan apply, once; the plan is then gone")
+    void anUnchangedSnapshotAppliesThePlanOnce() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.deleteUser(eq(REPO), eq("u1"))).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO,
+                json("users", "delete", "", "[{\"userId\":\"u1\"}]"))).get("planId");
+
+        Response first = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+        Response second = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(200, first.getStatus(), String.valueOf(first.getEntity()));
+        verify(cs, times(1)).deleteUser(REPO, "u1");
+        assertEquals(409, second.getStatus(), "a plan is applied once: " + second.getEntity());
+        assertEquals("PLAN_UNKNOWN", body(second).get("reason"));
+    }
+
+    // ---- gate: the password leaves through no exit ----
+
+    @Test
+    @DisplayName("a password appears in no response, is not kept in the plan, and is not audited")
+    void thePasswordLeavesThroughNoExit() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        AuditLogger audit = mock(AuditLogger.class);
+        PrincipalBatchResource resource = resourceWith(cs, true, audit);
+
+        Response preview = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+        assertEquals(200, preview.getStatus(), String.valueOf(preview.getEntity()));
+        assertFalse(String.valueOf(preview.getEntity()).contains(secret), "the preview echoed the password");
+        assertEquals(Boolean.TRUE, body(preview).get("passwordPresent"));
+        String planId = (String) body(preview).get("planId");
+
+        // The plan does not hold the password: execute with the planId ALONE cannot apply it.
+        Response alone = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+        assertEquals(400, alone.getStatus(), String.valueOf(alone.getEntity()));
+        assertFalse(String.valueOf(alone.getEntity()).contains(secret));
+        verifyNoWrites(cs);
+
+        // A DIFFERENT file with the plan is refused and the plan is kept for the right one.
+        Response wrongFile = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\","
+                + "\"kind\":\"users\",\"operation\":\"create\",\"rows\":[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"other\"}]}");
+        assertEquals(409, wrongFile.getStatus(), String.valueOf(wrongFile.getEntity()));
+        assertEquals("FILE_DIGEST_CHANGED", body(wrongFile).get("reason"));
+        verifyNoWrites(cs);
+
+        // The same rows again apply — the password came from THIS request, not from the plan —
+        // and the audit line carries counts, not cells.
+        Response execute = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\","
+                + "\"kind\":\"users\",\"operation\":\"create\",\"rows\":[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\""
+                + secret + "\"}]}");
+        assertEquals(200, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertFalse(String.valueOf(execute.getEntity()).contains(secret));
+        verify(cs).buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR));
+        ArgumentCaptor<Map<String, ?>> details = ArgumentCaptor.forClass(Map.class);
+        verify(audit).logOperation(eq(AuditOperation.PRINCIPAL_BATCH), eq(REPO), eq(ACTOR), anyString(), eq(true),
+                any(), details.capture());
+        assertFalse(String.valueOf(details.getValue()).contains(secret), "the audit line carried the password");
+    }
+
+    // ---- gate: the empty groups column is 'do not touch'; replace's empty members is 'make empty' ----
+
+    @Test
+    @DisplayName("an update with a blank groups column leaves the memberships alone")
+    void aBlankGroupsColumnLeavesMembershipsAlone() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        PrincipalBatchResource resource = resourceWith(cs);
+        byte[] csv = "userId,name,groups\nu1,Renamed,\n".getBytes(StandardCharsets.UTF_8);
+
+        Response response = resource.executeMultipart(REPO, new ByteArrayInputStream(csv), "users", "update",
+                null, null);
+
+        assertEquals(200, response.getStatus(), String.valueOf(response.getEntity()));
+        verify(cs).applyUserUpdate(eq(REPO), any(), eq(ACTOR));
+        verify(cs, never()).getGroupItems(anyString());
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("memberships/replace with empty members empties the group")
+    void replaceWithEmptyMembersEmptiesTheGroup() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("g1"))).thenReturn(group("g1", List.of("u1", "u2"), List.of("g2")));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response response = resource.executeJson(REPO, json("memberships", "replace", "",
+                "[{\"groupId\":\"g1\",\"members\":[]}]"));
+
+        assertEquals(200, response.getStatus(), String.valueOf(response.getEntity()));
+        ArgumentCaptor<GroupItem> written = ArgumentCaptor.forClass(GroupItem.class);
+        verify(cs).applyGroupUpdate(eq(REPO), written.capture(), eq(ACTOR));
+        assertTrue(written.getValue().getUsers().isEmpty(), "users: " + written.getValue().getUsers());
+        assertTrue(written.getValue().getGroups().isEmpty(), "groups: " + written.getValue().getGroups());
+    }
+
+    // ---- gate: 500 carries a fixed text and an incident id, never the exception's words ----
+
+    @Test
+    @DisplayName("a store failure while applying is a 500 with an incidentId and none of the exception's text")
+    void aStoreFailureWhileApplyingIs500WithoutTheMessage() throws Exception {
+        String marker = "jdbc://db.internal:5984/nemaki_conf rev 3-abc SECRET";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getUserItemById(eq(REPO), eq("u2"))).thenReturn(user("u2", "1-b"));
+        when(cs.deleteUser(eq(REPO), eq("u1"))).thenThrow(new IllegalStateException(marker));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response response = resource.executeJson(REPO, json("users", "delete", "",
+                "[{\"userId\":\"u1\"},{\"userId\":\"u2\"}]"));
+
+        assertEquals(500, response.getStatus(), String.valueOf(response.getEntity()));
+        String text = String.valueOf(response.getEntity());
+        assertFalse(text.contains(marker), "the store's exception text reached the client: " + text);
+        assertEquals("partial", body(response).get("status"));
+        assertNotNull(body(response).get("incidentId"));
+        assertEquals(2, body(response).get("stoppedAt"));
+        verify(cs, never()).deleteUser(REPO, "u2");
+    }
+
+    @Test
+    @DisplayName("a store that cannot answer whether a user exists is 503, not a file of NOT_FOUND")
+    void aStoreThatCannotAnswerIs503() throws Exception {
+        String marker = "couchdb view timed out at http://couchdb:5984 SECRET";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenThrow(new IllegalStateException(marker));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response response = resource.previewJson(REPO, json("users", "delete", "", "[{\"userId\":\"u1\"}]"));
+
+        assertEquals(503, response.getStatus(), String.valueOf(response.getEntity()));
+        assertEquals("STORE_UNAVAILABLE", body(response).get("reason"));
+        assertFalse(String.valueOf(response.getEntity()).contains(marker));
+        assertNotNull(body(response).get("incidentId"));
+    }
+
+    // ---- gate: admin only; the request's own errors are 400 / 413 ----
+
+    @Test
+    @DisplayName("a non-admin is refused with 403 before anything is read")
+    void aNonAdminIs403() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        PrincipalBatchResource resource = resourceWith(cs, false, null);
+
+        ApiException refused = assertThrows(ApiException.class,
+                () -> resource.previewJson(REPO, json("users", "delete", "", "[{\"userId\":\"u1\"}]")));
+
+        assertEquals(403, refused.getStatus());
+        verifyNoWrites(cs);
+    }
+
+    @Test
+    @DisplayName("an unknown column, a duplicate id and one row over the limit are 400 / 400 / 413")
+    void requestErrorsAreRefusedBeforePlanning() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response unknown = resource.previewJson(REPO, json("users", "update", "", "[{\"userId\":\"u1\",\"grups\":\"g\"}]"));
+        assertEquals(400, unknown.getStatus(), String.valueOf(unknown.getEntity()));
+        assertTrue(String.valueOf(unknown.getEntity()).contains("grups"));
+
+        Response duplicate = resource.previewJson(REPO, json("users", "delete", "", "[{\"userId\":\"u1\"},{\"userId\":\"u1\"}]"));
+        assertEquals(400, duplicate.getStatus(), String.valueOf(duplicate.getEntity()));
+
+        StringBuilder csv = new StringBuilder("userId\n");
+        for (int i = 0; i <= 5000; i++) {
+            csv.append('u').append(i).append('\n');
+        }
+        Response tooMany = resource.previewMultipart(REPO,
+                new ByteArrayInputStream(csv.toString().getBytes(StandardCharsets.UTF_8)), "users", "delete");
+        assertEquals(413, tooMany.getStatus(), String.valueOf(tooMany.getEntity()));
+        verify(cs, never()).getUserItemById(anyString(), anyString());
+    }
+
+    // ---- gate: a directory-synced-looking id is unexpected, so abort refuses it ----
+
+    @Test
+    @DisplayName("deleting a group with the directory-sync prefix is unexpected, so abort refuses the file")
+    void anLdapPrefixedGroupDeleteIsUnexpected() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("ldap_sales"))).thenReturn(group("ldap_sales", List.of(), List.of()));
+        when(cs.deleteGroup(eq(REPO), anyString())).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response preview = resource.previewJson(REPO, json("groups", "delete", "", "[{\"groupId\":\"ldap_sales\"}]"));
+        Response execute = resource.executeJson(REPO, json("groups", "delete", "", "[{\"groupId\":\"ldap_sales\"}]"));
+
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) body(preview).get("rows");
+        assertEquals("unexpected", rows.get(0).get("verdict"), String.valueOf(rows));
+        assertEquals("LOOKS_DIRECTORY_SYNCED", rows.get(0).get("reason"));
+        assertEquals(409, execute.getStatus(), String.valueOf(execute.getEntity()));
+        verify(cs, never()).deleteGroup(anyString(), anyString());
+    }
+}
