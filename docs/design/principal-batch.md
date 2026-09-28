@@ -204,7 +204,7 @@ memberships / replace の `members: []` だけが「空にする」）。
 - Solr ユーザー（`solr.nemaki.userid`）と `mcp-service` の delete、`admin=false`
 - **実行者自身**の delete と `admin=false`（legacy 層の既存規則と同じ向き）
 - 上の 3 者を `memberships / remove` / `replace` で管理者グループから外す行は**禁止しない**
-  （グループ所属は admin flag ではない）。preview の `message` に注意だけ出す
+  （グループ所属は admin flag ではない）。preview の `message` に注意だけ出す（**未実装** — §13）
 
 この guard は**この機能の validator に置く**。既存 3 層に同じ guard を足すかは別の判断
 （§12 の限界 1）。
@@ -255,7 +255,7 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
 | 操作 | 呼ぶもの |
 |---|---|
 | users / create | `PasswordPolicyService.validate` → `ContentServiceImpl.buildAndCreateUser`（`admin=true` は読み直して `applyUserUpdate`。`groups` 列があれば該当グループごとに `GroupMembershipEditor.edit` → `applyGroupUpdate`） |
-| users / update | `applyUserUpdate`（password 列があれば `validate` → hash は既存経路。`groups` 列があれば create と同じ所属の書き） |
+| users / update | `applyUserUpdate`（password 列があれば `validate` → hash は既存経路。`groups` 列があれば create と同じ所属の書き — 列は所属の**全リスト**で、列に無いグループからは外れる。§13） |
 | users / delete | `deleteUser`（所属の除去は既存の :882-909） |
 | groups / create | `buildAndCreateGroup`（`validateNewGroup` の 3 検査 — id / name の欠落、既存 — は planner が 400 / `ALREADY_EXISTS` で先にする） |
 | groups / update | `applyGroupUpdate`（サイクル検査は既存の :729） |
@@ -377,3 +377,12 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
   - **CSV の行番号は物理行**: 複数行セルの後の行も、ファイルのその行が始まる番号。
   - **2 MiB 超 → 413 に錠が無かった**（subagent P2、3 腕）: 錠を足した。製品は変えていない。
   - §3.1 / §7 の表を実装に合わせた（`file` 再送時の `kind` / `operation`、users の `groups` 列の所属の書き、`validateNewGroup` は呼ばない）。
+- **c40 の確認レビュー（2 名とも CONVERGED、P3 のみ）で写した点（2026-09-29）**:
+  - §5.2 の「管理者グループから外す行は preview の `message` に注意だけ出す」は**未実装**（`expected` の行は message を持たない。
+    生産者が無い文だった）。禁止しない判断は変わらない。注意を出すなら C-2 の画面側で `memberId` が built-in / 実行者かを見る（別判断）。
+  - §7 の users / create・update の `groups` 列は**所属の全リスト**（製品の `updateUserGroups` と同じ差分適用）— 列に無いグループからは
+    外れる。この暗黙の remove は `LOOKS_DIRECTORY_SYNCED` を通らない（§5.1 の表は delete / remove 操作だけ）。`ldap_` グループの所属を
+    保ちたい行はそのグループも列に書く。
+  - `readBounded` は 8 KiB 単位で読むので、読む量の上限は `MAX_BYTES + 8192`（javadoc の「+ 1」を直した。錠はこの境界で等号）。
+  - MH4 / ML4 の錠は入口でなく `PrincipalCsv.parse` に直接掛かる（入口の `readBounded` が超過を渡さないので、parse 自身の 413 は
+    二重防御。入口側の腕は MF4 / MG4 が測る）— 「錠は入口を通す」規則の例外として記録。
