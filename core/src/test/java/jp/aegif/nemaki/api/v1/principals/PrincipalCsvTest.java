@@ -92,6 +92,39 @@ class PrincipalCsvTest {
     }
 
     @Test
+    @DisplayName("a replace file without a members column is refused; a present but blank cell is the stated 'empty'")
+    void aReplaceFileWithoutAMembersColumnIsRefused() {
+        PrincipalBatchRequestException dropped = assertThrows(PrincipalBatchRequestException.class,
+                () -> PrincipalCsv.parse(utf8("groupId\ng1\n"), Kind.MEMBERSHIPS, Operation.REPLACE));
+        assertEquals(400, dropped.status());
+        assertTrue(dropped.getMessage().contains("members"), dropped.getMessage());
+        PrincipalCsv.Parsed stated = PrincipalCsv.parse(utf8("groupId,members\ng1,\n"),
+                Kind.MEMBERSHIPS, Operation.REPLACE);
+        assertEquals(1, stated.rows().size());
+        assertNull(stated.rows().get(0).cell("members"),
+                "the blank cell is null like any other — only the HEADER tells a dropped column from a stated empty one");
+    }
+
+    @Test
+    @DisplayName("one byte over the byte limit is 413 before the text is even decoded")
+    void overTheByteLimitIs413() {
+        byte[] oneOver = new byte[(int) PrincipalBatch.MAX_BYTES + 1];
+        java.util.Arrays.fill(oneOver, (byte) 'u');
+        PrincipalBatchRequestException e = assertThrows(PrincipalBatchRequestException.class,
+                () -> PrincipalCsv.parse(oneOver, Kind.USERS, Operation.DELETE));
+        assertEquals(413, e.status());
+    }
+
+    @Test
+    @DisplayName("a row's line is the FILE's line it starts on, also after a cell that spans lines")
+    void lineNumbersArePhysicalAfterAMultiLineCell() {
+        PrincipalCsv.Parsed parsed = PrincipalCsv.parse(utf8("userId,name\nu1,\"two\nlines\"\nu2,x\n"),
+                Kind.USERS, Operation.UPDATE);
+        assertEquals(2, parsed.rows().get(0).line());
+        assertEquals(4, parsed.rows().get(1).line(), "u2 starts on line 4: the header, u1, u1's second line, then u2");
+    }
+
+    @Test
     @DisplayName("over the row limit is 413 before any row is read into a plan")
     void tooManyRowsIs413() {
         StringBuilder csv = new StringBuilder("userId\n");

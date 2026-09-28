@@ -19,6 +19,7 @@ package jp.aegif.nemaki.api.v1.resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.api.v1.exception.ApiException;
+import jp.aegif.nemaki.api.v1.principals.PrincipalBatch;
 import jp.aegif.nemaki.audit.AuditLogger;
 import jp.aegif.nemaki.audit.AuditOperation;
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -34,11 +35,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -108,6 +118,12 @@ class PrincipalBatchResourceTest {
         Field field = target.getClass().getDeclaredField(name);
         field.setAccessible(true);
         field.set(target, value);
+    }
+
+    private static Object get(Object target, String name) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(target);
     }
 
     private static UserItem user(String id, String revision) {
@@ -320,6 +336,204 @@ class PrincipalBatchResourceTest {
         verify(cs).applyGroupUpdate(eq(REPO), written.capture(), eq(ACTOR));
         assertTrue(written.getValue().getUsers().isEmpty(), "users: " + written.getValue().getUsers());
         assertTrue(written.getValue().getGroups().isEmpty(), "groups: " + written.getValue().getGroups());
+    }
+
+    @Test
+    @DisplayName("a replace file that dropped its members column is 400, not 'empty every group' — CSV, JSON absent, JSON null")
+    void aReplaceWithoutAMembersColumnIsRefused() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("g1"))).thenReturn(group("g1", List.of("u1", "u2"), List.of("g2")));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response csv = resource.executeMultipart(REPO,
+                new ByteArrayInputStream("groupId\ng1\n".getBytes(StandardCharsets.UTF_8)),
+                "memberships", "replace", null, null);
+        Response absent = resource.executeJson(REPO, json("memberships", "replace", "",
+                "[{\"groupId\":\"g1\"}]"));
+        Response nul = resource.executeJson(REPO, json("memberships", "replace", "",
+                "[{\"groupId\":\"g1\",\"members\":null}]"));
+
+        for (Response refused : List.of(csv, absent, nul)) {
+            assertEquals(400, refused.getStatus(), String.valueOf(refused.getEntity()));
+            assertTrue(String.valueOf(refused.getEntity()).contains("members"), String.valueOf(refused.getEntity()));
+        }
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("two confirmations of one plan at the same moment apply it once: one 200, one 409, one write")
+    void aPlanConfirmedTwiceAtOnceIsAppliedOnce() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.deleteUser(eq(REPO), eq("u1"))).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO,
+                json("users", "delete", "", "[{\"userId\":\"u1\"}]"))).get("planId");
+        // From here every read of u1 waits until BOTH confirmations are inside their re-plan, so
+        // both see the snapshot unchanged and race for the plan itself. A sequential pair would
+        // pass through peek alone, so the overlap is asserted, not assumed.
+        CountDownLatch bothArePlanning = new CountDownLatch(2);
+        AtomicBoolean overlapped = new AtomicBoolean(true);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenAnswer(invocation -> {
+            bothArePlanning.countDown();
+            if (!bothArePlanning.await(5, TimeUnit.SECONDS)) {
+                overlapped.set(false);
+            }
+            return user("u1", "1-a");
+        });
+        String confirm = "{\"planId\":\"" + planId + "\"}";
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Integer> statuses;
+        try {
+            Future<Response> first = pool.submit(() -> resource.executeJson(REPO, confirm));
+            Future<Response> second = pool.submit(() -> resource.executeJson(REPO, confirm));
+            statuses = new ArrayList<>(List.of(first.get(20, TimeUnit.SECONDS).getStatus(),
+                    second.get(20, TimeUnit.SECONDS).getStatus()));
+        } finally {
+            pool.shutdownNow();
+        }
+        Collections.sort(statuses);
+
+        assertTrue(overlapped.get(), "the two confirmations did not overlap, so nothing was measured");
+        assertEquals(List.of(200, 409), statuses, "one applies, the other is refused");
+        verify(cs, times(1)).deleteUser(REPO, "u1");
+    }
+
+    // ---- gate: a confirmed plan is re-decided, and must come out as it was previewed (c39, both reviewers) ----
+
+    @Test
+    @DisplayName("a plan whose row names a member that vanished since the preview is 409 and writes nothing")
+    void aPlanWhoseReferencedMemberVanishedIs409() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("g1"))).thenReturn(group("g1", List.of(), List.of()));
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO, json("memberships", "add", "",
+                "[{\"groupId\":\"g1\",\"memberId\":\"u1\",\"memberType\":\"user\"}]"))).get("planId");
+
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(null); // u1 was deleted; g1's revision did not move
+        Response execute = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(409, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertEquals("SNAPSHOT_CHANGED", body(execute).get("reason"));
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a plan previewed by one admin and confirmed by the user it deletes is re-decided FORBIDDEN: 409, no write")
+    void aPlanConfirmedByItsOwnTargetIsReDecided() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("bob"))).thenReturn(user("bob", "1-a"));
+        when(cs.deleteUser(eq(REPO), anyString())).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO,
+                json("users", "delete", "", "[{\"userId\":\"bob\"}]"))).get("planId");
+
+        // Now bob, also an admin, confirms root's plan against himself.
+        CallContext bob = mock(CallContext.class);
+        when(bob.get(CallContextKey.IS_ADMIN)).thenReturn(true);
+        when(bob.getUsername()).thenReturn("bob");
+        when(((HttpServletRequest) get(resource, "httpRequest")).getAttribute("CallContext")).thenReturn(bob);
+        Response execute = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(409, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertEquals("SNAPSHOT_CHANGED", body(execute).get("reason"));
+        verify(cs, never()).deleteUser(anyString(), anyString());
+    }
+
+    // ---- gate: over the byte limit is 413 before anything is read (c39 subagent P2: the three arms) ----
+
+    @Test
+    @DisplayName("a file or a body over the limit is 413 before any row is planned — and the file is not read on past the limit")
+    void aFileOverTheByteLimitIs413BeforeAnythingIsRead() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        PrincipalBatchResource resource = resourceWith(cs);
+        // The multipart arm must stop READING at the limit, not refuse after buffering the whole
+        // file (the CSV parser's own limit would then produce the same 413 and hide a reader that
+        // buffers everything). This stream has no end and trips once asked far past the limit.
+        long[] served = {0};
+        InputStream endless = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                return serve(1) ? 'u' : -1;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                serve(len);
+                java.util.Arrays.fill(b, off, off + len, (byte) 'u');
+                return len;
+            }
+
+            private boolean serve(int n) throws IOException {
+                served[0] += n;
+                if (served[0] > PrincipalBatch.MAX_BYTES + 64 * 1024) {
+                    throw new IOException("the reader read on past the limit");
+                }
+                return true;
+            }
+        };
+
+        Response file = resource.previewMultipart(REPO, endless, "users", "delete");
+        Response jsonBody = resource.previewJson(REPO, json("users", "delete", "",
+                "[{\"userId\":\"" + "u".repeat((int) PrincipalBatch.MAX_BYTES) + "\"}]"));
+
+        assertEquals(413, file.getStatus(), String.valueOf(file.getEntity()));
+        assertTrue(served[0] <= PrincipalBatch.MAX_BYTES + 8192, "read " + served[0] + " bytes past a 2 MiB limit");
+        assertEquals(413, jsonBody.getStatus(), String.valueOf(jsonBody.getEntity()));
+        verify(cs, never()).getUserItemById(anyString(), anyString());
+    }
+
+    // ---- gate: a plan belongs to the repository it was decided against (c39 subagent P3) ----
+
+    @Test
+    @DisplayName("a plan previewed against one repository is not confirmed under another: 409 and no write")
+    void aPlanIsBoundToItsRepository() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.deleteUser(anyString(), anyString())).thenReturn(true);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getUserItemById(eq("canopy"), eq("u1"))).thenReturn(user("u1", "1-a")); // same id, same revision
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO,
+                json("users", "delete", "", "[{\"userId\":\"u1\"}]"))).get("planId");
+
+        Response elsewhere = resource.executeJson("canopy", "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(409, elsewhere.getStatus(), String.valueOf(elsewhere.getEntity()));
+        assertEquals("PLAN_UNKNOWN", body(elsewhere).get("reason"));
+        verify(cs, never()).deleteUser(anyString(), anyString());
+    }
+
+    // ---- gate: design §5.1 says delete AND remove for the directory-sync guess (c39 subagent P3) ----
+
+    @Test
+    @DisplayName("removing a member from a group with the directory-sync prefix is unexpected, so abort refuses it")
+    void anLdapPrefixedMembershipRemoveIsUnexpected() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("ldap_sales"))).thenReturn(group("ldap_sales", List.of("u1"), List.of()));
+        PrincipalBatchResource resource = resourceWith(cs);
+        String rows = "[{\"groupId\":\"ldap_sales\",\"memberId\":\"u1\",\"memberType\":\"user\"}]";
+
+        Response preview = resource.previewJson(REPO, json("memberships", "remove", "", rows));
+        Response execute = resource.executeJson(REPO, json("memberships", "remove", "", rows));
+
+        List<Map<String, Object>> verdicts = (List<Map<String, Object>>) body(preview).get("rows");
+        assertEquals("LOOKS_DIRECTORY_SYNCED", verdicts.get(0).get("reason"), String.valueOf(verdicts));
+        assertEquals(409, execute.getStatus(), String.valueOf(execute.getEntity()));
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a new group without a name is the file's defect: 400, not a NOT_FOUND verdict")
+    void aNewGroupWithoutANameIs400() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        Response preview = resource.previewJson(REPO, json("groups", "create", "", "[{\"groupId\":\"g9\"}]"));
+
+        assertEquals(400, preview.getStatus(), String.valueOf(preview.getEntity()));
+        assertTrue(String.valueOf(preview.getEntity()).contains("name"), String.valueOf(preview.getEntity()));
+        verify(cs, never()).buildAndCreateGroup(anyString(), anyString(), any(), any(), any(), any());
     }
 
     // ---- gate: 500 carries a fixed text and an incident id, never the exception's words ----

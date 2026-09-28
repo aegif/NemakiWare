@@ -106,11 +106,13 @@ public record PrincipalBatchPlan(String planId, String repositoryId, PrincipalBa
             return Optional.ofNullable(plans.get(planId));
         }
 
-        /** Consumed: a plan is applied once, and a plan whose world moved on is not kept. */
-        public void remove(String planId) {
-            if (planId != null) {
-                plans.remove(planId);
-            }
+        /**
+         * Consumed: a plan is applied once, and a plan whose world moved on is not kept. Returns
+         * whether THIS call took it — two confirmations racing for one plan both pass {@link #peek}
+         * and the snapshot check, and exactly one of them gets {@code true} here.
+         */
+        public boolean remove(String planId) {
+            return planId != null && plans.remove(planId) != null;
         }
 
         public boolean knew(String planId) {

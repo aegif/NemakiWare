@@ -144,6 +144,15 @@ public final class PrincipalBatchEngine {
                     cells.put(key, String.valueOf(v));
                 }
             }
+            // The same required columns as the CSV reader: absent or null is "not stated", and for
+            // memberships / replace that must not read as "make it empty" — [] or "" is that.
+            for (String required : new java.util.TreeSet<>(PrincipalBatch.requiredColumnsFor(kind, operation))) {
+                if (!cells.containsKey(required)) {
+                    throw new PrincipalBatchRequestException(400, "row " + (line - 1) + ": '" + required
+                            + "' is required" + (required.equals(idColumn) ? ""
+                                    : " (absent or null is not stated; an empty list is [] or \"\")"));
+                }
+            }
             String id = cells.get(idColumn);
             if (id == null || id.isBlank()) {
                 throw new PrincipalBatchRequestException(400, "row " + (line - 1) + ": '" + idColumn + "' is blank");

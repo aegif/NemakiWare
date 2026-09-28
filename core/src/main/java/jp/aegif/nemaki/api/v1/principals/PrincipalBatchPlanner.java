@@ -30,13 +30,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.function.Predicate;
 
 /**
  * Decides, without writing, what applying each row would do (design §5).
@@ -232,7 +230,10 @@ final class PrincipalBatchPlanner {
                     return unexpected(row, Reason.ALREADY_EXISTS, "a user with this id exists");
                 }
                 if (row.cell("name") == null) {
-                    return unexpected(row, Reason.NOT_FOUND, "a new group needs a name");
+                    // The file's own defect, like a missing memberId: a 400 for the file, not a
+                    // registry reason that means something else (c39 subagent P3).
+                    throw new PrincipalBatchRequestException(400, "line " + row.line()
+                            + ": a new group needs a name");
                 }
                 return membersColumnsVerdict(row, groupId);
             }
@@ -351,6 +352,11 @@ final class PrincipalBatchPlanner {
         if (!member) {
             return unexpected(row, Reason.NOT_MEMBER, memberId + " is not a member");
         }
+        if (guards.looksDirectorySynced(Kind.MEMBERSHIPS, groupId)) {
+            // Design §5.1: delete AND remove. The directory would put the membership back.
+            return unexpected(row, Reason.LOOKS_DIRECTORY_SYNCED,
+                    "the group id carries a directory-sync prefix; the directory would restore the membership");
+        }
         return expected(row);
     }
 
@@ -429,13 +435,5 @@ final class PrincipalBatchPlanner {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is not available", e);
         }
-    }
-
-    static Predicate<String> isBlank() {
-        return s -> s == null || s.isBlank();
-    }
-
-    static List<String> listOf(String... ids) {
-        return Arrays.asList(ids);
     }
 }

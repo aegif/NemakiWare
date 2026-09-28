@@ -119,6 +119,21 @@ public final class PrincipalBatch {
         };
     }
 
+    /**
+     * The columns a row must STATE for the operation to mean anything: the id, and for memberships
+     * the member columns. A {@code replace} file that dropped its {@code members} column is refused
+     * here, not read as "make every group empty" — a stated EMPTY cell is that (design §4); an
+     * absent column is nothing.
+     */
+    public static Set<String> requiredColumnsFor(Kind kind, Operation operation) {
+        if (kind == Kind.MEMBERSHIPS) {
+            return operation == Operation.REPLACE
+                    ? Set.of(idColumnFor(kind), "members")
+                    : Set.of(idColumnFor(kind), "memberId", "memberType");
+        }
+        return Set.of(idColumnFor(kind));
+    }
+
     /** Columns whose VALUE must never appear in a response, a plan, an audit line or a log. */
     public static final Set<String> SECRET_COLUMNS = Set.of("password");
 

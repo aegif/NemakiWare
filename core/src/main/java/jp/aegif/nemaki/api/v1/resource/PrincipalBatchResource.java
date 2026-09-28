@@ -213,6 +213,14 @@ public class PrincipalBatchResource {
                                     ? "the plan expired; preview the file again"
                                     : "no such plan on this node; preview the file again (plans are "
                                             + "not shared between replicas)"));
+            if (!repositoryId.equals(plan.repositoryId())) {
+                // A plan is decided against ONE repository's users and groups; confirming it under
+                // another path would apply bedroom's verdicts to canopy. The plan stays for the
+                // repository it belongs to.
+                throw new PrincipalBatchRequestException(409, "PLAN_UNKNOWN",
+                        "no such plan for this repository (it was previewed against another one); "
+                                + "preview the file again here");
+            }
             if (input.kind != null && input.kind != plan.kind()
                     || input.operation != null && input.operation != plan.operation()) {
                 throw new PrincipalBatchRequestException(400, "the plan is for " + plan.kind() + " / "
@@ -237,16 +245,29 @@ public class PrincipalBatchResource {
                 }
                 rows = plan.rows();
             }
+            // The plan is confirmed only if deciding the same rows NOW reproduces it: the targets'
+            // revisions (snapshotHash) AND every row's verdict. The snapshot alone misses what the
+            // verdicts depend on but the targets do not carry — a member or a group a row names
+            // that has since vanished, a nested cycle that has since closed, and the actor: a plan
+            // previewed by one admin and confirmed by the user it deletes must come out FORBIDDEN
+            // here, not be applied from the other admin's verdicts (c39, both reviewers).
             PrincipalBatchEngine.Planned again = engine.plan(kind, operation, rows);
-            if (!again.snapshotHash().equals(plan.snapshotHash())) {
+            if (!again.snapshotHash().equals(plan.snapshotHash()) || !again.verdicts().equals(plan.verdicts())) {
                 // The world moved on; the plan is stale and is not kept for a retry.
                 plans.remove(plan.planId());
                 throw new PrincipalBatchRequestException(409, "SNAPSHOT_CHANGED",
-                        "the users or groups this plan was decided against have changed since the "
-                                + "preview; nothing was written. Preview the file again");
+                        "the users or groups this plan was decided against, or what the preview "
+                                + "decided about its rows, have changed since the preview; nothing "
+                                + "was written. Preview the file again");
             }
-            verdicts = plan.verdicts();
-            plans.remove(plan.planId()); // applied once
+            verdicts = again.verdicts();
+            if (!plans.remove(plan.planId())) {
+                // Applied once: another confirmation of the same plan got past the snapshot check
+                // at the same moment and took it. This one writes nothing.
+                throw new PrincipalBatchRequestException(409, "PLAN_UNKNOWN",
+                        "the plan was just applied or discarded by another request; nothing was "
+                                + "written. Preview the file again");
+            }
             mode = "plan";
         } else {
             if (input.rows == null) {

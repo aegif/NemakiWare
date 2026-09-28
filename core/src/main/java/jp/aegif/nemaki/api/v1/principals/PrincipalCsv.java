@@ -52,11 +52,11 @@ final class PrincipalCsv {
                     + " bytes; the limit is " + PrincipalBatch.MAX_BYTES);
         }
         String text = decodeUtf8(bytes);
-        List<List<String>> records = records(text);
+        List<Record> records = records(text);
         if (records.isEmpty()) {
             throw new PrincipalBatchRequestException(400, "the CSV has no header row");
         }
-        List<String> header = records.get(0).stream().map(String::trim).toList();
+        List<String> header = records.get(0).cells().stream().map(String::trim).toList();
         Set<String> allowed = PrincipalBatch.columnsFor(kind, operation);
         Set<String> seen = new LinkedHashSet<>();
         for (String column : header) {
@@ -74,9 +74,13 @@ final class PrincipalCsv {
             }
         }
         String idColumn = PrincipalBatch.idColumnFor(kind);
-        if (!seen.contains(idColumn)) {
-            throw new PrincipalBatchRequestException(400, "line 1: the column '" + idColumn
-                    + "' is required");
+        // The columns the operation cannot do without. For memberships / replace that is
+        // `members`: a file that dropped the column must not read as "empty every group".
+        for (String required : new java.util.TreeSet<>(PrincipalBatch.requiredColumnsFor(kind, operation))) {
+            if (!seen.contains(required)) {
+                throw new PrincipalBatchRequestException(400, "line 1: the column '" + required
+                        + "' is required");
+            }
         }
         if (records.size() - 1 > PrincipalBatch.MAX_ROWS) {
             throw new PrincipalBatchRequestException(413, "the CSV has " + (records.size() - 1)
@@ -85,8 +89,10 @@ final class PrincipalCsv {
         List<PrincipalBatch.Row> rows = new ArrayList<>();
         Set<String> ids = new LinkedHashSet<>();
         for (int i = 1; i < records.size(); i++) {
-            List<String> cells = records.get(i);
-            int line = i + 1;
+            List<String> cells = records.get(i).cells();
+            // The FILE's line the record starts on — a quoted cell may span lines, so this is
+            // not the record's index (c39 subagent P3).
+            int line = records.get(i).line();
             if (cells.size() == 1 && cells.get(0).isEmpty()) {
                 continue; // a trailing or stray empty line is not a row
             }
@@ -134,14 +140,18 @@ final class PrincipalCsv {
         return text;
     }
 
+    /** One record and the file line it starts on. */
+    record Record(int line, List<String> cells) { }
+
     /** RFC 4180 records: quoted cells may hold commas, newlines and doubled quotes. */
-    static List<List<String>> records(String text) {
-        List<List<String>> records = new ArrayList<>();
+    static List<Record> records(String text) {
+        List<Record> records = new ArrayList<>();
         List<String> record = new ArrayList<>();
         StringBuilder cell = new StringBuilder();
         boolean quoted = false;
         boolean cellWasQuoted = false;
         int line = 1;
+        int recordStart = 1;
         int i = 0;
         while (i < text.length()) {
             char ch = text.charAt(i);
@@ -184,12 +194,13 @@ final class PrincipalCsv {
                 record.add(cell.toString());
                 cell.setLength(0);
                 cellWasQuoted = false;
-                records.add(record);
+                records.add(new Record(recordStart, record));
                 record = new ArrayList<>();
                 if (ch == '\r' && i + 1 < text.length() && text.charAt(i + 1) == '\n') {
                     i++;
                 }
                 line++;
+                recordStart = line;
                 i++;
                 continue;
             }
@@ -205,7 +216,7 @@ final class PrincipalCsv {
         }
         if (cell.length() > 0 || !record.isEmpty()) {
             record.add(cell.toString());
-            records.add(record);
+            records.add(new Record(recordStart, record));
         }
         return records;
     }
