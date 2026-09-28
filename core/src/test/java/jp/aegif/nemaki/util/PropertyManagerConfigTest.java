@@ -234,6 +234,22 @@ public class PropertyManagerConfigTest {
     }
 
     @Test
+    public void testAdminManagedKey_anchorScheduleSavedValueOverridesSystemProperty() {
+        // 3.4.0 (design anchor-scheduler.md §4.1, owner decision 2026-09-28): the schedule saved
+        // from the settings screen wins over a -D, like the SSO keys — so a saved "disabled" is
+        // not overridden by a start-up "enabled".
+        String key = "anchor.schedule.enabled";
+        stubDao.putConfig("nemaki_conf", configWith(key, "false"));
+        System.setProperty(key, "true");
+        try {
+            assertEquals("false", pm.readValue(key),
+                    "anchor.schedule.* is admin-managed: the saved value overrides the -D system property");
+        } finally {
+            System.clearProperty(key);
+        }
+    }
+
+    @Test
     public void testAdminManagedKey_blankCouchdbFallsThroughToSystemProperty() {
         String key = "cloud.auth.google.clientId";
         stubDao.putConfig("nemaki_conf", configWith(key, ""));   // blank = not set

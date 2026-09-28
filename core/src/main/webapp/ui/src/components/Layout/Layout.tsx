@@ -229,6 +229,7 @@ import {
   SendOutlined,
   SyncOutlined,
   ControlOutlined,
+  SafetyCertificateOutlined,
   WifiOutlined,
   LinkOutlined
 } from '@ant-design/icons';
@@ -437,6 +438,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
           key: '/integration-settings',
           icon: <LinkOutlined />,
           label: t('navigation.integrationSettings'),
+        },
+        {
+          key: '/evidence-anchoring',
+          icon: <SafetyCertificateOutlined />,
+          label: t('navigation.evidenceAnchoring'),
         },
         {
           key: '/config-viewer',

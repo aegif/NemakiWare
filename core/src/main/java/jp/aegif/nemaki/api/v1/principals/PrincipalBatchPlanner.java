@@ -226,7 +226,7 @@ final class PrincipalBatchPlanner {
                 }
                 if (world.userExists(groupId)) {
                     // createGroupItem refuses a group id that is a user's id, after preview would
-                    // have said expected (survey, 2026-09-29). Decide it here.
+                    // have said expected (survey, 2026-09-28). Decide it here.
                     return unexpected(row, Reason.ALREADY_EXISTS, "a user with this id exists");
                 }
                 if (row.cell("name") == null) {

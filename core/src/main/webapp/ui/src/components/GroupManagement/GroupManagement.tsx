@@ -43,6 +43,7 @@ interface GroupManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+import { PrincipalBatchModal } from '../PrincipalBatch/PrincipalBatchModal';
 
 /**
  * Detect circular reference in group hierarchy
@@ -99,6 +100,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [searchText, setSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -425,14 +427,26 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         <h2 style={{ margin: 0 }}>
           <TeamOutlined /> {t('groupManagement.title')}
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          {t('common.create')}
-        </Button>
+        <Space>
+          <Button onClick={() => setBatchOpen(true)} data-testid="principal-batch-open">
+            {t('principalBatch.open')}
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            {t('common.create')}
+          </Button>
+        </Space>
       </div>
+      <PrincipalBatchModal
+        open={batchOpen}
+        repositoryId={repositoryId}
+        kinds={['groups', 'memberships']}
+        onClose={() => setBatchOpen(false)}
+        onApplied={() => loadGroups(1, searchText)}
+      />
 
       <Input.Search
         placeholder={t('groupManagement.searchPlaceholder')}

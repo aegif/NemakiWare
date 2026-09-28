@@ -264,6 +264,125 @@ public class IntegrationSettingsService {
 	}
 
 	/**
+	 * Reads settings that belong to ONE repository (or one ledger domain) straight from
+	 * nemaki_conf — not through {@code PropertyManager}'s configuration cache.
+	 *
+	 * <p>Two reasons, both about reading the right value. The configuration cache never expires,
+	 * and a value saved on another replica invalidates only that replica's copy; a reader that
+	 * must act on a save wherever it landed cannot use it. And the cache is keyed by repository:
+	 * an id the cache pool does not know (a ledger domain such as {@code record-content}) shares
+	 * ONE entry with every other unknown id — nemaki_conf's global configuration among them — so
+	 * reading such an id through it can return, or overwrite, the global settings.
+	 *
+	 * @return key → value for the keys that have a stored document for this id; a key with none
+	 *         is absent
+	 * @throws RuntimeException when nemaki_conf could not be asked — never an empty map for that
+	 */
+	public Map<String, String> readRepositorySettings(String repositoryId, java.util.Collection<String> keys) {
+		if (repositoryId == null || repositoryId.isBlank()) {
+			throw new IllegalArgumentException("repositoryId is required for repository settings");
+		}
+		CloudantClientWrapper confClient = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
+		if (confClient == null) {
+			throw new IllegalStateException("nemaki_conf database client not available");
+		}
+		Map<String, Object> selector = new HashMap<>();
+		selector.put("type", "configuration");
+		selector.put("repositoryId", repositoryId);
+		selector.put("key", Map.of("$in", new java.util.ArrayList<>(keys)));
+		// At most one document per key; the limit only has to exceed that, with room for a
+		// duplicate a concurrent first save could leave behind.
+		int limit = Math.max(10, keys.size() * 4);
+		FindResult findResult = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB).getClient()
+				.postFind(new PostFindOptions.Builder().db(confClient.getDatabaseName())
+						.selector(selector).limit(limit).build()).execute().getResult();
+		List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();
+		if (docs == null) {
+			throw new IllegalStateException("nemaki_conf answered without documents for " + repositoryId);
+		}
+		if (docs.size() >= limit) {
+			throw new IllegalStateException("nemaki_conf returned a full page of settings for "
+					+ repositoryId + "; the result may be partial");
+		}
+		Map<String, String> values = new LinkedHashMap<>();
+		for (com.ibm.cloud.cloudant.v1.model.Document doc : docs) {
+			Map<String, Object> props = doc.getProperties();
+			Object key = props == null ? null : props.get("key");
+			Object value = props == null ? null : props.get("value");
+			if (key != null && value != null) {
+				values.put(key.toString(), value.toString());
+			}
+		}
+		return values;
+	}
+
+	/**
+	 * Writes settings that belong to ONE repository: configuration documents in nemaki_conf that
+	 * carry {@code repositoryId}, which {@code PropertyManager.readValue(repositoryId, key)} reads
+	 * before the global value. A blank value deletes the repository's document, so the key falls
+	 * back to the next source instead of holding an empty string (the global writer's rule for
+	 * {@link #deleteSettings}).
+	 *
+	 * <p>Every configuration cache on THIS node is invalidated afterwards. Other replicas keep
+	 * theirs until they re-read — a caller whose readers run elsewhere must refresh on its own
+	 * (the anchor scheduler evicts before every tick).
+	 */
+	public void writeRepositorySettings(String repositoryId, Map<String, String> settings) {
+		if (repositoryId == null || repositoryId.isBlank()) {
+			throw new IllegalArgumentException("repositoryId is required for repository settings");
+		}
+		CloudantClientWrapper confClient = connectorPool.getClient(SystemConst.NEMAKI_CONF_DB);
+		if (confClient == null) {
+			throw new RuntimeException("nemaki_conf database client not available");
+		}
+		String dbName = confClient.getDatabaseName();
+		com.ibm.cloud.cloudant.v1.Cloudant cloudant = confClient.getClient();
+
+		for (Map.Entry<String, String> entry : settings.entrySet()) {
+			String key = entry.getKey();
+			String value = entry.getValue();
+
+			Map<String, Object> selector = new HashMap<>();
+			selector.put("type", "configuration");
+			selector.put("key", key);
+			selector.put("repositoryId", repositoryId);
+			FindResult findResult = cloudant.postFind(new PostFindOptions.Builder()
+					.db(dbName).selector(selector).limit(1).build()).execute().getResult();
+			List<com.ibm.cloud.cloudant.v1.model.Document> docs = findResult.getDocs();
+			com.ibm.cloud.cloudant.v1.model.Document existing =
+					docs == null || docs.isEmpty() ? null : docs.get(0);
+
+			if (value == null || value.isBlank()) {
+				if (existing != null) {
+					cloudant.deleteDocument(new com.ibm.cloud.cloudant.v1.model.DeleteDocumentOptions.Builder()
+							.db(dbName).docId(existing.getId()).rev(existing.getRev()).build()).execute();
+					log.info("Repository setting cleared (reverted to the next source): " + key
+							+ " for " + repositoryId);
+				}
+				continue;
+			}
+			Document doc = new Document();
+			doc.put("type", "configuration");
+			doc.put("key", key);
+			doc.put("value", value);
+			doc.put("repositoryId", repositoryId);
+			if (existing != null) {
+				doc.setId(existing.getId());
+				doc.setRev(existing.getRev());
+			}
+			DocumentResult result = cloudant.postDocument(new PostDocumentOptions.Builder()
+					.db(dbName).document(doc).build()).execute().getResult();
+			if (!result.isOk()) {
+				throw new RuntimeException("Failed to save setting " + key + " for " + repositoryId
+						+ ": " + result.getError());
+			}
+			log.info("Repository setting updated: " + key + " for " + repositoryId);
+		}
+
+		invalidateAllConfigCaches();
+	}
+
+	/**
 	 * Deletes configuration documents from CouchDB for the given keys.
 	 * After deletion the key reverts to the next source in the PropertyManager
 	 * priority chain (properties file → @Value default).

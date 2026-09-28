@@ -116,6 +116,9 @@ public class PropertyManager{
 	 *   <li>{@code sso.} — {@code sso.oidc.enabled} / {@code sso.saml.enabled}</li>
 	 *   <li>{@code oidc.} — OIDC issuer / clientId (Keycloak etc.)</li>
 	 *   <li>{@code saml.} — SAML IdP SSO URL / SP entity id / certificate / SLO</li>
+	 *   <li>{@code anchor.schedule.} — when the ledger is sealed and anchored on its own (3.4.0,
+	 *       design anchor-scheduler.md §4.1). The DESTINATIONS ({@code anchor.rfc3161.*},
+	 *       {@code anchor.opentimestamps.*}) are not here: they stay start-up properties.</li>
 	 * </ul>
 	 */
 	public static boolean isAdminManagedDynamicKey(String key){
@@ -124,7 +127,8 @@ public class PropertyManager{
 				|| key.startsWith("cloud.drive.")
 				|| key.startsWith("sso.")
 				|| key.startsWith("oidc.")
-				|| key.startsWith("saml.");
+				|| key.startsWith("saml.")
+				|| key.startsWith("anchor.schedule.");
 	}
 
 	public String readHeadValue(String key) throws Exception{

@@ -89,6 +89,11 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
         return sidecarUrl != null;
     }
 
+    /** Where rung 2 sends, for display only — the settings screen shows it and cannot change it. */
+    public String sidecarUrl() {
+        return sidecarUrl;
+    }
+
     @Override
     public AnchorReceipt anchor(String hexDigest) {
         // Validate first, even when unconfigured: a caller bug should surface now rather than

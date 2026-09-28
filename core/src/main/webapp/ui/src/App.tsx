@@ -222,6 +222,7 @@ import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirecto
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
 import { IntegrationSettings } from './components/IntegrationSettings/IntegrationSettings';
 import LineageJournalPage from './components/LineageJournal/LineageJournalPage';
+import { EvidenceAnchoring } from './components/EvidenceAnchoring/EvidenceAnchoring';
 import { PurviewManagement } from './components/PurviewManagement/PurviewManagement';
 import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
@@ -504,6 +505,13 @@ function AppRoutes() {
             <ProtectedRoute>
               <AdminRoute>
                 <LineageJournalPage />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
+          <Route path="/evidence-anchoring" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <EvidenceAnchoring repositoryId={authToken.repositoryId} />
               </AdminRoute>
             </ProtectedRoute>
           } />

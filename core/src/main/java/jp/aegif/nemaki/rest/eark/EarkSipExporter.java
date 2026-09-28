@@ -388,33 +388,6 @@ public class EarkSipExporter {
                     new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
                     new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
 
-            // The evidence record, if this deployment has one. It goes in OTHER metadata,
-            // where ErsFormat.CSIP_LOCATION says an evidence record belongs -- and the call
-            // below is what actually decides that. The constant only describes the outcome:
-            // editing it alone leaves the package byte-identical, so the two must move together.
-            //
-            // NOT addPreservationMetadata. That call declares the file in <amdSec><digiprovMD>,
-            // which is the slot CSIP32 names for PREMIS ("For recording information about
-            // preservation the standard PREMIS is used..."). CSIP32 is SHOULD-level, so a DER
-            // there is a departure from its intent rather than a requirement violation -- but
-            // it is still ours: RODA 6.3.0 reads digiprovMD into SIP.getPreservationMetadata()
-            // and hands each entry to PremisV3Utils.binaryToGenericPremis, which fails the
-            // WHOLE ingest. Measured 2026-08-27 with controls. The directory follows the call;
-            // it is not the cause.
-            //
-            // Its data object is a CHECKPOINT, not this document — a receiver must not read a
-            // file called ers.der beside a record as a timestamp on the record. The evidence
-            // package below carries that sentence, and the record's own LIMITS repeat it.
-            jp.aegif.nemaki.evidence.validity.EvidenceRecordService.Built evidenceRecord =
-                    evidenceRecordService == null
-                            ? null
-                            : evidenceRecordService.latest(repositoryId);
-            if (evidenceRecord != null && evidenceRecord.present()) {
-                sip.addOtherMetadata(new IPMetadata(
-                        new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der())),
-                        new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
-            }
-
             // The evidence package: the inclusion proof that ties THIS record to the chain,
             // plus the checkpoint it was sealed under. Without the proof, a package carrying a
             // checkpoint would only say "this repository's chain was sealed at some point",
@@ -437,7 +410,48 @@ public class EarkSipExporter {
             if (!options.assurance().satisfiedBy(supported)) {
                 throw new AssuranceNotMetException(options.assurance(), supported);
             }
-            if (bundle != null && bundle.statement() != null) {
+            // The evidence record, if this deployment has one. It goes in OTHER metadata,
+            // where ErsFormat.CSIP_LOCATION says an evidence record belongs -- and the call
+            // below is what actually decides that. The constant only describes the outcome:
+            // editing it alone leaves the package byte-identical, so the two must move together.
+            //
+            // NOT addPreservationMetadata. That call declares the file in <amdSec><digiprovMD>,
+            // which is the slot CSIP32 names for PREMIS ("For recording information about
+            // preservation the standard PREMIS is used..."). CSIP32 is SHOULD-level, so a DER
+            // there is a departure from its intent rather than a requirement violation -- but
+            // it is still ours: RODA 6.3.0 reads digiprovMD into SIP.getPreservationMetadata()
+            // and hands each entry to PremisV3Utils.binaryToGenericPremis, which fails the
+            // WHOLE ingest. Measured 2026-08-27 with controls. The directory follows the call;
+            // it is not the cause.
+            //
+            // Its data object is a CHECKPOINT, not this document — a receiver must not read a
+            // file called ers.der beside a record as a timestamp on the record. The evidence
+            // package below carries that sentence, and the record's own LIMITS repeat it.
+            //
+            // WHICH checkpoint the record is about follows the layout. With profile v1's section
+            // the record must cover the section's anchor target: that is the checkpoint the
+            // section names and a verifier's P5 compares the record's data object with. The
+            // repository's own latest checkpoint is another ledger domain (the section's chain
+            // is record-content), so an ERS over it made every package that carried both answer
+            // P5 FAILED — a correct package judged altered (2026-09-28). The legacy layout keeps
+            // the repository's record; its evidence file says which checkpoint that is.
+            boolean v1Layout = bundle != null && bundle.statement() != null;
+            jp.aegif.nemaki.evidence.validity.EvidenceRecordService.Built evidenceRecord =
+                    evidenceRecordService == null
+                            ? null
+                            : v1Layout
+                                    ? (bundle.anchorTargetCheckpoint() == null ? null
+                                            : evidenceRecordService.forCheckpoint(
+                                                    bundle.anchorTargetCheckpoint().domain(),
+                                                    bundle.anchorTargetCheckpoint()))
+                                    : evidenceRecordService.latest(repositoryId);
+            if (evidenceRecord != null && evidenceRecord.present()) {
+                sip.addOtherMetadata(new IPMetadata(
+                        new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der())),
+                        new MetadataType(MetadataType.MetadataTypeEnum.OTHER)));
+            }
+
+            if (v1Layout) {
                 addEvidenceBundle(sip, workDir, bundle);
             } else {
                 Map<String, Object> evidence = evidencePackage(repositoryId, objectId, notes);

@@ -865,6 +865,53 @@ class AnchorServiceTest {
                         + outcome.refusedReason());
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("the lost receipt is NAMED in the outcome, so a scheduler can tell a lost commitment from a failed rung")
+    void aLostReceiptIsNamedForTheCaller() {
+        // The sentence says a receipt was lost; the scheduler must know WHICH, because a lost
+        // PENDING commitment must not be sent again on a timer (a second commitment, and on rung
+        // 3 a second token bought) while a lost NOT_CONFIGURED row is only a store fault.
+        AnchorReceiptStore refusingToWrite = new StubStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                throw new IllegalStateException("couchdb is down");
+            }
+        };
+        AnchorService service = serviceWith(storeAt(5), alwaysPending(AnchorKind.OPENTIMESTAMPS));
+        service.setReceiptStore(refusingToWrite);
+
+        AnchorService.Outcome outcome = service.anchor(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, outcome.unstored().size(),
+                "the outcome refuses but does not name what was lost: " + outcome.unstored());
+        org.junit.jupiter.api.Assertions.assertEquals(AnchorStatus.PENDING, outcome.unstored().get(0).status());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a RETRY whose receipt could not be stored names it too, and still answers as before")
+    void aRetryWhoseReceiptCouldNotBeStoredNamesIt() {
+        // retryUnsettled ignored persist()'s answer, so a commitment made by a retry and then
+        // lost left nothing for the caller to see. The HTTP answer of the endpoint is left as it
+        // was (no refusal); the list is what the scheduler reads before its next retry.
+        AnchorReceiptStore refusingToWrite = new StubStore() {
+            @Override
+            public SaveOutcome save(String domain, long toSequence,
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt receipt) {
+                throw new IllegalStateException("couchdb is down");
+            }
+        };
+        AnchorService service = serviceWith(storeAt(5), alwaysPending(AnchorKind.OPENTIMESTAMPS));
+        service.setReceiptStore(refusingToWrite);
+
+        AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
+
+        org.junit.jupiter.api.Assertions.assertNull(outcome.refusedReason(),
+                "the endpoint's answer changed: " + outcome.refusedReason());
+        org.junit.jupiter.api.Assertions.assertEquals(1, outcome.unstored().size(),
+                "a retried commitment was lost and the outcome does not say so: " + outcome.asMap());
+    }
+
     private static jp.aegif.nemaki.rest.purview.anchor.AnchorTarget alwaysPending(
             AnchorKind kind) {
         return new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {

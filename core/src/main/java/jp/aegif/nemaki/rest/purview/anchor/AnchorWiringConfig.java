@@ -53,7 +53,7 @@ public class AnchorWiringConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(AnchorWiringConfig.class);
 
-    /** The sidecar's base URL, e.g. {@code http://ots:8080}. Empty means rung 2 is off. */
+    /** The sidecar's base URL, e.g. {@code http://ots:8082} (the port docker/ots listens on). Empty means rung 2 is off. */
     @Value("${anchor.opentimestamps.sidecar.url:}")
     private String otsSidecarUrl;
 

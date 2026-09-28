@@ -275,12 +275,14 @@ interface UserManagementProps {
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+import { PrincipalBatchModal } from '../PrincipalBatch/PrincipalBatchModal';
 
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -586,14 +588,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <UserOutlined /> {t('userManagement.title')}
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          {t('common.create')}
-        </Button>
+        <Space>
+          <Button onClick={() => setBatchOpen(true)} data-testid="principal-batch-open">
+            {t('principalBatch.open')}
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            {t('common.create')}
+          </Button>
+        </Space>
       </div>
+      <PrincipalBatchModal
+        open={batchOpen}
+        repositoryId={repositoryId}
+        kinds={['users']}
+        onClose={() => setBatchOpen(false)}
+        onApplied={() => loadUsers(1, searchText)}
+      />
 
       <Input.Search
         placeholder={t('userManagement.searchPlaceholder')}

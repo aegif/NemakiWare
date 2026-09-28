@@ -114,8 +114,9 @@ class AnchorControllerTest {
 
         // A count guard, so an endpoint that stops being mapped (and therefore stops being
         // checked) is visible rather than silently reducing the coverage of this test.
-        assertEquals(5, endpoints.size(),
-                "the anchor API has " + endpoints.size() + " mapped endpoints, not 5; if one "
+        // 7 since 3.4.0: GET and PUT /schedule joined (both call requireAdmin first).
+        assertEquals(7, endpoints.size(),
+                "the anchor API has " + endpoints.size() + " mapped endpoints, not 7; if one "
                         + "was added, confirm it is gated and update this number");
 
         for (Method endpoint : endpoints) {
@@ -255,6 +256,33 @@ class AnchorControllerTest {
                 "an empty receipt list has two very different causes and nothing said which");
         org.mockito.Mockito.verify(anchors, org.mockito.Mockito.never())
                 .anchor(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("a REFUSED retry answers 409, not 200 — the status the body moved away from the controller still maps")
+    void aRefusedRetryIsNotSuccess() throws Exception {
+        // The body of this endpoint moved into AnchorRunService (3.4.0) and the controller kept
+        // only the status mapping. Nothing asserted the retry's status, so a mapping that sent a
+        // refusal back as 200 would have passed every test here.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.retryUnsettled(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
+                        java.util.List.of(), "the stored receipts could not be read"));
+        setField(controller, "anchorService", anchors);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null, "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", store);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("retryUnsettled", String.class)
+                .invoke(controller, "bedroom");
+
+        HttpStatus status = (HttpStatus) response.getClass().getMethod("getStatusCode").invoke(response);
+        assertEquals(HttpStatus.CONFLICT, status, "a refused retry was answered as success");
     }
 
     private static final String ROOT =

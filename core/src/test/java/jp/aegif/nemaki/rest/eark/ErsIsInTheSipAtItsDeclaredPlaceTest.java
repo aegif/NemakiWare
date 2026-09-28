@@ -46,6 +46,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -231,6 +235,66 @@ class ErsIsInTheSipAtItsDeclaredPlaceTest {
                 "a package with no evidence record still carries a file named "
                         + ErsFormat.CHOSEN.fileName() + ", which a receiver would read as "
                         + "evidence this node does not have");
+    }
+
+    @Test
+    @DisplayName("with profile v1's section, the ERS covers the section's anchor target — not the repository's latest checkpoint")
+    void inTheV1LayoutTheErsCoversTheSectionsAnchorTarget(@TempDir Path tmp) throws Exception {
+        // The section's chain is the record-content domain; the repository's own checkpoints are
+        // another domain. An ERS over the repository's latest made a verifier's P5 compare its data
+        // object with a root it was never about, and a correct package answered FAILED (2026-09-28).
+        jp.aegif.nemaki.evidence.EvidenceBundle bundle = TheSipLayoutIsWhereCommonsIpPutsItTest.oneBundle();
+        EvidenceCheckpoint target = bundle.anchorTargetCheckpoint();
+        byte[] overTarget = {0x30, 0x03, 0x02, 0x01, 0x05};
+        byte[] overRepository = {0x30, 0x03, 0x02, 0x01, 0x07};
+        EvidenceRecordService records = mock(EvidenceRecordService.class);
+        when(records.forCheckpoint(eq(target.domain()), same(target)))
+                .thenReturn(new EvidenceRecordService.Built(overTarget, target, null));
+        when(records.latest(anyString()))
+                .thenReturn(new EvidenceRecordService.Built(overRepository, checkpoint(), null));
+
+        Path sip = exportWithBundle(tmp, records, TheSipLayoutIsWhereCommonsIpPutsItTest.assemblerReturning(bundle));
+
+        byte[] shipped = null;
+        try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(Files.newInputStream(sip))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                if (entry.getName().endsWith(ErsFormat.CHOSEN.fileName())) {
+                    shipped = in.readAllBytes();
+                }
+            }
+        }
+        assertTrue(java.util.Arrays.equals(overTarget, shipped),
+                "the package's ERS is not the one over the section's anchor target: "
+                        + java.util.Arrays.toString(shipped));
+        verify(records, never()).latest(anyString());
+    }
+
+    private static Path exportWithBundle(Path tmp, EvidenceRecordService records,
+            jp.aegif.nemaki.evidence.EvidenceBundleAssembler bundles) throws Exception {
+        ContentService contentService = mock(ContentService.class);
+        Document document = new Document();
+        document.setId(OBJECT);
+        document.setName("minutes.txt");
+        document.setType("cmis:document");
+        document.setAttachmentNodeId("att-1");
+        when(contentService.getContent(REPO, OBJECT)).thenReturn(document);
+        AttachmentNode attachment = mock(AttachmentNode.class);
+        when(attachment.getName()).thenReturn("minutes.txt");
+        when(attachment.getInputStream())
+                .thenReturn(new ByteArrayInputStream("the minutes".getBytes(StandardCharsets.UTF_8)));
+        when(contentService.getAttachment(REPO, "att-1")).thenReturn(attachment);
+        AuthenticityReportAssembler assembler = mock(AuthenticityReportAssembler.class);
+        when(assembler.assemble(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new AuthenticityReport(REPO, OBJECT, "2026-08-27T00:00:00Z", List.of()));
+
+        EarkSipExporter exporter = new EarkSipExporter();
+        exporter.setContentService(contentService);
+        exporter.setReportAssembler(assembler);
+        exporter.setEvidenceRecordService(records);
+        exporter.setBundleAssembler(bundles);
+        return exporter.export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(),
+                Files.createDirectories(tmp.resolve("out"))).sip();
     }
 
     private static EvidenceCheckpoint checkpoint() {

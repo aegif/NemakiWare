@@ -79,6 +79,15 @@ public class AnchorService {
     }
 
     /**
+     * The rungs this service would contact, in ladder order — a copy, so a reader cannot rewire
+     * them. For the scheduler's "is any rung configured" question and the settings screen's
+     * display; neither sends through this list.
+     */
+    public List<AnchorTarget> targets() {
+        return List.copyOf(targets);
+    }
+
+    /**
      * What a claim built on this rung may and may not say.
      *
      * <p>Derived from the enum rather than supplied as text, so a new {@code TimeSemantics}
@@ -155,7 +164,22 @@ public class AnchorService {
 
     /** Every rung's receipt, plus what the set of them does and does not amount to. */
     public record Outcome(String domain, long toSequence, String merkleRoot,
-                          List<AnchorReceipt> receipts, String refusedReason) {
+                          List<AnchorReceipt> receipts, String refusedReason,
+                          List<AnchorReceipt> unstored) {
+
+        /**
+         * Every arm but one: nothing was left unstored. Only the "receipt NOT stored" refusal
+         * names what it lost, and a caller that must decide whether a second contact would mint
+         * a second commitment (the scheduler) needs WHICH rungs, not the sentence.
+         */
+        public Outcome(String domain, long toSequence, String merkleRoot,
+                       List<AnchorReceipt> receipts, String refusedReason) {
+            this(domain, toSequence, merkleRoot, receipts, refusedReason, List.of());
+        }
+
+        public Outcome {
+            unstored = unstored == null ? List.of() : List.copyOf(unstored);
+        }
 
         /**
          * Rungs that actually confirmed. {@code PENDING} is excluded — an OpenTimestamps
@@ -222,6 +246,7 @@ public class AnchorService {
         }
         List<AnchorReceipt> receipts = new ArrayList<>(targets.size());
         List<String> lost = new ArrayList<>();
+        List<AnchorReceipt> lostReceipts = new ArrayList<>();
         int configured = 0;
         int settled = 0;
         for (AnchorTarget target : targets) {
@@ -235,6 +260,7 @@ public class AnchorService {
             }
             if (!persist(checkpoint.domain(), checkpoint.toSequence(), receipt)) {
                 lost.add(receipt.kind().name());
+                lostReceipts.add(receipt);
             }
         }
         // Two refusals the caller could not see before, both after a commitment was made.
@@ -252,7 +278,7 @@ public class AnchorService {
                     checkpoint.merkleRoot(), receipts,
                     "a commitment was made and its receipt was NOT stored (" + lost
                             + "). It cannot be upgraded or shown later, and re-anchoring mints a "
-                            + "new one rather than recovering this");
+                            + "new one rather than recovering this", lostReceipts);
         }
         if (configured > 0 && settled == 0) {
             return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
@@ -290,6 +316,10 @@ public class AnchorService {
      * licence to contact all of them.
      *
      * <h2>Why this is not wired into the scheduled path</h2>
+     *
+     * <p>Since 3.4.0 {@code AnchorScheduler} can call it — on its OWN timer, only when an operator
+     * set {@code anchor.schedule.retry-unsettled-interval-minutes}, and never more often than every
+     * 60 minutes. What follows is why it is not on the seal path.
      *
      * <p>It was, briefly — the {@code noop} branch of {@code checkpoint-and-anchor} called it.
      * That made every idle cron run contact every rung that had no CONFIRMED or PENDING row,
@@ -364,6 +394,7 @@ public class AnchorService {
         }
 
         List<AnchorReceipt> receipts = new ArrayList<>();
+        List<AnchorReceipt> unstored = new ArrayList<>();
         for (AnchorTarget target : targets) {
             if (settled.contains(target.kind())) {
                 continue;
@@ -377,13 +408,19 @@ public class AnchorService {
             }
             AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
             receipts.add(receipt);
-            persist(checkpoint.domain(), checkpoint.toSequence(), receipt);
+            if (!persist(checkpoint.domain(), checkpoint.toSequence(), receipt)) {
+                // Carried, not refused: the HTTP answer of this verb is unchanged (a known gap —
+                // it still says the rung was contacted). The scheduler reads this list, because a
+                // retry on its timer would otherwise contact the same rung again next period and
+                // make another commitment for a receipt it could not keep.
+                unstored.add(receipt);
+            }
         }
         // An empty result is NOT a refusal. Reporting it as one made a healthy deployment —
         // every rung settled — answer refused:true on every call, which is how an operator
         // learns to ignore the field. Nothing stopped us; there was nothing to do.
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
-                receipts, null);
+                receipts, null, unstored);
     }
 
     /**

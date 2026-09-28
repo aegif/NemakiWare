@@ -164,6 +164,21 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         return tsaUrl != null;
     }
 
+    /** Where rung 3 sends, for display only — the settings screen shows it and cannot change it. */
+    public String tsaUrl() {
+        return tsaUrl;
+    }
+
+    /** The policy OID requested, or null when the TSA's default is accepted. Display only. */
+    public String requestedPolicyOid() {
+        return reqPolicyOid;
+    }
+
+    /** Whether a trust anchor was configured (and, since start-up refuses an unreadable one, loaded). */
+    public boolean hasTrustAnchor() {
+        return trustAnchor != null;
+    }
+
     @Override
     public AnchorReceipt anchor(String hexDigest) {
         byte[] imprint = decodeSha256Hex(hexDigest);

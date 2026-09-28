@@ -504,6 +504,34 @@ class PrincipalBatchResourceTest {
         verify(cs, never()).deleteUser(anyString(), anyString());
     }
 
+    // ---- gate: the confirmed path's default is abort too; skipping is its own choice (design §8, C-2) ----
+
+    @Test
+    @DisplayName("a confirmed plan with an unexpected or forbidden row writes nothing unless onUnexpected=skip; with skip the expected row alone is applied")
+    void aConfirmedPlanWithAnUnexpectedRowIsRefusedUnlessSkip() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getUserItemById(eq(REPO), eq("admin"))).thenReturn(user("admin", "1-b"));
+        when(cs.deleteUser(eq(REPO), anyString())).thenReturn(true);
+        PrincipalBatchResource resource = resourceWith(cs);
+        String planId = (String) body(resource.previewJson(REPO, json("users", "delete", "",
+                "[{\"userId\":\"u1\"},{\"userId\":\"u9\"},{\"userId\":\"admin\"}]"))).get("planId");
+
+        Response confirmed = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\"}");
+
+        assertEquals(409, confirmed.getStatus(), String.valueOf(confirmed.getEntity()));
+        assertEquals("UNEXPECTED_ROWS", body(confirmed).get("reason"));
+        verify(cs, never()).deleteUser(anyString(), anyString());
+
+        // The plan was kept: the same planId, now with skip, applies u1 alone.
+        Response skipped = resource.executeJson(REPO, "{\"planId\":\"" + planId + "\",\"onUnexpected\":\"skip\"}");
+
+        assertEquals(200, skipped.getStatus(), String.valueOf(skipped.getEntity()));
+        verify(cs, times(1)).deleteUser(REPO, "u1");
+        verify(cs, never()).deleteUser(REPO, "u9");
+        verify(cs, never()).deleteUser(REPO, "admin");
+    }
+
     // ---- gate: design §5.1 says delete AND remove for the directory-sync guess (c39 subagent P3) ----
 
     @Test

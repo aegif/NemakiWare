@@ -261,6 +261,17 @@ public class PrincipalBatchResource {
                                 + "was written. Preview the file again");
             }
             verdicts = again.verdicts();
+            long notExpectedInPlan = again.verdicts().size() - again.count(Verdict.EXPECTED);
+            if (input.onUnexpected == OnUnexpected.ABORT && notExpectedInPlan > 0) {
+                // The confirmed path follows the same default as the immediate one: a plan with an
+                // unexpected or forbidden row writes nothing unless onUnexpected=skip says so. The
+                // settings screen's "confirm and run" is this call; skipping is its own button
+                // (design §8). The plan is kept, so the same planId can be confirmed with skip.
+                audit(repositoryId, actor, jobId, kind, operation, "plan-abort", false,
+                        refusalCounts(again));
+                return Response.status(Response.Status.CONFLICT)
+                        .entity(unexpectedRowsRefusal(jobId, notExpectedInPlan, again)).build();
+            }
             if (!plans.remove(plan.planId())) {
                 // Applied once: another confirmation of the same plan got past the snapshot check
                 // at the same moment and took it. This one writes nothing.
@@ -268,7 +279,7 @@ public class PrincipalBatchResource {
                         "the plan was just applied or discarded by another request; nothing was "
                                 + "written. Preview the file again");
             }
-            mode = "plan";
+            mode = input.onUnexpected == OnUnexpected.SKIP ? "plan-skip" : "plan";
         } else {
             if (input.rows == null) {
                 throw new PrincipalBatchRequestException(400, "execute needs a planId or the rows");
@@ -280,21 +291,10 @@ public class PrincipalBatchResource {
             verdicts = planned.verdicts();
             long notExpected = planned.verdicts().size() - planned.count(Verdict.EXPECTED);
             if (input.onUnexpected == OnUnexpected.ABORT && notExpected > 0) {
-                Map<String, Object> refused = new LinkedHashMap<>();
-                refused.put("jobId", jobId);
-                refused.put("status", "refused");
-                refused.put("reason", "UNEXPECTED_ROWS");
-                refused.put("message", notExpected + " row(s) are not as the file assumes and onUnexpected "
-                        + "is abort, so nothing was written. Preview the file, or pass onUnexpected=skip "
-                        + "to apply the expected rows only");
-                Map<String, Object> counts = new LinkedHashMap<>();
-                counts.put("applied", 0);
-                counts.put("unexpected", planned.count(Verdict.UNEXPECTED));
-                counts.put("forbidden", planned.count(Verdict.FORBIDDEN));
-                refused.put("counts", counts);
-                refused.put("rows", planned.verdicts().stream().map(RowVerdict::asMap).toList());
-                audit(repositoryId, actor, jobId, kind, operation, "immediate-abort", false, counts);
-                return Response.status(Response.Status.CONFLICT).entity(refused).build();
+                audit(repositoryId, actor, jobId, kind, operation, "immediate-abort", false,
+                        refusalCounts(planned));
+                return Response.status(Response.Status.CONFLICT)
+                        .entity(unexpectedRowsRefusal(jobId, notExpected, planned)).build();
             }
             mode = input.onUnexpected == OnUnexpected.SKIP ? "immediate-skip" : "immediate";
         }
@@ -330,6 +330,29 @@ public class PrincipalBatchResource {
         body.put("status", "applied");
         audit(repositoryId, actor, jobId, kind, operation, mode, true, counts);
         return Response.ok(body).build();
+    }
+
+    /** The 409 both paths answer when a row is not expected and onUnexpected is abort. */
+    private static Map<String, Object> unexpectedRowsRefusal(String jobId, long notExpected,
+            PrincipalBatchEngine.Planned planned) {
+        Map<String, Object> refused = new LinkedHashMap<>();
+        refused.put("jobId", jobId);
+        refused.put("status", "refused");
+        refused.put("reason", "UNEXPECTED_ROWS");
+        refused.put("message", notExpected + " row(s) are not as the file assumes and onUnexpected "
+                + "is abort, so nothing was written. Preview the file, or pass onUnexpected=skip "
+                + "to apply the expected rows only");
+        refused.put("counts", refusalCounts(planned));
+        refused.put("rows", planned.verdicts().stream().map(RowVerdict::asMap).toList());
+        return refused;
+    }
+
+    private static Map<String, Object> refusalCounts(PrincipalBatchEngine.Planned planned) {
+        Map<String, Object> counts = new LinkedHashMap<>();
+        counts.put("applied", 0);
+        counts.put("unexpected", planned.count(Verdict.UNEXPECTED));
+        counts.put("forbidden", planned.count(Verdict.FORBIDDEN));
+        return counts;
     }
 
     // ---- plumbing ----
