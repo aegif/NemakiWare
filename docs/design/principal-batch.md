@@ -2,7 +2,7 @@
 
 2026-09-28。計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md)
 §20 トラック C の C-1（API）と C-2（管理画面）。旧「3.4.1」に置いていた機能を、2026-09-28 の
-オーナー判断で 3.4.0 に入れる。**C-1（API）は 2026-09-29 に実装した** — `api/v1/resource/PrincipalBatchResource` と
+オーナー判断で 3.4.0 に入れる。**C-1（API）は 2026-09-28 に実装した** — `api/v1/resource/PrincipalBatchResource` と
 `api/v1/principals/`（`PrincipalBatchEngine` / planner / applier / `PrincipalCsv` / plan store）。C-2（画面）は未着手。
 「現行コードの事実」は 2026-09-28 に読んで確かめた行番号で書き、着手時（09-29）に再読して一致を確かめた。
 実装で設計から動いた点は **§13** にまとめた。
@@ -103,7 +103,7 @@ POST /core/api/v1/cmis/repositories/{repo}/principals/batch/execute
 |---|---|---|
 | `kind` | `users` / `groups` / `memberships` | 必須 |
 | `operation` | `create` / `update` / `delete`（users, groups）、`add` / `remove` / `replace`（memberships） | 必須 |
-| `onUnexpected` | `abort`（既定）/ `skip` | execute の即実行だけ |
+| `onUnexpected` | `abort`（既定）/ `skip` | execute の両経路（2026-09-28 から確認あり経路も — §6.1 の 3。§13） |
 | `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外（`passwordPresent` でない plan）で `file` が付いていれば 400。`file` を再送するときは `kind` / `operation` も送る（CSV の列検査に要る。plan と照合され、違えば 400） |
 
 ### 3.2 preview の応答
@@ -225,7 +225,9 @@ preview は `Plan`（kind / operation / 行の正規化結果 / `snapshotHash` /
    一致しなければ → 409 `SNAPSHOT_CHANGED`（**0 件書く**）。snapshot は対象の `_rev` しか持たないので、行が名指す参照先
    （`memberId` / `groups` / `users` / `members`）の消失、入れ子サイクルの発生、**別の実行者**による forbidden の変化は
    verdict の側で捕まる（c39、2 名一致の P1）
-3. 一致 → 再判定した verdict で行を順に適用
+3. 一致したうえで、`unexpected` か `forbidden` の行が 1 行でもあり `onUnexpected` が `abort`（既定）なら → 409
+   `UNEXPECTED_ROWS`（**0 件書く**、plan は残す — 同じ `planId` を `onUnexpected=skip` で確認し直せる）
+4. それ以外 → 再判定した verdict で行を順に適用（`skip` なら `unexpected` は飛ばし、`forbidden` はそれでも書かない）
 
 plan はノードローカルなので、複数レプリカで別ノードに当たると `PLAN_UNKNOWN`（§12 の限界 3）。
 パスワードは plan に**平文でも hash でも保存しない** — 確認あり経路では execute に同じ CSV を
@@ -338,7 +340,7 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
 
 ---
 
-## 13. 実装で設計から動いた点（2026-09-29、C-1）
+## 13. 実装で設計から動いた点（2026-09-28、C-1）
 
 - **§2.2 の訂正**: 3 層の所属の入口は `applyGroupUpdate` ではなく `update()` を直接呼ぶ（修正印を自分で押す）。尾は同じなので、
   バッチは `GroupMembershipEditor.edit` → `applyGroupUpdate` で書く。正準の検索は `getUserItemById` / `getGroupItemByIdFresh`
@@ -362,13 +364,13 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
 - **plan の記録**: 既知の限界 §12 の 1〜5 は正典の残件表 R115〜R119 に写した（R115 は P2、他は P3）。
 - **admin=true の create は 2 書き**: `buildAndCreateUser` は admin=false で書くので、読み直して `setAdmin(true)` → `applyUserUpdate`。
 - **実行者**: `CallContext.getUsername()`（`HttpServletRequest.getUserPrincipal()` は常に null なので使わない）。
-- **`memberships / replace` の `members` 列は必須（2026-09-29、c39 前の自己確認）**: 列を落とした CSV、JSON で欄が無い / `null` の行は
+- **`memberships / replace` の `members` 列は必須（2026-09-28、c39 前の自己確認）**: 列を落とした CSV、JSON で欄が無い / `null` の行は
   400 で、plan にも apply にも進まない。「空にする」は**述べた空**（空文字・`[]`）だけ。§4 が「意味の側で塞ぐ」と書いた
   「列を落とした CSV で全員の所属が消える事故」は、`update` の空欄では塞がっていたが `replace` の欄の欠落では開いていた —
   読み手 2 つ（CSV / JSON）が同じ `requiredColumnsFor` を読む。`add` / `remove` の `memberId` / `memberType` も同じ扱い。
 - **plan の消費は原子的（同日）**: 同じ `planId` の確認 2 つが同時に snapshot 検査を通っても、`Store.remove` が true を
   返した 1 つだけが書き、もう 1 つは 409 `PLAN_UNKNOWN`（0 件）。「1 回だけ」は peek → remove の間でも成り立つ。
-- **c39 の確認レビュー（2 名とも NOT CONVERGED）で直した点（2026-09-29）**:
+- **c39 の確認レビュー（2 名とも NOT CONVERGED）で直した点（2026-09-28）**:
   - **再判定の verdict を捨てていた**（Codex P1 = subagent P1-2、独立に同じ穴）: 確認あり実行は snapshot だけ比べ、preview 時の
     verdict を適用していた。§6.1 の 2 を「snapshot と verdict の列の両方が一致」に改め、適用するのは再判定の verdict。
   - **plan は repository に縛る**: 別の repository の path で `planId` を渡すと 409 `PLAN_UNKNOWN`（plan は残る）。
@@ -377,7 +379,7 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
   - **CSV の行番号は物理行**: 複数行セルの後の行も、ファイルのその行が始まる番号。
   - **2 MiB 超 → 413 に錠が無かった**（subagent P2、3 腕）: 錠を足した。製品は変えていない。
   - §3.1 / §7 の表を実装に合わせた（`file` 再送時の `kind` / `operation`、users の `groups` 列の所属の書き、`validateNewGroup` は呼ばない）。
-- **c40 の確認レビュー（2 名とも CONVERGED、P3 のみ）で写した点（2026-09-29）**:
+- **c40 の確認レビュー（2 名とも CONVERGED、P3 のみ）で写した点（2026-09-28）**:
   - §5.2 の「管理者グループから外す行は preview の `message` に注意だけ出す」は**未実装**（`expected` の行は message を持たない。
     生産者が無い文だった）。禁止しない判断は変わらない。注意を出すなら C-2 の画面側で `memberId` が built-in / 実行者かを見る（別判断）。
   - §7 の users / create・update の `groups` 列は**所属の全リスト**（製品の `updateUserGroups` と同じ差分適用）— 列に無いグループからは
@@ -386,3 +388,14 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
   - `readBounded` は 8 KiB 単位で読むので、読む量の上限は `MAX_BYTES + 8192`（javadoc の「+ 1」を直した。錠はこの境界で等号）。
   - MH4 / ML4 の錠は入口でなく `PrincipalCsv.parse` に直接掛かる（入口の `readBounded` が超過を渡さないので、parse 自身の 413 は
     二重防御。入口側の腕は MF4 / MG4 が測る）— 「錠は入口を通す」規則の例外として記録。
+- **確認あり経路も既定 abort（2026-09-28、C-2）**: §6.1 は plan の verdict をそのまま適用し、想定外の行を黙って飛ばしていた。
+  §8 の画面は「確認して実行」が想定外で abort に跳ね、飛ばすのは確認ダイアログ付きの別ボタン、と書いていて、§6.1 の
+  API ではそれを実装できなかった。`onUnexpected` を確認あり経路にも効かせた（既定 `abort` → 409 `UNEXPECTED_ROWS`、
+  plan は残す。`skip` で確認し直すと expected だけを適用し、forbidden はそれでも書かない）。錠
+  `aConfirmedPlanWithAnUnexpectedRowIsRefusedUnlessSkip`、control OA4。
+- **画面（C-2）**: ユーザー管理・グループ管理の見出しに「一括」。4 段の dialog（種類と操作 → CSV とテンプレート → preview 表 →
+  結果）。preview 表は verdict で色分けし、想定外・禁止の行があれば「確認して実行は何も書かずに止まる」と段に書く。
+  「想定外を飛ばして実行」は別ボタンで確認ダイアログ付き。パスワードを含む plan は実行時に同じファイルを再送する
+  （§6.1 の 1'）。呼び出しは `services/principalBatch.ts`（`AuthService.getAuthHeaders()`）。Playwright は
+  `tests/admin/principal-batch.spec.ts`（preview が書かない・abort・skip・forbidden・groups 空欄で所属が残る）。
+

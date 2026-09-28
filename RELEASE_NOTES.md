@@ -9,6 +9,56 @@ only repository gotchas.
 
 # 未リリース (3.4.0 に向けた作業)
 
+## ユーザー・グループ・所属を CSV で一括是正できるようになりました
+
+管理画面のユーザー管理・グループ管理に「一括」を足しました（API は
+`POST /core/api/v1/cmis/repositories/{repo}/principals/batch/{preview,execute}`、CSV または JSON）。
+設計は [`docs/design/principal-batch.md`](docs/design/principal-batch.md)。
+
+- **preview は何も書きません**。行ごとに「想定どおり／想定外（理由付き）／禁止」を返し、plan（10 分有効）を作ります
+- 「確認して実行」は plan を確認して適用します。preview の後に対象（と、行が名指すメンバーやグループ）が変わっていれば
+  409 で 0 件です。**想定外か禁止の行が 1 行でもあれば、既定では何も書かずに 409** です。想定外の行を飛ばすのは
+  確認ダイアログ付きの別ボタン（API では `onUnexpected=skip`）で、既定にはしていません
+- **禁止**の行（built-in の `admin`、Solr ユーザー、`mcp-service`、実行者自身の削除と admin の剥奪）は、飛ばす指定でも書きません
+- `update` の空欄は「その列は触らない」です（`groups` が空でも所属は変わりません）。所属を空にするのは
+  `memberships / replace` の空の `members` だけで、`members` 列そのものが無いファイルは 400 です
+- パスワードの値は応答・plan・監査・ログのどこにも残しません。パスワードを含む plan の実行には同じファイルの再送が要ります
+- 上限は 5,000 行・2 MiB（超えると 413）。書き込みは既存の作成・更新・削除と同じ経路だけを通り、監査ログは 1 回の実行につき 1 行です
+
+### 主張しないこと
+
+- ディレクトリ（LDAP / IdP）と一致した状態にすること — 棚卸しは外側の仕事で、ファイルに無い ID は消しません
+- 同期由来の判別 — ID の接頭辞からの推定で、LDAP ユーザーは推定できません
+- 途中で失敗したときに元に戻すこと — 止まった行を返し、ロールバックはしません（同じファイルを再度 preview すると、適用済みの行は想定外として見えます）
+- 複数レプリカで plan を共有すること — 別のノードで確認すると 409 です
+- 既存の 1 件ずつの画面や API にも同じ保護があること — built-in アカウントの保護はこの一括の入口だけです（残件 R115）
+
+## 証拠台帳の checkpoint を、設定した条件で自動で封じて送れるようになりました（既定は無効）
+
+これまで checkpoint の封入と外部への送信（RFC 3161 の TSA、OpenTimestamps）は手動の API だけでした。
+管理画面の「証拠と時刻証明」で、**ドメインごと**（リポジトリ、または `record-content` — 書き出す package の証拠が
+読む記録内容の状態）に条件を決めると、leader ノードが封じて送ります。設計は
+[`docs/design/anchor-scheduler.md`](docs/design/anchor-scheduler.md)。
+
+- 条件は**時間または件数**: 最古の未封入からの経過（`anchor.schedule.interval-minutes`、有効にするには必須、5 分以上）か、
+  未封入の件数（`anchor.schedule.max-unanchored-entries`、任意）。前回の封入から最短間隔（既定 5 分）は送りません
+- OpenTimestamps の確定確認は自身の周期（既定 60 分）で、失敗した段の再送は周期を設定したときだけ（60 分以上）です。
+  commitment を作ったのに受領を保存できなかった checkpoint は、自動では再送しません（再送は新しい commitment を作るため）
+- 送り先の段が 1 つも構成されていなければ、有効にしても動きません（画面にそう出ます）。送り先（`anchor.rfc3161.*`、
+  `anchor.opentimestamps.sidecar.url`）は**起動時の system property のまま**で、画面は表示するだけです
+- **画面で保存した値は `-D` や環境変数より優先されます**（`anchor.schedule.*` は SSO の設定と同じ扱い）。保存値が読めない
+  ときは何もしません（保存された「無効」を起動時の「有効」で置き換えません）
+- 複数レプリカでは `lineage.leader-election.enabled=true` にしてください。無効のままだと全ノードが自分を leader とみなします
+
+### 主張しないこと
+
+- 設定した間隔が「未封入のまま残る時間」の上限であること — 送れなかった間（拒否・読めない・leader でない）は伸びます。
+  その理由は画面の「最後の判定」に出ます
+- 独立 verifier が P3 以上で `VERIFIED` に届くこと — この版の CLI は P3〜P5 で exit 3 です（P2 は token が根を commit していれば届きます）
+- 発行時の失効情報の収集（既定 `false` のまま）、文書 1 件ごとの TSA（送るのは台帳の checkpoint）、既定での公開 calendar への送信
+- 提示された checkpoint が最新であること
+- leader election を無効にした複数レプリカで二重に送らないこと — 製品はレプリカの数を知らないので検出できません（残件 R120）
+
 ## Notion コネクタが、見せられなかったページを checkpoint で越えなくなりました (**挙動変更**)
 
 Notion の `/search` は時刻での絞り込みを持たず、返る順も指定しなければ未規定です。

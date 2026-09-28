@@ -2,7 +2,7 @@
 
 2026-09-28。計画 [`v3.4.0-evidence-and-residuals-plan.md`](v3.4.0-evidence-and-residuals-plan.md)
 §20 トラック C の C-3（スケジューラ）と C-4（管理画面）。旧「3.4.1」に置いていた機能を、
-2026-09-28 のオーナー判断で 3.4.0 に入れる。**この文書は設計であって、製品コードはまだ無い。**
+2026-09-28 のオーナー判断で 3.4.0 に入れる。**製品コードは 2026-09-28 に入った**（C-3 / C-4）— 設計から動いた点は §10。
 anchor の段と受領の意味は [`p2-0-anchor-targets.md`](p2-0-anchor-targets.md) が正典で、この文書は
 **いつ送るか**だけを足す。「現行コードの事実」は 2026-09-28 に読んだ行番号（着手時に再確認）。
 
@@ -283,7 +283,8 @@ checkpoint を封じて送る。送った結果と未封入の件数を管理画
 
 - 頻度の設定が**未封入の窓の上限**であること — 送れなかった分（error / refused / not leader）の間、
   窓は伸びる。上限ではなく「この条件で試みる」
-- 独立 verifier が P2 で `VERIFIED` に届くこと（この版の CLI は構造的に exit 3。3.4.0 の残件のまま）
+- 独立 verifier が P3 以上で `VERIFIED` に届くこと（この版の CLI は P3〜P5 で構造的に exit 3。3.4.0 の残件のまま。
+  P2 は RFC 3161 token が根を commit していれば `VERIFIED` に届く — 2026-09-28 に訂正、この行は P2 と書いていた）
 - 発行時失効収集の on（R65。既定 `false` のまま）
 - 文書 1 件ごとの TSA（段 3 は台帳 checkpoint）
 - 既定で公開 calendar へ送ること（OTS は sidecar URL を置いたときだけ）
@@ -325,3 +326,48 @@ checkpoint を封じて送る。送った結果と未封入の件数を管理画
 
 錠は本番の入口（`AnchorScheduler.tick` と `AnchorController`）を通す。`AnchorRunService` だけを直接叩く
 錠で済ませない（[[lock-the-entry-point-not-the-collaborators]] の規則）。
+
+---
+
+## 10. 実装で設計から動いた点（2026-09-28、C-3 / C-4）
+
+- **封じる domain は repository ＋ `record-content`**。§3.2 は「for each repositoryId」と書いていたが、書き出す package の
+  証拠 section が読む checkpoint と anchor は `record-content` domain（E1 の記録内容の状態、全リポジトリ共通）にある
+  （`RecordContentStateRecorder.DOMAIN`、`EvidenceBundleAssembler`）。repository だけを回すと、計画 §0 が名指す連鎖は
+  手押しのまま残る。設定の API と画面は `repositoryId=record-content` を受ける（既存の手動 API と同じく id は台帳の domain）。
+- **設定の読みは PropertyManager の cache を通らない**。§4.1 は `propertyManager.readValue(repositoryId, key)` と書いていたが、
+  (1) configuration cache は eternal で、別レプリカの保存はそのレプリカの cache しか無効にしない（leader が別ノードだと
+  「次の tick で効く」が偽）、(2) cache pool は repository ごとで、未登録の id（`record-content`）は nemaki_conf の全体設定と
+  **同じ 1 行を共有する** — その id で読むと全体設定を返すか、上書きしうる。domain 自身の保存値は tick ごとに nemaki_conf から
+  直接読み（`IntegrationSettingsService.readRepositorySettings`）、無いキーだけ全体の値（`PropertyManager.readValue(key)`:
+  全体の nemaki_conf → `-D` → 環境変数 → properties）に落ちる。**保存値が読めなければその tick は何もしない**（保存された
+  「無効」を `-D` の「有効」で置き換えない）。`anchor.schedule.` は admin-managed prefix に足した（全体の保存値も `-D` に勝つ）。
+- **封入済みの上端 A**: 時刻証明になる受領（RFC 3161 の `CONFIRMED`、OpenTimestamps の `PENDING` / `CONFIRMED`）が
+  1 つでもある最新の checkpoint。いま構成されている段かどうかは問わない（過去に得た token は今も証拠）。何も無ければ −1
+  （sequence は 0 始まりなので、§3.1 の「A = 0」は 1 件少なく数える）。**20 checkpoint 遡って見つからなければ UNAVAILABLE に
+  せず下限にする** — 件数は「以上」、最古の時刻は遡った最古の checkpoint の封入時刻（entry は封じる checkpoint より前に
+  追加される）で上から押さえる。§3.1 のとおり止めると、anchor 無しで封じてきた配備は二度と封じなくなる（過剰拒否）。
+  受領が読めない（例外・`lastQueryFailed`・読めない行）ときは従来どおり UNAVAILABLE で、件数を出さない。
+- **due でも、未封入の entry が全部すでに封じた checkpoint の中なら呼ばない**。そこで `closeCheckpoint` を呼んでも noop に
+  なるだけで、その checkpoint の anchor を取り戻す道は retry-unsettled（自身の周期、または運用者）。これで §3.2 の
+  「件数 ≥ 1 なのに noop なら WARN」は本当の食い違い（別の書き手が先に封じた等）のときだけになる。
+- **error の後は最短間隔だけ待つ**（`nextEligibleAt`、ノードのメモリ）。封じられなかった場合 checkpoint の時刻は動かないので、
+  §3.2 の最短間隔の判定だけでは毎分繰り返す。
+- **再送の保留**: 封入の anchor でも再送でも、commitment を作ったのに受領を保存できなかった段があれば（`Outcome.unstored`、
+  このバッチで `AnchorService` に足した — HTTP の応答は変えていない）、その checkpoint の自動再送を止める（ノードの
+  メモリ。再起動で消える — 残件 R124）。同じ tick で封じた直後は再送しない（失敗した段を 2 度叩かない）。
+- **WARN は理由が変わったときだけ**（毎分同じ行を書かない）。
+- **PUT の検査**: 送った値をいまの値に重ねて、scheduler と同じ規則（`AnchorScheduleSettings.parse`）で検査する。空にしたキーは
+  「未設定」として判定する（空にすると現れる全体の値が有効かどうかは仮定しない — 保守的）。知らない domain は 400。
+  保存の失敗は #1410 の規則（固定文 + `incidentId`）。
+- **画面**（C-4）: `管理 → 証拠と時刻証明`（`/evidence-anchoring`、`AdminRoute`）。対象は「このリポジトリ」と `record-content`。
+  段 0 のときは「有効にしても動かない」と出し、受領が読めない件数は「読めていません」と出す（0 と出さない）。送り先は表示だけ
+  （TSA URL は user:password を除いて表示、PEM は有無だけ）。「今すぐ 1 回」は既存の `POST /checkpoint-and-anchor`。
+- **§1.5 の port**: `AnchorWiringConfig` の javadoc の例を sidecar の実際（8082）に直した。
+- **錠と control**: `AnchorSchedulerTest` 23（入口は `tick`）、`AnchorScheduleEndpointTest` 9（入口は controller の GET / PUT）、
+  `AnchorServiceTest` +2、`AnchorControllerTest` +1（retry の 409 — 本体を移したので status の写像を読む錠が要った）、
+  `PropertyManagerConfigTest` +1。control は MM4〜NZ4（正典 §5）。**件数 0 のとき封じない**ことは 3 つの仕組み（時間の腕は
+  最古が無い、件数の腕は上限 ≥ 1、封じる entry が無い）が重ねて守るので、1 点の細工では発火しない — control は置かない。
+  「tick の中で設定を cache しない」も保持する場所の無い構造なので細工で作れない（`ND4` は「保存値を読まない」で測る）。
+- **§8 の限界は正典の残件表 R120〜R125 に写した**。
+
