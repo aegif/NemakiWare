@@ -14,8 +14,8 @@
 | AIP の中身 | payload `契約書 v2.txt`（非 ASCII 名）は byte 同一、**sha256 が statement の `contentDigest` と一致**（`bc6ad68e…`）。evidence section の 12 ファイル・authenticity report・`dc.xml`・schema 4 本も byte 同一（RODA は `metadata/other/*` を `metadata/descriptive/` に移す）。**我々の METS 2 本と `premis.xml` は AIP 構造には残らない**（RODA が自前の AIP と PREMIS を書く — 8 月と同じ）が、`submission/` に SIP ごと残る |
 | **round-trip 後の CLI** | 承認済み AIP の `/api/v2/aips/{id}/download/submission` は**元 zip を包んだ zip**を返す。中の zip の sha256 は golden と**一致**し、CLI は **`PACKAGE_INTEGRITY_V1` exit 0 / `RECORD_LEDGER_V1` exit 0** — 往復前と同じ verdict |
 
-**測っていないこと（言わない）**: anchors（`anchors/` と ERS）を持つ package —
-この golden は P0/P1 のみで、**real RFC 3161 / ERS の RODA 往復は未測定**。他版の RODA。
+**測っていないこと（言わない）**: ~~anchors（`anchors/` と ERS）を持つ package —
+この golden は P0/P1 のみで、**real RFC 3161 / ERS の RODA 往復は未測定**。~~ — 2026-09-28 に測った（下の「anchors 付き」）。他版の RODA。
 RODA 側の受領証（v2 API に受領証と分かるリソースは無い — p3-4 §16 のとおり）。
 
 ## 前提
@@ -108,3 +108,33 @@ docker compose -p roda -f docker/docker-compose-roda.yml down     # -v は付け
 - `download/submission` は SIP そのものではなく**包み zip**。そのまま CLI にかけると exit 3。
 - `unzip -Z1` は非 ASCII の entry 名を壊す。golden 側の digest は Python `zipfile` で取ること
   （最初の照合で payload を「変わった」と誤読した）。
+
+## anchors 付き — 製品の書き出しで（2026-09-28）
+
+golden ではなく**製品が書き出した package**を流した。token はリポジトリ内のローカル TSA
+（[`tools/local-tsa/LocalTsa.java`](../../tools/local-tsa/LocalTsa.java)、BouncyCastle、自己署名 — **信頼された TSA ではない**）。
+
+| 段 | 結果 |
+|---|---|
+| 準備 | ローカル TSA をホストの 3180 で起動、core を一時の compose override（`JAVA_OPTS` に `-Danchor.rfc3161.tsa.url=http://host.docker.internal:3180/`）で作り直す。専用フォルダに CMIS で内容付き文書を 1 件作る — 作成で record-content の statement が 1 件 chain に入る |
+| 封入（自動） | `PUT /core/api/v1/admin/anchor/schedule?repositoryId=record-content`（enabled・interval 5・max 1・min 1）→ **次の tick で leader が封じて送った**（checkpoint 0..768、`RFC3161_TSA` `CONFIRMED`、TSA の記録した imprint = checkpoint の root） |
+| 封入（手動） | R127 の修正を入れた WAR で新しい文書を作り、`POST …/anchor/checkpoint-and-anchor?repositoryId=record-content` → `success`、`RFC3161_TSA` `CONFIRMED` |
+| 書き出し | `POST /core/api/v1/admin/eark/export?repositoryId=bedroom&objectId=<id>` → v1 section 12 ファイル＋`anchors/rfc3161.der`（manifest で `PRESENT`）＋`metadata/other/ers.der`。sha256 `d1b30e5d…` |
+| 往復前の CLI | P0〜P5 すべて exit 3（`INDETERMINATE`）。P5 の 30 check のうち FAILED 0。anchor の check（anchor commits root、token parse / imprint / signature / eku、ers parse / data object / chain / algorithms）は PASSED |
+| 投入と ingest | transfer の bytes は送った物と一致、`ConfigurableIngestPlugin`（`EARKSIP2ToAIPPlugin`、ClamAV・Siegfried・承認まで）→ `SUCCESS`、AIP `c15eba94-…` **`ACTIVE`**。token・ERS・anchor target・payload は AIP 内で byte 同一（RODA は `metadata/other/*` を `metadata/descriptive/` に移す — 8 月と同じ） |
+| 往復後の CLI | `download/submission` の中の zip の sha256 = 書き出し。P0〜P5 の exit と **check ごとの結果が往復前と全部同じ** |
+
+**全体の verdict が `INDETERMINATE` の理由（往復とは無関係）**: CMIS で作った文書は取込時の digest
+（`nemaki:contentHash`）を持たないので PREMIS に digest が無く、`payload fixity` が `NOT_PRESENT`。trust profile を渡していないので
+`token pkix` / `token policy` が `NOT_PRESENT`、発行時の失効材料が無いので `token revocation` が `UNAVAILABLE`（P3〜P5 はこの版では
+構造的に exit 3）。**P2 の `VERIFIED` は、取込で digest を記録した文書でしか出ない — この測定では出していない。**
+
+**この測定で見つけて直したもの**: 作成と check-in の statement が statements view に載らず、書き出しが legacy に落ちていた（R127）。
+v1 の package の ERS が repository の domain の checkpoint を覆い、P5 が正しい package を FAILED にしていた（R126）。
+
+**測っていないこと**: 信頼された（認定の）TSA の token での往復（公開 TSA の実 token は段 3 単体で 2026-08-18 に取った —
+`authenticity-roadmap.md`）、取込で digest を記録した文書での P2 `VERIFIED`、Archivematica での anchors 付きの往復。
+
+後始末: RODA は `down`（`-v` なし）、測定用フォルダは `deleteTree`、record-content の schedule は全部空に戻し、core は override なしで
+作り直した（台帳の entry と checkpoint は append-only なので残る）。
+
