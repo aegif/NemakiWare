@@ -424,7 +424,8 @@ public class PrincipalBatchResource {
                 success, null, details);
     }
 
-    /** At most MAX_BYTES + 1 are read; one byte over is a 413 before anything is parsed. */
+    /** Reads in 8 KiB chunks and stops at the first chunk that takes the total over MAX_BYTES: at
+     *  most MAX_BYTES + 8192 bytes are consumed, and the 413 comes before anything is parsed. */
     static byte[] readBounded(InputStream in) {
         if (in == null) {
             throw new PrincipalBatchRequestException(400, "the file part is missing");
