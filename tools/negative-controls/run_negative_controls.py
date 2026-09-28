@@ -18484,7 +18484,7 @@ CONTROLS = [
         find='        PrincipalBatchEngine.Planned planned = engine.plan(input.kind, input.operation, input.rows);\n        PrincipalBatchPlan plan = plans.put(',
         replace='        PrincipalBatchEngine.Planned planned = engine.plan(input.kind, input.operation, input.rows);\n        engine.apply(input.kind, input.operation, input.rows, planned.verdicts(), "preview");\n        PrincipalBatchPlan plan = plans.put(',
         test='PrincipalBatchResourceTest',
-        expect_fail=['previewWritesNothing'],
+        expect_fail=['previewWritesNothing', 'aChangedSnapshotIs409AndWritesNothing', 'anUnchangedSnapshotAppliesThePlanOnce', 'thePasswordLeavesThroughNoExit'],
     ),
     dict(
         id='LP4',
@@ -18494,7 +18494,7 @@ CONTROLS = [
         find='            if (input.onUnexpected == OnUnexpected.ABORT && notExpected > 0) {',
         replace='            if (input.onUnexpected == OnUnexpected.ABORT && notExpected > PrincipalBatch.MAX_ROWS) {',
         test='PrincipalBatchResourceTest',
-        expect_fail=['abortRefusesWhenAnyRowIsUnexpected'],
+        expect_fail=['abortRefusesWhenAnyRowIsUnexpected', 'anLdapPrefixedGroupDeleteIsUnexpected'],
     ),
     dict(
         id='LQ4',
