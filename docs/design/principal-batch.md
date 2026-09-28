@@ -104,7 +104,7 @@ POST /core/api/v1/cmis/repositories/{repo}/principals/batch/execute
 | `kind` | `users` / `groups` / `memberships` | 必須 |
 | `operation` | `create` / `update` / `delete`（users, groups）、`add` / `remove` / `replace`（memberships） | 必須 |
 | `onUnexpected` | `abort`（既定）/ `skip` | execute の即実行だけ |
-| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外（`passwordPresent` でない plan）で `file` が付いていれば 400 |
+| `planId` | preview が返した id | execute の確認あり経路だけ。`planId` と `file` の**両方を渡したら 400** — **例外は users の create / update で `passwordPresent` の plan**: パスワードは plan に保存しないので（§6.1）同じファイルの再送を**要求**し、`fileDigest` が plan と一致しなければ 409。それ以外（`passwordPresent` でない plan）で `file` が付いていれば 400。`file` を再送するときは `kind` / `operation` も送る（CSV の列検査に要る。plan と照合され、違えば 400） |
 
 ### 3.2 preview の応答
 
@@ -221,8 +221,11 @@ preview は `Plan`（kind / operation / 行の正規化結果 / `snapshotHash` /
 
 1. `planId` が無い・期限切れ → 409 `PLAN_UNKNOWN` / `PLAN_EXPIRED`
 1'. `passwordPresent` の plan で `file` が無い → 400。あって `fileDigest` が plan と違う → 409 `FILE_DIGEST_CHANGED`（**0 件書く**）
-2. 対象を読み直して `snapshotHash` を再計算、不一致 → 409 `SNAPSHOT_CHANGED`（**0 件書く**）
-3. 一致 → 行を順に適用
+2. 同じ行をもう一度判定し、`snapshotHash` の再計算値**と行ごとの verdict の列**（verdict / reason / message）が preview と
+   一致しなければ → 409 `SNAPSHOT_CHANGED`（**0 件書く**）。snapshot は対象の `_rev` しか持たないので、行が名指す参照先
+   （`memberId` / `groups` / `users` / `members`）の消失、入れ子サイクルの発生、**別の実行者**による forbidden の変化は
+   verdict の側で捕まる（c39、2 名一致の P1）
+3. 一致 → 再判定した verdict で行を順に適用
 
 plan はノードローカルなので、複数レプリカで別ノードに当たると `PLAN_UNKNOWN`（§12 の限界 3）。
 パスワードは plan に**平文でも hash でも保存しない** — 確認あり経路では execute に同じ CSV を
@@ -251,10 +254,10 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
 
 | 操作 | 呼ぶもの |
 |---|---|
-| users / create | `PasswordPolicyService.validate` → `ContentServiceImpl.buildAndCreateUser` |
-| users / update | `applyUserUpdate`（password 列があれば `validate` → hash は既存経路） |
+| users / create | `PasswordPolicyService.validate` → `ContentServiceImpl.buildAndCreateUser`（`admin=true` は読み直して `applyUserUpdate`。`groups` 列があれば該当グループごとに `GroupMembershipEditor.edit` → `applyGroupUpdate`） |
+| users / update | `applyUserUpdate`（password 列があれば `validate` → hash は既存経路。`groups` 列があれば create と同じ所属の書き） |
 | users / delete | `deleteUser`（所属の除去は既存の :882-909） |
-| groups / create | `validateNewGroup` → `buildAndCreateGroup` |
+| groups / create | `buildAndCreateGroup`（`validateNewGroup` の 3 検査 — id / name の欠落、既存 — は planner が 400 / `ALREADY_EXISTS` で先にする） |
 | groups / update | `applyGroupUpdate`（サイクル検査は既存の :729） |
 | groups / delete | `deleteGroup` |
 | memberships / * | `GroupMembershipEditor.edit` → `applyGroupUpdate` |
@@ -359,3 +362,18 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
 - **plan の記録**: 既知の限界 §12 の 1〜5 は正典の残件表 R115〜R119 に写した（R115 は P2、他は P3）。
 - **admin=true の create は 2 書き**: `buildAndCreateUser` は admin=false で書くので、読み直して `setAdmin(true)` → `applyUserUpdate`。
 - **実行者**: `CallContext.getUsername()`（`HttpServletRequest.getUserPrincipal()` は常に null なので使わない）。
+- **`memberships / replace` の `members` 列は必須（2026-09-29、c39 前の自己確認）**: 列を落とした CSV、JSON で欄が無い / `null` の行は
+  400 で、plan にも apply にも進まない。「空にする」は**述べた空**（空文字・`[]`）だけ。§4 が「意味の側で塞ぐ」と書いた
+  「列を落とした CSV で全員の所属が消える事故」は、`update` の空欄では塞がっていたが `replace` の欄の欠落では開いていた —
+  読み手 2 つ（CSV / JSON）が同じ `requiredColumnsFor` を読む。`add` / `remove` の `memberId` / `memberType` も同じ扱い。
+- **plan の消費は原子的（同日）**: 同じ `planId` の確認 2 つが同時に snapshot 検査を通っても、`Store.remove` が true を
+  返した 1 つだけが書き、もう 1 つは 409 `PLAN_UNKNOWN`（0 件）。「1 回だけ」は peek → remove の間でも成り立つ。
+- **c39 の確認レビュー（2 名とも NOT CONVERGED）で直した点（2026-09-29）**:
+  - **再判定の verdict を捨てていた**（Codex P1 = subagent P1-2、独立に同じ穴）: 確認あり実行は snapshot だけ比べ、preview 時の
+    verdict を適用していた。§6.1 の 2 を「snapshot と verdict の列の両方が一致」に改め、適用するのは再判定の verdict。
+  - **plan は repository に縛る**: 別の repository の path で `planId` を渡すと 409 `PLAN_UNKNOWN`（plan は残る）。
+  - **`memberships / remove` の `LOOKS_DIRECTORY_SYNCED`**（§5.1 は delete / remove）: planner に腕が無く届いていなかった。
+  - **`groups / create` の `name` 欠落は 400**（`memberId` 欠落と同じ扱い）。`NOT_FOUND` の流用をやめた。
+  - **CSV の行番号は物理行**: 複数行セルの後の行も、ファイルのその行が始まる番号。
+  - **2 MiB 超 → 413 に錠が無かった**（subagent P2、3 腕）: 錠を足した。製品は変えていない。
+  - §3.1 / §7 の表を実装に合わせた（`file` 再送時の `kind` / `operation`、users の `groups` 列の所属の書き、`validateNewGroup` は呼ばない）。
