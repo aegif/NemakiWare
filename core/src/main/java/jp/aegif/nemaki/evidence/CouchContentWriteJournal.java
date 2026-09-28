@@ -166,6 +166,15 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             updated.put("_rev", existing.getRev());
             updated.put("closedAt", java.time.Instant.now().toString());
             updated.put("statementDigest", statementDigest);
+            // The version the statement is about, when the row was opened without one. A create
+            // and a check-in open their row before the version exists, and the statements view
+            // indexes only rows that name a version — so without this, the statement a package
+            // must ship was stored where the assembler never looks, and every export of a newly
+            // created document fell back to the legacy layout saying no entry names it
+            // (measured on the stack, 2026-09-28).
+            if (rowVersion == null && versionObjectId != null) {
+                updated.put("versionObjectId", versionObjectId);
+            }
             // The statement itself, because nothing else keeps it and a package has to ship it.
             updated.put("statement", statementDocument);
             updated.put("entrySequence", entrySequence);

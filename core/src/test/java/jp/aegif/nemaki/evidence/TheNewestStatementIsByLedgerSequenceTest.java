@@ -185,6 +185,35 @@ class TheNewestStatementIsByLedgerSequenceTest {
     }
 
     @Test
+    @DisplayName("closing a row opened before its version existed records the version, so the statements view lists it")
+    void closingARowOpenedWithoutAVersionRecordsTheVersion() {
+        // A create and a check-in open their row before the new version has an id. The
+        // statements view emits only rows that carry versionObjectId, so a close that left the
+        // key out stored the statement where statementFor never finds it — and the export fell
+        // back to the legacy layout for every newly created document (2026-09-28).
+        assertTrue(CouchContentWriteJournal.MAP_STATEMENTS.contains("doc.versionObjectId"),
+                "the view no longer keys on the row's version; this lock no longer measures the join");
+        Map<String, Object> open = new LinkedHashMap<>();
+        open.put("intentId", "i-9");
+        open.put("writeKind", "CREATE_DOCUMENT");
+        Document existing = mock(Document.class);
+        when(existing.getProperties()).thenReturn(open);
+        when(existing.getRev()).thenReturn("1-abc");
+        DocumentResult ok = mock(DocumentResult.class);
+        when(ok.isOk()).thenReturn(true);
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.get(anyString())).thenReturn(existing);
+        ArgumentCaptor<Map<String, Object>> written = ArgumentCaptor.forClass(Map.class);
+        when(client.update(written.capture())).thenReturn(ok);
+
+        journalOver(client).close("i-9", "v-9", "d".repeat(64), Map.of("versionObjectId", "v-9"), 42L);
+
+        assertEquals("v-9", written.getValue().get("versionObjectId"),
+                "the closed row does not name its version, so the statements view never lists it: "
+                        + written.getValue());
+    }
+
+    @Test
     @DisplayName("a row already closed with a statement cannot be abandoned")
     void aClosedRowIsNotUnsaid() {
         Map<String, Object> closed = new LinkedHashMap<>();

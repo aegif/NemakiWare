@@ -76,12 +76,14 @@ test.describe('Principal batch (C-2)', () => {
   const group = `batch-e2e-group-${run}`;
 
   test.beforeAll(async ({ request }) => {
+    // skip, so a retry of the serial group (beforeAll runs again) finds its fixtures in place
+    // rather than being refused as ALREADY_EXISTS.
     const users = await batch(request, 'users', 'create', [
       { userId: existing, name: existing, password: PASSWORD },
       { userId: member, name: member, password: PASSWORD },
-    ]);
+    ], 'skip');
     expect(users.status, JSON.stringify(users.body)).toBe(200);
-    const groups = await batch(request, 'groups', 'create', [{ groupId: group, name: group, users: [member] }]);
+    const groups = await batch(request, 'groups', 'create', [{ groupId: group, name: group, users: [member] }], 'skip');
     expect(groups.status, JSON.stringify(groups.body)).toBe(200);
   });
 
@@ -131,7 +133,7 @@ test.describe('Principal batch (C-2)', () => {
       `userId,name,password\n${existing},${existing},${PASSWORD}\n${fresh},${fresh},${PASSWORD}\n`);
 
     await page.getByTestId('principal-batch-skip').click();
-    await page.getByRole('button', { name: /飛ばして実行|Skip and run/ }).click();
+    await page.getByRole('button', { name: /^(飛ばして実行|Skip and run)$/ }).click();
 
     await expect(page.getByText(/適用しました|Applied/).first()).toBeVisible({ timeout: 15000 });
     expect(await userExists(request, fresh)).toBe(true);
@@ -145,7 +147,7 @@ test.describe('Principal batch (C-2)', () => {
     await chooseAndUpload(page, /^(削除|Delete)$/, `userId\nadmin\n${doomed}\n`);
     await expect(page.getByTestId('principal-batch-count-forbidden')).toHaveText('1');
     await page.getByTestId('principal-batch-skip').click();
-    await page.getByRole('button', { name: /飛ばして実行|Skip and run/ }).click();
+    await page.getByRole('button', { name: /^(飛ばして実行|Skip and run)$/ }).click();
 
     await expect(page.getByText(/適用しました|Applied/).first()).toBeVisible({ timeout: 15000 });
     expect(await userExists(request, 'admin')).toBe(true);
