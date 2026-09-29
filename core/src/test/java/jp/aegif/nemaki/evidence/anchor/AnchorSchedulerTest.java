@@ -660,6 +660,26 @@ class AnchorSchedulerTest {
         assertTrue(reason != null && reason.contains("not asked") && reason.contains("RFC3161_TSA"), reason);
     }
 
+    @Test
+    @DisplayName("an upgrade that could not finish is recorded as unavailable, with the reason")
+    void anUpgradeThatCouldNotFinishIsRecordedAsUnavailable() throws Exception {
+        // c46: a sidecar that could not be asked came back as "SUCCESS: 0 upgraded" — the record
+        // of a calendar that had answered "not yet".
+        dueByEitherArm();
+        ots = rung(AnchorKind.OPENTIMESTAMPS, true);
+        AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, ROOT, NOW, new byte[] {1}, null, Map.of());
+        when(receipts.pending(eq(REPO), anyInt())).thenReturn(List.of(new AnchorReceiptStore.PendingReceipt(REPO, 4, pending)));
+        when(anchors.upgradePending(anyString(), anyInt())).thenReturn(new AnchorService.Upgraded(List.of(), null, null,
+                "1 pending commitment(s) could not be upgraded (the first reason per rung): {OPENTIMESTAMPS=…}"));
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        String outcome = scheduler.state(REPO).lastUpgradeOutcome;
+        assertTrue(outcome != null && outcome.startsWith("UNAVAILABLE") && outcome.contains("could not be upgraded"),
+                "an upgrade that could not finish was recorded as " + outcome);
+    }
+
     /** The seal the next tick makes seals checkpoint 0..2; what anchor() answers is the test's. */
     private AtomicReference<EvidenceCheckpoint> sealWillCreateACheckpoint() {
         AtomicReference<EvidenceCheckpoint> made = new AtomicReference<>();

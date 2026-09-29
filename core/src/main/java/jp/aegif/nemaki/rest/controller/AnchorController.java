@@ -26,6 +26,7 @@ import jp.aegif.nemaki.evidence.anchor.AnchorScheduler;
 import jp.aegif.nemaki.evidence.anchor.AnchorService;
 import jp.aegif.nemaki.evidence.validity.LongTermValidityService;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
 import jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget;
 import jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget;
@@ -338,9 +339,13 @@ public class AnchorController {
             row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
             row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
             // Without it a FAILED row read the same whether the rung was asked and failed or
-            // refused its configuration and was never asked (c45, P1). The run's own answer has
-            // always carried it; this is where an operator looks afterwards.
-            row.put("failureReason", receipt.failureReason());
+            // refused its configuration and was never asked (c45, P1). A mark and not the stored
+            // reason: that is free text from whatever build wrote the receipt, and one written
+            // before c42 can hold a destination's user:password (c46, P1). The mark carries only
+            // this product's own refusal, which names no destination.
+            row.put("notAsked", receipt.status() == AnchorStatus.FAILED
+                    && Rfc3161AnchorTarget.USER_INFO_REFUSED.equals(receipt.failureReason())
+                    ? Rfc3161AnchorTarget.USER_INFO_REFUSED : null);
             receipts.add(row);
         }
         body.put("receipts", receipts);

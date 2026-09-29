@@ -109,18 +109,35 @@ test.describe('Evidence and time-stamping (C-4)', () => {
     expect(JSON.stringify(await res.json())).toContain('anchor.rfc3161.tsa.url');
   });
 
-  test('a FAILED receipt says why — a rung never asked does not read as one asked and failed', async ({ page }) => {
+  test('a rung never asked is marked, and a stored failure reason is not shown', async ({ page }) => {
     // c45, P1: the receipt table showed a rung that refused its configuration as a bare FAILED,
-    // the value a rung that was asked and failed shows. /status is substituted so the row exists
-    // whatever this environment has anchored; the screen is what is measured.
-    const reason = 'the configured URL carries an @ (a user-info), which is not used for authentication';
+    // the value a rung that was asked and failed shows. c46, P1: the fix showed the stored reason,
+    // which is free text from whatever build wrote it and can hold a destination's user:password;
+    // /status now sends only the product's own refusal, as notAsked. /status is substituted so the
+    // rows exist whatever this environment has anchored; the screen is what is measured.
+    const refusal =
+      'the configured URL carries an @ (a user-info), which is not used for authentication and is refused ' +
+      'so that this product writes it to none of its logs, receipts or screens; remove it — a user-info ' +
+      'cannot be written in any form, and %40 is only for an @ inside a path';
     await page.route(/\/core\/api\/v1\/admin\/anchor\/status\?/, (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           status: 'success',
-          receipts: [{ rung: 'RFC3161_TSA', status: 'FAILED', claimLimits: '', anchoredAt: null, failureReason: reason }],
+          receipts: [
+            { rung: 'RFC3161_TSA', status: 'FAILED', claimLimits: '', anchoredAt: null, notAsked: refusal },
+            {
+              rung: 'OPENTIMESTAMPS',
+              status: 'FAILED',
+              claimLimits: '',
+              anchoredAt: null,
+              notAsked: null,
+              // What an older build could have stored. Not sent by /status any more; if a later
+              // change sends it again, the screen must still not show it.
+              failureReason: 'IllegalArgumentException: https://ops:s3cr3t@ots.example/',
+            },
+          ],
         }),
       }),
     );
@@ -128,6 +145,8 @@ test.describe('Evidence and time-stamping (C-4)', () => {
     await waitForUiStable(page);
     await expect(page.getByTestId('evidence-anchoring-page')).toBeVisible();
 
-    await expect(page.getByRole('cell', { name: reason })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'the configured URL carries an @' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'OPENTIMESTAMPS' })).toBeVisible();
+    await expect(page.getByText('s3cr3t')).toHaveCount(0);
   });
 });

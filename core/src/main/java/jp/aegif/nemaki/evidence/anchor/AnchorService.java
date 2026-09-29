@@ -22,6 +22,7 @@ import jp.aegif.nemaki.rest.purview.anchor.AnchorKind;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorUpgradeException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -316,15 +317,24 @@ public class AnchorService {
      * What an upgrade pass found, and why it found nothing when that is the answer.
      *
      * @param unavailable non-null when the store could not be asked. An empty {@code upgraded}
-     *        beside a null {@code unavailable} AND a null {@code refused} means "asked, nothing
-     *        had settled" — a different answer, and the one the endpoint used to give for both.
-     * @param refused non-null when the rung holding the pending commitments refuses its
-     *        configuration and was not asked (c44, P1: that used to read as "nothing had
-     *        settled yet" too)
+     *        with all three reasons null means "asked, nothing had settled" — a different
+     *        answer, and the one the endpoint used to give for each of them.
+     * @param refused non-null when a rung holding pending commitments was not asked: it refuses
+     *        its configuration (c44, P1: that used to read as "nothing had settled yet" too), or
+     *        it is not configured on this node (c46)
+     * @param unanswered non-null when rows were tried and could not be finished: the rung could
+     *        not be asked, its answer could not be used, or a settled receipt could not be stored
+     *        (c46 — each was skipped with a WARN and read as "nothing had settled"). {@code
+     *        upgraded} still lists what did settle
      */
-    public record Upgraded(List<AnchorReceipt> upgraded, String unavailable, String refused) {
+    public record Upgraded(List<AnchorReceipt> upgraded, String unavailable, String refused,
+            String unanswered) {
         public Upgraded(List<AnchorReceipt> upgraded, String unavailable) {
-            this(upgraded, unavailable, null);
+            this(upgraded, unavailable, null, null);
+        }
+
+        public Upgraded(List<AnchorReceipt> upgraded, String unavailable, String refused) {
+            this(upgraded, unavailable, refused, null);
         }
     }
 
@@ -460,9 +470,10 @@ public class AnchorService {
      * {@code PENDING} for ever: the calendar has it, a block confirmed it, and the deployment
      * never asked — so the anchor exists and the proof does not.
      *
-     * @return the receipts that CHANGED. An empty list with neither {@code unavailable} nor
-     *         {@code refused} means nothing had settled yet, which is the ordinary answer during
-     *         the hours a block takes and not a failure.
+     * @return the receipts that CHANGED. An empty list with no reason set ({@code unavailable},
+     *         {@code refused}, {@code unanswered}) means every pending commitment was asked and
+     *         none had settled — or a stronger receipt was already stored for it — which is the
+     *         ordinary answer during the hours a block takes and not a failure.
      */
     public Upgraded upgradePending(String domain, int limit) {
         List<AnchorReceipt> upgraded = new ArrayList<>();
@@ -502,12 +513,20 @@ public class AnchorService {
                             + "work its own answer then has to deny");
         }
         java.util.Map<String, String> notAsked = new java.util.LinkedHashMap<>();
+        // Rows tried and not finished, each with the first reason its rung gave. Every one of
+        // them used to be skipped with a WARN at most, and the answer read "nothing had settled
+        // yet — do not re-anchor" (c46).
+        java.util.Map<String, String> unanswered = new java.util.LinkedHashMap<>();
+        int unansweredRows = 0;
         for (AnchorReceiptStore.PendingReceipt pending : pendingRows) {
             AnchorTarget target = targetFor(pending.receipt().kind());
             if (target == null) {
                 // The rung that made this receipt is no longer configured. Leaving the row
                 // pending is right: deleting it would lose a proof the calendar still holds,
                 // and marking it failed would assert something about an anchor nobody checked.
+                // Saying nothing was not: it was not asked (c46).
+                notAsked.putIfAbsent(pending.receipt().kind().name(),
+                        "the rung is not configured on this node");
                 continue;
             }
             if (target.refusal() != null) {
@@ -521,17 +540,32 @@ public class AnchorService {
             } catch (RuntimeException e) {
                 logger.warn("Upgrade of a pending {} receipt failed: {}",
                         pending.receipt().kind(), e.getMessage());
+                // The rung's own reason when it wrote one (it names no destination); otherwise
+                // only the type, since an arbitrary message can carry an address.
+                unanswered.putIfAbsent(pending.receipt().kind().name(), e instanceof AnchorUpgradeException
+                        ? e.getMessage() : e.getClass().getSimpleName());
+                unansweredRows++;
                 continue;
             }
-            if (after == null || after.status() == AnchorStatus.PENDING) {
+            if (after == null) {
+                unanswered.putIfAbsent(pending.receipt().kind().name(), "the rung returned no receipt");
+                unansweredRows++;
                 continue;
             }
             if (after.kind() != pending.receipt().kind()) {
                 // Not an upgrade of THIS receipt. Saving it would write a row under the other
                 // rung's key and leave this one pending for ever — the commitment would look
-                // unsettled while a settled proof sat one row away under the wrong name.
+                // unsettled while a settled proof sat one row away under the wrong name. Checked
+                // before PENDING: another rung's pending receipt is not "not yet" for this one.
                 logger.warn("Rung {} returned an upgrade of kind {}; ignoring it",
                         pending.receipt().kind(), after.kind());
+                unanswered.putIfAbsent(pending.receipt().kind().name(),
+                        "the rung returned an upgrade for " + after.kind() + ", not for this receipt");
+                unansweredRows++;
+                continue;
+            }
+            if (after.status() == AnchorStatus.PENDING) {
+                // Asked, and not settled: the ordinary answer while a block is awaited.
                 continue;
             }
             try {
@@ -546,16 +580,21 @@ public class AnchorService {
                 // still upgradable and the next run is not guaranteed to come sooner.
                 logger.warn("Could not store the upgraded {} receipt for {}@{}: {}",
                         after.kind(), pending.domain(), pending.toSequence(), e.getMessage());
+                unanswered.putIfAbsent(pending.receipt().kind().name(), "it settled, and the settled "
+                        + "receipt could not be stored; the next pass asks again");
+                unansweredRows++;
                 continue;
             }
             upgraded.add(after);
         }
         // The unreadable check happened before the loop, so reaching here means the whole
-        // list was read. Save-time failures are carried per-rung above.
-        return new Upgraded(upgraded, null, notAsked.isEmpty() ? null
-                : "not asked, because the rung refuses its configuration: " + notAsked
-                        + ". Its pending commitments were not looked at — this is NOT the answer "
-                        + "that nothing had settled");
+        // list was read. Rows the loop could not finish are named, not skipped.
+        return new Upgraded(upgraded, null,
+                notAsked.isEmpty() ? null : "not asked: " + notAsked + ". Its pending commitments were "
+                        + "not looked at — this is NOT the answer that nothing had settled",
+                unanswered.isEmpty() ? null : unansweredRows + " pending commitment(s) could not be "
+                        + "upgraded (the first reason per rung): " + unanswered + ". They stay pending — "
+                        + "this is NOT the answer that nothing had settled");
     }
 
     private AnchorTarget targetFor(AnchorKind kind) {

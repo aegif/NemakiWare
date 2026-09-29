@@ -155,14 +155,25 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
      */
     @Override
     public AnchorReceipt upgrade(AnchorReceipt pending) {
-        if (pending == null || pending.status() != AnchorStatus.PENDING
-                || pending.kind() != kind() || pending.proof() == null || !isConfigured()) {
+        if (pending == null || pending.status() != AnchorStatus.PENDING || pending.kind() != kind()) {
+            // Not this rung's to move: handed back as it came (AnchorTarget#upgrade).
             return pending;
+        }
+        // The three arms below, the digest check and the catch at the end used to hand the pending
+        // receipt back unchanged — which the upgrade pass reads as "asked; nothing had settled yet"
+        // (c46).
+        if (!isConfigured()) {
+            throw new AnchorUpgradeException("the OpenTimestamps rung is not configured on this node, "
+                    + "so the sidecar was not asked; the commitment stays pending");
+        }
+        if (pending.proof() == null) {
+            throw new AnchorUpgradeException("the pending receipt carries no proof, so there is nothing "
+                    + "to upgrade and the sidecar was not asked");
         }
         if (Rfc3161AnchorTarget.carriesAt(sidecarUrl)) {
             // The sidecar is not asked; the commitment stays pending (R132).
             logger.warn("OpenTimestamps upgrade refused: {}", Rfc3161AnchorTarget.USER_INFO_REFUSED);
-            return pending;
+            throw new AnchorUpgradeException(Rfc3161AnchorTarget.USER_INFO_REFUSED);
         }
         try {
             byte[] current = pending.proof();
@@ -183,7 +194,9 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             if (!info.path("digestMatches").asBoolean(false)) {
                 logger.warn("OpenTimestamps proof does not belong to digest {}: {}",
                         pending.anchoredDigest(), info.path("error").asString(""));
-                return pending;
+                // An answer, and not "not yet": this proof will not settle for this digest.
+                throw new AnchorUpgradeException("the sidecar says the stored proof does not belong to "
+                        + "this digest, so it cannot be upgraded; the commitment stays pending");
             }
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
@@ -238,10 +251,14 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
                     null, candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs,
                     AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
+        } catch (AnchorUpgradeException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("OpenTimestamps upgrade failed for {}: {}",
                     pending.anchoredDigest(), e.toString());
-            return pending;
+            // Named by its type only: a transport error's message can carry the sidecar's address.
+            throw new AnchorUpgradeException("the sidecar could not be asked, or answered with an error ("
+                    + e.getClass().getSimpleName() + "); the commitment stays pending");
         }
     }
 

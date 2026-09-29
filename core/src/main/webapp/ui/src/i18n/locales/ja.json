@@ -3412,7 +3412,7 @@
     "rung": "段",
     "receiptStatus": "最新 checkpoint の受領",
     "anchoredAt": "時刻",
-    "failureReason": "失敗・拒否の理由",
+    "notAsked": "訊かなかった理由",
     "destinationsCard": "送り先（表示のみ）",
     "tsaUrl": "TSA（RFC 3161）の URL",
     "policyOid": "要求する policy OID",

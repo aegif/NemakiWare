@@ -3665,7 +3665,7 @@
     "rung": "Rung",
     "receiptStatus": "Receipt for the latest checkpoint",
     "anchoredAt": "Time",
-    "failureReason": "Why it failed or was refused",
+    "notAsked": "Why it was not asked",
     "destinationsCard": "Destinations (display only)",
     "tsaUrl": "TSA (RFC 3161) URL",
     "policyOid": "Requested policy OID",

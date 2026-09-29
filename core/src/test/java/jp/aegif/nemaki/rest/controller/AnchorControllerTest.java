@@ -780,12 +780,12 @@ class AnchorControllerTest {
     }
 
     /**
-     * /status says why a receipt FAILED (c45, P1): a rung that refused its configuration and
-     * was never asked showed as a bare FAILED — the value a rung that was asked and failed shows.
+     * /status marks a rung that refused its configuration and was never asked (c45, P1): it
+     * showed as a bare FAILED — the value a rung that was asked and failed shows.
      */
     @Test
-    @DisplayName("/status says why a receipt failed, so 'never asked' does not read as 'asked and failed'")
-    void theStatusSaysWhyAReceiptFailed() throws Exception {
+    @DisplayName("/status marks a rung that was never asked, so it does not read as 'asked and failed'")
+    void theStatusMarksARungThatWasNeverAsked() throws Exception {
         jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt refused =
                 jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(
                         jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA, ROOT,
@@ -799,7 +799,127 @@ class AnchorControllerTest {
         assertEquals(1, rows.size(), String.valueOf(body));
         assertEquals("FAILED", rows.get(0).get("status"), String.valueOf(body));
         assertEquals(jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.USER_INFO_REFUSED,
-                rows.get(0).get("failureReason"), String.valueOf(body));
+                rows.get(0).get("notAsked"), String.valueOf(body));
+    }
+
+    /**
+     * /status does not repeat a stored reason (c46, P1). A receipt keeps the free text of whatever
+     * build wrote it, and a build before c42 wrote the parser's message — URL, user:password and
+     * all — as the reason of a TSA it could not parse. c45 put that text on the screen.
+     */
+    @Test
+    @DisplayName("/status does not repeat a stored failure reason, which can hold a destination's password")
+    void theStatusDoesNotRepeatAStoredReason() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt old =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA, ROOT,
+                        java.time.Instant.parse("2026-09-28T00:00:00Z"),
+                        "IllegalArgumentException: Malformed escape pair at index 14: "
+                                + "https://svc:s3%cr3t@tsa.example/tsr");
+
+        java.util.Map<String, Object> body = statusBodyWith(receiptsHolding(List.of(old), List.of()));
+
+        @SuppressWarnings("unchecked")
+        List<java.util.Map<String, Object>> rows = (List<java.util.Map<String, Object>>) body.get("receipts");
+        assertEquals(1, rows.size(), "the row itself is gone, so this measures nothing: " + body);
+        org.junit.jupiter.api.Assertions.assertFalse(String.valueOf(body).contains("s3%cr3t"),
+                "/status repeats a stored reason that holds a password: " + body);
+        assertNull(rows.get(0).get("notAsked"), "a failure was marked as never asked: " + body);
+    }
+
+    /** A pending OpenTimestamps commitment for checkpoint 5, as the store answers it. */
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.PendingReceipt pendingOts() {
+        return new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.PendingReceipt("bedroom", 5,
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS, ROOT,
+                        java.time.Instant.parse("2026-09-29T00:00:00Z"), new byte[] {1}, "d",
+                        java.util.Map.of()));
+    }
+
+    /**
+     * An upgrade that could not ask the sidecar is not "nothing had settled" (c46, P1 by rule —
+     * R133's shape). The rung handed the pending receipt back unchanged when its request failed,
+     * and the endpoint answered 200 "not a failure — do not re-anchor" while the sidecar was down.
+     */
+    @Test
+    @DisplayName("an upgrade that could not ask the sidecar is unavailable, not 'nothing had settled'")
+    void anUpgradeThatCouldNotAskTheSidecarIsUnavailable() throws Exception {
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of(pendingOts())),
+                new jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget("http://127.0.0.1:1"));
+
+        Object response = AnchorController.class.getDeclaredMethod("upgradePending", String.class, int.class)
+                .invoke(controller, "bedroom", 10);
+        java.util.Map<String, Object> body = bodyOf(response);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusOf(response), String.valueOf(body));
+        assertTrue(String.valueOf(body.get("message")).contains("could not be asked"), String.valueOf(body));
+        assertNull(body.get("note"), "an upgrade that asked nobody carried the 'ordinary answer' note: " + body);
+    }
+
+    /**
+     * An upgrade whose rung is not configured on this node was not asked (c46). The row was
+     * skipped without a word and the endpoint answered "nothing had settled yet".
+     */
+    @Test
+    @DisplayName("an upgrade through a rung this node has not configured is not asked, not 'nothing had settled'")
+    void anUpgradeThroughAnUnconfiguredRungIsNotAsked() throws Exception {
+        // The wiring always builds the OpenTimestamps rung; without a sidecar URL it is simply
+        // not configured (AnchorWiringConfig).
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of(pendingOts())),
+                new jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget(null));
+
+        Object response = AnchorController.class.getDeclaredMethod("upgradePending", String.class, int.class)
+                .invoke(controller, "bedroom", 10);
+        java.util.Map<String, Object> body = bodyOf(response);
+
+        assertEquals(HttpStatus.CONFLICT, statusOf(response), String.valueOf(body));
+        assertTrue(String.valueOf(body.get("message")).contains("not configured on this node"), String.valueOf(body));
+        assertNull(body.get("note"), String.valueOf(body));
+    }
+
+    /**
+     * A commitment that settled and could not be stored is not "nothing had settled" (c46). The
+     * save failure was logged and the row skipped, and the answer denied the settlement.
+     */
+    @Test
+    @DisplayName("an upgrade whose settled receipt could not be stored says so")
+    void anUpgradeWhoseSettledReceiptCouldNotBeStoredSaysSo() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.AnchorTarget settles = new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorKind kind() {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String hexDigest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(kind(), hexDigest,
+                        java.time.Instant.now(), "not used here");
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt upgrade(
+                    jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt pending) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(kind(),
+                        pending.anchoredDigest(), java.time.Instant.now(), new byte[] {9}, java.util.Map.of());
+            }
+        };
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts = receiptsHolding(List.of(), List.of(pendingOts()));
+        when(receipts.save(anyString(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("document update conflict"));
+        AnchorController controller = controllerOverRealRungs(receipts, settles);
+
+        Object response = AnchorController.class.getDeclaredMethod("upgradePending", String.class, int.class)
+                .invoke(controller, "bedroom", 10);
+        java.util.Map<String, Object> body = bodyOf(response);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, statusOf(response), String.valueOf(body));
+        assertTrue(String.valueOf(body.get("message")).contains("could not be stored"), String.valueOf(body));
+        assertNull(body.get("note"), String.valueOf(body));
     }
 
     @SuppressWarnings("unchecked")

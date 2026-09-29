@@ -362,8 +362,10 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                     { title: t('evidenceAnchoring.receiptStatus'), dataIndex: 'status' },
                     { title: t('evidenceAnchoring.anchoredAt'), dataIndex: 'anchoredAt' },
                     // A FAILED row read the same whether the rung was asked and failed or refused its
-                    // configuration and was never asked; the reason tells them apart (c45).
-                    { title: t('evidenceAnchoring.failureReason'), dataIndex: 'failureReason' },
+                    // configuration and was never asked (c45). /status marks the second with the
+                    // product's own refusal and never sends a stored reason, which can be free text
+                    // holding a destination's user:password (c46).
+                    { title: t('evidenceAnchoring.notAsked'), dataIndex: 'notAsked' },
                   ]}
                 />
               )}

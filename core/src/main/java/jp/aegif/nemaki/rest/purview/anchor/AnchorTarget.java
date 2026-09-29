@@ -25,11 +25,11 @@ package jp.aegif.nemaki.rest.purview.anchor;
  * implementation has to remember. (OpenTimestamps additionally blinds the digest itself before
  * it reaches a calendar; see that implementation.)
  *
- * <p>Implementations MUST NOT throw for ordinary remote failure. An anchor that cannot be
+ * <p>{@link #anchor} MUST NOT throw for ordinary remote failure. An anchor that cannot be
  * reached is a fact to record — {@link AnchorReceipt#failed} — not an exception to propagate
  * into whatever operation triggered the anchoring. Anchoring is evidence gathering; it must
  * never be able to fail a CMIS write. Only programming errors (a null digest, a malformed one)
- * throw.
+ * throw. {@link #upgrade} is the exception to the rule, and says why.
  */
 public interface AnchorTarget {
 
@@ -59,6 +59,13 @@ public interface AnchorTarget {
      * they are made, and until then the proof is incomplete. Targets that confirm synchronously
      * return the receipt unchanged, so a scheduler can call this over every pending receipt
      * without knowing which kinds care.
+     *
+     * <p>A receipt comes back only as an ANSWER: the rung asked and this is what it learned
+     * (the same receipt when nothing changed), or the receipt is not this rung's to move. A rung
+     * that did not ask, could not ask, or could not use the answer throws
+     * {@link AnchorUpgradeException} instead (c46): its caller is the upgrade pass, not a CMIS
+     * write, and an unchanged receipt handed back for a sidecar that was down read as "asked;
+     * nothing had settled yet — do not re-anchor".
      */
     default AnchorReceipt upgrade(AnchorReceipt pending) {
         return pending;

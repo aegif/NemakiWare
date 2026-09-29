@@ -37,8 +37,9 @@ import java.util.Map;
  * (design {@code docs/design/anchor-scheduler.md} §2).
  *
  * <p>The bodies were moved here from {@code AnchorController} unchanged. What stayed in the
- * controller is the mapping of a {@link Kind} to an HTTP status, so the existing responses are
- * byte-for-byte what they were; what the scheduler reads is the {@link Kind} and the
+ * controller is the mapping of a {@link Kind} to an HTTP status, so the move itself changed no
+ * response (the answers changed later, and on purpose: rungs that were not asked, c44 / c45, and
+ * upgrades that could not finish, c46); what the scheduler reads is the {@link Kind} and the
  * {@link AnchorService.Outcome}, never a status code. "The scheduler drives the existing API" means
  * it calls these methods — not that it sends HTTP to itself.
  *
@@ -85,7 +86,11 @@ public final class AnchorRunService {
          * service refused, or every rung that held nothing refuses its configuration.
          */
         REFUSED,
-        /** The receipt store could not be asked (upgrade only). */
+        /**
+         * Upgrade only: the receipt store could not be asked, or pending rows could not be
+         * finished — the rung could not be asked, its answer could not be used, or a settled
+         * receipt could not be stored (c46).
+         */
         UNAVAILABLE
     }
 
@@ -349,6 +354,16 @@ public final class AnchorRunService {
             body.put("message", result.unavailable());
             return new Run(Kind.UNAVAILABLE, body, null);
         }
+        if (result.unanswered() != null) {
+            // Tried, and not finished: the note below — "nothing had settled yet … do not
+            // re-anchor" — answers a question nobody got an answer to (c46). What did settle is
+            // still listed.
+            body.put("status", "unavailable");
+            body.put("upgradedCount", upgraded.size());
+            body.put("upgradedRungs", rungsOf(upgraded));
+            body.put("message", result.unanswered());
+            return new Run(Kind.UNAVAILABLE, body, null);
+        }
         body.put("status", "success");
         body.put("upgradedCount", upgraded.size());
         // An empty result is the ORDINARY answer during the hours a Bitcoin block takes. Saying
@@ -358,11 +373,15 @@ public final class AnchorRunService {
                 ? "nothing had settled yet. That is the ordinary answer while a commitment is "
                         + "waiting on confirmation (hours), not a failure — do not re-anchor."
                 : "these commitments settled and their proofs were stored");
+        body.put("upgradedRungs", rungsOf(upgraded));
+        return new Run(Kind.SUCCESS, body, null);
+    }
+
+    private static List<String> rungsOf(List<AnchorReceipt> upgraded) {
         List<String> rungs = new ArrayList<>(upgraded.size());
         for (AnchorReceipt receipt : upgraded) {
             rungs.add(receipt.kind().name());
         }
-        body.put("upgradedRungs", rungs);
-        return new Run(Kind.SUCCESS, body, null);
+        return rungs;
     }
 }

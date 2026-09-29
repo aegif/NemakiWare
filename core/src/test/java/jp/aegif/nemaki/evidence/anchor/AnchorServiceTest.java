@@ -1063,4 +1063,38 @@ class AnchorServiceTest {
         verify(target, org.mockito.Mockito.never()).upgrade(any());
         verify(store, org.mockito.Mockito.never()).save(anyString(), anyLong(), any());
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an answer the pass cannot use is not 'nothing settled': none, or another rung's")
+    void anAnswerThePassCannotUseIsNotNothingSettled() {
+        // c46: no answer was skipped silently, and an answer for another rung with a WARN — and a
+        // PENDING one for another rung was read as "not yet" before its kind was looked at. Each
+        // left the pass saying "nothing had settled yet — do not re-anchor".
+        String digest = "ab".repeat(32);
+        for (AnchorReceipt answer : new AnchorReceipt[] { null,
+                AnchorReceipt.pending(AnchorKind.RFC3161_TSA, digest, Instant.now(), new byte[] {1}, "x",
+                        java.util.Map.of()),
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(AnchorKind.RFC3161_TSA, digest,
+                        Instant.now(), new byte[] {1}, java.util.Map.of()) }) {
+            AnchorReceiptStore store = mock(AnchorReceiptStore.class);
+            when(store.isActive()).thenReturn(true);
+            when(store.pending(anyString(), anyInt())).thenReturn(java.util.List.of(
+                    new AnchorReceiptStore.PendingReceipt(DOMAIN, 5L, AnchorReceipt.pending(
+                            AnchorKind.OPENTIMESTAMPS, digest, Instant.now(), new byte[] {1}, "d",
+                            java.util.Map.of()))));
+            AnchorTarget target = mock(AnchorTarget.class);
+            when(target.kind()).thenReturn(AnchorKind.OPENTIMESTAMPS);
+            when(target.isConfigured()).thenReturn(true);
+            when(target.upgrade(any())).thenReturn(answer);
+            AnchorService service = new AnchorService();
+            service.setReceiptStore(store);
+            service.setTargets(List.of(target));
+
+            AnchorService.Upgraded result = service.upgradePending(DOMAIN, 10);
+
+            assertNotNull(result.unanswered(), "an answer of " + answer + " read as 'nothing had settled'");
+            assertTrue(result.upgraded().isEmpty(), String.valueOf(result.upgraded()));
+            verify(store, org.mockito.Mockito.never()).save(anyString(), anyLong(), any());
+        }
+    }
 }
