@@ -87,6 +87,11 @@ poll で恒久的に除外**されていました（残件 R59）。
 - `last_edited_time` を持たない行が返ったら、その listing は読めなかったものとして
   実行がエラーになります（黙って飛ばしません）。Notion の 1 query 10,000 件の上限に
   ちょうど達して `request_status` の無い応答は、切れたものとして扱います
+- 応答に `has_more` が無い、または boolean でない（null・文字列・数）ときも、読めなかった
+  ものとしてエラーで止まります。以前は「続きなし」と読み、見せられなかったページを checkpoint が
+  越えていました（残件 R61）。ページ本文のブロック一覧も同じで、以前は「このページに添付は無い」と
+  読んでいました。checkpoint に届いたページと、Notion 自身が `incomplete` と答えたページは
+  `has_more` 無しでも答えが決まるので止めません
 - 検索の要求上限（`notionSearchMaxRequests`、既定 50 要求 = 5,000 行）または Notion 自身の
   `request_status: incomplete` で listing が切れたときは、**何も取り込まず checkpoint を
   止め、`PARTIAL` で理由を報告**します。checkpoint より新しい行が 5,000 を超える
@@ -499,7 +504,7 @@ channel messages の Response に明記）、作成時刻での絞り込みも�
 - 1 回の実行で取り込むのは**古い順に `limit` 件**で、残りは次回に回り `PARTIAL` になります。失敗した
   メッセージは数に入らず、試みるのは `limit` の 4 倍までです（Box / Dropbox と同じ）
 - checkpoint はメッセージの `ts` です。保存済みの値が `ts` の形でないとき、`ts` の無いメッセージが
-  来たとき、応答に `messages` や `has_more` が無いときはエラーで止まります。`has_more` に cursor が
+  来たとき、応答に `messages` が無いとき、`has_more` が無いか boolean でない（文字列・数）ときはエラーで止まります。`has_more` に cursor が
   無い・同じ cursor が続くときは `PARTIAL` です
 - 添付の download に失敗すると「読めていない item」として死信キューに記録し（download URL 付き）、
   メッセージは checkpoint に名指されません。download URL の無いファイルも同じく記録します（この行は
