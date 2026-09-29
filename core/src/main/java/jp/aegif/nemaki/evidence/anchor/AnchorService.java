@@ -314,11 +314,9 @@ public class AnchorService {
      * @param unavailable non-null when the store could not be asked. An empty {@code upgraded}
      *        beside a null {@code unavailable} means "asked, nothing had settled" — a different
      *        answer, and the one the endpoint used to give for both.
-     */
-    /**
-     * What an upgrade pass did: the receipts that changed, why nothing could be looked at
-     * ({@code unavailable}), or why the rung holding the pending commitments was not asked
-     * ({@code refused} — c44, P1: that used to read as "nothing had settled yet").
+     * @param refused non-null when the rung holding the pending commitments refuses its
+     *        configuration and was not asked (c44, P1: that used to read as "nothing had
+     *        settled yet" too)
      */
     public record Upgraded(List<AnchorReceipt> upgraded, String unavailable, String refused) {
         public Upgraded(List<AnchorReceipt> upgraded, String unavailable) {
