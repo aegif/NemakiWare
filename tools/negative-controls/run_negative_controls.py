@@ -18909,7 +18909,9 @@ CONTROLS = [
         test='AnchorSchedulerTest',
         expect_fail=['aSavedValueIsWhatTheNextTickActsOn', 'aLostCommitmentHoldsTheRetryForThatCheckpoint', 'aReceiptQueryThatFailedIsNotNothingAnchored', 'aRetryThatLostItsReceiptHoldsTheNext', 'anAnchoredPositionThatCannotBeReadSealsNothingAndShowsNoCount', 'anErrorWaitsTheMinimumIntervalBeforeTryingAgain', 'anExhaustedWalkStillSeals', 'anUnreadableSavedSettingDoesNotFallBackToTheStartupValue', 'dueButEverythingIsSealedCallsNothing', 'enabledWithoutAnIntervalSealsNothingAndWarnsOnce', 'theCountArmAloneSeals', 'theDomainsOwnValueWinsOverTheDeploymentWideOne', 'theRecordContentDomainIsSealedToo', 'theRetryRunsOnItsPeriodForAFailedAnchor', 'theTimeArmAloneSeals', 'upgradeRunsOnItsOwnPeriod', 'withNoRungConfiguredNothingIsSealed', 'withinTheMinimumIntervalNothingIsSealed',
                      # c41 (2026-09-29): the upgrade-display lock enables the domain through its saved value
-                     'anUndecodablePendingRowIsNotNothingPending'],
+                     'anUndecodablePendingRowIsNotNothingPending',
+                     # c44: the refused-upgrade lock enables the domain the same way
+                     'aRefusedUpgradeIsRecordedWithItsReason'],
     ),
     dict(
         id='NE4',
