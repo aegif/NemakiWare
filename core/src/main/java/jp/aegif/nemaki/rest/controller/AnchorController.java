@@ -337,6 +337,10 @@ public class AnchorController {
             row.put("status", receipt.status().name());
             row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
             row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
+            // Without it a FAILED row read the same whether the rung was asked and failed or
+            // refused its configuration and was never asked (c45, P1). The run's own answer has
+            // always carried it; this is where an operator looks afterwards.
+            row.put("failureReason", receipt.failureReason());
             receipts.add(row);
         }
         body.put("receipts", receipts);

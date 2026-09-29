@@ -63,7 +63,11 @@ public final class AnchorRunService {
 
     /** How a run ended. The controller maps each to a status; the scheduler branches on it. */
     public enum Kind {
-        /** Sealed (or retried, or upgraded) and nothing refused. */
+        /**
+         * Sealed (or retried, or upgraded), and the run as a whole was not refused. NOT a
+         * statement that every rung was asked: a rung that refuses its configuration is not
+         * asked, and a seal or a retry names it in the body's {@code notAsked} (c45).
+         */
         SUCCESS,
         /** Nothing to do, and nothing sent. Not a failure. */
         NOOP,
@@ -74,7 +78,12 @@ public final class AnchorRunService {
          * checkpoint WAS sealed by the call and could not be read back, so nothing was anchored.
          */
         FAILED,
-        /** Sealed, then the anchor was refused ({@link AnchorService.Outcome#refusedReason}). */
+        /**
+         * Refused. A seal: sealed, then the anchor was refused
+         * ({@link AnchorService.Outcome#refusedReason}). An upgrade: the rung holding the
+         * pending commitments refuses its configuration and was not asked. A retry: the anchor
+         * service refused, or every rung that held nothing refuses its configuration.
+         */
         REFUSED,
         /** The receipt store could not be asked (upgrade only). */
         UNAVAILABLE
@@ -196,11 +205,23 @@ public final class AnchorRunService {
         // CONFLICT); this one now does the same.
         AnchorService.Outcome outcome = anchorService.anchor(checkpoint);
         body.put("anchor", outcome.asMap());
+        // The retry's rule, here too (c45, P1): a seal that reached one rung and was refused by
+        // another answered 200 "sealed and sent" with nothing naming the rung it did not ask,
+        // and /status showed that rung as FAILED like one that had been asked.
+        Map<String, String> notAsked = notAskedOf(outcome.receipts());
+        String notAskedClause = notAsked.isEmpty() ? ""
+                : "; not asked, because they refuse their configuration: " + notAsked;
+        if (!notAsked.isEmpty()) {
+            body.put("notAsked", notAsked);
+        }
         if (outcome.refusedReason() != null) {
             body.put("status", "refused");
             body.put("message", "the checkpoint was sealed and the anchor was refused: "
-                    + outcome.refusedReason());
+                    + outcome.refusedReason() + notAskedClause);
             return new Run(Kind.REFUSED, body, outcome);
+        }
+        if (!notAsked.isEmpty()) {
+            body.put("message", "the checkpoint was sealed and sent" + notAskedClause);
         }
         return new Run(Kind.SUCCESS, body, outcome);
     }
@@ -269,6 +290,18 @@ public final class AnchorRunService {
                                                 + "their configuration: " + notAsked));
         return new Run(outcome.refusedReason() == null && !onlyRefusals ? Kind.SUCCESS : Kind.REFUSED,
                 body, outcome);
+    }
+
+    /** Each rung whose receipt it made without asking anyone, with its refusal, in order. */
+    private Map<String, String> notAskedOf(List<AnchorReceipt> receipts) {
+        Map<String, String> notAsked = new LinkedHashMap<>();
+        for (AnchorReceipt receipt : receipts) {
+            String refusal = refusalOf(receipt);
+            if (refusal != null) {
+                notAsked.put(receipt.kind().name(), refusal);
+            }
+        }
+        return notAsked;
     }
 
     /** The refusal a receipt carries when its rung refused without asking anyone, or null. */

@@ -184,12 +184,14 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      * {@code @}, {@code #}, {@code /} or {@code ?}, and the JDK's own network log prints the URL
      * it is handed. The user-info is not used for authentication — {@code HttpURLConnection}
      * does not read it — so a URL with an {@code @} is refused instead: never sent, never parsed,
-     * never shown (the user's decision, 2026-09-29). A path that needs one writes {@code %40}.
+     * never shown by this product (the user's decision, 2026-09-29). Tomcat's own start-up log
+     * prints a {@code -D} value as it was given, and that is not this product's to change (c45). A
+     * path that needs one writes {@code %40}.
      */
     public static final String USER_INFO_REFUSED = "the configured URL carries an @ (a user-info), "
-            + "which is not used for authentication and is refused so that it cannot reach a log, "
-            + "a receipt or the screen; remove it — a user-info cannot be written in any form, "
-            + "and %40 is only for an @ inside a path";
+            + "which is not used for authentication and is refused so that this product writes it "
+            + "to none of its logs, receipts or screens; remove it — a user-info cannot be written "
+            + "in any form, and %40 is only for an @ inside a path";
 
     /** Whether a configured destination URL is refused for carrying an {@code @}. */
     public static boolean carriesAt(String url) {

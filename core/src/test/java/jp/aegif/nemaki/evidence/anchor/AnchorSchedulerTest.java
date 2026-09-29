@@ -77,6 +77,8 @@ class AnchorSchedulerTest {
     private static final String REPO = "bedroom";
     private static final String ROOT = "ab".repeat(32);
     private static final Instant NOW = Instant.parse("2026-09-29T12:00:00Z");
+    /** A rung's own refusal of its configuration: what it says instead of asking anyone. */
+    private static final String REFUSAL = "the configured URL carries an @ (c45 fixture)";
 
     private AnchorService anchors;
     private EvidenceLedgerService ledger;
@@ -608,6 +610,54 @@ class AnchorSchedulerTest {
         String outcome = scheduler.state(REPO).lastUpgradeOutcome;
         assertTrue(outcome != null && outcome.startsWith("REFUSED") && outcome.contains("not asked"),
                 "a refused upgrade was recorded as " + outcome);
+    }
+
+    @Test
+    @DisplayName("a seal that did not ask a rung names it in the record, not 'sealed and sent' alone")
+    void aSealThatDidNotAskARungNamesItInTheRecord() throws Exception {
+        // c45, P1: a seal that reached the sidecar and was refused by the TSA was recorded as
+        // "SUCCESS: sealed and sent" — the record of a seal that had reached every rung.
+        dueByEitherArm();
+        sealWillCreateACheckpoint();
+        ots = rung(AnchorKind.OPENTIMESTAMPS, true);
+        when(tsa.refusal()).thenReturn(REFUSAL);
+        when(anchors.anchor(any())).thenAnswer(inv -> {
+            EvidenceCheckpoint cp = inv.getArgument(0);
+            return new AnchorService.Outcome(cp.domain(), cp.toSequence(), cp.merkleRoot(), List.of(
+                    AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT, NOW, REFUSAL),
+                    AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, ROOT, NOW, new byte[] {1}, null, Map.of())),
+                    null);
+        });
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        assertEquals("SUCCESS", scheduler.state(REPO).lastOutcome);
+        String reason = scheduler.state(REPO).lastReason;
+        assertTrue(reason != null && reason.contains("not asked") && reason.contains("RFC3161_TSA"), reason);
+    }
+
+    @Test
+    @DisplayName("a refused seal names the rungs it did not ask in the record")
+    void aRefusedSealNamesTheRungsItDidNotAsk() throws Exception {
+        // c45 (subagent P3): "every configured rung FAILED or refused" left the record's reader
+        // to find out which, and the receipts it pointed at were not on the screen.
+        dueByEitherArm();
+        sealWillCreateACheckpoint();
+        when(tsa.refusal()).thenReturn(REFUSAL);
+        when(anchors.anchor(any())).thenAnswer(inv -> {
+            EvidenceCheckpoint cp = inv.getArgument(0);
+            return new AnchorService.Outcome(cp.domain(), cp.toSequence(), cp.merkleRoot(),
+                    List.of(AnchorReceipt.failed(AnchorKind.RFC3161_TSA, ROOT, NOW, REFUSAL)),
+                    "every configured rung FAILED or refused its configuration without being asked");
+        });
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        assertEquals("REFUSED", scheduler.state(REPO).lastOutcome);
+        String reason = scheduler.state(REPO).lastReason;
+        assertTrue(reason != null && reason.contains("not asked") && reason.contains("RFC3161_TSA"), reason);
     }
 
     /** The seal the next tick makes seals checkpoint 0..2; what anchor() answers is the test's. */

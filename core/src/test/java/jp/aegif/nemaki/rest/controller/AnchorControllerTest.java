@@ -699,6 +699,109 @@ class AnchorControllerTest {
         assertTrue(message.contains("not asked") && message.contains("RFC3161_TSA"), message);
     }
 
+    /** A catalog rung that is asked and settles: the rung a mixed seal reaches (c45). */
+    private static jp.aegif.nemaki.rest.purview.anchor.AnchorTarget settlingCatalog() {
+        return new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorKind kind() {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorKind.ATLAS_CATALOG;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String hexDigest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(kind(), hexDigest,
+                        java.time.Instant.now(), new byte[] {1}, java.util.Map.of());
+            }
+        };
+    }
+
+    /** The seal the controller asks for succeeds; what the anchor makes of it is the rungs'. */
+    private static void sealWillSucceed(AnchorController controller) throws Exception {
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
+        when(ledger.closeCheckpoint(anyString(), anyString()))
+                .thenReturn(java.util.Map.of("status", "success", "toSequence", 5L));
+        setField(controller, "ledgerService", ledger);
+    }
+
+    /**
+     * A seal that reached one rung and not another names the one it did not ask (c45, P1). The
+     * catalog settled and the TSA refused its URL; the run answered 200 "success", and only the
+     * TSA's FAILED receipt row, read closely, said that the TSA had never been asked.
+     */
+    @Test
+    @DisplayName("a seal names the rung it did not ask apart from the rung it reached")
+    void aSealNamesTheRungItDidNotAsk() throws Exception {
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of()),
+                new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
+                        "https://svc:s3cr3t@tsa.example/tsr", null, null), settlingCatalog());
+        sealWillSucceed(controller);
+
+        Object response = AnchorController.class.getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = bodyOf(response);
+        String message = String.valueOf(body.get("message"));
+
+        assertEquals(HttpStatus.OK, statusOf(response), String.valueOf(body));
+        assertEquals(java.util.Map.of("RFC3161_TSA",
+                        jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.USER_INFO_REFUSED),
+                body.get("notAsked"), String.valueOf(body));
+        assertTrue(message.contains("not asked") && message.contains("RFC3161_TSA"), message);
+        org.junit.jupiter.api.Assertions.assertFalse(String.valueOf(body).contains("s3cr3t"), String.valueOf(body));
+    }
+
+    /**
+     * A seal whose every rung refused names them too: "every configured rung FAILED or refused"
+     * alone left an operator to read each receipt to learn which (c45, subagent P3).
+     */
+    @Test
+    @DisplayName("a seal whose rungs all refuse their URL names them")
+    void aSealThroughOnlyRefusingRungsNamesThem() throws Exception {
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of()),
+                new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
+                        "https://svc:s3cr3t@tsa.example/tsr", null, null));
+        sealWillSucceed(controller);
+
+        Object response = AnchorController.class.getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = bodyOf(response);
+        String message = String.valueOf(body.get("message"));
+
+        assertEquals(HttpStatus.CONFLICT, statusOf(response), String.valueOf(body));
+        Object notAsked = body.get("notAsked");
+        assertTrue(notAsked instanceof java.util.Map<?, ?> named
+                && named.keySet().equals(java.util.Set.of("RFC3161_TSA")), String.valueOf(body));
+        assertTrue(message.contains("not asked") && message.contains("RFC3161_TSA"), message);
+    }
+
+    /**
+     * /status says why a receipt FAILED (c45, P1): a rung that refused its configuration and
+     * was never asked showed as a bare FAILED — the value a rung that was asked and failed shows.
+     */
+    @Test
+    @DisplayName("/status says why a receipt failed, so 'never asked' does not read as 'asked and failed'")
+    void theStatusSaysWhyAReceiptFailed() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt refused =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA, ROOT,
+                        java.time.Instant.parse("2026-09-29T00:00:00Z"),
+                        jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.USER_INFO_REFUSED);
+
+        java.util.Map<String, Object> body = statusBodyWith(receiptsHolding(List.of(refused), List.of()));
+
+        @SuppressWarnings("unchecked")
+        List<java.util.Map<String, Object>> rows = (List<java.util.Map<String, Object>>) body.get("receipts");
+        assertEquals(1, rows.size(), String.valueOf(body));
+        assertEquals("FAILED", rows.get(0).get("status"), String.valueOf(body));
+        assertEquals(jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.USER_INFO_REFUSED,
+                rows.get(0).get("failureReason"), String.valueOf(body));
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     @DisplayName("a run's receipts reach the screen without a destination URL's user:password")

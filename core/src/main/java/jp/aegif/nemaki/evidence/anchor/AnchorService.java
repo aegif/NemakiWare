@@ -316,8 +316,8 @@ public class AnchorService {
      * What an upgrade pass found, and why it found nothing when that is the answer.
      *
      * @param unavailable non-null when the store could not be asked. An empty {@code upgraded}
-     *        beside a null {@code unavailable} means "asked, nothing had settled" — a different
-     *        answer, and the one the endpoint used to give for both.
+     *        beside a null {@code unavailable} AND a null {@code refused} means "asked, nothing
+     *        had settled" — a different answer, and the one the endpoint used to give for both.
      * @param refused non-null when the rung holding the pending commitments refuses its
      *        configuration and was not asked (c44, P1: that used to read as "nothing had
      *        settled yet" too)
@@ -460,8 +460,9 @@ public class AnchorService {
      * {@code PENDING} for ever: the calendar has it, a block confirmed it, and the deployment
      * never asked — so the anchor exists and the proof does not.
      *
-     * @return the receipts that CHANGED. An empty list means nothing had settled yet, which is
-     *         the ordinary answer during the hours a block takes and not a failure.
+     * @return the receipts that CHANGED. An empty list with neither {@code unavailable} nor
+     *         {@code refused} means nothing had settled yet, which is the ordinary answer during
+     *         the hours a block takes and not a failure.
      */
     public Upgraded upgradePending(String domain, int limit) {
         List<AnchorReceipt> upgraded = new ArrayList<>();

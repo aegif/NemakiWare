@@ -3665,6 +3665,7 @@
     "rung": "Rung",
     "receiptStatus": "Receipt for the latest checkpoint",
     "anchoredAt": "Time",
+    "failureReason": "Why it failed or was refused",
     "destinationsCard": "Destinations (display only)",
     "tsaUrl": "TSA (RFC 3161) URL",
     "policyOid": "Requested policy OID",
@@ -3676,7 +3677,7 @@
     "otsOff": "Not set — rung 2 is not used (no sidecar URL on this node)",
     "destinationsReadOnly": "Destinations are start-up system properties (anchor.rfc3161.* / anchor.opentimestamps.sidecar.url) and cannot be changed from this screen: the requests to them carry no SSRF check, so they are not made editable from a screen.",
     "runNowCard": "Run once now",
-    "runNowDescription": "Calls the existing POST /checkpoint-and-anchor: seals the ledger as it is and sends it to the configured rungs. The answer is shown as it came.",
+    "runNowDescription": "Calls the existing POST /checkpoint-and-anchor: seals the ledger as it is and sends it to the configured rungs. A rung whose URL carries an @ is not asked, and the answer names it under notAsked. The answer is shown as it came.",
     "runNow": "Seal and send now"
   },
   "principalBatch": {

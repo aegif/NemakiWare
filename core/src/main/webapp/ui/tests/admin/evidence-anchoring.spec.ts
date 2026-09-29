@@ -108,4 +108,26 @@ test.describe('Evidence and time-stamping (C-4)', () => {
     expect(res.status()).toBe(400);
     expect(JSON.stringify(await res.json())).toContain('anchor.rfc3161.tsa.url');
   });
+
+  test('a FAILED receipt says why — a rung never asked does not read as one asked and failed', async ({ page }) => {
+    // c45, P1: the receipt table showed a rung that refused its configuration as a bare FAILED,
+    // the value a rung that was asked and failed shows. /status is substituted so the row exists
+    // whatever this environment has anchored; the screen is what is measured.
+    const reason = 'the configured URL carries an @ (a user-info), which is not used for authentication';
+    await page.route(/\/core\/api\/v1\/admin\/anchor\/status\?/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'success',
+          receipts: [{ rung: 'RFC3161_TSA', status: 'FAILED', claimLimits: '', anchoredAt: null, failureReason: reason }],
+        }),
+      }),
+    );
+    await page.reload();
+    await waitForUiStable(page);
+    await expect(page.getByTestId('evidence-anchoring-page')).toBeVisible();
+
+    await expect(page.getByRole('cell', { name: reason })).toBeVisible();
+  });
 });

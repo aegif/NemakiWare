@@ -3412,6 +3412,7 @@
     "rung": "段",
     "receiptStatus": "最新 checkpoint の受領",
     "anchoredAt": "時刻",
+    "failureReason": "失敗・拒否の理由",
     "destinationsCard": "送り先（表示のみ）",
     "tsaUrl": "TSA（RFC 3161）の URL",
     "policyOid": "要求する policy OID",
@@ -3423,7 +3424,7 @@
     "otsOff": "未設定 — 段 2 は使いません（このノードに sidecar URL が無い）",
     "destinationsReadOnly": "送り先は起動時の system property（anchor.rfc3161.* / anchor.opentimestamps.sidecar.url）で設定し、この画面からは変えられません。送信に SSRF の検査が無いため、画面から書き換えられる送り先にはしていません。",
     "runNowCard": "今すぐ 1 回",
-    "runNowDescription": "既存の POST /checkpoint-and-anchor を呼び、いまの台帳を封じて構成された段へ送ります。結果は返ってきたまま表示します。",
+    "runNowDescription": "既存の POST /checkpoint-and-anchor を呼び、いまの台帳を封じて構成された段へ送ります。URL に @ のある段には送らず、結果の notAsked に名指します。結果は返ってきたまま表示します。",
     "runNow": "今すぐ封じて送る"
   },
   "principalBatch": {

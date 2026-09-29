@@ -299,7 +299,9 @@ public class AnchorScheduler {
         state.lastSealAttemptAt = now;
         AnchorRunService.Run run = runService().checkpointAndAnchor(repositoryId, now);
         switch (run.kind()) {
-            case SUCCESS -> state.ran(now, "SUCCESS", "sealed and sent");
+            // A rung that refused its configuration was not asked; the record names it rather than
+            // reading "sealed and sent" over a rung nothing was sent to (c45, P1).
+            case SUCCESS -> state.ran(now, "SUCCESS", "sealed and sent" + notAskedClause(run));
             case NOOP -> {
                 // This tick counted unsealed entries and closeCheckpoint found none: another writer
                 // (a replica, an operator) sealed them in between, or the two reads disagree.
@@ -315,13 +317,20 @@ public class AnchorScheduler {
                 logger.warn("Anchor scheduler for {} could not seal and send: {}", repositoryId,
                         run.body().get("message"));
             }
-            case REFUSED -> refused(repositoryId, state, run.outcome(), now);
+            case REFUSED -> refused(repositoryId, state, run.outcome(), now, notAskedClause(run));
         }
     }
 
+    /** The rungs a seal did not ask, as the run's body names them, or nothing. */
+    private static String notAskedClause(AnchorRunService.Run run) {
+        Object notAsked = run.body().get("notAsked");
+        return notAsked == null ? "" : "; not asked, because they refuse their configuration: " + notAsked;
+    }
+
     /** The refusal arms, each with its own consequence (design §3.2). */
-    private void refused(String repositoryId, RepoState state, AnchorService.Outcome outcome, Instant now) {
-        String reason = outcome == null ? "refused" : outcome.refusedReason();
+    private void refused(String repositoryId, RepoState state, AnchorService.Outcome outcome, Instant now,
+            String notAskedClause) {
+        String reason = (outcome == null ? "refused" : outcome.refusedReason()) + notAskedClause;
         if (outcome != null && holdsAConfiguredCommitment(outcome.unstored())) {
             // A commitment exists that this deployment has no record of. Sending again would not
             // recover it; it would make ANOTHER (and buy another token). The retry timer leaves
