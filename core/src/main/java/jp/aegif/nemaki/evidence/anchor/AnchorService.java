@@ -302,7 +302,11 @@ public class AnchorService {
         if (configured > 0 && settled == 0) {
             return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
                     checkpoint.merkleRoot(), receipts,
-                    "every configured rung FAILED, so this checkpoint is not anchored anywhere");
+                    // "FAILED" alone read as "asked and failed" for a rung that refused its
+                    // configuration and was never asked (R133): each receipt says which.
+                    "every configured rung FAILED or refused its configuration without being "
+                            + "asked (each receipt's reason says which), so this checkpoint is not "
+                            + "anchored anywhere");
         }
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
                 receipts, null);
