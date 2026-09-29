@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -102,6 +103,11 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             return AnchorReceipt.notConfigured(kind(), hexDigest);
         }
         Instant attemptedAt = Instant.now();
+        if (Rfc3161AnchorTarget.carriesAt(sidecarUrl)) {
+            // Not sent, not parsed, not named (R132).
+            logger.warn("OpenTimestamps anchoring refused: {}", Rfc3161AnchorTarget.USER_INFO_REFUSED);
+            return AnchorReceipt.failed(kind(), hexDigest, attemptedAt, Rfc3161AnchorTarget.USER_INFO_REFUSED);
+        }
         try {
             JsonNode response = post("/stamp", "{\"digest\":\"" + hexDigest + "\"}");
             String status = response.path("status").asString("");
@@ -112,7 +118,7 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             byte[] proof = Base64.getDecoder().decode(response.path("proofBase64").asString(""));
 
             Map<String, String> attrs = new LinkedHashMap<>();
-            attrs.put("sidecarUrl", Rfc3161AnchorTarget.withoutUserInfo(sidecarUrl));
+            attrs.put("sidecarUrl", sidecarUrl);
             attrs.put("calendars", response.path("calendars").toString());
             attrs.put("noncePolicy", "SHA256(digest || 16 random bytes)");
             attrs.put("upgraded", "false");
@@ -125,8 +131,7 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
                     Rfc3161AnchorTarget.sha256Hex(proof), attrs);
 
         } catch (Exception e) {
-            logger.warn("OpenTimestamps anchoring failed via {}: {}",
-                    Rfc3161AnchorTarget.withoutUserInfo(sidecarUrl), e.toString());
+            logger.warn("OpenTimestamps anchoring failed via {}: {}", sidecarUrl, e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }
@@ -145,6 +150,11 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
     public AnchorReceipt upgrade(AnchorReceipt pending) {
         if (pending == null || pending.status() != AnchorStatus.PENDING
                 || pending.kind() != kind() || pending.proof() == null || !isConfigured()) {
+            return pending;
+        }
+        if (Rfc3161AnchorTarget.carriesAt(sidecarUrl)) {
+            // The sidecar is not asked; the commitment stays pending (R132).
+            logger.warn("OpenTimestamps upgrade refused: {}", Rfc3161AnchorTarget.USER_INFO_REFUSED);
             return pending;
         }
         try {
@@ -170,8 +180,8 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             }
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
-            // A receipt stored before the URL was kept without its user:password still carries
-            // it; the upgraded receipt is returned to the caller, and stored when it confirms —
+            // A receipt stored before a URL with an @ was refused (R132) may still carry one; the
+            // upgraded receipt is returned to the caller, and stored when it confirms —
             // upgradePending discards one that stays PENDING (c41, P1; subagent, c42).
             attrs.computeIfPresent("sidecarUrl", (key, url) -> Rfc3161AnchorTarget.withoutUserInfo(url));
             if (changed && latest.length > 0) {
@@ -229,7 +239,7 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
     }
 
     private JsonNode post(String path, String jsonBody) throws IOException {
-        URL url = Rfc3161AnchorTarget.parsedUrl(sidecarUrl + path, "OpenTimestamps sidecar");
+        URL url = URI.create(sidecarUrl + path).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
             byte[] payload = jsonBody.getBytes(StandardCharsets.UTF_8);

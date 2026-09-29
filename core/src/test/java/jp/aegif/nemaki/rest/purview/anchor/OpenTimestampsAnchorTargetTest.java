@@ -157,57 +157,43 @@ class OpenTimestampsAnchorTargetTest {
         }
 
         /**
-         * The receipt names the sidecar without the user:password its URL may carry (Codex, c41,
-         * P1): it is returned to the management screen, stored, and logged.
+         * A sidecar URL that carries an {@code @} is refused (R132): the sidecar is asked neither to
+         * stamp nor to upgrade, the stamp's reason is the refusal, and no log names the URL. The
+         * control beside it: the same sidecar, asked through a URL without one, answers.
          */
         @Test
-        @DisplayName("the sidecar URL's user:password reaches neither the receipt nor the failure log")
-        void theSidecarsCredentialsReachNeitherTheReceiptNorTheLog() throws Exception {
+        @DisplayName("a sidecar URL with an @ is refused — neither stamp nor upgrade is sent, and it is named nowhere")
+        void aSidecarUrlWithAnAtIsRefusedAndNeverSent() throws Exception {
             String url = start(java.util.Map.of("/stamp",
                     "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
                             + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}"));
-
-            AnchorReceipt receipt = new OpenTimestampsAnchorTarget(
-                    url.replace("http://", "http://ops:s3cr3t@")).anchor(DIGEST);
-
-            assertEquals(AnchorStatus.PENDING, receipt.status(), receipt.failureReason());
-            assertEquals(url, receipt.attributes().get("sidecarUrl"),
-                    "the receipt must still name the sidecar — without its password");
-
-            String logged = Rfc3161AnchorTargetTest.logOf(OpenTimestampsAnchorTarget.class, () ->
-                    new OpenTimestampsAnchorTarget("http://ops:s3cr3t@127.0.0.1:1").anchor(DIGEST));
-            assertTrue(logged.contains("http://127.0.0.1:1"), "the failure log no longer names the "
-                    + "sidecar, so it carries no password by carrying nothing: " + logged);
-            assertFalse(logged.contains("s3cr3t"), "the failure log carries the sidecar's password: " + logged);
-        }
-
-        /**
-         * A sidecar URL the parser cannot read does not have its text repeated — in the stamp's
-         * reason, its failure log, or the upgrade's failure log (Codex and subagent, c42, P1).
-         */
-        @Test
-        @DisplayName("a sidecar URL the parser cannot read does not repeat its user:password")
-        void aSidecarUrlThatCannotBeParsedDoesNotRepeatItsCredentials() throws Exception {
-            String configured = "http://ops:Pa%ss@127.0.0.1:1";
-            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+            String withAt = url.replace("http://", "http://ops:Pa%ss@");
+            AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                    java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false"));
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> stamped =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> upgraded =
                     new java.util.concurrent.atomic.AtomicReference<>();
 
             String logged = Rfc3161AnchorTargetTest.logOf(OpenTimestampsAnchorTarget.class, () -> {
-                OpenTimestampsAnchorTarget target = new OpenTimestampsAnchorTarget(configured);
-                receipt.set(target.anchor(DIGEST));
-                target.upgrade(AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
-                        java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false")));
+                OpenTimestampsAnchorTarget target = new OpenTimestampsAnchorTarget(withAt);
+                stamped.set(target.anchor(DIGEST));
+                upgraded.set(target.upgrade(pending));
                 return null;
             });
 
-            String reason = receipt.get().failureReason();
-            assertEquals(AnchorStatus.FAILED, receipt.get().status());
-            assertTrue(reason.contains("could not be parsed"), reason);
-            assertFalse(reason.contains("Pa%ss") || reason.contains("ops:"), reason);
-            assertTrue(logged.contains("upgrade failed"), "the upgrade's failure was not logged, so "
-                    + "its log carries no password by carrying nothing: " + logged);
-            assertFalse(logged.contains("Pa%ss") || logged.contains("ops:"),
-                    "a failure log repeats the configured URL's credentials: " + logged);
+            assertEquals(AnchorStatus.FAILED, stamped.get().status());
+            assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, stamped.get().failureReason());
+            assertSame(pending, upgraded.get(), "an upgrade through a refused URL changed the commitment");
+            assertTrue(paths.isEmpty(), "the sidecar was asked through a URL that carries an @: " + paths);
+            assertTrue(logged.contains("anchoring refused") && logged.contains("upgrade refused"),
+                    "a refusal was not logged: " + logged);
+            assertFalse(logged.contains("Pa%ss") || logged.contains("ops:") || logged.contains("127.0.0.1"),
+                    "a log names the refused URL: " + logged);
+
+            AnchorReceipt answered = new OpenTimestampsAnchorTarget(url).anchor(DIGEST);
+            assertEquals(AnchorStatus.PENDING, answered.status(), answered.failureReason());
+            assertEquals(url, answered.attributes().get("sidecarUrl"));
         }
     }
 
@@ -276,7 +262,11 @@ class OpenTimestampsAnchorTargetTest {
 
             assertEquals("true", result.attributes().get("proofComplete"),
                     "the upgrade did not produce a new receipt, so this measures nothing");
-            assertEquals("http://ots.example.invalid:8082", result.attributes().get("sidecarUrl"));
+            String sidecar = result.attributes().get("sidecarUrl");
+            assertFalse(sidecar.contains("s3cr3t") || sidecar.contains("ops:"),
+                    "the upgraded receipt carries the stored password forward: " + sidecar);
+            assertTrue(sidecar.startsWith("(not shown"), "the stored URL was dropped rather than "
+                    + "marked, so the receipt no longer says where it came from: " + sidecar);
         }
 
         @Test

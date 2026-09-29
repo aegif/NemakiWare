@@ -225,7 +225,8 @@ class AnchorScheduleEndpointTest {
         ResponseEntity<Map<String, Object>> response = controller().schedule(REPO);
 
         Map<?, ?> destinations = (Map<?, ?>) response.getBody().get("destinations");
-        assertEquals("https://tsa.example.invalid/ts", destinations.get("tsaUrl"), String.valueOf(destinations));
+        // A URL with an @ is not shown at all (R132); the key says so rather than being dropped.
+        assertTrue(String.valueOf(destinations.get("tsaUrl")).startsWith("(not shown"), String.valueOf(destinations));
         assertEquals(Boolean.TRUE, destinations.get("trustAnchorConfigured"));
         assertFalse(String.valueOf(response.getBody()).contains("s3cr3t"), String.valueOf(response.getBody()));
         assertFalse(String.valueOf(response.getBody()).contains("BEGIN CERTIFICATE"));

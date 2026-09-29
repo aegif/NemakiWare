@@ -158,25 +158,30 @@ class AnchorServiceTest {
     }
 
     /**
-     * What a run returns — and the management screen shows as it is — does not repeat a
-     * destination URL the parser could not read, measured through the real targets (Codex and
-     * subagent, c42, P1: the parser's message carried the URL into the receipt's reason).
+     * A run whose destinations carry an {@code @} sends to neither and returns no part of either
+     * URL — measured through the real targets, since what a run returns is what the management
+     * screen shows as it is (R132). Each receipt is read on its own: one refusal must not stand
+     * in for the other.
      */
     @Test
-    @DisplayName("a run whose destinations cannot be parsed returns no user:password")
-    void aRunWhoseDestinationsCannotBeParsedReturnsNoCredentials() {
+    @DisplayName("a run whose destinations carry an @ sends nothing and returns no user:password")
+    void aRunWhoseDestinationsCarryAnAtReturnsNoCredentials() {
         AnchorService.Outcome outcome = serviceWith(storeAt(5),
                 new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
                         "https://svc:Pa%ss@tsa.example/tsr", null, null),
                 new jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget(
                         "http://ops:pa#ss@ots_sidecar:8082")).anchor(checkpoint(5));
 
+        assertEquals(2, outcome.receipts().size(), String.valueOf(outcome.asMap()));
+        for (AnchorReceipt receipt : outcome.receipts()) {
+            assertEquals(AnchorStatus.FAILED, receipt.status(), receipt.kind().name());
+            assertEquals(jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.USER_INFO_REFUSED,
+                    receipt.failureReason(), receipt.kind().name());
+        }
         String shown = String.valueOf(outcome.asMap());
-        assertEquals(2, outcome.receipts().size(), shown);
-        assertTrue(shown.contains("could not be parsed"), "the receipts no longer say what failed: " + shown);
         assertFalse(shown.contains("Pa%ss") || shown.contains("pa#ss") || shown.contains("svc:")
-                || shown.contains("ops:") || shown.contains("\"pa\""),
-                "the run's answer repeats a destination's credentials: " + shown);
+                || shown.contains("ops:") || shown.contains("tsa.example") || shown.contains("ots_sidecar"),
+                "the run's answer names a refused destination: " + shown);
     }
 
     // ---- AC 2: every rung's claim travels with it ----

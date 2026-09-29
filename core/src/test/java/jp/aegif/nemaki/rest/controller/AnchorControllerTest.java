@@ -596,8 +596,8 @@ class AnchorControllerTest {
                 jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(
                         jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS, ROOT, at,
                         new byte[] {4}, "d",
-                        // A Docker service name: not a valid server name, so java.net.URI reads the
-                        // authority as registry-based and reports no user-info at all (subagent, c41).
+                        // A Docker service name (subagent, c41): once a trap for a rule that read the
+                        // user-info back out of the string; any @ is now simply not shown (R132).
                         java.util.Map.of("sidecarUrl", "http://ops:s3cr3t@ots_sidecar:8082"));
         jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
                 mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
@@ -615,9 +615,9 @@ class AnchorControllerTest {
 
         org.junit.jupiter.api.Assertions.assertFalse(shown.contains("s3cr3t"),
                 "the run's response carries a destination's password: " + shown);
-        // Still named: dropping the attributes altogether would also carry no password.
-        assertTrue(shown.contains("https://tsa.example.invalid/ts"), shown);
-        assertTrue(shown.contains("http://ots_sidecar:8082"), shown);
+        // Still marked: dropping the attributes altogether would also carry no password. A URL
+        // with an @ is not shown at all (R132), so each key says so rather than naming a host.
+        assertEquals(2, shown.split("not shown: the URL carries an @", -1).length - 1, shown);
     }
 
     @Test

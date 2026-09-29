@@ -230,11 +230,11 @@ public class AnchorService {
         }
 
         /**
-         * The attributes as returned to a caller, with a destination URL's user:password removed
-         * (Codex, c41, P1 — the management screen shows this map as it is). Defence in depth: the
-         * targets already keep the URL that way, and today an Outcome carries only receipts the
-         * targets have just made, so no stored receipt reaches here (subagent, c42) — this holds
-         * the answer to the rule whatever a later path hands it.
+         * The attributes as returned to a caller, with a destination URL that carries an {@code @}
+         * not shown (Codex, c41, P1 — the management screen shows this map as it is; R132 — such a
+         * destination is refused, so no receipt the targets make today carries one). Defence in
+         * depth: an Outcome carries only receipts the targets have just made (subagent, c42), and
+         * this holds the answer to the rule whatever a later path hands it.
          */
         private static Map<String, String> shownAttributes(Map<String, String> attributes) {
             if (attributes == null) {

@@ -170,66 +170,36 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     }
 
     /**
-     * The URL with any user:password removed, for everything that is shown, kept or logged.
+     * The reason a destination whose URL carries an {@code @} is refused. It names no URL.
      *
-     * <p>An operator may put a destination's credentials in its URL. The management screen
-     * showed the destination without them while the receipt of every run — returned to that
-     * screen, stored with the receipt, and logged — carried the URL whole (Codex, c41, P1).
-     * Only the request itself uses the URL as configured.
-     *
-     * <p>Read from the authority as text, not through {@code URI.getUserInfo()}: a host that is
-     * not a valid server name — {@code tsa_int}, a Docker service name — makes {@code URI} read
-     * the authority as registry-based and answer no user-info at all, and so did a password
-     * with a raw {@code @} (subagent, c41). Everything up to the authority's last {@code @} goes.
-     *
-     * <p>A password with a raw {@code /}, {@code ?} or {@code #} ends the authority inside the
-     * password, so no {@code @} is found there and the URL used to be returned whole (subagent,
-     * c42). An {@code @} after the authority may be that, or a path's own {@code @}, and the text
-     * cannot tell the two apart — so such a URL is not shown at all rather than shown whole.
+     * <p>Three review rounds each found another way the user:password in a destination URL
+     * reached the screen, the stored receipt or a log (c41 R129, c42 R131, c43 R132): read back
+     * out of the string, the end of a user-info cannot be told when the password holds a raw
+     * {@code @}, {@code #}, {@code /} or {@code ?}, and the JDK's own network log prints the URL
+     * it is handed. The user-info is not used for authentication — {@code HttpURLConnection}
+     * does not read it — so a URL with an {@code @} is refused instead: never sent, never parsed,
+     * never shown (the user's decision, 2026-09-29). A path that needs one writes {@code %40}.
+     */
+    public static final String USER_INFO_REFUSED = "the configured URL carries an @ (a user-info), "
+            + "which is not used for authentication and is refused so that it cannot reach a log, "
+            + "a receipt or the screen; remove it (write %40 where a path needs an @)";
+
+    /** Whether a configured destination URL is refused for carrying an {@code @}. */
+    public static boolean carriesAt(String url) {
+        return url != null && url.indexOf('@') >= 0;
+    }
+
+    /**
+     * The URL as it may be shown, kept or logged: whole when it carries no {@code @}, and not at
+     * all when it does — such a destination is refused ({@link #USER_INFO_REFUSED}), and no rule
+     * that reads a user-info back out of the string survived review (c43, R132).
      */
     public static String withoutUserInfo(String url) {
         if (url == null) {
             return null;
         }
-        int schemeEnd = url.indexOf("://");
-        if (schemeEnd < 0) {
-            // Not a URL with an authority: nothing here is a user-info this can find, and a
-            // string with an @ in it could be one — so it is not shown whole.
-            return url.indexOf('@') < 0 ? url : "(a URL that could not be parsed for display)";
-        }
-        int start = schemeEnd + 3;
-        int end = url.length();
-        for (char stop : new char[] {'/', '?', '#'}) {
-            int at = url.indexOf(stop, start);
-            if (at >= 0 && at < end) {
-                end = at;
-            }
-        }
-        int at = url.lastIndexOf('@', end - 1);
-        if (at >= start) {
-            return url.substring(0, start) + url.substring(at + 1);
-        }
-        return url.indexOf('@', end) < 0 ? url
-                : "(a URL with an @ that could not be read as user-info — not shown)";
-    }
-
-    /**
-     * The configured URL as a {@link URL}, or an {@link IOException} whose text does NOT repeat it.
-     *
-     * <p>{@code URI.create} puts its whole input in the message it throws, and {@code toURL}
-     * names the part of a password it read as a port — so a password with a raw {@code %}, space,
-     * {@code #}, {@code /} or {@code ?} reached the failure log and the stored receipt's reason,
-     * user:password and all (Codex and subagent, c42, P1 — the second in R129's area, opened by
-     * the user's decision). The parser's own text is withheld; its class name is kept.
-     */
-    static URL parsedUrl(String configured, String what) throws IOException {
-        try {
-            return URI.create(configured).toURL();
-        } catch (IllegalArgumentException | java.net.MalformedURLException unparsable) {
-            throw new IOException("the configured " + what + " URL could not be parsed as a URL ("
-                    + unparsable.getClass().getSimpleName() + "; the parser's message is withheld "
-                    + "because it repeats the URL, user:password included)");
-        }
+        return url.indexOf('@') < 0 ? url
+                : "(not shown: the URL carries an @, and a destination with one is refused)";
     }
 
     /** The policy OID requested, or null when the TSA's default is accepted. Display only. */
@@ -249,6 +219,11 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             return AnchorReceipt.notConfigured(kind(), hexDigest);
         }
         Instant attemptedAt = Instant.now();
+        if (carriesAt(tsaUrl)) {
+            // Not sent, not parsed, not named: see USER_INFO_REFUSED (R132).
+            logger.warn("RFC 3161 anchoring refused: {}", USER_INFO_REFUSED);
+            return AnchorReceipt.failed(kind(), hexDigest, attemptedAt, USER_INFO_REFUSED);
+        }
         try {
             TimeStampRequestGenerator gen = new TimeStampRequestGenerator();
             // Pitfall 2: without this the TSA is REQUIRED to omit its certificate.
@@ -301,7 +276,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             }
 
             Map<String, String> attrs = new LinkedHashMap<>();
-            attrs.put("tsaUrl", withoutUserInfo(tsaUrl));
+            attrs.put("tsaUrl", tsaUrl);
             attrs.put("accreditation", accreditation);
             attrs.put("policyOid", String.valueOf(info.getPolicy()));
             attrs.put("serialNumber", String.valueOf(info.getSerialNumber()));
@@ -333,7 +308,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.putAll(collectRevocationMaterial(token).asAttributes());
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
-                    withoutUserInfo(tsaUrl), info.getSerialNumber(), info.getGenTime().toInstant());
+                    tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
 
             // Independence is a fact about the WORLD, not about cryptography, and no amount of
             // certificate checking can establish it: an operator can configure their own
@@ -354,7 +329,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.
-            logger.warn("RFC 3161 anchoring failed against {}: {}", withoutUserInfo(tsaUrl), e.toString());
+            logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }
@@ -552,7 +527,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      * failure, so the content type is checked and the mismatch reported as itself.
      */
     private byte[] post(byte[] derRequest) throws IOException {
-        URL url = parsedUrl(tsaUrl, "TSA");
+        URL url = URI.create(tsaUrl).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
             conn.setRequestMethod("POST");

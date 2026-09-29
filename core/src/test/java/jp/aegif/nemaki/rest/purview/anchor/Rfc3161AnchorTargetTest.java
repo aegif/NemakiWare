@@ -236,45 +236,21 @@ class Rfc3161AnchorTargetTest {
         }
 
         /**
-         * A failed request logs the TSA without the user:password its URL may carry (Codex, c41,
-         * P1). The scheduler makes this log periodic: every tick that tries and fails writes it.
+         * Every URL with an {@code @} is refused, whatever else it holds (R132). These are the
+         * shapes three review rounds found leaking through a rule that read the user-info back
+         * out of the string: a raw {@code %} (the parser's message repeated the URL), a raw
+         * {@code #} (the parser named the password's first part as a port), an {@code @} and a
+         * {@code #} together (the authority ended inside the password), and an {@code @} in the
+         * user name with a {@code /} in the password.
          */
         @Test
-        @DisplayName("a failed request logs the TSA, and its reason names it, without the URL's user:password")
-        void aFailedRequestLogsTheTsaWithoutItsCredentials() throws Exception {
-            String url = startServer("/tsr", exchange -> {
-                exchange.sendResponseHeaders(503, -1);
-                exchange.close();
-            });
-            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
-                    new java.util.concurrent.atomic.AtomicReference<>();
-
-            String logged = logOf(Rfc3161AnchorTarget.class, () -> {
-                receipt.set(new Rfc3161AnchorTarget(url.replace("http://", "http://operator:s3cr3t@"),
-                        null, null).anchor(DIGEST));
-                return null;
-            });
-
-            assertEquals(AnchorStatus.FAILED, receipt.get().status());
-            assertTrue(logged.contains(url), "the failure log no longer names the TSA, so it "
-                    + "carries no password by carrying nothing: " + logged);
-            assertFalse(logged.contains("s3cr3t"), "the failure log carries the TSA's password: " + logged);
-            assertFalse(receipt.get().failureReason().contains("s3cr3t"), receipt.get().failureReason());
-        }
-
-        /**
-         * A configured URL the parser cannot read does not have its text repeated (Codex and
-         * subagent, c42, P1). {@code URI.create} puts its whole input in its message, and
-         * {@code toURL} names the part of a password it read as a port — both reached the failure
-         * log and the receipt's reason. Measured with both shapes: a raw {@code %} (the whole URL
-         * in the message) and a raw {@code #} (the password's first part, read as a port).
-         */
-        @Test
-        @DisplayName("a URL the parser cannot read does not repeat its user:password in the reason or the log")
-        void aUrlThatCannotBeParsedDoesNotRepeatItsCredentials() throws Exception {
+        @DisplayName("every URL with an @ is refused, whatever else it holds, and no part of it is written")
+        void everyUrlWithAnAtIsRefused() throws Exception {
             for (String[] shape : new String[][] {
                     {"https://svc:Pa%ss@tsa.example/tsr", "Pa%ss"},
-                    {"https://svc:pa#ss@tsa.example/tsr", "\"pa\""}}) {
+                    {"https://svc:pa#ss@tsa.example/tsr", "pa#ss"},
+                    {"https://svc:@secret#tail@tsa.example/tsr", "secret"},
+                    {"https://alice@example.com:s3cr/et@tsa.example/tsr", "s3cr"}}) {
                 java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
                         new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -284,33 +260,27 @@ class Rfc3161AnchorTargetTest {
                 });
 
                 String reason = receipt.get().failureReason();
-                assertEquals(AnchorStatus.FAILED, receipt.get().status());
-                assertTrue(reason.contains("could not be parsed"), "the reason no longer says what "
-                        + "failed, so it carries no password by carrying nothing: " + reason);
-                assertFalse(reason.contains(shape[1]) || reason.contains("svc:"),
-                        "the reason repeats the configured URL's credentials: " + reason);
-                assertFalse(logged.contains(shape[1]) || logged.contains("svc:"),
-                        "the failure log repeats the configured URL's credentials: " + logged);
+                assertEquals(AnchorStatus.FAILED, receipt.get().status(), shape[0]);
+                assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, reason, shape[0]);
+                assertFalse(logged.contains(shape[1]) || logged.contains("tsa.example"),
+                        "the log names the refused URL: " + logged);
             }
         }
 
         /**
-         * The user-info rule on its edges (subagent, c42 — no lock held them): the authority's
-         * LAST {@code @} ends the user-info; an {@code @} after the authority (a password with a
-         * raw {@code #}, or a path's own) makes the URL not shown rather than shown whole; a URL
-         * with no {@code @} at all is shown as it is.
+         * The display rule: a URL with an {@code @} anywhere is not shown — the user-info, a path's
+         * own {@code @}, a query's, a fragment's — and a URL with none is shown as it is (R132:
+         * no rule that reads a user-info back out of the string survived review).
          */
         @Test
-        @DisplayName("the user-info rule on its edges")
-        void theUserInfoRuleOnItsEdges() {
-            assertEquals("https://h/", Rfc3161AnchorTarget.withoutUserInfo("https://u:p@ss@h/"),
-                    "a raw @ in the password left part of it behind");
-            String hashInPassword = Rfc3161AnchorTarget.withoutUserInfo("https://svc:pa#ss@tsa.example/tsr");
-            assertFalse(hashInPassword.contains("pa#ss") || hashInPassword.contains("svc:"),
-                    "a password with a raw # was shown: " + hashInPassword);
-            String atInPath = Rfc3161AnchorTarget.withoutUserInfo("https://h/a@b");
-            assertFalse(atInPath.equals("https://b"), "a path's @ was read as the end of a user-info, "
-                    + "so the URL was shown as a different host: " + atInPath);
+        @DisplayName("a URL with an @ anywhere is not shown, and one without is shown as it is")
+        void aUrlWithAnAtIsNotShown() {
+            for (String withAt : new String[] {"https://u:p@ss@h/", "https://svc:@secret#tail@tsa.example/tsr",
+                    "https://alice@example.com:s3cr/et@tsa.example/tsr", "https://h/a@b",
+                    "https://tsa.example/ts?user=a@b", "https://tsa.example/#ops@example"}) {
+                String shown = Rfc3161AnchorTarget.withoutUserInfo(withAt);
+                assertTrue(shown.startsWith("(not shown"), withAt + " was shown as " + shown);
+            }
             assertEquals("http://127.0.0.1:3180/", Rfc3161AnchorTarget.withoutUserInfo("http://127.0.0.1:3180/"),
                     "a URL with no @ at all is shown as it is");
         }
@@ -625,14 +595,17 @@ class Rfc3161AnchorTargetTest {
         }
 
         /**
-         * The receipt names the TSA without the user:password its URL may carry, and so does the
-         * log (Codex, c41, P1). The management screen showed the destination without it while
-         * the receipt of every run — returned to that screen, stored, and logged — carried it.
+         * A TSA URL that carries an {@code @} is refused: the TSA is never asked, and neither the
+         * receipt nor the log names the URL (R132 — the user's decision after three rounds found
+         * user:password reaching the screen, the receipt or a log by another shape each time).
+         * The control beside it: the same TSA, asked through a URL without one, answers.
          */
         @Test
-        @DisplayName("the TSA URL's user:password reaches neither the receipt nor the log")
-        void theUrlsCredentialsReachNeitherTheReceiptNorTheLog() throws Exception {
-            String url = startTsa(true);
+        @DisplayName("a TSA URL with an @ is refused — never sent, and named nowhere")
+        void aUrlWithAnAtIsRefusedAndNeverSent() throws Exception {
+            java.util.concurrent.atomic.AtomicReference<String> imprintSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            String url = startTsaRecording(imprintSeen);
             java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
                     new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -642,11 +615,16 @@ class Rfc3161AnchorTargetTest {
                 return null;
             });
 
-            assertEquals(AnchorStatus.CONFIRMED, receipt.get().status(), receipt.get().failureReason());
-            assertEquals(url, receipt.get().attributes().get("tsaUrl"),
-                    "the receipt must still name the TSA — without its password");
-            assertTrue(logged.contains(url), "the success log no longer names the TSA: " + logged);
-            assertFalse(logged.contains("s3cr3t"), "the success log carries the TSA's password: " + logged);
+            assertEquals(AnchorStatus.FAILED, receipt.get().status());
+            assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, receipt.get().failureReason());
+            assertNull(imprintSeen.get(), "the TSA was asked through a URL that carries an @");
+            assertTrue(logged.contains("refused"), "the refusal was not logged: " + logged);
+            assertFalse(logged.contains("s3cr3t") || logged.contains("operator"),
+                    "the log names the refused URL: " + logged);
+
+            AnchorReceipt answered = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+            assertEquals(AnchorStatus.CONFIRMED, answered.status(), answered.failureReason());
+            assertEquals(url, answered.attributes().get("tsaUrl"));
         }
 
         @Test
