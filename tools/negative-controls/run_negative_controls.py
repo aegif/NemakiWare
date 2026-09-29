@@ -19270,7 +19270,9 @@ CONTROLS = [
         find='            logger.warn("RFC 3161 anchoring failed against {}: {}", withoutUserInfo(tsaUrl), e.toString());',
         replace='            logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());',
         test='Rfc3161AnchorTargetTest',
-        expect_fail=['aFailedRequestLogsTheTsaWithoutItsCredentials'],
+        expect_fail=['aFailedRequestLogsTheTsaWithoutItsCredentials',
+                     # c42: the parse-failure lock reads the same failure log
+                     'aUrlThatCannotBeParsedDoesNotRepeatItsCredentials'],
     ),
     dict(
         id='OO4',
@@ -19290,7 +19292,9 @@ CONTROLS = [
         find='            logger.warn("OpenTimestamps anchoring failed via {}: {}",\n                    Rfc3161AnchorTarget.withoutUserInfo(sidecarUrl), e.toString());',
         replace='            logger.warn("OpenTimestamps anchoring failed via {}: {}",\n                    sidecarUrl, e.toString());',
         test='OpenTimestampsAnchorTargetTest',
-        expect_fail=['theSidecarsCredentialsReachNeitherTheReceiptNorTheLog'],
+        expect_fail=['theSidecarsCredentialsReachNeitherTheReceiptNorTheLog',
+                     # c42: the parse-failure lock reads the same failure log
+                     'aSidecarUrlThatCannotBeParsedDoesNotRepeatItsCredentials'],
     ),
     dict(
         id='OQ4',
