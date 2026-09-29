@@ -565,6 +565,60 @@ class AnchorControllerTest {
                 "the outer status says success over an inner refusal: " + body);
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    @DisplayName("a run's receipts reach the screen without a destination URL's user:password")
+    void aRunsReceiptsCarryNoCredentials() throws Exception {
+        // The management screen shows this response as it is. Its destination card showed the
+        // TSA URL without user:password while the receipts of the run it had just made carried
+        // it whole (Codex, c41, P1). The receipts here are ones a store could hand back from
+        // before the targets kept the URL that way, so the response itself has to hold the rule.
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);
+        when(ledger.closeCheckpoint(anyString(), anyString()))
+                .thenReturn(java.util.Map.of("status", "success", "toSequence", 5L));
+        setField(controller, "ledgerService", ledger);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        setField(controller, "ledgerStore", store);
+        java.time.Instant at = java.time.Instant.parse("2026-09-29T00:00:00Z");
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt tsa =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipts.confirmed(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.RFC3161_TSA, ROOT, at,
+                        new byte[] {1, 2, 3},
+                        java.util.Map.of("tsaUrl", "https://operator:s3cr3t@tsa.example.invalid/ts"));
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt ots =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS, ROOT, at,
+                        new byte[] {4}, "d",
+                        // A Docker service name: not a valid server name, so java.net.URI reads the
+                        // authority as registry-based and reports no user-info at all (subagent, c41).
+                        java.util.Map.of("sidecarUrl", "http://ops:s3cr3t@ots_sidecar:8082"));
+        jp.aegif.nemaki.evidence.anchor.AnchorService anchors =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorService.class);
+        when(anchors.anchor(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new jp.aegif.nemaki.evidence.anchor.AnchorService.Outcome("bedroom", 5, ROOT,
+                        List.of(tsa, ots), null));
+        setField(controller, "anchorService", anchors);
+
+        Object response = AnchorController.class
+                .getDeclaredMethod("checkpointAndAnchor", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = (java.util.Map<String, Object>)
+                response.getClass().getMethod("getBody").invoke(response);
+        String shown = String.valueOf(body);
+
+        org.junit.jupiter.api.Assertions.assertFalse(shown.contains("s3cr3t"),
+                "the run's response carries a destination's password: " + shown);
+        // Still named: dropping the attributes altogether would also carry no password.
+        assertTrue(shown.contains("https://tsa.example.invalid/ts"), shown);
+        assertTrue(shown.contains("http://ots_sidecar:8082"), shown);
+    }
+
     @Test
     @DisplayName("receipts the store could not read are not silently missing from /status")
     void droppedReceiptRowsAreDisclosed() throws Exception {

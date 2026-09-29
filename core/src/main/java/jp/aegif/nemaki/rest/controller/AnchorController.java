@@ -702,21 +702,9 @@ public class AnchorController {
         return ResponseEntity.badRequest().body(body);
     }
 
-    /** A URL for display, with any user:password removed. */
+    /** A URL for display, with any user:password removed — the same rule the receipts follow. */
     static String withoutUserInfo(String url) {
-        if (url == null) {
-            return null;
-        }
-        try {
-            java.net.URI uri = new java.net.URI(url);
-            if (uri.getUserInfo() == null) {
-                return url;
-            }
-            return new java.net.URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(),
-                    uri.getQuery(), uri.getFragment()).toString();
-        } catch (java.net.URISyntaxException e) {
-            return "(a URL that could not be parsed for display)";
-        }
+        return Rfc3161AnchorTarget.withoutUserInfo(url);
     }
 
     private static final String SCHEDULE_LIMITS = "The interval is when a seal is TRIED, not a bound on "

@@ -463,6 +463,27 @@ class AnchorSchedulerTest {
     }
 
     @Test
+    @DisplayName("a global configuration that could not be loaded does not read as 'nothing saved'")
+    void anUnloadedGlobalConfigurationIsUnavailable() throws Exception {
+        // A key the domain has no value for falls back to the deployment-wide value, which
+        // PropertyManager answers from the global configuration — and, when that failed to load,
+        // from -D in its place. A saved global "disabled" then reads as the start-up "enabled"
+        // (subagent, c41: no lock read this arm).
+        dueByEitherArm();
+        deploymentWide.putAll(saved);
+        saved.clear();
+        Configuration unloaded = new Configuration();
+        unloaded.setLoadFailed(true);
+        when(props.getConfiguration(SystemConst.NEMAKI_CONF_DB)).thenReturn(unloaded);
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        verifyNothingSealed();
+        assertEquals("UNAVAILABLE", scheduler.state(REPO).lastOutcome);
+    }
+
+    @Test
     @DisplayName("what is saved for the domain is what the NEXT tick acts on")
     void aSavedValueIsWhatTheNextTickActsOn() throws Exception {
         dueByEitherArm();
@@ -543,6 +564,30 @@ class AnchorSchedulerTest {
 
         scheduler.tick(NOW.plus(Duration.ofMinutes(61)));
         verify(anchors, times(2)).upgradePending(eq(REPO), anyInt());
+    }
+
+    @Test
+    @DisplayName("an empty pending list with an undecodable row behind it is not 'nothing pending'")
+    void anUndecodablePendingRowIsNotNothingPending() throws Exception {
+        // The store drops a row it cannot decode and counts it; the list alone then reads as
+        // "nothing pending" (subagent, c41). The other side: an empty list with no drop is.
+        dueByEitherArm();
+        ots = rung(AnchorKind.OPENTIMESTAMPS, true);
+        when(receipts.pending(eq(REPO), anyInt())).thenReturn(List.of());
+        when(receipts.unreadableCount()).thenReturn(1);
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        String outcome = scheduler.state(REPO).lastUpgradeOutcome;
+        assertTrue(outcome != null && outcome.startsWith("UNAVAILABLE"),
+                "a pending row that could not be read was reported as " + outcome);
+        verify(anchors, never()).upgradePending(anyString(), anyInt());
+
+        when(receipts.unreadableCount()).thenReturn(0);
+        AnchorScheduler clean = scheduler();
+        clean.tick(NOW);
+        assertEquals("NOOP: nothing pending", clean.state(REPO).lastUpgradeOutcome);
     }
 
     /** The seal the next tick makes seals checkpoint 0..2; what anchor() answers is the test's. */

@@ -368,7 +368,14 @@ public class AnchorScheduler {
             return;
         }
         if (pending.isEmpty()) {
-            state.lastUpgradeOutcome = "NOOP: nothing pending";
+            // A row the store could not decode is dropped before this list is built, so an empty
+            // list with a drop behind it is "could not read", not "nothing pending" — the rule
+            // upgradePending itself follows (subagent, c41).
+            int unreadable = receiptStore.unreadableCount();
+            state.lastUpgradeOutcome = unreadable > 0
+                    ? "UNAVAILABLE: " + unreadable + " pending receipt row(s) could not be read, so "
+                            + "whether anything is pending is unknown"
+                    : "NOOP: nothing pending";
             return;
         }
         AnchorRunService.Run run = runService().upgradePending(repositoryId, UPGRADE_BATCH);

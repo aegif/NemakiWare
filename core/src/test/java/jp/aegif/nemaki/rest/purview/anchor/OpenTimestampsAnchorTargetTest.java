@@ -155,6 +155,31 @@ class OpenTimestampsAnchorTargetTest {
                     new OpenTimestampsAnchorTarget("http://127.0.0.1:1").anchor(DIGEST);
             assertEquals(AnchorStatus.FAILED, receipt.status());
         }
+
+        /**
+         * The receipt names the sidecar without the user:password its URL may carry (Codex, c41,
+         * P1): it is returned to the management screen, stored, and logged.
+         */
+        @Test
+        @DisplayName("the sidecar URL's user:password reaches neither the receipt nor the failure log")
+        void theSidecarsCredentialsReachNeitherTheReceiptNorTheLog() throws Exception {
+            String url = start(java.util.Map.of("/stamp",
+                    "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
+                            + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}"));
+
+            AnchorReceipt receipt = new OpenTimestampsAnchorTarget(
+                    url.replace("http://", "http://ops:s3cr3t@")).anchor(DIGEST);
+
+            assertEquals(AnchorStatus.PENDING, receipt.status(), receipt.failureReason());
+            assertEquals(url, receipt.attributes().get("sidecarUrl"),
+                    "the receipt must still name the sidecar — without its password");
+
+            String logged = Rfc3161AnchorTargetTest.logOf(OpenTimestampsAnchorTarget.class, () ->
+                    new OpenTimestampsAnchorTarget("http://ops:s3cr3t@127.0.0.1:1").anchor(DIGEST));
+            assertTrue(logged.contains("http://127.0.0.1:1"), "the failure log no longer names the "
+                    + "sidecar, so it carries no password by carrying nothing: " + logged);
+            assertFalse(logged.contains("s3cr3t"), "the failure log carries the sidecar's password: " + logged);
+        }
     }
 
     @Nested
@@ -199,6 +224,30 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals("true", result.attributes().get("proofComplete"));
             assertEquals("921447", result.attributes().get("bitcoinBlockHeight"));
             assertEquals("false", result.attributes().get("chainVerifiedLocally"));
+        }
+
+        /**
+         * A receipt stored before the URL was kept without its user:password still carries it,
+         * and the upgrade copies the pending receipt's attributes into the one it returns and
+         * stores again (Codex, c41, P1).
+         */
+        @Test
+        @DisplayName("an upgrade does not carry a stored receipt's sidecar password forward")
+        void anUpgradeDoesNotCarryAStoredPasswordForward() throws Exception {
+            String url = start(java.util.Map.of(
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\""
+                            + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":true,\"digestMatches\":true,\"bitcoinBlockHeight\":921447}",
+                    "/verify", "{\"verified\":false,\"stderr\":\"Could not connect to local Bitcoin node\"}"));
+            AnchorReceipt stored = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                    java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false",
+                            "sidecarUrl", "http://ops:s3cr3t@ots.example.invalid:8082"));
+
+            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(stored);
+
+            assertEquals("true", result.attributes().get("proofComplete"),
+                    "the upgrade did not produce a new receipt, so this measures nothing");
+            assertEquals("http://ots.example.invalid:8082", result.attributes().get("sidecarUrl"));
         }
 
         @Test

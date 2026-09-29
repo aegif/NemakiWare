@@ -169,6 +169,44 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         return tsaUrl;
     }
 
+    /**
+     * The URL with any user:password removed, for everything that is shown, kept or logged.
+     *
+     * <p>An operator may put a destination's credentials in its URL. The management screen
+     * showed the destination without them while the receipt of every run — returned to that
+     * screen, stored with the receipt, and logged — carried the URL whole (Codex, c41, P1).
+     * Only the request itself uses the URL as configured.
+     *
+     * <p>Read from the authority as text, not through {@code URI.getUserInfo()}: a host that is
+     * not a valid server name — {@code tsa_int}, a Docker service name — makes {@code URI} read
+     * the authority as registry-based and answer no user-info at all, and so did a password
+     * with a raw {@code @} (subagent, c41). Everything up to the authority's last {@code @} goes.
+     */
+    public static String withoutUserInfo(String url) {
+        if (url == null) {
+            return null;
+        }
+        int schemeEnd = url.indexOf("://");
+        if (schemeEnd < 0) {
+            // Not a URL with an authority: nothing here is a user-info this can find, and a
+            // string with an @ in it could be one — so it is not shown whole.
+            return url.indexOf('@') < 0 ? url : "(a URL that could not be parsed for display)";
+        }
+        int start = schemeEnd + 3;
+        int end = url.length();
+        for (char stop : new char[] {'/', '?', '#'}) {
+            int at = url.indexOf(stop, start);
+            if (at >= 0 && at < end) {
+                end = at;
+            }
+        }
+        int at = url.lastIndexOf('@', end - 1);
+        if (at < start) {
+            return url;
+        }
+        return url.substring(0, start) + url.substring(at + 1);
+    }
+
     /** The policy OID requested, or null when the TSA's default is accepted. Display only. */
     public String requestedPolicyOid() {
         return reqPolicyOid;
@@ -238,7 +276,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             }
 
             Map<String, String> attrs = new LinkedHashMap<>();
-            attrs.put("tsaUrl", tsaUrl);
+            attrs.put("tsaUrl", withoutUserInfo(tsaUrl));
             attrs.put("accreditation", accreditation);
             attrs.put("policyOid", String.valueOf(info.getPolicy()));
             attrs.put("serialNumber", String.valueOf(info.getSerialNumber()));
@@ -270,7 +308,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             attrs.putAll(collectRevocationMaterial(token).asAttributes());
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
-                    tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
+                    withoutUserInfo(tsaUrl), info.getSerialNumber(), info.getGenTime().toInstant());
 
             // Independence is a fact about the WORLD, not about cryptography, and no amount of
             // certificate checking can establish it: an operator can configure their own
@@ -291,7 +329,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
 
         } catch (Exception e) {
             // Anchoring must never fail the operation that triggered it.
-            logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());
+            logger.warn("RFC 3161 anchoring failed against {}: {}", withoutUserInfo(tsaUrl), e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }

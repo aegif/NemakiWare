@@ -77,6 +77,33 @@ class Rfc3161AnchorTargetTest {
         }
     }
 
+    /**
+     * What {@code target} logged, at INFO and above, while {@code action} ran. The level is
+     * raised for the duration so a test configuration that hides INFO cannot make "the log
+     * carries no password" true by carrying nothing.
+     */
+    static String logOf(Class<?> target, java.util.concurrent.Callable<?> action) throws Exception {
+        ch.qos.logback.classic.Logger log =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(target);
+        ch.qos.logback.classic.Level previous = log.getLevel();
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        log.setLevel(ch.qos.logback.classic.Level.INFO);
+        try {
+            action.call();
+        } finally {
+            log.detachAppender(appender);
+            log.setLevel(previous);
+        }
+        StringBuilder all = new StringBuilder();
+        for (ch.qos.logback.classic.spi.ILoggingEvent event : appender.list) {
+            all.append(event.getFormattedMessage()).append('\n');
+        }
+        return all.toString();
+    }
+
     // ---------------------------------------------------------------- configuration
 
     @Nested
@@ -206,6 +233,33 @@ class Rfc3161AnchorTargetTest {
 
             assertEquals(AnchorStatus.FAILED, receipt.status());
             assertTrue(receipt.failureReason().contains("503"), receipt.failureReason());
+        }
+
+        /**
+         * A failed request logs the TSA without the user:password its URL may carry (Codex, c41,
+         * P1). The scheduler makes this log periodic: every tick that tries and fails writes it.
+         */
+        @Test
+        @DisplayName("a failed request logs the TSA, and its reason names it, without the URL's user:password")
+        void aFailedRequestLogsTheTsaWithoutItsCredentials() throws Exception {
+            String url = startServer("/tsr", exchange -> {
+                exchange.sendResponseHeaders(503, -1);
+                exchange.close();
+            });
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            String logged = logOf(Rfc3161AnchorTarget.class, () -> {
+                receipt.set(new Rfc3161AnchorTarget(url.replace("http://", "http://operator:s3cr3t@"),
+                        null, null).anchor(DIGEST));
+                return null;
+            });
+
+            assertEquals(AnchorStatus.FAILED, receipt.get().status());
+            assertTrue(logged.contains(url), "the failure log no longer names the TSA, so it "
+                    + "carries no password by carrying nothing: " + logged);
+            assertFalse(logged.contains("s3cr3t"), "the failure log carries the TSA's password: " + logged);
+            assertFalse(receipt.get().failureReason().contains("s3cr3t"), receipt.get().failureReason());
         }
 
         @Test
@@ -515,6 +569,31 @@ class Rfc3161AnchorTargetTest {
             assertEquals("1.2.3.4.1", receipt.attributes().get("policyOid"));
             assertEquals("1.0", receipt.attributes().get("accuracySeconds"));
             assertEquals("1", receipt.attributes().get("embeddedCertificateCount"));
+        }
+
+        /**
+         * The receipt names the TSA without the user:password its URL may carry, and so does the
+         * log (Codex, c41, P1). The management screen showed the destination without it while
+         * the receipt of every run — returned to that screen, stored, and logged — carried it.
+         */
+        @Test
+        @DisplayName("the TSA URL's user:password reaches neither the receipt nor the log")
+        void theUrlsCredentialsReachNeitherTheReceiptNorTheLog() throws Exception {
+            String url = startTsa(true);
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            String logged = logOf(Rfc3161AnchorTarget.class, () -> {
+                receipt.set(new Rfc3161AnchorTarget(url.replace("http://", "http://operator:s3cr3t@"),
+                        null, "NONE").anchor(DIGEST));
+                return null;
+            });
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.get().status(), receipt.get().failureReason());
+            assertEquals(url, receipt.get().attributes().get("tsaUrl"),
+                    "the receipt must still name the TSA — without its password");
+            assertTrue(logged.contains(url), "the success log no longer names the TSA: " + logged);
+            assertFalse(logged.contains("s3cr3t"), "the success log carries the TSA's password: " + logged);
         }
 
         @Test

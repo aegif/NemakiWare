@@ -221,12 +221,30 @@ public class AnchorService {
                 row.put("attemptedAt", receipt.attemptedAt() == null ? null : receipt.attemptedAt().toString());
                 row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
                 row.put("proofDigest", receipt.proofDigest());
-                row.put("attributes", receipt.attributes());
+                row.put("attributes", shownAttributes(receipt.attributes()));
                 row.put("failureReason", receipt.failureReason());
                 rows.add(row);
             }
             m.put("receipts", rows);
             return m;
+        }
+
+        /**
+         * The attributes as returned to a caller, with a destination URL's user:password removed.
+         * The targets now keep the URL that way, but a receipt stored before they did still
+         * carries it, and a run can hand a stored receipt back (Codex, c41, P1 — the management
+         * screen shows this map as it is).
+         */
+        private static Map<String, String> shownAttributes(Map<String, String> attributes) {
+            if (attributes == null) {
+                return null;
+            }
+            Map<String, String> shown = new LinkedHashMap<>(attributes);
+            for (String key : List.of("tsaUrl", "sidecarUrl")) {
+                shown.computeIfPresent(key, (name, url) ->
+                        jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget.withoutUserInfo(url));
+            }
+            return shown;
         }
     }
 

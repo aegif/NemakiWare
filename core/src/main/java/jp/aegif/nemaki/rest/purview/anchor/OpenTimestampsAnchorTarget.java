@@ -113,7 +113,7 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             byte[] proof = Base64.getDecoder().decode(response.path("proofBase64").asString(""));
 
             Map<String, String> attrs = new LinkedHashMap<>();
-            attrs.put("sidecarUrl", sidecarUrl);
+            attrs.put("sidecarUrl", Rfc3161AnchorTarget.withoutUserInfo(sidecarUrl));
             attrs.put("calendars", response.path("calendars").toString());
             attrs.put("noncePolicy", "SHA256(digest || 16 random bytes)");
             attrs.put("upgraded", "false");
@@ -126,7 +126,8 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
                     Rfc3161AnchorTarget.sha256Hex(proof), attrs);
 
         } catch (Exception e) {
-            logger.warn("OpenTimestamps anchoring failed via {}: {}", sidecarUrl, e.toString());
+            logger.warn("OpenTimestamps anchoring failed via {}: {}",
+                    Rfc3161AnchorTarget.withoutUserInfo(sidecarUrl), e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }
@@ -170,6 +171,9 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             }
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
+            // A receipt stored before the URL was kept without its user:password still carries
+            // it; the upgraded receipt is returned to the caller and stored again (c41, P1).
+            attrs.computeIfPresent("sidecarUrl", (key, url) -> Rfc3161AnchorTarget.withoutUserInfo(url));
             if (changed && latest.length > 0) {
                 // Progress that may not be completion: keep the newer bytes rather than relying
                 // on calendars still holding the same intermediate data next time.
