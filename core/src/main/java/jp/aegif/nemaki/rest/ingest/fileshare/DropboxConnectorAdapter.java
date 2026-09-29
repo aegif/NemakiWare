@@ -119,12 +119,17 @@ public class DropboxConnectorAdapter {
             }
             // A missing has_more is a malformed answer, not "no more": read as false it made
             // a broken page the end of the folder, and the checkpoint then excluded the rest
-            // (review, P1). Dropbox always writes the field.
-            if (!root.hasNonNull("has_more")) {
-                throw new RuntimeException("Dropbox answered the folder listing without has_more on request "
-                        + request + ", so whether the folder continues is unknown");
+            // (review, P1). Dropbox always writes the field, and writes it as a boolean — one
+            // written as anything else ("false", 0) is as broken as one left out, and asBoolean
+            // read it as the end too (R61: the Slack reader had the same half, and the user
+            // found this one after the batch said Slack was the only other).
+            JsonNode hasMore = root.get("has_more");
+            if (hasMore == null || !hasMore.isBoolean()) {
+                throw new RuntimeException("Dropbox answered the folder listing "
+                        + (hasMore == null || hasMore.isNull() ? "without has_more" : "with has_more as " + hasMore.getNodeType())
+                        + " on request " + request + ", so whether the folder continues is unknown");
             }
-            if (!root.path("has_more").asBoolean(false)) {
+            if (!hasMore.booleanValue()) {
                 return new FileListing(allFiles, true, null);
             }
             String cursor = root.path("cursor").asText(null);

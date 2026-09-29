@@ -1325,6 +1325,27 @@ class FileShareFoldersAreReadWholeTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * The other half of the one above (R61 — the Slack reader had it too). The refusal looked for
+     * the field and then read it with {@code asBoolean(false)}, so a has_more written as a string
+     * or a number — present, not null — was the end of the folder all the same.
+     */
+    @Test
+    @DisplayName("Dropbox: a has_more that is not a boolean is refused, not read as the end of the folder")
+    void dropboxAHasMoreThatIsNotABooleanIsRefused() {
+        for (String hasMore : List.of("\"false\"", "0")) {
+            dropboxList = (exchange, n) -> json(exchange, 200, "{\"entries\":[{\".tag\":\"file\",\"id\":\"d-a\","
+                    + "\"name\":\"a.txt\",\"path_display\":\"/a.txt\",\"size\":3,\"server_modified\":\"2026-01-05T00:00:00Z\"}],"
+                    + "\"cursor\":\"c-2\",\"has_more\":" + hasMore + "}");
+            FetchResult result = dropbox().execute(null, profile(), connector("dropbox"), Map.of(), 10);
+
+            assertTrue(result.hasErrors(), "has_more written as " + hasMore + " was read as the end: " + result);
+            assertTrue(result.errors().get(0).contains("has_more"), result.errors().get(0));
+            assertTrue(importedIds.isEmpty(), importedIds.toString());
+            verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        }
+    }
+
     /** {@code has_more} with no cursor is a cut, not the end of the folder. */
     @Test
     @DisplayName("Dropbox: has_more without a cursor is a cut, not the end of the folder")
