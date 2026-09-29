@@ -362,8 +362,9 @@ checkpoint を封じて送る。送った結果と未封入の件数を管理画
   保存の失敗は #1410 の規則（固定文 + `incidentId`）。
 - **画面**（C-4）: `管理 → 証拠と時刻証明`（`/evidence-anchoring`、`AdminRoute`）。対象は「このリポジトリ」と `record-content`。
   段 0 のときは「有効にしても動かない」と出し、受領が読めない件数は「読めていません」と出す（0 と出さない）。送り先は表示だけ
-  （TSA URL は user:password を除いて表示、PEM は有無だけ）。「今すぐ 1 回」は既存の `POST /checkpoint-and-anchor`。
+  （TSA URL は user:password を除いて表示、PEM は有無だけ）。「今すぐ 1 回」は既存の `POST /checkpoint-and-anchor`。**その結果・保存する受領・送り先のログも同じ規則** — 受領の `tsaUrl` / `sidecarUrl` とログが URL をそのまま持ち、画面は結果の JSON をそのまま出していた（c41、Codex P1、正典 R129）。規則は送り先の側（`Rfc3161AnchorTarget.withoutUserInfo`）に置き、要求だけが設定どおりの URL を使う。
 - **§1.5 の port**: `AnchorWiringConfig` の javadoc の例を sidecar の実際（8082）に直した。
+- **c41 の確認レビューで動いた点**（2026-09-29）: upgrade の判定は、保留の一覧が空でも store が decode できない行を落としていれば「保留なし」でなく UNAVAILABLE と出す（`upgradePending` と同じ規則）。domain ごとの設定の読み書き（`readRepositorySettings` / `writeRepositorySettings`）と、全体の設定が読めない腕に、mock を通さない錠を置いた（`RepositorySettingsAreReadFailClosedTest`、`AnchorSchedulerTest#anUnloadedGlobalConfigurationIsUnavailable`）。運用の窓 5 件は正典 R130（P3）に記録した。
 - **錠と control**: `AnchorSchedulerTest` 23（入口は `tick`）、`AnchorScheduleEndpointTest` 9（入口は controller の GET / PUT）、
   `AnchorServiceTest` +2、`AnchorControllerTest` +1（retry の 409 — 本体を移したので status の写像を読む錠が要った）、
   `PropertyManagerConfigTest` +1。control は MM4〜NZ4（正典 §5）。**件数 0 のとき封じない**ことは 3 つの仕組み（時間の腕は
