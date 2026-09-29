@@ -330,6 +330,27 @@ class SlackChannelsAreReadToTheCheckpointTest {
         verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
     }
 
+    /**
+     * The other half of the one above (R61, the Notion reader's twin). The refusal looked for
+     * the field and then read it with {@code asBoolean(false)}, so a has_more written as a string
+     * or a number — present, not null — was the end of the channel all the same.
+     */
+    @Test
+    @DisplayName("Slack: a has_more that is not a boolean is refused — read as false it was the end of the channel")
+    void slackAHasMoreThatIsNotABooleanIsRefused() {
+        for (String hasMore : List.of("\"false\"", "0")) {
+            history = (exchange, n) -> json(exchange, 200, "{\"ok\":true,\"messages\":["
+                    + msg("1700000001.000000") + "],\"has_more\":" + hasMore + "}");
+            FetchResult result = slack().execute(null, profile(), connector(), CHANNEL, 10);
+
+            assertTrue(result.hasErrors(), "has_more written as " + hasMore + " was read as the end: "
+                    + result);
+            assertTrue(result.errors().get(0).contains("has_more"), result.errors().get(0));
+            assertTrue(importedIds.isEmpty(), importedIds.toString());
+            verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        }
+    }
+
     @Test
     @DisplayName("Slack: has_more without a cursor is a cut — nothing imported, checkpoint held")
     void slackHasMoreWithoutACursorIsACut() {

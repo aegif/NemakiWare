@@ -47,8 +47,9 @@ class NotionConnectorAdapterTest {
 
     @Test
     void shouldSendAuthAndVersionHeaders() throws Exception {
+        // has_more as Notion documents it: an answer without it is refused (R61).
         wireMock.stubFor(post(urlPathEqualTo("/search"))
-                .willReturn(aResponse().withBody("{\"results\":[]}")));
+                .willReturn(aResponse().withBody("{\"results\":[],\"has_more\":false}")));
         adapter.searchPages(null, null, 10);
         wireMock.verify(postRequestedFor(urlPathEqualTo("/search"))
                 .withHeader("Authorization", equalTo("Bearer test-token"))
@@ -60,7 +61,7 @@ class NotionConnectorAdapterTest {
     @Test
     void shouldSafelyEscapeQueryInSearchBody() throws Exception {
         wireMock.stubFor(post(urlPathEqualTo("/search"))
-                .willReturn(aResponse().withBody("{\"results\":[]}")));
+                .willReturn(aResponse().withBody("{\"results\":[],\"has_more\":false}")));
         // Query with special characters should be JSON-safe
         adapter.searchPages("test\"injection", null, 10);
         // Should not throw; Jackson ObjectMapper handles escaping

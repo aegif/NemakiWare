@@ -77,10 +77,10 @@ public class NotionConnectorAdapter {
      *
      * @param pages what was read, in the order Notion returned it — newest first when
      *     {@code ordered}
-     * @param complete true when nothing this method saw says there is more. NOT the same as
-     *     "Notion answered that there is nothing after these": a response that OMITS
-     *     {@code has_more} is read as false, i.e. as an end (R61 — recorded, not fixed,
-     *     because the plan stops this area after its second P1)
+     * @param complete true when Notion answered {@code has_more: false} without reporting the
+     *     result set incomplete, or when the caller's checkpoint was reached. A response that
+     *     omits {@code has_more}, or carries it as anything but a boolean, is refused rather
+     *     than read as an end (R61)
      * @param truncatedBecause why it stopped early; null when {@code complete}
      * @param ordered true when the rows came back DESCENDING by {@code last_edited_time} — the
      *     order this adapter asks for, and the one that lets it stop reading at the caller's
@@ -142,11 +142,11 @@ public class NotionConnectorAdapter {
      * says, unless the checkpoint was reached inside it — Notion cuts the TAIL of the ordered
      * set, and the tail is older than the checkpoint.
      *
-     * <p><b>One is left open and recorded (R61).</b> A response that omits {@code has_more}
-     * altogether is read as {@code false} — as an end — while the line below it refuses a
-     * response that omits {@code results}. The two are equally broken answers and only one is
-     * refused; the sentence is corrected here rather than the code, because the plan stops this
-     * area after its second P1 and the fix belongs with whoever opens it.
+     * <p>A response that omits {@code has_more}, or carries it as anything but a boolean, is
+     * refused like one that omits {@code results} (R61). Read as {@code false} it called the
+     * listing whole, and the caller moved its checkpoint over every page the answer had not
+     * shown. It is refused only where the answer depends on it: a page on which the checkpoint
+     * was reached, or that Notion reports {@code incomplete}, is decided without it.
      *
      * @param since a {@code last_edited_time} as Notion writes it (the caller's checkpoint
      *     minute), or null to read every page
@@ -191,8 +191,9 @@ public class NotionConnectorAdapter {
             }
             // Notion pagination: has_more + next_cursor. Read BEFORE the empty-page arm, because
             // an empty page that says there is more is not the end of anything — treating it as
-            // one reported the rest of the workspace as nothing (both reviews, P1).
-            boolean hasMore = root.path("has_more").asBoolean(false);
+            // one reported the rest of the workspace as nothing (both reviews, P1). Decided
+            // below, after the rows: whether it may be missing depends on what they showed.
+            JsonNode hasMore = root.get("has_more");
             String nextCursor = root.path("next_cursor").asText(null);
             // Notion's OWN statement that the result set was cut. Documented beside has_more as
             // {"type": "complete" | "incomplete", "incomplete_reason": "query_result_limit_reached"}
@@ -230,7 +231,19 @@ public class NotionConnectorAdapter {
                                 + requestStatus.path("incomplete_reason").asText("no reason given")
                                 + ")"));
             }
-            if (!hasMore) {
+            // A missing or non-boolean has_more is a malformed answer, like a missing results
+            // array — not "no more". Read as false it called the listing whole and the caller
+            // moved its checkpoint over every page this answer did not show (R61). Refused HERE
+            // and not beside results: a page on which the checkpoint was reached, or that Notion
+            // reports incomplete, has already been answered without it, and refusing those would
+            // be refusing a whole answer.
+            if (hasMore == null || !hasMore.isBoolean()) {
+                throw new NotionReadIncompleteException("Notion search answered "
+                        + (hasMore == null ? "without has_more" : "has_more as " + hasMore.getNodeType())
+                        + " on request " + requests + " after " + allPages.size() + " page(s), so "
+                        + "whether more pages exist is unknown");
+            }
+            if (!hasMore.booleanValue()) {
                 // Notion caps one query at 10,000 results: pagination then stops with
                 // has_more=false and a request_status saying so. If that field is ABSENT at
                 // exactly the cap — an API version that does not write it, or a shape this
@@ -243,8 +256,7 @@ public class NotionConnectorAdapter {
                                     + " results per query was reached and the response carried no "
                                     + "request_status, so whether the result set was cut is unknown"));
                 }
-                // Notion said there is no more — or omitted has_more, which is read the same
-                // way and is not the same thing (R61).
+                // Notion said there is no more.
                 return logged(query, since, PageListing.whole(allPages, sorted));
             }
             if (nextCursor == null || nextCursor.isEmpty()) {
@@ -399,10 +411,18 @@ public class NotionConnectorAdapter {
             for (JsonNode block : results) {
                 allBlocks.add(block);
             }
-            boolean hasMore = root.path("has_more").asBoolean(false);
-            if (!hasMore) {
-                // As above: an omitted has_more reaches here as "that is the whole
-                // page" without Notion having said so (R61).
+            // As in the search: a missing or non-boolean has_more is a malformed answer, not the
+            // end of the page. Read as false it was "that is the whole page" — for extractFiles,
+            // "this page has no attachments" — without Notion having said so (R61).
+            JsonNode hasMore = root.get("has_more");
+            if (hasMore == null || !hasMore.isBoolean()) {
+                throw new NotionReadIncompleteException("Notion answered block page " + (page + 1)
+                        + " of " + pageId
+                        + (hasMore == null ? " without has_more" : " with has_more as " + hasMore.getNodeType())
+                        + " after " + allBlocks.size() + " block(s), so whether the page has more "
+                        + "blocks is unknown");
+            }
+            if (!hasMore.booleanValue()) {
                 return allBlocks;
             }
             cursor = root.path("next_cursor").asText(null);

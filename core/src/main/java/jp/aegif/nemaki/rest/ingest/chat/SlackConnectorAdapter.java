@@ -101,9 +101,9 @@ public class SlackConnectorAdapter {
      * out fell below the checkpoint for ever. The whole span is read; the caller's budget is
      * the caller's.
      *
-     * <p>A response without a {@code messages} array or without {@code has_more} is refused, not
-     * read as an empty channel or as its end; {@code has_more} with no cursor, or with the cursor
-     * of the previous page, is a cut.
+     * <p>A response without a {@code messages} array or without a boolean {@code has_more} is
+     * refused, not read as an empty channel or as its end; {@code has_more} with no cursor, or
+     * with the cursor of the previous page, is a cut.
      */
     public HistoryListing listSince(String channelId, String oldest, int maxRequests) throws Exception {
         List<SlackMessage> all = new ArrayList<>();
@@ -125,12 +125,17 @@ public class SlackConnectorAdapter {
                 all.add(parseMessage(msg));
             }
             // A missing has_more is a malformed answer, not "no more": read as false it would
-            // make a broken page the end of the channel. Slack always writes the field.
-            if (!root.hasNonNull("has_more")) {
-                throw new RuntimeException("Slack answered conversations.history without has_more on request "
-                        + request + ", so whether the channel continues is unknown");
+            // make a broken page the end of the channel. Slack always writes the field, and
+            // writes it as a boolean — one written as anything else ("false", 0) is as broken
+            // as one left out, and asBoolean read it as the end too (R61, the Notion reader's
+            // twin; Salesforce's `done` was already checked for its type).
+            JsonNode hasMore = root.get("has_more");
+            if (hasMore == null || !hasMore.isBoolean()) {
+                throw new RuntimeException("Slack answered conversations.history "
+                        + (hasMore == null || hasMore.isNull() ? "without has_more" : "with has_more as " + hasMore.getNodeType())
+                        + " on request " + request + ", so whether the channel continues is unknown");
             }
-            if (!root.path("has_more").asBoolean(false)) {
+            if (!hasMore.booleanValue()) {
                 return new HistoryListing(all, true, null);
             }
             String next = root.path("response_metadata").path("next_cursor").asText("");

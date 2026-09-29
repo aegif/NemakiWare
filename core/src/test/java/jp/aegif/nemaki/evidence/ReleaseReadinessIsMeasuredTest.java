@@ -56,8 +56,12 @@ class ReleaseReadinessIsMeasuredTest {
     private static final Path SPEC = Path.of("../docs/design/evidence-profile-v1.md");
     private static final Path RUNNER = Path.of("../tools/negative-controls/run_negative_controls.py");
 
-    /** The three residuals the owner froze on 2026-09-20. */
-    private static final Set<String> FROZEN = Set.of("R61", "R62", "R63");
+    /**
+     * The residuals the owner froze on 2026-09-20 that are frozen still. R61 was the third: on
+     * 2026-09-29 the owner had all three classified for RC condition 11, R61 came out P1, and
+     * the owner had it opened and treated that day.
+     */
+    private static final Set<String> FROZEN = Set.of("R62", "R63");
 
     private static final String FREEZE_MARK = "凍結（ユーザー指示 2026-09-20）";
 
@@ -409,7 +413,10 @@ class ReleaseReadinessIsMeasuredTest {
                 "the RC gate's heading says it classified " + says.group(1) + " residuals and "
                         + "its table carries " + classified);
         assertFalse(says.find(), "the section carries more than one RC condition 11 heading");
-        Matcher under = Pattern.compile("書ける状態にまだない\\*{0,2}。開いている (\\d+) 件を")
+        // Anchored on the sentence that does the counting, not on the verdict before it: until
+        // 2026-09-29 this read 「書ける状態にまだない。開いている N 件を」, and the verdict is
+        // the part of that sentence that changes when the condition is met.
+        Matcher under = Pattern.compile("開いている (\\d+) 件を\\s*1 つずつ読んで分類した")
                 .matcher(intro);
         assertTrue(under.find(), "the RC gate's prose no longer says how many are open");
         assertEquals(classified, Integer.parseInt(under.group(1)),
@@ -417,6 +424,70 @@ class ReleaseReadinessIsMeasuredTest {
                         + "carries " + classified);
         assertFalse(under.find(), "the RC gate states its open count in more than one sentence, "
                 + "so which one this compares is a guess");
+    }
+
+    /**
+     * Condition 11 is declared met exactly when the gate's table allows it (2026-09-29).
+     *
+     * <p>The declaration is prose and the severities are the table under it, so the two can
+     * part: a P0 or P1 row added later, or a residual carried without a severity — the three
+     * frozen ones stood in the table as 「凍結」 until 2026-09-29 — would leave "met" standing
+     * over a table that contradicts it. The other direction is read too: a table that allows
+     * the declaration, under prose that withholds it, is the document reading as further from
+     * release than the work is.
+     *
+     * <p>A row allows it when its classification names P2, P3 or 「設計判断待ち」 and names no
+     * P0 or P1. 「設計判断待ち」 is R67's: a feature that cannot be exported yet — the export
+     * entry refuses the version — not an answer given wrongly, and the gate has read it as not
+     * blocking since it was first classified on 2026-09-23. This lock writes that reading down
+     * instead of leaving it implicit.
+     *
+     * <p>The declaration has two exits in this document — the gate's own introduction and §0's
+     * list of met conditions — and both are read.
+     */
+    @Test
+    @DisplayName("condition 11 is declared met exactly when its table holds no P0, no P1 and nothing unclassified")
+    void conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt() throws IOException {
+        String readiness = read(READINESS);
+        String gate = slice(readiness, "### RC 条件 11", "## ",
+                "the readiness document's RC condition 11 section");
+        String intro = gate.split("(?m)^\\| ", 2)[0];
+
+        SortedSet<String> blocking = new TreeSet<>();
+        int rows = 0;
+        for (String line : gate.split("\n")) {
+            if (!line.startsWith("| R")) {
+                continue;
+            }
+            rows++;
+            String[] cells = line.split("\\|", 4);
+            assertTrue(cells.length >= 4, "an RC gate row has no classification cell: " + line);
+            String classification = cells[2];
+            boolean allows = classification.matches("(?s).*(\\bP[23]\\b|設計判断待ち).*")
+                    && !classification.matches("(?s).*\\bP[01]\\b.*");
+            if (!allows) {
+                blocking.add(cells[1].trim() + " —" + classification);
+            }
+        }
+        assertTrue(rows > 0, "the RC gate's table carries no rows: " + gate);
+
+        boolean introDeclares = Pattern.compile("条件 11 は 20\\d\\d-\\d\\d-\\d\\d に満たした")
+                .matcher(intro).find();
+        String zero = slice(readiness, "## 0. 現在地", "## 1.", "the readiness document's §0");
+        boolean zeroLists = zero.contains("/ 11 open P0/P1 = 0（");
+
+        if (blocking.isEmpty()) {
+            assertTrue(introDeclares, "every row of the RC gate's table is P2, P3 or pending a "
+                    + "design decision, and the gate's introduction does not declare condition 11 "
+                    + "met: " + intro);
+            assertTrue(zeroLists, "every row of the RC gate's table allows condition 11, and §0 "
+                    + "does not list it among the met conditions");
+        } else {
+            assertFalse(introDeclares, "the gate's introduction declares condition 11 met over "
+                    + "rows that are P0, P1 or unclassified: " + blocking);
+            assertFalse(zeroLists, "§0 lists condition 11 as met over rows that are P0, P1 or "
+                    + "unclassified: " + blocking);
+        }
     }
 
     /**
@@ -804,7 +875,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     @Test
-    @DisplayName("the frozen residuals say so in the canon, and the plan names exactly those three")
+    @DisplayName("the frozen residuals say so in the canon, and the plan names exactly those")
     void theFrozenResidualsAreMarkedInBothPlaces() throws IOException {
         String canon = read(CANON);
         String plan = read(PLAN);

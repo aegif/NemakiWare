@@ -455,6 +455,91 @@ class NotionPartialReadsAreNotCompleteTest {
         assertEquals(1, dlqReasons.size(), "the page was not dead-lettered: " + dlqReasons);
     }
 
+    /**
+     * How has_more is written in the answers below: left out, JSON null, a string, a number.
+     * Each used to be read as {@code false} — as the end — by {@code asBoolean(false)}.
+     */
+    private static final List<String> NOT_A_BOOLEAN_HAS_MORE = java.util.Arrays.asList(
+            null, "null", "\"false\"", "0");
+
+    private static String withHasMore(String resultsJson, String hasMore) {
+        return "{\"results\":[" + resultsJson + "]"
+                + (hasMore == null ? "" : ",\"has_more\":" + hasMore) + "}";
+    }
+
+    /**
+     * A search page without a boolean {@code has_more} is not the end of the workspace (R61).
+     *
+     * <p>The sibling of the missing {@code results} array above, which was refused while this was
+     * not: read as {@code false}, it called the listing whole, the run imported what the page
+     * showed and moved the checkpoint over every page the answer had not shown. No checkpoint is
+     * stored here, so nothing on the page ends the listing but has_more itself.
+     */
+    @Test
+    @DisplayName("a search page without a boolean has_more is not the end of the workspace")
+    void aSearchPageWithoutABooleanHasMoreIsRefused() {
+        for (String hasMore : NOT_A_BOOLEAN_HAS_MORE) {
+            search = (exchange, n) -> json(exchange, 200,
+                    withHasMore(rowsJson("p-1@2026-01-01T00:00:00.000Z"), hasMore));
+
+            FetchResult result = run();
+
+            assertTrue(result.hasErrors(), "has_more written as " + hasMore + " was read as the "
+                    + "end of the workspace: " + result);
+            assertTrue(result.errors().get(0).contains("has_more"), result.errors().get(0));
+            assertEquals(0, result.fetched(), result.toString());
+            assertTrue(importedIds.isEmpty(), importedIds.toString());
+            verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        }
+    }
+
+    /**
+     * A block page without a boolean {@code has_more} is not the whole page (R61). Read as the
+     * end, it was — for the attachment listing — "this page has no attachments": the note was
+     * imported without them and the checkpoint moved past it.
+     */
+    @Test
+    @DisplayName("a block page without a boolean has_more is not the whole page")
+    void aBlockPageWithoutABooleanHasMoreIsRefused() {
+        for (String hasMore : NOT_A_BOOLEAN_HAS_MORE) {
+            blocks = (exchange, n) -> json(exchange, 200, withHasMore(
+                    "{\"id\":\"b-1\",\"type\":\"paragraph\",\"paragraph\":{\"rich_text\":[]}}", hasMore));
+
+            FetchResult result = run();
+
+            verify(importService, never()).executeNoteImport(any(), any());
+            assertEquals(1, dlqReasons.size(), "has_more written as " + hasMore + " was read as "
+                    + "the whole page, and the page was not dead-lettered: " + dlqReasons);
+            assertTrue(dlqReasons.get(0).contains("has_more"), dlqReasons.get(0));
+            assertTrue(result.hasErrors(), result.toString());
+            verify(checkpointManager, never()).saveSimpleCheckpoint(anyString(), anyString(), anyString());
+        }
+    }
+
+    /**
+     * The over-refusal side of the two above. A page on which the checkpoint is reached is a
+     * whole answer whatever it says about has_more: every row after the one older than the
+     * checkpoint is older still, so nothing has_more could say changes what the run must read.
+     * Refusing it would stop a healthy workspace over a field the answer did not need.
+     */
+    @Test
+    @DisplayName("a search page that reaches the checkpoint is whole without has_more")
+    void aPageThatReachesTheCheckpointNeedsNoHasMore() {
+        search = (exchange, n) -> json(exchange, 200, withHasMore(
+                rowsJson("p-3@2026-01-03T00:00:00.000Z", "p-1@2026-01-01T00:00:00.000Z"), null));
+        NotionFetchOrchestrator orchestrator = orchestrator();
+        checkpointIs("2026-01-02T00:00:00.000Z");
+
+        FetchResult result = orchestrator.execute(null, profile(), connector(), Map.of(), 10);
+
+        assertFalse(result.hasErrors(), "a page that reached the checkpoint was refused for "
+                + "a has_more it did not need: " + result.errors());
+        assertTrue(result.sawEverything(), result.incompleteReads().toString());
+        assertEquals(List.of("p-3"), importedIds);
+        verify(checkpointManager).saveSimpleCheckpoint("p-notion", "notion",
+                "2026-01-03T00:00:00.000Z|p-3");
+    }
+
     @Test
     @DisplayName("a block cursor that does not move is not the end of the page")
     void aRepeatedBlockCursorIsRefused() {
