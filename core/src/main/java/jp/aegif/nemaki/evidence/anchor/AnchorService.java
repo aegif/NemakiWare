@@ -315,7 +315,16 @@ public class AnchorService {
      *        beside a null {@code unavailable} means "asked, nothing had settled" — a different
      *        answer, and the one the endpoint used to give for both.
      */
-    public record Upgraded(List<AnchorReceipt> upgraded, String unavailable) {}
+    /**
+     * What an upgrade pass did: the receipts that changed, why nothing could be looked at
+     * ({@code unavailable}), or why the rung holding the pending commitments was not asked
+     * ({@code refused} — c44, P1: that used to read as "nothing had settled yet").
+     */
+    public record Upgraded(List<AnchorReceipt> upgraded, String unavailable, String refused) {
+        public Upgraded(List<AnchorReceipt> upgraded, String unavailable) {
+            this(upgraded, unavailable, null);
+        }
+    }
 
     /**
      * Anchors only the rungs that have nothing to show for this checkpoint yet.
@@ -489,12 +498,18 @@ public class AnchorService {
                             + "upgraded — an upgrade pass over a partly-readable list would do "
                             + "work its own answer then has to deny");
         }
+        java.util.Map<String, String> notAsked = new java.util.LinkedHashMap<>();
         for (AnchorReceiptStore.PendingReceipt pending : pendingRows) {
             AnchorTarget target = targetFor(pending.receipt().kind());
             if (target == null) {
                 // The rung that made this receipt is no longer configured. Leaving the row
                 // pending is right: deleting it would lose a proof the calendar still holds,
                 // and marking it failed would assert something about an anchor nobody checked.
+                continue;
+            }
+            if (target.refusal() != null) {
+                // Not asked, so not "nothing had settled": the answer names the refusal (c44, P1).
+                notAsked.put(target.kind().name(), target.refusal());
                 continue;
             }
             AnchorReceipt after;
@@ -534,7 +549,10 @@ public class AnchorService {
         }
         // The unreadable check happened before the loop, so reaching here means the whole
         // list was read. Save-time failures are carried per-rung above.
-        return new Upgraded(upgraded, null);
+        return new Upgraded(upgraded, null, notAsked.isEmpty() ? null
+                : "not asked, because the rung refuses its configuration: " + notAsked
+                        + ". Its pending commitments were not looked at — this is NOT the answer "
+                        + "that nothing had settled");
     }
 
     private AnchorTarget targetFor(AnchorKind kind) {

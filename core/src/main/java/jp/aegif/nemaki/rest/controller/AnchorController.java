@@ -185,8 +185,14 @@ public class AnchorController {
             return unavailable("the anchor service is not wired on this node");
         }
         AnchorRunService.Run run = runService().upgradePending(repositoryId, limit);
-        return ResponseEntity.status(run.kind() == AnchorRunService.Kind.UNAVAILABLE
-                ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.OK).body(run.body());
+        // REFUSED (a rung that refuses its configuration was not asked — c44) is a conflict
+        // with the configuration, like the other two verbs' refusals, not a 200.
+        return ResponseEntity.status(switch (run.kind()) {
+            case SUCCESS, NOOP -> HttpStatus.OK;
+            case REFUSED, NOT_SEALED -> HttpStatus.CONFLICT;
+            case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+            case FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
+        }).body(run.body());
     }
 
     /** Built per call from this controller's collaborators — the same code the scheduler runs. */
@@ -702,7 +708,7 @@ public class AnchorController {
         return ResponseEntity.badRequest().body(body);
     }
 
-    /** A URL for display, with any user:password removed — the same rule the receipts follow. */
+    /** A URL for display: not shown at all when it carries an {@code @} — such a destination is refused (R132). */
     static String withoutUserInfo(String url) {
         return Rfc3161AnchorTarget.withoutUserInfo(url);
     }

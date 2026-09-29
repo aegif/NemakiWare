@@ -20,6 +20,8 @@ import jp.aegif.nemaki.evidence.EvidenceCheckpoint;
 import jp.aegif.nemaki.evidence.EvidenceLedgerService;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -231,18 +233,56 @@ public final class AnchorRunService {
             return new Run(Kind.NOOP, body, null);
         }
         AnchorService.Outcome outcome = anchorService.retryUnsettled(latest);
-        body.put("status", outcome.refusedReason() == null ? "success" : "error");
+        // A rung that refuses its configuration answers with a FAILED receipt it made without
+        // asking anyone. Counted with the rungs that were asked, it was reported as "contacted
+        // again" (c44, P1) — so the receipts are split by what the rung itself says.
+        Map<String, String> notAsked = new LinkedHashMap<>();
+        List<String> asked = new ArrayList<>();
+        for (AnchorReceipt receipt : outcome.receipts()) {
+            String refusal = refusalOf(receipt);
+            if (refusal != null) {
+                notAsked.put(receipt.kind().name(), refusal);
+            } else {
+                asked.add(receipt.kind().name());
+            }
+        }
+        boolean onlyRefusals = outcome.refusedReason() == null && !notAsked.isEmpty() && asked.isEmpty();
+        body.put("status", outcome.refusedReason() == null && !onlyRefusals ? "success"
+                : onlyRefusals ? "refused" : "error");
         body.put("anchor", outcome.asMap());
+        if (!notAsked.isEmpty()) {
+            body.put("notAsked", notAsked);
+        }
         // Said out loud, because an empty receipt list has two very different causes and the
         // list alone cannot tell them apart.
         body.put("message", outcome.refusedReason() != null
                 ? "nothing was retried: " + outcome.refusedReason()
-                : outcome.receipts().isEmpty()
-                        ? "no rung needed retrying: every configured rung already holds a "
-                                + "CONFIRMED or PENDING receipt for this checkpoint, or no rung "
-                                + "is configured. This is NOT a failure."
-                        : "the rungs that held nothing were contacted again");
-        return new Run(outcome.refusedReason() == null ? Kind.SUCCESS : Kind.REFUSED, body, outcome);
+                : onlyRefusals
+                        ? "nothing was retried: every rung that held nothing refuses its "
+                                + "configuration and was not asked — " + notAsked
+                        : outcome.receipts().isEmpty()
+                                ? "no rung needed retrying: every configured rung already holds a "
+                                        + "CONFIRMED or PENDING receipt for this checkpoint, or no rung "
+                                        + "is configured. This is NOT a failure."
+                                : "the rungs that held nothing were contacted again: " + asked
+                                        + (notAsked.isEmpty() ? "" : "; not asked, because they refuse "
+                                                + "their configuration: " + notAsked));
+        return new Run(outcome.refusedReason() == null && !onlyRefusals ? Kind.SUCCESS : Kind.REFUSED,
+                body, outcome);
+    }
+
+    /** The refusal a receipt carries when its rung refused without asking anyone, or null. */
+    private String refusalOf(AnchorReceipt receipt) {
+        if (receipt.status() != AnchorStatus.FAILED) {
+            return null;
+        }
+        for (AnchorTarget target : anchorService.targets()) {
+            if (target.kind() == receipt.kind() && target.refusal() != null
+                    && target.refusal().equals(receipt.failureReason())) {
+                return target.refusal();
+            }
+        }
+        return null;
     }
 
     /**
@@ -255,6 +295,16 @@ public final class AnchorRunService {
         List<AnchorReceipt> upgraded = result.upgraded();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("limits", LIMITS);
+        if (result.refused() != null) {
+            // Not asked is neither "could not ask" nor "nothing had settled": the note below
+            // tells an operator not to re-anchor, which is wrong advice for a rung that will
+            // never be asked until its configuration changes (c44, P1).
+            body.put("status", "refused");
+            body.put("upgradedCount", upgraded.size());
+            body.put("upgradedRungs", null);
+            body.put("message", result.refused());
+            return new Run(Kind.REFUSED, body, null);
+        }
         if (result.unavailable() != null) {
             // "Could not ask" is not "nothing had settled". Telling an operator the second when
             // the first is true is worse than silence: the note below says "do not re-anchor",

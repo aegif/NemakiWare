@@ -565,15 +565,149 @@ class AnchorControllerTest {
                 "the outer status says success over an inner refusal: " + body);
     }
 
+    /** An AnchorService over real rungs and a receipt store the test describes, wired into a controller. */
+    private static AnchorController controllerOverRealRungs(
+            jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts,
+            jp.aegif.nemaki.rest.purview.anchor.AnchorTarget... rungs) throws Exception {
+        AnchorController controller = controllerFor(true);
+        jp.aegif.nemaki.evidence.EvidenceLedgerStore store =
+                mock(jp.aegif.nemaki.evidence.EvidenceLedgerStore.class);
+        when(store.highestSequence(anyString())).thenReturn(5L);
+        when(store.latestCheckpoint(anyString())).thenReturn(
+                jp.aegif.nemaki.evidence.EvidenceCheckpoint.of("bedroom", 0, 5, ROOT, null,
+                        "2026-08-25T00:00:00Z"));
+        jp.aegif.nemaki.evidence.anchor.AnchorService service =
+                new jp.aegif.nemaki.evidence.anchor.AnchorService();
+        service.setStore(store);
+        service.setReceiptStore(receipts);
+        service.setTargets(List.of(rungs));
+        setField(controller, "anchorService", service);
+        setField(controller, "ledgerStore", store);
+        return controller;
+    }
+
+    private static jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receiptsHolding(
+            List<jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt> forCheckpoint,
+            List<jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.PendingReceipt> pending) {
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts =
+                mock(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.class);
+        when(receipts.isActive()).thenReturn(true);
+        when(receipts.forCheckpoint(anyString(), org.mockito.ArgumentMatchers.anyLong())).thenReturn(forCheckpoint);
+        when(receipts.pending(anyString(), anyInt())).thenReturn(pending);
+        when(receipts.save(anyString(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.SaveOutcome.STORED);
+        return receipts;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> bodyOf(Object response) throws Exception {
+        return (java.util.Map<String, Object>) response.getClass().getMethod("getBody").invoke(response);
+    }
+
+    private static HttpStatus statusOf(Object response) throws Exception {
+        return (HttpStatus) response.getClass().getMethod("getStatusCode").invoke(response);
+    }
+
+    /**
+     * An upgrade through a rung that refuses its URL is REFUSED, not "nothing had settled yet"
+     * (c44, P1). The OpenTimestamps rung returned the pending receipt unchanged without asking,
+     * the service read that as "not settled", and the endpoint answered 200 with "not a failure
+     * — do not re-anchor": the refusal and an answer from the calendar were the same value.
+     */
+    @Test
+    @DisplayName("an upgrade through a rung that refuses its URL is refused, not 'nothing had settled'")
+    void anUpgradeThroughARefusingRungIsRefused() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt pending =
+                jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(
+                        jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS, ROOT,
+                        java.time.Instant.parse("2026-09-29T00:00:00Z"), new byte[] {1}, "d",
+                        java.util.Map.of());
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts = receiptsHolding(List.of(),
+                List.of(new jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore.PendingReceipt("bedroom", 5, pending)));
+        AnchorController controller = controllerOverRealRungs(receipts,
+                new jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget("http://ops:s3cr3t@127.0.0.1:1"));
+
+        Object response = AnchorController.class.getDeclaredMethod("upgradePending", String.class, int.class)
+                .invoke(controller, "bedroom", 10);
+        java.util.Map<String, Object> body = bodyOf(response);
+
+        assertEquals(HttpStatus.CONFLICT, statusOf(response), String.valueOf(body));
+        assertEquals("refused", body.get("status"), String.valueOf(body));
+        assertTrue(String.valueOf(body.get("message")).contains("not asked"), String.valueOf(body));
+        assertNull(body.get("note"), "a refused upgrade carried the 'ordinary answer, do not re-anchor' note: " + body);
+        org.junit.jupiter.api.Assertions.assertFalse(String.valueOf(body).contains("s3cr3t"), String.valueOf(body));
+    }
+
+    /**
+     * A retry whose every rung refuses its URL is REFUSED — nothing was contacted (c44, P1: it
+     * answered 200 "the rungs that held nothing were contacted again").
+     */
+    @Test
+    @DisplayName("a retry whose rungs all refuse their URL is refused, not 'contacted again'")
+    void aRetryThroughOnlyRefusingRungsIsRefused() throws Exception {
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of()),
+                new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
+                        "https://svc:s3cr3t@tsa.example/tsr", null, null));
+
+        Object response = AnchorController.class.getDeclaredMethod("retryUnsettled", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = bodyOf(response);
+
+        assertEquals(HttpStatus.CONFLICT, statusOf(response), String.valueOf(body));
+        assertEquals("refused", body.get("status"), String.valueOf(body));
+        String message = String.valueOf(body.get("message"));
+        assertTrue(message.contains("not asked"), message);
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains("contacted again"), message);
+        org.junit.jupiter.api.Assertions.assertFalse(String.valueOf(body).contains("s3cr3t"), String.valueOf(body));
+    }
+
+    /**
+     * A retry that asked some rungs and not others says which — the refusing rung is not among
+     * the rungs "contacted again" (c44, P1; the other side of the lock above).
+     */
+    @Test
+    @DisplayName("a retry names the rungs it did not ask apart from the rungs it did")
+    void aRetryNamesTheRungsItDidNotAsk() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.AnchorTarget asked = new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorKind kind() {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorKind.ATLAS_CATALOG;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String hexDigest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.failed(kind(), hexDigest,
+                        java.time.Instant.now(), "the catalog answered 500");
+            }
+        };
+        AnchorController controller = controllerOverRealRungs(receiptsHolding(List.of(), List.of()),
+                new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
+                        "https://svc:s3cr3t@tsa.example/tsr", null, null), asked);
+
+        Object response = AnchorController.class.getDeclaredMethod("retryUnsettled", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = bodyOf(response);
+        String message = String.valueOf(body.get("message"));
+
+        assertEquals(HttpStatus.OK, statusOf(response), String.valueOf(body));
+        assertTrue(message.contains("contacted again: [ATLAS_CATALOG]"), message);
+        assertTrue(message.contains("not asked") && message.contains("RFC3161_TSA"), message);
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     @DisplayName("a run's receipts reach the screen without a destination URL's user:password")
     void aRunsReceiptsCarryNoCredentials() throws Exception {
         // The management screen shows this response as it is. Its destination card showed the
         // TSA URL without user:password while the receipts of the run it had just made carried
-        // it whole (Codex, c41, P1). No path builds an Outcome with such receipts today — the
-        // targets already keep the URL without it (subagent, c42) — so this holds the response
-        // itself to the rule, whatever a later path hands it.
+        // it whole (Codex, c41, P1). No path builds an Outcome with such receipts today — a
+        // destination with an @ is refused before anything is sent (R132) — so this holds the
+        // response itself to the rule, whatever a later path hands it.
         AnchorController controller = controllerFor(true);
         jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
                 mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);

@@ -380,6 +380,7 @@ public class AnchorScheduler {
         }
         AnchorRunService.Run run = runService().upgradePending(repositoryId, UPGRADE_BATCH);
         state.lastUpgradeOutcome = run.kind() + ": " + (run.kind() == AnchorRunService.Kind.UNAVAILABLE
+                || run.kind() == AnchorRunService.Kind.REFUSED
                 ? run.body().get("message") : run.body().get("upgradedCount") + " upgraded");
     }
 

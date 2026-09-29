@@ -590,6 +590,26 @@ class AnchorSchedulerTest {
         assertEquals("NOOP: nothing pending", clean.state(REPO).lastUpgradeOutcome);
     }
 
+    @Test
+    @DisplayName("an upgrade the rung refused is recorded as refused, with the reason")
+    void aRefusedUpgradeIsRecordedWithItsReason() throws Exception {
+        // c44, P1: the refusal came back as "SUCCESS: 0 upgraded" — the same record as a
+        // calendar that had answered "not yet".
+        dueByEitherArm();
+        ots = rung(AnchorKind.OPENTIMESTAMPS, true);
+        AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, ROOT, NOW, new byte[] {1}, null, Map.of());
+        when(receipts.pending(eq(REPO), anyInt())).thenReturn(List.of(new AnchorReceiptStore.PendingReceipt(REPO, 4, pending)));
+        when(anchors.upgradePending(anyString(), anyInt())).thenReturn(new AnchorService.Upgraded(List.of(), null,
+                "not asked, because the rung refuses its configuration: {OPENTIMESTAMPS=…}"));
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+
+        String outcome = scheduler.state(REPO).lastUpgradeOutcome;
+        assertTrue(outcome != null && outcome.startsWith("REFUSED") && outcome.contains("not asked"),
+                "a refused upgrade was recorded as " + outcome);
+    }
+
     /** The seal the next tick makes seals checkpoint 0..2; what anchor() answers is the test's. */
     private AtomicReference<EvidenceCheckpoint> sealWillCreateACheckpoint() {
         AtomicReference<EvidenceCheckpoint> made = new AtomicReference<>();

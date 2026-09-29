@@ -169,6 +169,12 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         return tsaUrl;
     }
 
+    /** {@link #USER_INFO_REFUSED} when the configured URL carries an {@code @}; see R132. */
+    @Override
+    public String refusal() {
+        return isConfigured() && carriesAt(tsaUrl) ? USER_INFO_REFUSED : null;
+    }
+
     /**
      * The reason a destination whose URL carries an {@code @} is refused. It names no URL.
      *
@@ -182,7 +188,8 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      */
     public static final String USER_INFO_REFUSED = "the configured URL carries an @ (a user-info), "
             + "which is not used for authentication and is refused so that it cannot reach a log, "
-            + "a receipt or the screen; remove it (write %40 where a path needs an @)";
+            + "a receipt or the screen; remove it — a user-info cannot be written in any form, "
+            + "and %40 is only for an @ inside a path";
 
     /** Whether a configured destination URL is refused for carrying an {@code @}. */
     public static boolean carriesAt(String url) {

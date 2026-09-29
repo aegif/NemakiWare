@@ -63,4 +63,15 @@ public interface AnchorTarget {
     default AnchorReceipt upgrade(AnchorReceipt pending) {
         return pending;
     }
+
+    /**
+     * Why this rung is refused without being asked — a configuration it will not send with — or
+     * null when it would be asked. A caller that would otherwise say the rung was contacted
+     * again, or that nothing had settled yet, says this instead (c44, P1: an upgrade refused for
+     * an {@code @} in the URL was answered "nothing had settled yet … not a failure", and a retry
+     * "the rungs that held nothing were contacted again").
+     */
+    default String refusal() {
+        return null;
+    }
 }

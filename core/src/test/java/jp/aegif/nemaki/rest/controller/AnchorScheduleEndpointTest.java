@@ -232,6 +232,29 @@ class AnchorScheduleEndpointTest {
         assertFalse(String.valueOf(response.getBody()).contains("BEGIN CERTIFICATE"));
     }
 
+    /**
+     * The other destination on the same card: the OpenTimestamps sidecar URL is not shown when it
+     * carries an {@code @} either (subagent, c44 — the TSA's arm had a lock and a control, this
+     * one had neither since the card was written).
+     */
+    @Test
+    @DisplayName("GET does not show a sidecar URL that carries an @")
+    void theSidecarDestinationIsNotShownWithAnAt() throws Exception {
+        jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget ots =
+                mock(jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget.class);
+        when(ots.kind()).thenReturn(AnchorKind.OPENTIMESTAMPS);
+        when(ots.isConfigured()).thenReturn(true);
+        when(ots.sidecarUrl()).thenReturn("http://ops:s3cr3t@ots_sidecar:8082");
+        when(anchors.targets()).thenReturn(List.<AnchorTarget>of(ots));
+
+        ResponseEntity<Map<String, Object>> response = controller().schedule(REPO);
+
+        Map<?, ?> destinations = (Map<?, ?>) response.getBody().get("destinations");
+        assertTrue(String.valueOf(destinations.get("otsSidecarUrl")).startsWith("(not shown"),
+                String.valueOf(destinations));
+        assertFalse(String.valueOf(response.getBody()).contains("s3cr3t"), String.valueOf(response.getBody()));
+    }
+
     @Test
     @DisplayName("record-content is a domain the schedule can be set for; an unknown id is 400")
     void recordContentIsADomainTheScheduleCanBeSetFor() throws Exception {

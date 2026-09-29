@@ -164,10 +164,16 @@ class OpenTimestampsAnchorTargetTest {
         @Test
         @DisplayName("a sidecar URL with an @ is refused — neither stamp nor upgrade is sent, and it is named nowhere")
         void aSidecarUrlWithAnAtIsRefusedAndNeverSent() throws Exception {
-            String url = start(java.util.Map.of("/stamp",
-                    "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
-                            + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}"));
-            String withAt = url.replace("http://", "http://ops:Pa%ss@");
+            // Every path the target would ask answers, and the URL parses: without the refusal the
+            // stamp and the upgrade WOULD reach this stub, so an empty path list measures the
+            // refusal and not a parse failure (subagent, c44 — a raw % made the URL unparseable
+            // and "nothing was sent" held with the refusal gone).
+            String url = start(java.util.Map.of(
+                    "/stamp", "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
+                            + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}",
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\"" + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":false,\"digestMatches\":true,\"pending\":true}"));
+            String withAt = url.replace("http://", "http://ops:s3cr3t@");
             AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
                     java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false"));
             java.util.concurrent.atomic.AtomicReference<AnchorReceipt> stamped =
@@ -188,7 +194,7 @@ class OpenTimestampsAnchorTargetTest {
             assertTrue(paths.isEmpty(), "the sidecar was asked through a URL that carries an @: " + paths);
             assertTrue(logged.contains("anchoring refused") && logged.contains("upgrade refused"),
                     "a refusal was not logged: " + logged);
-            assertFalse(logged.contains("Pa%ss") || logged.contains("ops:") || logged.contains("127.0.0.1"),
+            assertFalse(logged.contains("s3cr3t") || logged.contains("ops:") || logged.contains("127.0.0.1"),
                     "a log names the refused URL: " + logged);
 
             AnchorReceipt answered = new OpenTimestampsAnchorTarget(url).anchor(DIGEST);

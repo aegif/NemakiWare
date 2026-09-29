@@ -94,6 +94,13 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
         return sidecarUrl;
     }
 
+    /** {@link Rfc3161AnchorTarget#USER_INFO_REFUSED} when the sidecar URL carries an {@code @} (R132). */
+    @Override
+    public String refusal() {
+        return isConfigured() && Rfc3161AnchorTarget.carriesAt(sidecarUrl)
+                ? Rfc3161AnchorTarget.USER_INFO_REFUSED : null;
+    }
+
     @Override
     public AnchorReceipt anchor(String hexDigest) {
         // Validate first, even when unconfigured: a caller bug should surface now rather than
