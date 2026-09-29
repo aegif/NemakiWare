@@ -180,6 +180,35 @@ class OpenTimestampsAnchorTargetTest {
                     + "sidecar, so it carries no password by carrying nothing: " + logged);
             assertFalse(logged.contains("s3cr3t"), "the failure log carries the sidecar's password: " + logged);
         }
+
+        /**
+         * A sidecar URL the parser cannot read does not have its text repeated — in the stamp's
+         * reason, its failure log, or the upgrade's failure log (Codex and subagent, c42, P1).
+         */
+        @Test
+        @DisplayName("a sidecar URL the parser cannot read does not repeat its user:password")
+        void aSidecarUrlThatCannotBeParsedDoesNotRepeatItsCredentials() throws Exception {
+            String configured = "http://ops:Pa%ss@127.0.0.1:1";
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            String logged = Rfc3161AnchorTargetTest.logOf(OpenTimestampsAnchorTarget.class, () -> {
+                OpenTimestampsAnchorTarget target = new OpenTimestampsAnchorTarget(configured);
+                receipt.set(target.anchor(DIGEST));
+                target.upgrade(AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                        java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false")));
+                return null;
+            });
+
+            String reason = receipt.get().failureReason();
+            assertEquals(AnchorStatus.FAILED, receipt.get().status());
+            assertTrue(reason.contains("could not be parsed"), reason);
+            assertFalse(reason.contains("Pa%ss") || reason.contains("ops:"), reason);
+            assertTrue(logged.contains("upgrade failed"), "the upgrade's failure was not logged, so "
+                    + "its log carries no password by carrying nothing: " + logged);
+            assertFalse(logged.contains("Pa%ss") || logged.contains("ops:"),
+                    "a failure log repeats the configured URL's credentials: " + logged);
+        }
     }
 
     @Nested

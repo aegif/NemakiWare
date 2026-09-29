@@ -157,6 +157,28 @@ class AnchorServiceTest {
         assertEquals(List.of("ATLAS_CATALOG"), outcome.confirmedRungs());
     }
 
+    /**
+     * What a run returns — and the management screen shows as it is — does not repeat a
+     * destination URL the parser could not read, measured through the real targets (Codex and
+     * subagent, c42, P1: the parser's message carried the URL into the receipt's reason).
+     */
+    @Test
+    @DisplayName("a run whose destinations cannot be parsed returns no user:password")
+    void aRunWhoseDestinationsCannotBeParsedReturnsNoCredentials() {
+        AnchorService.Outcome outcome = serviceWith(storeAt(5),
+                new jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget(
+                        "https://svc:Pa%ss@tsa.example/tsr", null, null),
+                new jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget(
+                        "http://ops:pa#ss@ots_sidecar:8082")).anchor(checkpoint(5));
+
+        String shown = String.valueOf(outcome.asMap());
+        assertEquals(2, outcome.receipts().size(), shown);
+        assertTrue(shown.contains("could not be parsed"), "the receipts no longer say what failed: " + shown);
+        assertFalse(shown.contains("Pa%ss") || shown.contains("pa#ss") || shown.contains("svc:")
+                || shown.contains("ops:") || shown.contains("\"pa\""),
+                "the run's answer repeats a destination's credentials: " + shown);
+    }
+
     // ---- AC 2: every rung's claim travels with it ----
 
     @Test

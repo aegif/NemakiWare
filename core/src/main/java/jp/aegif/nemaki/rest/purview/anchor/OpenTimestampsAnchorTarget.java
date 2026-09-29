@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -172,7 +171,8 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
             // A receipt stored before the URL was kept without its user:password still carries
-            // it; the upgraded receipt is returned to the caller and stored again (c41, P1).
+            // it; the upgraded receipt is returned to the caller, and stored when it confirms —
+            // upgradePending discards one that stays PENDING (c41, P1; subagent, c42).
             attrs.computeIfPresent("sidecarUrl", (key, url) -> Rfc3161AnchorTarget.withoutUserInfo(url));
             if (changed && latest.length > 0) {
                 // Progress that may not be completion: keep the newer bytes rather than relying
@@ -229,7 +229,7 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
     }
 
     private JsonNode post(String path, String jsonBody) throws IOException {
-        URL url = URI.create(sidecarUrl + path).toURL();
+        URL url = Rfc3161AnchorTarget.parsedUrl(sidecarUrl + path, "OpenTimestamps sidecar");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
             byte[] payload = jsonBody.getBytes(StandardCharsets.UTF_8);

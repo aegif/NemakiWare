@@ -262,6 +262,59 @@ class Rfc3161AnchorTargetTest {
             assertFalse(receipt.get().failureReason().contains("s3cr3t"), receipt.get().failureReason());
         }
 
+        /**
+         * A configured URL the parser cannot read does not have its text repeated (Codex and
+         * subagent, c42, P1). {@code URI.create} puts its whole input in its message, and
+         * {@code toURL} names the part of a password it read as a port — both reached the failure
+         * log and the receipt's reason. Measured with both shapes: a raw {@code %} (the whole URL
+         * in the message) and a raw {@code #} (the password's first part, read as a port).
+         */
+        @Test
+        @DisplayName("a URL the parser cannot read does not repeat its user:password in the reason or the log")
+        void aUrlThatCannotBeParsedDoesNotRepeatItsCredentials() throws Exception {
+            for (String[] shape : new String[][] {
+                    {"https://svc:Pa%ss@tsa.example/tsr", "Pa%ss"},
+                    {"https://svc:pa#ss@tsa.example/tsr", "\"pa\""}}) {
+                java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+
+                String logged = logOf(Rfc3161AnchorTarget.class, () -> {
+                    receipt.set(new Rfc3161AnchorTarget(shape[0], null, null).anchor(DIGEST));
+                    return null;
+                });
+
+                String reason = receipt.get().failureReason();
+                assertEquals(AnchorStatus.FAILED, receipt.get().status());
+                assertTrue(reason.contains("could not be parsed"), "the reason no longer says what "
+                        + "failed, so it carries no password by carrying nothing: " + reason);
+                assertFalse(reason.contains(shape[1]) || reason.contains("svc:"),
+                        "the reason repeats the configured URL's credentials: " + reason);
+                assertFalse(logged.contains(shape[1]) || logged.contains("svc:"),
+                        "the failure log repeats the configured URL's credentials: " + logged);
+            }
+        }
+
+        /**
+         * The user-info rule on its edges (subagent, c42 — no lock held them): the authority's
+         * LAST {@code @} ends the user-info; an {@code @} after the authority (a password with a
+         * raw {@code #}, or a path's own) makes the URL not shown rather than shown whole; a URL
+         * with no {@code @} at all is shown as it is.
+         */
+        @Test
+        @DisplayName("the user-info rule on its edges")
+        void theUserInfoRuleOnItsEdges() {
+            assertEquals("https://h/", Rfc3161AnchorTarget.withoutUserInfo("https://u:p@ss@h/"),
+                    "a raw @ in the password left part of it behind");
+            String hashInPassword = Rfc3161AnchorTarget.withoutUserInfo("https://svc:pa#ss@tsa.example/tsr");
+            assertFalse(hashInPassword.contains("pa#ss") || hashInPassword.contains("svc:"),
+                    "a password with a raw # was shown: " + hashInPassword);
+            String atInPath = Rfc3161AnchorTarget.withoutUserInfo("https://h/a@b");
+            assertFalse(atInPath.equals("https://b"), "a path's @ was read as the end of a user-info, "
+                    + "so the URL was shown as a different host: " + atInPath);
+            assertEquals("http://127.0.0.1:3180/", Rfc3161AnchorTarget.withoutUserInfo("http://127.0.0.1:3180/"),
+                    "a URL with no @ at all is shown as it is");
+        }
+
         @Test
         @DisplayName("an unreachable TSA fails the anchor, not the caller")
         void unreachableTsaDoesNotThrow() {

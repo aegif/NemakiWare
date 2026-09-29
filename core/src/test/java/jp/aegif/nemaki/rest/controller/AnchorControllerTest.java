@@ -571,8 +571,9 @@ class AnchorControllerTest {
     void aRunsReceiptsCarryNoCredentials() throws Exception {
         // The management screen shows this response as it is. Its destination card showed the
         // TSA URL without user:password while the receipts of the run it had just made carried
-        // it whole (Codex, c41, P1). The receipts here are ones a store could hand back from
-        // before the targets kept the URL that way, so the response itself has to hold the rule.
+        // it whole (Codex, c41, P1). No path builds an Outcome with such receipts today — the
+        // targets already keep the URL without it (subagent, c42) — so this holds the response
+        // itself to the rule, whatever a later path hands it.
         AnchorController controller = controllerFor(true);
         jp.aegif.nemaki.evidence.EvidenceLedgerService ledger =
                 mock(jp.aegif.nemaki.evidence.EvidenceLedgerService.class);

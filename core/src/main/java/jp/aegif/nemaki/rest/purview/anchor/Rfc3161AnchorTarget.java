@@ -181,6 +181,11 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      * not a valid server name — {@code tsa_int}, a Docker service name — makes {@code URI} read
      * the authority as registry-based and answer no user-info at all, and so did a password
      * with a raw {@code @} (subagent, c41). Everything up to the authority's last {@code @} goes.
+     *
+     * <p>A password with a raw {@code /}, {@code ?} or {@code #} ends the authority inside the
+     * password, so no {@code @} is found there and the URL used to be returned whole (subagent,
+     * c42). An {@code @} after the authority may be that, or a path's own {@code @}, and the text
+     * cannot tell the two apart — so such a URL is not shown at all rather than shown whole.
      */
     public static String withoutUserInfo(String url) {
         if (url == null) {
@@ -201,10 +206,30 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             }
         }
         int at = url.lastIndexOf('@', end - 1);
-        if (at < start) {
-            return url;
+        if (at >= start) {
+            return url.substring(0, start) + url.substring(at + 1);
         }
-        return url.substring(0, start) + url.substring(at + 1);
+        return url.indexOf('@', end) < 0 ? url
+                : "(a URL with an @ that could not be read as user-info — not shown)";
+    }
+
+    /**
+     * The configured URL as a {@link URL}, or an {@link IOException} whose text does NOT repeat it.
+     *
+     * <p>{@code URI.create} puts its whole input in the message it throws, and {@code toURL}
+     * names the part of a password it read as a port — so a password with a raw {@code %}, space,
+     * {@code #}, {@code /} or {@code ?} reached the failure log and the stored receipt's reason,
+     * user:password and all (Codex and subagent, c42, P1 — the second in R129's area, opened by
+     * the user's decision). The parser's own text is withheld; its class name is kept.
+     */
+    static URL parsedUrl(String configured, String what) throws IOException {
+        try {
+            return URI.create(configured).toURL();
+        } catch (IllegalArgumentException | java.net.MalformedURLException unparsable) {
+            throw new IOException("the configured " + what + " URL could not be parsed as a URL ("
+                    + unparsable.getClass().getSimpleName() + "; the parser's message is withheld "
+                    + "because it repeats the URL, user:password included)");
+        }
     }
 
     /** The policy OID requested, or null when the TSA's default is accepted. Display only. */
@@ -527,7 +552,7 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
      * failure, so the content type is checked and the mismatch reported as itself.
      */
     private byte[] post(byte[] derRequest) throws IOException {
-        URL url = URI.create(tsaUrl).toURL();
+        URL url = parsedUrl(tsaUrl, "TSA");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         try {
             conn.setRequestMethod("POST");

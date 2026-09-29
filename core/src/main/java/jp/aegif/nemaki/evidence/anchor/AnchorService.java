@@ -230,10 +230,11 @@ public class AnchorService {
         }
 
         /**
-         * The attributes as returned to a caller, with a destination URL's user:password removed.
-         * The targets now keep the URL that way, but a receipt stored before they did still
-         * carries it, and a run can hand a stored receipt back (Codex, c41, P1 — the management
-         * screen shows this map as it is).
+         * The attributes as returned to a caller, with a destination URL's user:password removed
+         * (Codex, c41, P1 — the management screen shows this map as it is). Defence in depth: the
+         * targets already keep the URL that way, and today an Outcome carries only receipts the
+         * targets have just made, so no stored receipt reaches here (subagent, c42) — this holds
+         * the answer to the rule whatever a later path hands it.
          */
         private static Map<String, String> shownAttributes(Map<String, String> attributes) {
             if (attributes == null) {
