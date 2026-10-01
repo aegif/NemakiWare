@@ -16,6 +16,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { ownEntry } from '../../i18n/ownEntry';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
@@ -107,7 +108,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
         setConfigs((data.webhookConfigs as WebhookConfigData[] | undefined) || []);
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.loadError'))
+          withDetail(t('documentViewer.webhooks.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -160,7 +161,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
         loadConfigs();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.deleteError'))
+          withDetail(t('documentViewer.webhooks.deleteError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -237,7 +238,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
         loadConfigs();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('documentViewer.webhooks.saveError'))
+          withDetail(t('documentViewer.webhooks.saveError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {

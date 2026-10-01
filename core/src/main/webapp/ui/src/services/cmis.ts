@@ -1865,7 +1865,7 @@ export class CMISService {
           if (errorResponse.error) errorDetails = errorResponse.error;
           if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          errorDetails = response.responseText || 'Unknown server error';
+          errorDetails = response.responseText || i18n.t('common.unknownError');
         }
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
@@ -2080,7 +2080,7 @@ export class CMISService {
           if (errorResponse.error) errorDetails = errorResponse.error;
           if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          errorDetails = response.responseText || 'Unknown server error';
+          errorDetails = response.responseText || i18n.t('common.unknownError');
         }
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;

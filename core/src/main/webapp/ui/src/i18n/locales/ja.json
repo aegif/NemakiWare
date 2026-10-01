@@ -79,7 +79,8 @@
       "authError": "認証エラー: ログインし直してください",
       "permissionError": "権限エラー: この操作の権限がありません",
       "navigationFailed": "ナビゲーションに失敗しました",
-      "details": "詳細: {{details}}"
+      "details": "詳細: {{details}}",
+      "withDetail": "{{message}}（詳細: {{detail}}）"
     },
     "confirmDelete": "この{{item}}を削除しますか？",
     "totalItems": "全 {{total}} 件",
@@ -747,7 +748,10 @@
       "containmentReconciliationStarted": "包含関係再整合を開始しました",
       "deleteResolutionStarted": "削除解決を開始しました",
       "retryFailedStarted": "デッドレターの再試行を開始しました",
-      "purgeJobHistoryCompleted": "{{count}} 件の古いジョブ状態を削除しました"
+      "purgeJobHistoryCompleted": "{{count}} 件の古いジョブ状態を削除しました",
+      "jobFailed": "ジョブが失敗しました",
+      "jobNotCompleted": "ジョブが完了しませんでした（{{status}}）",
+      "actionFailed": "操作に失敗しました"
     },
     "purgeJobHistory": {
       "confirmTitle": "ジョブ履歴のパージ",
@@ -1750,7 +1754,8 @@
     "objectIdSearchNotFound": "指定されたIDのオブジェクトが見つかりません",
     "objectIdSearchDescription": "CouchDBの内部IDでオブジェクトを直接検索します",
     "fulltext": "全文検索",
-    "semantic": "セマンティック検索"
+    "semantic": "セマンティック検索",
+    "objectIdSearchFailed": "ID検索に失敗しました"
   },
   "searchResults": {
     "title": "検索",
@@ -2242,7 +2247,8 @@
       "missingInSolr": "Solrに未登録",
       "orphanedInSolr": "孤立ドキュメント",
       "healthy": "インデックスは正常です",
-      "error": "インデックスヘルスチェックに失敗しました"
+      "error": "インデックスヘルスチェックに失敗しました",
+      "unhealthy": "インデックスの状態に問題があります"
     },
     "reindexStatus": {
       "title": "再インデクシング状態",
@@ -3028,7 +3034,8 @@
       "placeholder": "セットアップトークンを入力",
       "verify": "確認",
       "invalid": "トークンが無効です",
-      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token"
+      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token",
+      "verifyFailed": "トークンを確認できませんでした"
     },
     "steps": {
       "couchdb": "CouchDB接続",
@@ -3096,7 +3103,9 @@
       "testSamlCertificate": "証明書を検証",
       "samlCertValid": "有効 ({{subject}})",
       "samlCertInvalid": "無効な証明書",
-      "lockoutWarning": "少なくとも1つの認証方式を有効にしてください"
+      "lockoutWarning": "少なくとも1つの認証方式を有効にしてください",
+      "clientIdCheck": "クライアントIDの確認",
+      "samlCertWarning": "証明書の注意"
     },
     "admin": {
       "info": "管理者パスワードを変更できます。空欄の場合は変更されません。",
@@ -3126,7 +3135,8 @@
       "bedrockCredentials": "認証方式",
       "bedrockExplicitCredentials": "明示キー",
       "bedrockDefaultCredentials": "デフォルト（環境変数/IAMロール）",
-      "dimensionTag": "次元数: {{dimension}}"
+      "dimensionTag": "次元数: {{dimension}}",
+      "dimensionWarningLead": "次元数の注意"
     },
     "confirm": {
       "apply": "適用",
@@ -3139,7 +3149,8 @@
       "retry": "リトライ",
       "proceedAnyway": "このまま続行",
       "applyFailed": "セットアップの適用に失敗しました",
-      "persistenceNote": "CouchDB接続設定はランタイムに適用されました。再起動後も有効にするには docker-compose.yml の環境変数を設定してください。ベクトル検索設定は再起動後に反映されます。"
+      "persistenceNote": "CouchDB接続設定はランタイムに適用されました。再起動後も有効にするには docker-compose.yml の環境変数を設定してください。ベクトル検索設定は再起動後に反映されます。",
+      "proceedFailed": "セットアップを完了にできませんでした"
     },
     "provenance": {
       "description": "取込・書き出し・アーカイブといった操作の来歴 (いつ・何が・どこから来たか) を記録するかを選びます。**来歴は後から遡って作れません** — 記録していなかった期間について、あとで証拠を用意する手段はありません。",
@@ -3626,7 +3637,8 @@
       "filename": "ファイル名",
       "sourceId": "ソースID（デフォルト）",
       "sourceIdOrFilename": "ソースID → ファイル名（フォールバック）"
-    }
+    },
+    "autoDisabledBy": "スケジューラが自動的に無効化しました"
   },
   "manualIngest": {
     "title": "手動インポート",
@@ -3789,7 +3801,11 @@
     "destinationsReadOnly": "送り先は起動時の system property（anchor.rfc3161.* / anchor.opentimestamps.sidecar.url）で設定し、この画面からは変えられません。送信に SSRF の検査が無いため、画面から書き換えられる送り先にはしていません。",
     "runNowCard": "今すぐ 1 回",
     "runNowDescription": "既存の POST /checkpoint-and-anchor を呼び、いまの台帳を封じて構成された段へ送ります。URL に @ のある段には送らず、結果の notAsked に名指します。結果は返ってきたまま表示します。",
-    "runNow": "今すぐ封じて送る"
+    "runNow": "今すぐ封じて送る",
+    "saveFailed": "設定を保存できませんでした",
+    "runFailed": "今すぐ封じて送る処理に失敗しました",
+    "nodeLabel": "ノード {{nodeId}}",
+    "scheduleLimitsLead": "自動封入の条件についての注意"
   },
   "principalBatch": {
     "open": "一括",
@@ -3846,6 +3862,10 @@
     "partial": "{{line}} 行目で止まりました。それより後の行は適用していません。ロールバックはしません — 同じファイルをもう一度プレビューすると、適用済みの行は想定外として見えます。",
     "applied": "適用しました",
     "outcome": "結果",
-    "again": "別のファイルで続ける"
+    "again": "別のファイルで続ける",
+    "previewFailed": "プレビューを作れませんでした",
+    "executeFailed": "一括処理を実行できませんでした",
+    "refused": "サーバが一括処理を受け付けませんでした（{{status}} {{reason}}）",
+    "incidentIdSuffix": "（インシデントID: {{incidentId}}）"
   }
 }

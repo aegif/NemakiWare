@@ -28,6 +28,7 @@ import {
 } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import {
   AnchorSchedule,
   RECORD_CONTENT_DOMAIN,
@@ -147,7 +148,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
             .map(([key, why]) => ({ name: FIELD_OF_KEY[key], errors: [why] }))
         );
       }
-      message.error(e instanceof Error ? e.message : String(e));
+      message.error(withDetail(t('evidenceAnchoring.saveFailed'), e));
     } finally {
       setSaving(false);
     }
@@ -159,7 +160,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
       setRunResult(await checkpointAndAnchorNow(domain));
       await load();
     } catch (e) {
-      message.error(e instanceof Error ? e.message : String(e));
+      message.error(withDetail(t('evidenceAnchoring.runFailed'), e));
     } finally {
       setRunning(false);
     }
@@ -303,8 +304,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                       </>
                     ) : (
                       <Text type="danger">
-                        {t('evidenceAnchoring.notReadable')}
-                        {unanchored?.reason ? ` — ${unanchored.reason}` : ''}
+                        {withDetail(t('evidenceAnchoring.notReadable'), unanchored?.reason)}
                       </Text>
                     )}
                   </span>
@@ -344,7 +344,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                   {runtime?.leader === null || runtime?.leader === undefined
                     ? t('evidenceAnchoring.leaderUnknown')
                     : runtime.leader ? t('evidenceAnchoring.isLeader') : t('evidenceAnchoring.notLeader')}
-                  {runtime?.nodeId ? ` (node ${runtime.nodeId})` : ''}
+                  {runtime?.nodeId ? ` (${t('evidenceAnchoring.nodeLabel', { nodeId: runtime.nodeId })})` : ''}
                 </Descriptions.Item>
               </Descriptions>
               {runtime && !runtime.leaderElectionEnabled && (
@@ -369,7 +369,9 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                   ]}
                 />
               )}
-              <Paragraph type="secondary" style={{ marginTop: 12 }}>{schedule.scheduleLimits}</Paragraph>
+              <Paragraph type="secondary" style={{ marginTop: 12 }}>
+                {withDetail(t('evidenceAnchoring.scheduleLimitsLead'), schedule.scheduleLimits)}
+              </Paragraph>
             </Card>
 
             <Card title={t('evidenceAnchoring.destinationsCard')}>

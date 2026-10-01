@@ -79,7 +79,8 @@
       "authError": "Authentication error: Please log in again",
       "permissionError": "Permission error: You do not have permission for this operation",
       "navigationFailed": "Navigation failed",
-      "details": "Details: {{details}}"
+      "details": "Details: {{details}}",
+      "withDetail": "{{message}} (details: {{detail}})"
     },
     "confirmDelete": "Delete this {{item}}?",
     "totalItems": "Total {{total}} items",
@@ -747,7 +748,10 @@
       "containmentReconciliationStarted": "Started containment reconciliation",
       "deleteResolutionStarted": "Started delete resolution",
       "retryFailedStarted": "Started dead-letter retry",
-      "purgeJobHistoryCompleted": "Purged {{count}} old job states"
+      "purgeJobHistoryCompleted": "Purged {{count}} old job states",
+      "jobFailed": "The job failed",
+      "jobNotCompleted": "The job did not complete ({{status}})",
+      "actionFailed": "The action failed"
     },
     "purgeJobHistory": {
       "confirmTitle": "Purge Job History",
@@ -1750,7 +1754,8 @@
     "objectIdSearchNotFound": "No object found with the specified ID",
     "objectIdSearchDescription": "Search objects directly by CouchDB internal ID",
     "fulltext": "Full-text Search",
-    "semantic": "Semantic Search"
+    "semantic": "Semantic Search",
+    "objectIdSearchFailed": "The ID search failed"
   },
   "searchResults": {
     "title": "Search",
@@ -2242,7 +2247,8 @@
       "missingInSolr": "Missing in Solr",
       "orphanedInSolr": "Orphaned Documents",
       "healthy": "Index is healthy",
-      "error": "Index health check failed"
+      "error": "Index health check failed",
+      "unhealthy": "The index reports a problem"
     },
     "reindexStatus": {
       "title": "Reindex Status",
@@ -3028,7 +3034,8 @@
       "placeholder": "Enter setup token",
       "verify": "Verify",
       "invalid": "Invalid token",
-      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token"
+      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token",
+      "verifyFailed": "Could not verify the token"
     },
     "steps": {
       "couchdb": "CouchDB Connection",
@@ -3096,7 +3103,9 @@
       "testSamlCertificate": "Validate Certificate",
       "samlCertValid": "Valid ({{subject}})",
       "samlCertInvalid": "Invalid certificate",
-      "lockoutWarning": "At least one authentication method must be enabled"
+      "lockoutWarning": "At least one authentication method must be enabled",
+      "clientIdCheck": "Client ID check",
+      "samlCertWarning": "Certificate warning"
     },
     "admin": {
       "info": "You can change the admin password. Leave blank to keep the current password.",
@@ -3126,7 +3135,8 @@
       "bedrockCredentials": "Authentication",
       "bedrockExplicitCredentials": "Explicit Keys",
       "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)",
-      "dimensionTag": "Dimension: {{dimension}}"
+      "dimensionTag": "Dimension: {{dimension}}",
+      "dimensionWarningLead": "Dimension warning"
     },
     "confirm": {
       "apply": "Apply",
@@ -3139,7 +3149,8 @@
       "retry": "Retry",
       "proceedAnyway": "Proceed Anyway",
       "applyFailed": "Setup apply failed",
-      "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart."
+      "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart.",
+      "proceedFailed": "Could not mark the setup as complete"
     },
     "provenance": {
       "description": "Whether to record the provenance of operations such as ingest, export and archive — when, what, and where it came from. Provenance cannot be reconstructed after the fact: there is no way to produce evidence later for a period that was not recorded.",
@@ -3626,7 +3637,8 @@
       "copyFromSource": "Copy from source",
       "none": "None"
     },
-    "daysSuffix": "d"
+    "daysSuffix": "d",
+    "autoDisabledBy": "Auto-disabled by the scheduler"
   },
   "manualIngest": {
     "title": "Manual Import",
@@ -3789,7 +3801,11 @@
     "destinationsReadOnly": "Destinations are start-up system properties (anchor.rfc3161.* / anchor.opentimestamps.sidecar.url) and cannot be changed from this screen: the requests to them carry no SSRF check, so they are not made editable from a screen.",
     "runNowCard": "Run once now",
     "runNowDescription": "Calls the existing POST /checkpoint-and-anchor: seals the ledger as it is and sends it to the configured rungs. A rung whose URL carries an @ is not asked, and the answer names it under notAsked. The answer is shown as it came.",
-    "runNow": "Seal and send now"
+    "runNow": "Seal and send now",
+    "saveFailed": "The settings could not be saved",
+    "runFailed": "Seal and send now failed",
+    "nodeLabel": "node {{nodeId}}",
+    "scheduleLimitsLead": "About the schedule"
   },
   "principalBatch": {
     "open": "Bulk",
@@ -3846,6 +3862,10 @@
     "partial": "Stopped at line {{line}}. The rows after it were not applied and nothing was rolled back — preview the same file again and the applied rows show as unexpected.",
     "applied": "Applied",
     "outcome": "Outcome",
-    "again": "Continue with another file"
+    "again": "Continue with another file",
+    "previewFailed": "Could not preview the batch",
+    "executeFailed": "Could not apply the batch",
+    "refused": "The server did not accept the batch ({{status}} {{reason}})",
+    "incidentIdSuffix": " (incident ID: {{incidentId}})"
   }
 }

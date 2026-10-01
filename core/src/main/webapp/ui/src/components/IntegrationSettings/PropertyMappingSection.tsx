@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Alert, Card, Table, Switch, Input, Button, Select, Space, Typography, message, Spin, Empty, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { AuthService } from '../../services/auth';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import {
@@ -194,7 +195,7 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
       setConflictWarnings(result.warnings || []);
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
-      message.error(detail || t('integrationSettings.propertyMappingSaveFailed'));
+      message.error(withDetail(t('integrationSettings.propertyMappingSaveFailed'), detail));
       console.error('Failed to save property mappings:', err);
     } finally {
       setSaving(false);

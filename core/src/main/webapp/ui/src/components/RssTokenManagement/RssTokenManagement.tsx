@@ -19,6 +19,7 @@ import {
 import { RowActionTooltip } from '../common/RowActionTooltip';
 import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined, FolderOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
@@ -171,7 +172,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         }
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch (e) {
@@ -232,7 +233,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.createError'))
+          withDetail(t('rssManagement.createError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -251,7 +252,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -271,7 +272,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -291,7 +292,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.deleteError'))
+          withDetail(t('rssManagement.deleteError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {

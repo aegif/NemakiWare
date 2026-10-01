@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Space, message } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   PurviewAdminService,
@@ -149,17 +150,20 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
     try {
       const result = await service.testConnection();
       setConnectionStatus(result);
+      const connectionMessage = result.connected
+        ? withDetail(t('purviewManagement.summary.connectionHealthy'), result.message)
+        : withDetail(t('purviewManagement.alerts.connectionFailed'), result.message);
       setActionResult({
         kind: result.connected ? 'COMPLETED' : 'FAILED',
-        message: result.message,
+        message: connectionMessage,
       });
       if (result.connected) {
-        message.success(result.message);
+        message.success(connectionMessage);
       } else {
-        message.warning(result.message);
+        message.warning(connectionMessage);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
+      const errorMessage = withDetail(t('purviewManagement.alerts.connectionFailed'), error);
       setActionResult({ kind: 'FAILED', message: errorMessage });
       message.error(errorMessage);
     } finally {
@@ -177,7 +181,7 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
       message.success(t('purviewManagement.messages.governanceLookupCompleted', { count: result.length }));
       return result;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
+      const errorMessage = withDetail(t('purviewManagement.governanceLookup.failed'), error);
       message.error(errorMessage);
       throw error;
     } finally {
@@ -193,10 +197,14 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
     setRunningAction(actionKey);
     try {
       const result = await runner();
+      const serverMessage = 'message' in result ? result.message : undefined;
+      // The lead says what happened in the UI language; the server's own text follows as a detail.
       const actionMessage =
-        'message' in result && result.message
-          ? result.message
-          : t(successMessageKey);
+        result.status === 'FAILED'
+          ? withDetail(t('purviewManagement.messages.jobFailed'), result.errorSummary || serverMessage)
+          : result.status === 'REJECTED' || result.status === 'COMPLETED_WITH_ERRORS'
+            ? withDetail(t('purviewManagement.messages.jobNotCompleted', { status: result.status }), result.errorSummary || serverMessage)
+            : withDetail(t(successMessageKey), serverMessage);
       setActionResult({
         kind: result.status,
         message: actionMessage,
@@ -204,14 +212,14 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
       });
 
       if (result.status === 'FAILED') {
-        message.error(result.errorSummary || actionMessage);
+        message.error(actionMessage);
       } else if (result.status === 'REJECTED' || result.status === 'COMPLETED_WITH_ERRORS') {
-        message.warning(result.errorSummary || actionMessage);
+        message.warning(actionMessage);
       } else {
         message.success(actionMessage);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
+      const errorMessage = withDetail(t('purviewManagement.messages.actionFailed'), error);
       setActionResult({ kind: 'FAILED', message: errorMessage });
       message.error(errorMessage);
     } finally {
@@ -316,7 +324,7 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
               })
             );
           } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
+            const errorMessage = withDetail(t('purviewManagement.messages.actionFailed'), error);
             message.error(errorMessage);
           } finally {
             setRunningAction(null);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Form, Radio, Input, Button, Tag, Space, Alert, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
+import { withDetail } from '../../../i18n/withDetail';
 
 const { Text } = Typography;
 
@@ -143,10 +144,10 @@ export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) 
                     )}
                   </Space>
                   {!testResult.reachable && testResult.error && (
-                    <Alert type="warning" message={testResult.error} showIcon />
+                    <Alert type="warning" message={withDetail(t('setup.vector.connectionFailed'), testResult.error)} showIcon />
                   )}
                   {testResult.reachable && testResult.dimensionWarning && (
-                    <Alert type="error" message={testResult.dimensionWarning} showIcon />
+                    <Alert type="error" message={withDetail(t('setup.vector.dimensionWarningLead'), testResult.dimensionWarning)} showIcon />
                   )}
                 </Space>
               )}

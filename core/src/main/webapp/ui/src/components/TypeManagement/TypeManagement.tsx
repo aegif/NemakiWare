@@ -25,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { CMISService } from '../../services/cmis';
 import { TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { TypeGUIEditor } from './TypeGUIEditor';
@@ -157,7 +158,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
       
       // Use the error message if available
       if (error.message && error.message !== 'Network error during type deletion') {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
       
       message.error(errorMessage);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Form, Input, Button, message, Alert, Spin, Tabs, Descriptions, Tag, Tooltip } from 'antd';
 import { UserOutlined, LockOutlined, SafetyOutlined, CloudOutlined, ApiOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { CMISService } from '../../services/cmis';
 import { getPasswordPolicy } from '../../services/passwordPolicy';
@@ -101,7 +102,7 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
       message.success(t('accountSettings.passwordChanged'));
       passwordForm.resetFields();
     } catch (error: any) {
-      message.error(error.message || t('accountSettings.passwordChangeError'));
+      message.error(withDetail(t('accountSettings.passwordChangeError'), error));
     } finally {
       setLoading(false);
     }

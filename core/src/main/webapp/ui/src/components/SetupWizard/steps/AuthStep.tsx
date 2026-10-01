@@ -3,6 +3,7 @@ import { Form, Switch, Input, Button, Alert, Space, Tag, Checkbox } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../../services/setupApi';
 import type { AuthConfig, SamlCertTestResult } from '../../../services/setupApi';
+import { withDetail } from '../../../i18n/withDetail';
 
 export type { AuthConfig };
 
@@ -213,7 +214,7 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
               </Tag>
             )}
             {!keycloakOidcTest.reachable && keycloakOidcTest.error && (
-              <Alert type="warning" message={keycloakOidcTest.error} showIcon />
+              <Alert type="warning" message={withDetail(t('setup.auth.oidcUnreachable'), keycloakOidcTest.error)} showIcon />
             )}
           </Space>
         )}
@@ -266,10 +267,10 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
               </Tag>
             )}
             {samlCertTest.result && !samlCertTest.result.valid && samlCertTest.result.error && (
-              <Alert type="error" message={samlCertTest.result.error} showIcon />
+              <Alert type="error" message={withDetail(t('setup.auth.samlCertInvalid'), samlCertTest.result.error)} showIcon />
             )}
             {samlCertTest.result?.warning && (
-              <Alert type="warning" message={samlCertTest.result.warning} showIcon />
+              <Alert type="warning" message={withDetail(t('setup.auth.samlCertWarning'), samlCertTest.result.warning)} showIcon />
             )}
             <Form.Item label={t('setup.auth.samlSloUrl')}>
               <Input
@@ -320,10 +321,10 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
                   )}
                 </Space>
                 {!googleOidcTest.reachable && googleOidcTest.error && (
-                  <Alert type="warning" message={googleOidcTest.error} showIcon />
+                  <Alert type="warning" message={withDetail(t('setup.auth.oidcUnreachable'), googleOidcTest.error)} showIcon />
                 )}
                 {googleOidcTest.reachable && googleOidcTest.clientIdError && (
-                  <Alert type="info" message={googleOidcTest.clientIdError} showIcon />
+                  <Alert type="info" message={withDetail(t('setup.auth.clientIdCheck'), googleOidcTest.clientIdError)} showIcon />
                 )}
               </Space>
             )}
@@ -368,14 +369,14 @@ export function AuthStep({ value, onChange, onValidChange }: AuthStepProps) {
                   )}
                 </Space>
                 {!microsoftOidcTest.reachable && microsoftOidcTest.error && (
-                  <Alert type="warning" message={microsoftOidcTest.error} showIcon />
+                  <Alert type="warning" message={withDetail(t('setup.auth.oidcUnreachable'), microsoftOidcTest.error)} showIcon />
                 )}
                 {microsoftOidcTest.reachable && microsoftOidcTest.clientIdError && !microsoftOidcTest.clientIdIndeterminate && (
-                  <Alert type="error" message={microsoftOidcTest.clientIdError} showIcon />
+                  <Alert type="error" message={withDetail(t('setup.auth.clientIdCheck'), microsoftOidcTest.clientIdError)} showIcon />
                 )}
                 {microsoftOidcTest.reachable && microsoftOidcTest.clientIdIndeterminate && (
                   <>
-                    <Alert type="warning" message={microsoftOidcTest.clientIdError} showIcon />
+                    <Alert type="warning" message={withDetail(t('setup.auth.clientIdCheck'), microsoftOidcTest.clientIdError)} showIcon />
                     <Checkbox
                       checked={microsoftClientIdAcknowledged}
                       onChange={(e) => setMicrosoftClientIdAcknowledged(e.target.checked)}

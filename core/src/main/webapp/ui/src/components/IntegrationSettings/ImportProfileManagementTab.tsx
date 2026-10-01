@@ -3,6 +3,7 @@ import { Table, Button, Modal, Form, Input, InputNumber, Select, Switch, Space, 
 import { RowActionTooltip } from '../common/RowActionTooltip';
 import { PlusOutlined, EditOutlined, DeleteOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   ImportProfileDefinition,
@@ -289,7 +290,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
       load();
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
-      message.error(detail || t('importProfileManagement.saveError'));
+      message.error(withDetail(t('importProfileManagement.saveError'), detail));
     }
   };
 
@@ -340,7 +341,9 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               tooltip shows the reason (e.g. CREATOR_USER_INACTIVE) so
               they know whether re-enabling is safe. */}
           {!record.enabled && record.lastAutoDisabledAt && (
-            <RowActionTooltip title={record.lastAutoDisabledReason || t('importProfileManagement.autoDisabledHint')}>
+            <RowActionTooltip title={record.lastAutoDisabledReason
+              ? withDetail(t('importProfileManagement.autoDisabledBy'), record.lastAutoDisabledReason)
+              : t('importProfileManagement.autoDisabledHint')}>
               <Tag color="orange" style={{ fontSize: 10 }}>
                 {t('importProfileManagement.autoDisabledBadge')}
               </Tag>

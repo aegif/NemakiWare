@@ -27,6 +27,7 @@ import {
   LoginOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig } from '../../services/cloud-auth';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
@@ -130,12 +131,12 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
       } else {
         setStatus('error');
         setErrorMessage(
-          getResourceBaseErrorMessage(result, t('mcpCloudLogin.errors.completionFailed'))
+          withDetail(t('mcpCloudLogin.errors.completionFailed'), getResourceBaseErrorMessage(result, ''))
         );
       }
     } catch (error: any) {
       setStatus('error');
-      setErrorMessage(error.message || t('mcpCloudLogin.errors.networkError'));
+      setErrorMessage(withDetail(t('mcpCloudLogin.errors.networkError'), error));
     } finally {
       setIsSubmitting(false);
     }

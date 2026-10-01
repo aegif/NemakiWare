@@ -27,6 +27,7 @@ import {
   FileTextOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   AuditMetricsService,
@@ -104,7 +105,7 @@ export const AuditDashboard: React.FC = () => {
       message.success(t('auditDashboard.resetSuccess'));
       await fetchMetrics();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('auditDashboard.resetError'));
+      message.error(withDetail(t('auditDashboard.resetError'), err));
     } finally {
       setResetting(false);
     }
@@ -117,7 +118,7 @@ export const AuditDashboard: React.FC = () => {
       setEntries(data.entries || []);
       setEntriesLoaded(true);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('auditDashboard.loadError'));
+      message.error(withDetail(t('auditDashboard.loadError'), err));
     } finally {
       setEntriesLoading(false);
     }

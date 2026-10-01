@@ -3,6 +3,7 @@ import { Alert, Modal, Spin, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { FolderOutlined, FolderOpenOutlined, CheckCircleTwoTone, CloseCircleTwoTone } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { CMISService } from '../../services/cmis';
 import { listConnectorSummary } from '../../services/externalIngest';
 
@@ -100,7 +101,7 @@ export function FolderPickerModal({
         }]);
       } catch (err) {
         if (cancelled) return;
-        setRootLoadError(err instanceof Error ? err.message : t('folderPicker.loadFailed'));
+        setRootLoadError(withDetail(t('folderPicker.loadFailed'), err));
       } finally {
         if (!cancelled) setRootLoading(false);
       }

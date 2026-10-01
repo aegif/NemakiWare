@@ -15,6 +15,7 @@ import {
   FolderOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useNavigate } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject } from '../../types/cmis';
@@ -77,7 +78,7 @@ export const ObjectIdSearch: React.FC<ObjectIdSearchProps> = ({
       if (err.status === 404 || err.message?.includes('404')) {
         setError(t('search.objectIdSearchNotFound'));
       } else {
-        setError(err.message || String(err));
+        setError(withDetail(t('search.objectIdSearchFailed'), err));
       }
     } finally {
       setLoading(false);

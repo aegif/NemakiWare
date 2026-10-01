@@ -37,6 +37,7 @@ import {
 import { CMISService } from '../../services/cmis';
 import { Group, User } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 interface GroupManagementProps {
   repositoryId: string;
@@ -146,7 +147,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('groupManagement.messages.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -263,7 +264,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -298,7 +299,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('groupManagement.messages.deletePermissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);

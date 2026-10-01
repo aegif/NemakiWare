@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Switch, Space, Tag, App, Popconfirm, Typography } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import {
   ConnectorDefinition,
   AdapterDescriptor,
@@ -85,7 +86,7 @@ export function ConnectorManagementTab() {
       load();
     } catch (err) {
       const detail = err instanceof Error ? err.message : '';
-      message.error(detail || t('connectorManagement.saveError'));
+      message.error(withDetail(t('connectorManagement.saveError'), detail));
     }
   };
 

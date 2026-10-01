@@ -269,6 +269,7 @@ import { CMISService } from '../../services/cmis';
 import { getPasswordPolicy } from '../../services/passwordPolicy';
 import { User, Group } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 interface UserManagementProps {
   repositoryId: string;
@@ -332,7 +333,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('userManagement.messages.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -386,7 +387,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
       
       message.error(errorMessage);
@@ -424,7 +425,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('userManagement.messages.deletePermissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
       
       message.error(errorMessage);
@@ -450,7 +451,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       message.success(t('userManagement.messages.passwordResetSuccess'));
       resetPasswordForm.resetFields();
     } catch (error: any) {
-      message.error(error.message || t('userManagement.messages.passwordResetError'));
+      message.error(withDetail(t('userManagement.messages.passwordResetError'), error));
     } finally {
       setResetPasswordLoading(false);
     }

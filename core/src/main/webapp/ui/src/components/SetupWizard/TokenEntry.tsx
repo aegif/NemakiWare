@@ -3,6 +3,7 @@ import { Input, Button, Alert, Typography, Space, Card } from 'antd';
 import { KeyOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { setupApi } from '../../services/setupApi';
+import { withDetail } from '../../i18n/withDetail';
 
 const { Title, Paragraph } = Typography;
 
@@ -37,7 +38,7 @@ export function TokenEntry({ onTokenVerified }: TokenEntryProps) {
       if (msg.includes('401') || msg.includes('Unauthorized')) {
         setError(t('setup.token.invalid'));
       } else {
-        setError(msg);
+        setError(withDetail(t('setup.token.verifyFailed'), e));
       }
     } finally {
       setLoading(false);

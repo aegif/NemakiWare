@@ -533,7 +533,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
           {healthStatus.healthy ? (
             <Alert message={t('solrMaintenance.healthCheck.healthy')} type="success" showIcon />
           ) : (
-            <Alert message={healthStatus.message} type="warning" showIcon />
+            <Alert message={t('solrMaintenance.healthCheck.unhealthy')} description={healthStatus.message} type="warning" showIcon />
           )}
         </div>
       </Card>

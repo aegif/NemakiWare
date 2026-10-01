@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { ownEntry } from '../../i18n/ownEntry';
 import {
   BATCH_COLUMNS,
@@ -121,7 +122,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
       setPreview(await previewBatch(repositoryId, file, kind, operation));
       setStep(2);
     } catch (e) {
-      setError(e instanceof BatchRequestRefused ? `${e.httpStatus} ${e.reason ?? ''} ${e.message}` : String(e));
+      setError(withDetail(t('principalBatch.previewFailed'), e instanceof BatchRequestRefused ? `${e.httpStatus} ${e.reason ?? ''} ${e.message}` : e));
     } finally {
       setBusy(false);
     }
@@ -141,7 +142,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
         onApplied();
       }
     } catch (e) {
-      setError(e instanceof BatchRequestRefused ? `${e.httpStatus} ${e.message}` : String(e));
+      setError(withDetail(t('principalBatch.executeFailed'), e instanceof BatchRequestRefused ? `${e.httpStatus} ${e.message}` : e));
     } finally {
       setBusy(false);
     }
@@ -300,7 +301,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               type="error"
               showIcon
               message={t('principalBatch.partial', { line: execution.stoppedAt })}
-              description={`${execution.message ?? ''}${execution.incidentId ? ` (incidentId ${execution.incidentId})` : ''}`}
+              description={`${execution.message ?? ''}${execution.incidentId ? t('principalBatch.incidentIdSuffix', { incidentId: execution.incidentId }) : ''}`}
             />
           )}
           {execution.httpStatus !== 200 && execution.status !== 'partial' && (
@@ -308,7 +309,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               type="warning"
               showIcon
               data-testid="principal-batch-refused"
-              message={`${execution.httpStatus} ${execution.reason ?? execution.status ?? ''}`}
+              message={t('principalBatch.refused', { status: execution.httpStatus, reason: execution.reason ?? execution.status ?? '' })}
               description={execution.message}
             />
           )}
