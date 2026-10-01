@@ -10955,8 +10955,13 @@ CONTROLS = [
     ),
     dict(
         id='LO3',
-        what="after a sweep that ran every control, the readiness document's second statement still marks the count unswept — the site a single contains() let through",
+        what="after a sweep that ran every control, the readiness document's §4 statement of the added-since-sweep count still marks it unswept — a lock that reads only the first statement in each document lets it through (measured 2026-10-01: with the reading cut to the first statement, this sabotage leaves the lock green)",
         file='docs/design/v3.4-release-readiness.md',
+        # NOT what this control tells apart in this direction (c54 subagent P1): a lock that asks
+        # contains("通し未実施") once per document. That lock also goes red when this sabotage ADDS
+        # the marker (measured 2026-10-01); it is the outstanding direction — every site must
+        # carry the marker — that a single contains() let through, and that arm is not measured
+        # until a control is added again (canon §5).
         find='8 回目以後に足した control は **0 本**。\n  7 回目以後に足した 137 本も',
         replace='8 回目以後に足した control は **0 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
