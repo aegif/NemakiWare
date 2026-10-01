@@ -202,6 +202,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
+import { CloseOutlined } from '@ant-design/icons';
 import jaJP from 'antd/locale/ja_JP';
 import enUS from 'antd/locale/en_US';
 import { useTranslation } from 'react-i18next';
@@ -562,9 +563,21 @@ function AppRoutes() {
 
 function App() {
   // Re-renders on a language switch (react-i18next listens for it), so antd follows at once.
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
-    <ConfigProvider theme={customTheme} locale={antdLocales[uiLanguage(i18n.resolvedLanguage)]}>
+    <ConfigProvider
+      theme={customTheme}
+      locale={antdLocales[uiLanguage(i18n.resolvedLanguage)]}
+      // Close buttons the locale does not name. A Modal's button carries "Close" in every language
+      // (rc-dialog writes it, and a closable object's aria-label replaces it); an Alert's and an
+      // image preview's button has no name of its own and is named by its icon ("close"), so an
+      // icon with a name names it. What is closable stays as it was: the Modal default is closable
+      // already, and antd does not read an Alert's closeIcon from here when it decides whether that
+      // Alert is closable. Not reachable from here: notification — see uiLanguage.
+      modal={{ closable: { 'aria-label': t('common.close') } }}
+      alert={{ closeIcon: <CloseOutlined aria-label={t('common.close')} /> }}
+      image={{ preview: { closeIcon: <CloseOutlined aria-label={t('common.close')} /> } }}
+    >
       {/* AntApp wraps the entire application to ensure Modal.confirm, message, notification
           static methods properly integrate with React lifecycle and clean up on unmount.
           This prevents the gray overlay issue that occurs when modals are not properly destroyed. */}

@@ -47,7 +47,8 @@
     "importing": "Importing...",
     "uploading": "Uploading...",
     "total": "Total: {{count}} items",
-    "items": "{{count}} items",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
     "beta": "Beta",
@@ -83,7 +84,8 @@
       "withDetail": "{{message}} (details: {{detail}})"
     },
     "confirmDelete": "Delete this {{item}}?",
-    "totalItems": "Total {{total}} items",
+    "totalItems_one": "Total {{total}} item",
+    "totalItems_other": "Total {{total}} items",
     "copyFailed": "Copy failed",
     "noData": "No data",
     "booleanTrue": "Yes (true)",
@@ -633,7 +635,8 @@
       "applyRequired": "Purview schema apply is required",
       "applyRequiredDescription": "Apply type definitions before running repository sync jobs.",
       "deadLettersPresent": "Dead letters are present",
-      "deadLettersPresentDescription": "{{count}} retry candidates are waiting."
+      "deadLettersPresentDescription_one": "{{count}} retry candidate is waiting.",
+      "deadLettersPresentDescription_other": "{{count}} retry candidates are waiting."
     },
     "latestAction": {
       "title": "Latest Action"
@@ -667,7 +670,8 @@
     "governanceLookup": {
       "objectIdPlaceholder": "Enter object IDs separated by commas or new lines",
       "failed": "Failed to load governance metadata",
-      "resultSummary": "Loaded {{count}} objects ({{successCount}} successful)",
+      "resultSummary_one": "Loaded {{count}} object ({{successCount}} successful)",
+      "resultSummary_other": "Loaded {{count}} objects ({{successCount}} successful)",
       "objectId": "Object ID",
       "status": "Status",
       "qualifiedName": "Qualified Name",
@@ -748,7 +752,8 @@
       "containmentReconciliationStarted": "Started containment reconciliation",
       "deleteResolutionStarted": "Started delete resolution",
       "retryFailedStarted": "Started dead-letter retry",
-      "purgeJobHistoryCompleted": "Purged {{count}} old job states",
+      "purgeJobHistoryCompleted_one": "Purged {{count}} old job state",
+      "purgeJobHistoryCompleted_other": "Purged {{count}} old job states",
       "jobFailed": "The job failed",
       "actionFailed": "The action failed",
       "jobRejected": "The job was not started ({{status}})",
@@ -779,7 +784,8 @@
     },
     "messages": {
       "loadError": "Failed to load configuration properties",
-      "totalItems": "{{count}} items total"
+      "totalItems_one": "{{count}} item total",
+      "totalItems_other": "{{count}} items total"
     }
   },
   "typeManagement": {
@@ -1079,7 +1085,8 @@
     "readOnlyTooltip": "This property is read-only",
     "secondaryTypeTooltip": "Edit in the Secondary Types section above",
     "dedicatedUI": "Dedicated UI",
-    "totalItems": "Total {{total}} items",
+    "totalItems_one": "Total {{total}} item",
+    "totalItems_other": "Total {{total}} items",
     "columns": {
       "propertyName": "Property Name",
       "value": "Value"
@@ -1181,7 +1188,8 @@
       "thisObject": "This Object",
       "propertyName": "Property Name",
       "value": "Value",
-      "propertiesCount": "Properties ({{count}} items)",
+      "propertiesCount_one": "Properties ({{count}} item)",
+      "propertiesCount_other": "Properties ({{count}} items)",
       "fieldRequired": "{{field}} is required"
     },
     "messages": {
@@ -1267,7 +1275,8 @@
         "chat": "Chat",
         "email": "Email"
       },
-      "charCount": "{{count}} chars"
+      "charCount_one": "{{count}} char",
+      "charCount_other": "{{count}} chars"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -1400,8 +1409,10 @@
       "userIdRequired": "Please enter a user ID",
       "userNameRequired": "Please enter a user name",
       "passwordRequired": "Please enter a password",
-      "passwordMinLength": "Password must be at least {{min}} characters",
-      "passwordMinLength8": "Password must be at least {{min}} characters",
+      "passwordMinLength_one": "Password must be at least {{min}} character",
+      "passwordMinLength_other": "Password must be at least {{min}} characters",
+      "passwordMinLength8_one": "Password must be at least {{min}} character",
+      "passwordMinLength8_other": "Password must be at least {{min}} characters",
       "confirmPasswordRequired": "Please confirm the password"
     },
     "messages": {
@@ -1771,7 +1782,8 @@
     "customPropertySearch": "Search by Custom Properties",
     "secondaryPropertySearch": "Search by Secondary Type Properties",
     "executedQuery": "Executed CMIS Query",
-    "results": "Search Results ({{count}} items)",
+    "results_one": "Search Results ({{count}} item)",
+    "results_other": "Search Results ({{count}} items)",
     "baseTypes": {
       "document": "Document",
       "folder": "Folder",
@@ -1872,7 +1884,8 @@
     "renameTitle": "Rename \"{{name}}\"",
     "changeButton": "Change",
     "newName": "New Name",
-    "bulkDelete": "Delete {{count}} items",
+    "bulkDelete_one": "Delete {{count}} item",
+    "bulkDelete_other": "Delete {{count}} items",
     "bulkDeleteConfirmation": "Confirm Bulk Delete",
     "bulkDeleteConfirmMessage": "Are you sure you want to delete {{count}} selected item(s)? This action cannot be undone.",
     "columns": {
@@ -2265,8 +2278,10 @@
       "verificationSkippedCount": "Verification Skipped",
       "verificationSkippedCountTooltip": "Number of documents skipped from verification due to query length limits. These documents are not checked for silent drops.",
       "errorMessage": "Error Message",
-      "errorDetails": "Error Details ({{count}} errors)",
-      "warningDetails": "Warning Details ({{count}} warnings)",
+      "errorDetails_one": "Error Details ({{count}} error)",
+      "errorDetails_other": "Error Details ({{count}} errors)",
+      "warningDetails_one": "Warning Details ({{count}} warning)",
+      "warningDetails_other": "Warning Details ({{count}} warnings)",
       "cancel": "Cancel"
     },
     "status": {
@@ -2315,7 +2330,8 @@
       "simulateAsUserTooltip": "Apply ACL filtering with the specified user's permissions. Admin only.",
       "selectUser": "Select user (no filtering if not selected)",
       "executeQuery": "Execute Query",
-      "results": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
+      "results_one": "Showing {{start}}-{{end}} of {{numFound}} result ({{queryTime}}ms)",
+      "results_other": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
       "resultsWithAcl": "{{numFound}} total, {{visibleCount}} visible, {{aclFilteredCount}} filtered by ACL (showing {{start}}-{{end}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "document": "Document {{number}}",
@@ -2334,7 +2350,8 @@
       "simulateAsUserTooltip": "Execute search with the specified user's permissions. Admin only.",
       "selectUser": "Select user (searches as yourself if not selected)",
       "executeQuery": "Execute Query",
-      "results": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
+      "results_one": "Showing {{displayed}} of {{numFound}} result (more: {{hasMore}}, {{queryTime}}ms)",
+      "results_other": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "columnName": "Name",
       "columnObjectId": "Object ID",
@@ -2392,7 +2409,8 @@
     "minSimilarity": "Min Similarity",
     "searchingInFolder": "Searching in this folder",
     "searching": "Searching...",
-    "resultsCount": "{{count}} results",
+    "resultsCount_one": "{{count}} result",
+    "resultsCount_other": "{{count}} results",
     "noResults": "No matching documents found",
     "searchFailed": "Search failed",
     "similarity": "Similarity",
@@ -2478,7 +2496,8 @@
       "skipped": "Skipped",
       "errorCount": "Error Count",
       "errorMessage": "Error Message",
-      "errorDetails": "Error Details ({{count}} errors)",
+      "errorDetails_one": "Error Details ({{count}} error)",
+      "errorDetails_other": "Error Details ({{count}} errors)",
       "cancel": "Cancel"
     },
     "status": {
@@ -2707,7 +2726,8 @@
       "testWebhook": "Test Webhook"
     },
     "pagination": {
-      "total": "Total {{total}} items"
+      "total_one": "Total {{total}} item",
+      "total_other": "Total {{total}} items"
     },
     "messages": {
       "loadError": "Failed to load delivery logs",
@@ -2820,7 +2840,8 @@
     "currentPasswordRequired": "Please enter your current password",
     "newPasswordRequired": "Please enter a new password",
     "confirmPasswordRequired": "Please confirm your new password",
-    "passwordMinLength": "Password must be at least {{min}} characters",
+    "passwordMinLength_one": "Password must be at least {{min}} character",
+    "passwordMinLength_other": "Password must be at least {{min}} characters",
     "passwordMismatch": "Passwords do not match",
     "passwordChanged": "Password changed successfully",
     "passwordChangeError": "Failed to change password",
@@ -3116,7 +3137,8 @@
       "confirmPassword": "Confirm Password",
       "passwordPlaceholder": "Enter password",
       "confirmPlaceholder": "Re-enter password",
-      "passwordTooShort": "Password must be at least {{min}} characters",
+      "passwordTooShort_one": "Password must be at least {{min}} character",
+      "passwordTooShort_other": "Password must be at least {{min}} characters",
       "passwordMismatch": "Passwords do not match",
       "noChange": "No change",
       "passkeyNote": "Passkey (WebAuthn) registration can be done from the login screen after setup is complete."
@@ -3169,7 +3191,8 @@
     "title": "Password Policy",
     "minLength": "Minimum password length",
     "noConstraint": "No constraint (0)",
-    "currentSetting": "Current setting: {{min}} characters",
+    "currentSetting_one": "Current setting: {{min}} character",
+    "currentSetting_other": "Current setting: {{min}} characters",
     "currentSettingNone": "Current setting: No constraint",
     "updateSuccess": "Password policy updated",
     "updateError": "Failed to update password policy",
@@ -3361,7 +3384,8 @@
       "nonTerminalByTarget": "Backlog by Target",
       "estimatedSize": "Estimated Size",
       "replayAllConfirm": "Replay all unreplayed dead-letters?",
-      "replayedCount": "Replayed {{count}} events",
+      "replayedCount_one": "Replayed {{count}} event",
+      "replayedCount_other": "Replayed {{count}} events",
       "repoOverridesActive": "repository overrides active"
     },
     "atlas": {
@@ -3499,8 +3523,10 @@
     "groupRequired": "Enter a group ID first.",
     "groupLookupFailed": "Group lookup failed",
     "groupNotResolved": "This ID did not resolve to a group, but any connectors granting it directly are still shown.",
-    "groupSummary": "{{name}} ({{count}} members)",
-    "groupMembersShowing": "Showing {{shown}} of {{total}} members",
+    "groupSummary_one": "{{name}} ({{count}} member)",
+    "groupSummary_other": "{{name}} ({{count}} members)",
+    "groupMembersShowing_one": "Showing {{shown}} of {{total}} member",
+    "groupMembersShowing_other": "Showing {{shown}} of {{total}} members",
     "groupMembersTruncated": "Member list capped at memberLimit ({{limit}}); raise the limit to see more.",
     "includeMembersLabel": "Compute member impact",
     "memberLimitLabel": "memberLimit",
@@ -3558,8 +3584,10 @@
     "autoDisabledBadge": "auto-disabled",
     "autoDisabledHint": "Auto-disabled by the scheduler after detecting an inactive creator",
     "autoDisabledFilter": "Show only auto-disabled",
-    "autoDisabledBanner": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
-    "autoDisabledBannerRecent": "{{count}} of {{total}} auto-disabled profiles were disabled in the last {{days}} day(s).",
+    "autoDisabledBanner_one": "{{count}} profile was auto-disabled by the scheduler. Review the reason before re-enabling.",
+    "autoDisabledBanner_other": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
+    "autoDisabledBannerRecent_one": "{{count}} of {{total}} auto-disabled profiles was disabled in the last {{days}} day(s).",
+    "autoDisabledBannerRecent_other": "{{count}} of {{total}} auto-disabled profiles were disabled in the last {{days}} day(s).",
     "autoDisabledWindowAll": "All time",
     "autoDisabledWindow1d": "Last 24 hours",
     "autoDisabledWindow7d": "Last 7 days",

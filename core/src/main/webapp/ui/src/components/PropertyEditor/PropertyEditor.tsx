@@ -320,7 +320,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
           pagination={{
             pageSize: 10,
             showSizeChanger: true,
-            showTotal: (total) => t('propertyEditor.totalItems', { total }),
+            showTotal: (total) => t('propertyEditor.totalItems', { total, count: total }),
           }}
           size="small"
         />

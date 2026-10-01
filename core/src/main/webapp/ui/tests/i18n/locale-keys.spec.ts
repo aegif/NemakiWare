@@ -4,8 +4,9 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 /**
- * The locale files and the code agree (UI i18n batch 3). The test reads files only — no browser —
- * though the Playwright run around it still needs the backend (the global setup checks it).
+ * The locale files and the code agree (UI i18n batch 3). The test reads files only — no browser.
+ * Under the main Playwright config the global setup still needs the backend; playwright.lint.config.ts
+ * runs this file alone without one, which is how the CI job ui-unit runs it beside vitest.
  *
  * - Every key the code names is a text in both ja.json and en.json: the literal first argument
  *   of t() / i18n.t(), and a dotted string that starts with a locale namespace anywhere else
@@ -17,6 +18,11 @@ import * as ts from 'typescript';
  *   first rule covers it. Other ways to assemble a key (`[ns, x].join('.')`, an alias of t) are
  *   not looked for; the code has none.
  * - ja.json and en.json have the same keys, and each key has the same {{…}} variables in both.
+ * - A count-dependent text is a family of i18next plural forms (`key_one`, `key_other`, …) in place
+ *   of the plain key. Each locale has exactly the forms its language's plural rules use
+ *   (Intl.PluralRules: Japanese `other`, English `one` and `other`), every form has the same
+ *   {{…}} variables, and the code names the family by its plain key in a t() call that passes
+ *   `count` (without it i18next shows the key) — not in a label table, where no count is given.
  *
  * A missing key renders as the key itself (i18next's fallback), so this measures what a screen
  * would show without opening it.
@@ -51,6 +57,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 }
 
 const isTCall = (callee: string) => /(^|\.)t$/.test(callee);
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 const variables = (s: string) => [...s.matchAll(/{{\s*([^}\s,]+)[^}]*}}/g)].map((m) => m[1]).sort().join(',');
 
 test('every key the code names is in ja.json and en.json, and the two files agree', () => {
@@ -64,10 +71,19 @@ test('every key the code names is in ja.json and en.json, and the two files agre
     const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true,
       file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
     const where = (n: ts.Node) => `${rel}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
-    const requireKey = (key: string, n: ts.Node) => {
+    // Whether a t() call passes `count` in an object literal — what selects a plural form.
+    const passesCount = (call: ts.CallExpression | undefined) => {
+      const options = call?.arguments[1];
+      return !!options && ts.isObjectLiteralExpression(options) && options.properties.some((p) =>
+        (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && p.name.getText(sf) === 'count');
+    };
+    const requireKey = (key: string, n: ts.Node, call?: ts.CallExpression) => {
       named++;
       for (const lang of ['ja', 'en'] as const) {
-        if (!flat[lang].has(key)) problems.push(`${where(n)} ${key} is not in ${lang}.json`);
+        if (!flat[lang].has(key) && flat[lang].get(`${key}_other`) != null) {
+          if (!call) problems.push(`${where(n)} ${key} has plural forms in ${lang}.json; name it in a t() call that passes count`);
+          else if (!passesCount(call)) problems.push(`${where(n)} ${key} has plural forms in ${lang}.json; the t() call must pass count`);
+        } else if (!flat[lang].has(key)) problems.push(`${where(n)} ${key} is not in ${lang}.json`);
         else if (flat[lang].get(key) === null) problems.push(`${where(n)} ${key} is an object in ${lang}.json, not a text`);
       }
     };
@@ -76,7 +92,7 @@ test('every key the code names is in ja.json and en.json, and the two files agre
       if (ts.isCallExpression(n) && isTCall(n.expression.getText(sf)) && n.arguments[0]) {
         const a0 = n.arguments[0];
         if (ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0)) {
-          requireKey(a0.text, a0);
+          requireKey(a0.text, a0, n);
         } else if (ts.isTemplateExpression(a0)) {
           problems.push(`${where(a0)} t() key built from a template — name each key literally`);
         }
@@ -97,9 +113,36 @@ test('every key the code names is in ja.json and en.json, and the two files agre
     visit(sf);
   }
 
+  // Plural families: the plain key with its forms. A form one language has and the other does
+  // not is the plural rules differing, not a missing key — the forms are checked here instead.
+  const families = new Set<string>();
+  for (const lang of ['ja', 'en'] as const) {
+    for (const key of flat[lang].keys()) {
+      if (PLURAL_SUFFIX.test(key) && flat[lang].get(key) !== null) families.add(key.replace(PLURAL_SUFFIX, ''));
+    }
+  }
+  for (const base of families) {
+    const reference = flat.en.get(`${base}_other`) ?? flat.ja.get(`${base}_other`) ?? '';
+    for (const lang of ['ja', 'en'] as const) {
+      const needs = [...new Intl.PluralRules(lang).resolvedOptions().pluralCategories].sort();
+      const has = [...flat[lang].keys()].filter((k) => k.startsWith(`${base}_`) && k.slice(base.length + 1).match(/^(zero|one|two|few|many|other)$/))
+        .map((k) => k.slice(base.length + 1)).sort();
+      if (has.join(',') !== needs.join(',')) {
+        problems.push(`${base} has the forms [${has}] in ${lang}.json but ${lang} uses [${needs}]`);
+      }
+      if (flat[lang].has(base)) problems.push(`${base} is both a plain key and a plural family in ${lang}.json`);
+      for (const form of has) {
+        const text = flat[lang].get(`${base}_${form}`) ?? '';
+        if (variables(text) !== variables(reference)) {
+          problems.push(`${base}_${form} has {{${variables(text)}}} in ${lang}.json but the family has {{${variables(reference)}}}`);
+        }
+      }
+    }
+  }
+  const isForm = (key: string) => PLURAL_SUFFIX.test(key) && families.has(key.replace(PLURAL_SUFFIX, ''));
   for (const [a, b] of [['ja', 'en'], ['en', 'ja']] as const) {
     for (const key of flat[a].keys()) {
-      if (!flat[b].has(key)) problems.push(`${key} is in ${a}.json but not in ${b}.json`);
+      if (!flat[b].has(key) && !isForm(key)) problems.push(`${key} is in ${a}.json but not in ${b}.json`);
     }
   }
   for (const [key, ja] of flat.ja) {

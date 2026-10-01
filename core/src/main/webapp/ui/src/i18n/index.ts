@@ -21,10 +21,15 @@ export type LanguageCode = keyof typeof languages;
  * otherwise. This only maps i18next's result; it does not decide the language. For the two
  * languages the app offers, Ant Design's built-in texts and dayjs follow this, so the library's
  * visible texts (empty tables, date pickers, default confirm buttons) are in the language of the
- * app's own labels. Accessible names follow only in part (antd 6.5.1): Modal and notification close
- * buttons are named "Close" in every language (for a Modal the locale's word lands on a wrapper
- * inside the button), Tag and Drawer close buttons take the locale's word, and an icon with no name
- * of its own is named by its icon ("search").
+ * app's own labels. Accessible names follow only in part (antd 6.5.1): the close buttons of a
+ * Modal, an Alert and the image preview are named in the UI language because App.tsx gives them
+ * t('common.close') through ConfigProvider; Tag and Drawer close buttons take the locale's word.
+ * Left as they are: a notification's close button is "Close" in every language — rc-notification
+ * writes it on the button, the app's one notification (DocumentList) is antd's static method,
+ * which is drawn outside App.tsx's ConfigProvider and does not read it, and ConfigProvider's
+ * notification setting has no closable, only a closeIcon, which cannot rename a button that
+ * carries its own aria-label (read, not measured) — and an icon with no name of its own is named
+ * by its icon ("search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';

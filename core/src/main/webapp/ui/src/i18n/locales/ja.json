@@ -47,7 +47,7 @@
     "importing": "インポート中...",
     "uploading": "アップロード中...",
     "total": "全 {{count}} 件",
-    "items": "{{count}}個",
+    "items_other": "{{count}}個",
     "moreResults": "さらに結果があります",
     "unknownError": "不明なエラー",
     "beta": "ベータ",
@@ -83,7 +83,7 @@
       "withDetail": "{{message}}（詳細: {{detail}}）"
     },
     "confirmDelete": "この{{item}}を削除しますか？",
-    "totalItems": "全 {{total}} 件",
+    "totalItems_other": "全 {{total}} 件",
     "copyFailed": "コピーに失敗しました",
     "noData": "データがありません",
     "booleanTrue": "はい (true)",
@@ -633,7 +633,7 @@
       "applyRequired": "Purview スキーマの適用が必要です",
       "applyRequiredDescription": "型定義を適用してから同期ジョブを流す構成です。",
       "deadLettersPresent": "デッドレターが残っています",
-      "deadLettersPresentDescription": "{{count}} 件の再試行対象があります。"
+      "deadLettersPresentDescription_other": "{{count}} 件の再試行対象があります。"
     },
     "latestAction": {
       "title": "直近の操作結果"
@@ -667,7 +667,7 @@
     "governanceLookup": {
       "objectIdPlaceholder": "オブジェクトIDを改行またはカンマ区切りで入力",
       "failed": "ガバナンス情報の取得に失敗しました",
-      "resultSummary": "{{count}} 件の対象を参照しました（成功 {{successCount}} 件）",
+      "resultSummary_other": "{{count}} 件の対象を参照しました（成功 {{successCount}} 件）",
       "objectId": "オブジェクトID",
       "status": "状態",
       "qualifiedName": "完全修飾名",
@@ -748,7 +748,7 @@
       "containmentReconciliationStarted": "包含関係再整合を開始しました",
       "deleteResolutionStarted": "削除解決を開始しました",
       "retryFailedStarted": "デッドレターの再試行を開始しました",
-      "purgeJobHistoryCompleted": "{{count}} 件の古いジョブ状態を削除しました",
+      "purgeJobHistoryCompleted_other": "{{count}} 件の古いジョブ状態を削除しました",
       "jobFailed": "ジョブが失敗しました",
       "actionFailed": "操作に失敗しました",
       "jobRejected": "ジョブは開始されませんでした（{{status}}）",
@@ -779,7 +779,7 @@
     },
     "messages": {
       "loadError": "設定プロパティの読み込みに失敗しました",
-      "totalItems": "全 {{count}} 件"
+      "totalItems_other": "全 {{count}} 件"
     }
   },
   "typeManagement": {
@@ -1079,7 +1079,7 @@
     "readOnlyTooltip": "このプロパティは読み取り専用です",
     "secondaryTypeTooltip": "上部の「セカンダリタイプ」セクションで編集できます",
     "dedicatedUI": "専用UI",
-    "totalItems": "全 {{total}} 件",
+    "totalItems_other": "全 {{total}} 件",
     "columns": {
       "propertyName": "プロパティ名",
       "value": "値"
@@ -1181,7 +1181,7 @@
       "thisObject": "このオブジェクト",
       "propertyName": "プロパティ名",
       "value": "値",
-      "propertiesCount": "プロパティ ({{count}}件)",
+      "propertiesCount_other": "プロパティ ({{count}}件)",
       "fieldRequired": "{{field}}は必須です"
     },
     "messages": {
@@ -1267,7 +1267,7 @@
         "chat": "チャット",
         "email": "メール"
       },
-      "charCount": "{{count}} 文字"
+      "charCount_other": "{{count}} 文字"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -1400,8 +1400,8 @@
       "userIdRequired": "ユーザーIDを入力してください",
       "userNameRequired": "ユーザー名を入力してください",
       "passwordRequired": "パスワードを入力してください",
-      "passwordMinLength": "パスワードは{{min}}文字以上で入力してください",
-      "passwordMinLength8": "パスワードは{{min}}文字以上で入力してください",
+      "passwordMinLength_other": "パスワードは{{min}}文字以上で入力してください",
+      "passwordMinLength8_other": "パスワードは{{min}}文字以上で入力してください",
       "confirmPasswordRequired": "パスワードの確認を入力してください"
     },
     "messages": {
@@ -1771,7 +1771,7 @@
     "customPropertySearch": "カスタムプロパティで検索",
     "secondaryPropertySearch": "セカンダリタイプのプロパティで検索",
     "executedQuery": "実行したCMISクエリ",
-    "results": "検索結果 ({{count}}件)",
+    "results_other": "検索結果 ({{count}}件)",
     "baseTypes": {
       "document": "ドキュメント",
       "folder": "フォルダ",
@@ -1872,7 +1872,7 @@
     "renameTitle": "「{{name}}」の名前を変更",
     "changeButton": "変更",
     "newName": "新しい名前",
-    "bulkDelete": "{{count}}件を削除",
+    "bulkDelete_other": "{{count}}件を削除",
     "bulkDeleteConfirmation": "一括削除の確認",
     "bulkDeleteConfirmMessage": "選択した{{count}}件のアイテムを削除しますか？この操作は取り消せません。",
     "columns": {
@@ -2265,8 +2265,8 @@
       "verificationSkippedCount": "検証スキップ数",
       "verificationSkippedCountTooltip": "クエリ長制限により検証をスキップしたドキュメントの数。これらのドキュメントはサイレントドロップの検出対象外です。",
       "errorMessage": "エラーメッセージ",
-      "errorDetails": "エラー詳細 ({{count}}件)",
-      "warningDetails": "警告詳細 ({{count}}件)",
+      "errorDetails_other": "エラー詳細 ({{count}}件)",
+      "warningDetails_other": "警告詳細 ({{count}}件)",
       "cancel": "キャンセル"
     },
     "status": {
@@ -2315,7 +2315,7 @@
       "simulateAsUserTooltip": "指定したユーザーの権限でACLフィルタリングを適用します。管理者のみ使用可能です。",
       "selectUser": "ユーザーを選択（未選択時はフィルタリングなし）",
       "executeQuery": "クエリ実行",
-      "results": "{{numFound}}件中 {{start}}〜{{end}}件を表示 ({{queryTime}}ms)",
+      "results_other": "{{numFound}}件中 {{start}}〜{{end}}件を表示 ({{queryTime}}ms)",
       "resultsWithAcl": "{{numFound}}件中 {{visibleCount}}件が閲覧可能、{{aclFilteredCount}}件がACLでフィルタ ({{start}}〜{{end}}件を表示, {{queryTime}}ms)",
       "noResults": "0件 ({{queryTime}}ms)",
       "document": "ドキュメント {{number}}",
@@ -2334,7 +2334,7 @@
       "simulateAsUserTooltip": "指定したユーザーの権限で検索を実行します。管理者のみ使用可能です。",
       "selectUser": "ユーザーを選択（未選択時は自分として検索）",
       "executeQuery": "クエリ実行",
-      "results": "{{numFound}}件中 {{displayed}}件を表示 (さらに結果: {{hasMore}}, {{queryTime}}ms)",
+      "results_other": "{{numFound}}件中 {{displayed}}件を表示 (さらに結果: {{hasMore}}, {{queryTime}}ms)",
       "noResults": "0件 ({{queryTime}}ms)",
       "columnName": "名前",
       "columnObjectId": "オブジェクトID",
@@ -2392,7 +2392,7 @@
     "minSimilarity": "最小類似度",
     "searchingInFolder": "このフォルダ内を検索",
     "searching": "検索中...",
-    "resultsCount": "{{count}}件の結果",
+    "resultsCount_other": "{{count}}件の結果",
     "noResults": "該当するドキュメントが見つかりませんでした",
     "searchFailed": "検索に失敗しました",
     "similarity": "類似度",
@@ -2478,7 +2478,7 @@
       "skipped": "スキップ",
       "errorCount": "エラー数",
       "errorMessage": "エラーメッセージ",
-      "errorDetails": "エラー詳細 ({{count}}件)",
+      "errorDetails_other": "エラー詳細 ({{count}}件)",
       "cancel": "キャンセル"
     },
     "status": {
@@ -2707,7 +2707,7 @@
       "testWebhook": "Webhookテスト"
     },
     "pagination": {
-      "total": "全 {{total}} 件"
+      "total_other": "全 {{total}} 件"
     },
     "messages": {
       "loadError": "配信ログの読み込みに失敗しました",
@@ -2820,7 +2820,7 @@
     "currentPasswordRequired": "現在のパスワードを入力してください",
     "newPasswordRequired": "新しいパスワードを入力してください",
     "confirmPasswordRequired": "パスワードの確認を入力してください",
-    "passwordMinLength": "パスワードは{{min}}文字以上で入力してください",
+    "passwordMinLength_other": "パスワードは{{min}}文字以上で入力してください",
     "passwordMismatch": "パスワードが一致しません",
     "passwordChanged": "パスワードを変更しました",
     "passwordChangeError": "パスワードの変更に失敗しました",
@@ -3116,7 +3116,7 @@
       "confirmPassword": "パスワード確認",
       "passwordPlaceholder": "パスワードを入力",
       "confirmPlaceholder": "パスワードを再入力",
-      "passwordTooShort": "パスワードは{{min}}文字以上必要です",
+      "passwordTooShort_other": "パスワードは{{min}}文字以上必要です",
       "passwordMismatch": "パスワードが一致しません",
       "noChange": "変更なし",
       "passkeyNote": "パスキー（WebAuthn）の登録はセットアップ完了後にログイン画面から行えます。"
@@ -3169,7 +3169,7 @@
     "title": "パスワードポリシー",
     "minLength": "パスワード最小文字数",
     "noConstraint": "制約なし (0)",
-    "currentSetting": "現在の設定: {{min}}文字以上",
+    "currentSetting_other": "現在の設定: {{min}}文字以上",
     "currentSettingNone": "現在の設定: 制約なし",
     "updateSuccess": "パスワードポリシーを更新しました",
     "updateError": "パスワードポリシーの更新に失敗しました",
@@ -3361,7 +3361,7 @@
       "nonTerminalByTarget": "ターゲット別バックログ",
       "estimatedSize": "推定サイズ",
       "replayAllConfirm": "未リプレイのデッドレターを全てリプレイしますか？",
-      "replayedCount": "{{count}} 件リプレイしました",
+      "replayedCount_other": "{{count}} 件リプレイしました",
       "repoOverridesActive": "リポジトリ単位の有効化あり"
     },
     "atlas": {
@@ -3499,8 +3499,8 @@
     "groupRequired": "グループ ID を入力してください",
     "groupLookupFailed": "グループ検索に失敗しました",
     "groupNotResolved": "この ID はグループとして解決できませんでしたが、直接付与されているコネクタがあれば表示します。",
-    "groupSummary": "{{name}}（{{count}} 名）",
-    "groupMembersShowing": "{{shown}} / {{total}} 名を表示",
+    "groupSummary_other": "{{name}}（{{count}} 名）",
+    "groupMembersShowing_other": "{{shown}} / {{total}} 名を表示",
     "groupMembersTruncated": "メンバー数が上限（{{limit}}）を超えたため一部のみ表示しています",
     "includeMembersLabel": "メンバー影響を計算",
     "memberLimitLabel": "メンバー数の上限",
@@ -3553,8 +3553,8 @@
     "autoDisabledBadge": "自動無効化",
     "autoDisabledHint": "作成者が有効なユーザーではなくなったため、スケジューラが自動的に無効化しました",
     "autoDisabledFilter": "自動無効化のみ表示",
-    "autoDisabledBanner": "{{count}} 件のプロファイルがスケジューラによって自動無効化されています。理由を確認してから再有効化してください。",
-    "autoDisabledBannerRecent": "過去 {{days}} 日に {{count}} 件 (合計 {{total}} 件中) のプロファイルがスケジューラによって自動無効化されました。",
+    "autoDisabledBanner_other": "{{count}} 件のプロファイルがスケジューラによって自動無効化されています。理由を確認してから再有効化してください。",
+    "autoDisabledBannerRecent_other": "過去 {{days}} 日に {{count}} 件 (合計 {{total}} 件中) のプロファイルがスケジューラによって自動無効化されました。",
     "autoDisabledWindowAll": "全期間",
     "autoDisabledWindow1d": "過去 24 時間",
     "autoDisabledWindow7d": "過去 7 日",

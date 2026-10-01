@@ -829,6 +829,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
                     })
                   : t('solrMaintenance.query.results', {
                       numFound: queryResult.numFound,
+                      count: queryResult.numFound,
                       start: queryResult.start + 1,
                       end: queryResult.start + queryResult.docs.length,
                       queryTime: queryResult.queryTime
@@ -929,6 +930,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
                 ? t('solrMaintenance.cmisQuery.noResults', { queryTime: cmisQueryResult.queryTime })
                 : t('solrMaintenance.cmisQuery.results', {
                     numFound: cmisQueryResult.numFound,
+                    count: cmisQueryResult.numFound,
                     displayed: cmisQueryResult.objects.length,
                     hasMore: cmisQueryResult.hasMoreItems ? t('common.yes') : t('common.no'),
                     queryTime: cmisQueryResult.queryTime

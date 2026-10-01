@@ -785,6 +785,7 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                 {t('connectorGovernance.groupMembersShowing', {
                   shown: groupResult.memberUserIds.length,
                   total: groupResult.memberCount,
+                  count: groupResult.memberCount,
                 })}
               </Text>
               {groupResult.memberUserIdsTruncated && (

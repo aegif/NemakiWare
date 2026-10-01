@@ -469,7 +469,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
           pageSize: pageSize,
           total: totalCount,
           showSizeChanger: false,
-          showTotal: (total) => t('common.totalItems', { total }),
+          showTotal: (total) => t('common.totalItems', { total, count: total }),
           onChange: (page) => loadGroups(page),
         }}
       />

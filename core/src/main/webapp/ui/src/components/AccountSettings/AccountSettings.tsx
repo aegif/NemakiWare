@@ -187,7 +187,7 @@ export const AccountSettings: React.FC<AccountSettingsProps> = ({ repositoryId }
         label={t('accountSettings.newPassword')}
         rules={[
           { required: true, message: t('accountSettings.newPasswordRequired') },
-          ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('accountSettings.passwordMinLength', { min: minPasswordLength }) }] : [])
+          ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('accountSettings.passwordMinLength', { min: minPasswordLength, count: minPasswordLength }) }] : [])
         ]}
       >
         <Input.Password

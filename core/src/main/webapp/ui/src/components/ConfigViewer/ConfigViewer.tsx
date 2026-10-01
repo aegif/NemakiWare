@@ -180,7 +180,7 @@ export const ConfigViewer: React.FC<ConfigViewerProps> = ({ repositoryId }) => {
           </Button>
           <Text type="secondary">
             {policyMinLength > 0
-              ? t('passwordPolicy.currentSetting', { min: policyMinLength })
+              ? t('passwordPolicy.currentSetting', { min: policyMinLength, count: policyMinLength })
               : t('passwordPolicy.currentSettingNone')}
           </Text>
         </Space>

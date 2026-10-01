@@ -15,6 +15,12 @@ import { waitForAppReady, waitForUiStable } from '../utils/wait-helpers';
  *
  * The confirmation is only ever dismissed with its cancel button; nothing is synchronised.
  *
+ * Close buttons the locale does not name are named by App.tsx's ConfigProvider (common.close): a
+ * Modal's (rc-dialog writes "Close" on it in every language), an Alert's and the image preview's
+ * (named by their icon, "close", otherwise). Without that, all three fail in Japanese; in English
+ * the Alert's and the preview's fail, and the Modal's cannot — "Close" is the same word. The Alert
+ * is the Purview tab's connection test result, which saves nothing.
+ *
  * The language is stored BEFORE the app loads (an init script), because the app reads it once at
  * start-up: a hash navigation after login does not reload the page, and with nothing stored the
  * app starts in Japanese even in this English browser (it lists only en-US, and the page's
@@ -29,6 +35,7 @@ const EXPECTED: Record<Lang, {
   firstWeekday: string;
   empty: RegExp;
   cancel: string;
+  close: string;
   otherLanguage: RegExp;
 }> = {
   ja: {
@@ -37,6 +44,7 @@ const EXPECTED: Record<Lang, {
     firstWeekday: '日',
     empty: /データがありません|データなし/,
     cancel: 'キャンセル',
+    close: '閉じる',
     otherLanguage: /Select date|Today|No data|Cancel/,
   },
   en: {
@@ -45,6 +53,7 @@ const EXPECTED: Record<Lang, {
     firstWeekday: 'Su',
     empty: /No data/,
     cancel: 'Cancel',
+    close: 'Close',
     otherLanguage: /日付を選択|今日|データ|キャンセル/,
   },
 };
@@ -103,6 +112,33 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
       await expect(popconfirm).not.toContainText(EXPECTED[lang].otherLanguage);
       await cancel.click();
       await expect(popconfirm).toBeHidden();
+    });
+
+    test(`close button: a Modal's in ${lang}`, async ({ page }) => {
+      await openInLanguage(page, lang, '/users');
+      await page.getByTestId('principal-batch-open').click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      const close = dialog.locator('.ant-modal-close');
+      await expect(close).toHaveAccessibleName(EXPECTED[lang].close);
+      await close.click();
+      await expect(dialog).toBeHidden();
+    });
+
+    test(`close button: an Alert's in ${lang}`, async ({ page }) => {
+      await openInLanguage(page, lang, '/integration-settings');
+      await page.locator('.ant-tabs-tab').filter({ hasText: /Purview/i }).click();
+      await waitForUiStable(page);
+      await page.getByRole('button', { name: /接続テスト|Test\s*Connection/i }).click();
+      const close = page.locator('.ant-alert-close-icon:visible').first();
+      await expect(close).toHaveAccessibleName(EXPECTED[lang].close, { timeout: 30000 });
+    });
+
+    test(`close button: the image preview's in ${lang}`, async ({ page }) => {
+      // The help page opens with its login section expanded, so its first image is on the screen.
+      await openInLanguage(page, lang, '/help');
+      await page.locator('.ant-image').first().click();
+      await expect(page.locator('.ant-image-preview-close')).toHaveAccessibleName(EXPECTED[lang].close);
     });
   }
 

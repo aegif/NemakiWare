@@ -66,7 +66,7 @@ export function AdminStep({ value, onChange, onValidChange, repositoryId }: Admi
         <Form.Item
           label={t('setup.admin.newPassword')}
           validateStatus={tooShort ? 'error' : undefined}
-          help={tooShort ? t('setup.admin.passwordTooShort', { min: minLength }) : undefined}
+          help={tooShort ? t('setup.admin.passwordTooShort', { min: minLength, count: minLength }) : undefined}
         >
           <Input.Password
             value={value.newPassword}

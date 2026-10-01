@@ -630,7 +630,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
           pageSize: pageSize,
           total: totalCount,
           showSizeChanger: false,
-          showTotal: (total) => t('common.totalItems', { total }),
+          showTotal: (total) => t('common.totalItems', { total, count: total }),
           onChange: (page) => loadUsers(page),
         }}
       />
@@ -700,7 +700,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
               label={t('userManagement.password')}
               rules={[
                 { required: true, message: t('userManagement.validation.passwordRequired') },
-                ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength', { min: minPasswordLength }) }] : [])
+                ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength', { min: minPasswordLength, count: minPasswordLength }) }] : [])
               ]}
             >
               <Input.Password placeholder={t('userManagement.placeholders.password')} />
@@ -784,7 +784,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
                   label={t('userManagement.newPassword')}
                   rules={[
                     { required: true, message: t('userManagement.validation.passwordRequired') },
-                    ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength8', { min: minPasswordLength }) }] : [])
+                    ...(minPasswordLength > 0 ? [{ min: minPasswordLength, message: t('userManagement.validation.passwordMinLength8', { min: minPasswordLength, count: minPasswordLength }) }] : [])
                   ]}
                 >
                   <Input.Password placeholder={t('userManagement.placeholders.newPassword')} />

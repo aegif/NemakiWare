@@ -568,7 +568,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
             pagination={{
               pageSize: 20,
               showSizeChanger: true,
-              showTotal: (total) => t('webhookManagement.pagination.total', { total })
+              showTotal: (total) => t('webhookManagement.pagination.total', { total, count: total })
             }}
             scroll={{ x: 1400 }}
           />
