@@ -20,7 +20,11 @@ export type LanguageCode = keyof typeof languages;
  * The language the UI shows: 'en' when i18next resolved to English (a stored choice or an
  * English browser), 'ja' otherwise — the same answer the translations use, since 'ja' is the
  * fallback. Ant Design's built-in texts and dayjs follow this, so a component's own labels and
- * the library's (empty tables, date pickers, default confirm buttons) never disagree.
+ * the library's visible texts (empty tables, date pickers, default confirm buttons) agree.
+ * Accessible names do not all follow: the close buttons of dialogs and notifications are named
+ * "Close" in every language (antd 6.5.1 gives the locale's word, if at all, to the icon inside a
+ * dialog's close button, not to the button), and icons are named by their icon name ("close",
+ * "search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';
@@ -63,7 +67,8 @@ i18n
 // antd's date picker does not read the global locale — Japanese names come from antd's ja_JP
 // locale, English names from dayjs 'en' which the picker asks for explicitly — and the app's own
 // dayjs formats are numeric. It keeps any locale-dependent dayjs output (month names, relative
-// times) in the UI language. src/i18n/dayjsLocale.test.ts measures both paths.
+// times) in the UI language. dayjsStartupLocale*.test.ts measure the start-up path (a file per
+// language — i18next and dayjs are singletons), dayjsLocale.test.ts the change path.
 const syncDayjsLocale = (lng?: string) => {
   dayjs.locale(uiLanguage(lng));
 };
