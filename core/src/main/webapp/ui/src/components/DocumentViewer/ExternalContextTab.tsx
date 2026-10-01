@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, Tag, Button, Space, Alert, Typography, Tooltip, message, Descriptions } from 'antd';
 import { CopyOutlined, CheckOutlined, WarningOutlined, CloudOutlined, ApiOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 import { formatServerDate } from '../../utils/dateUtils';
 
 const { Text, Title } = Typography;
@@ -91,7 +92,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
   };
 
   // Get source type display info
-  const sourceTypeConfig = sourceType ? SOURCE_TYPE_CONFIG[sourceType] : null;
+  const sourceTypeConfig = ownEntry(SOURCE_TYPE_CONFIG, sourceType);
   const sourceIdConfig = sourceId ? SOURCE_ID_CONFIG[sourceId] : null;
   const formattedUpdatedAt = formatDate(updatedAt);
 

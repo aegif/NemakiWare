@@ -16,6 +16,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 import { useAuth } from '../../contexts/AuthContext';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
 import { getResourceBaseErrorMessage } from '../../services/http/restResult';
@@ -261,7 +262,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
         <Space wrap>
           {events?.map((e: string) => (
             <Tag key={e} color="blue">
-              {EVENT_TYPE_LABEL_KEYS[e] ? t(EVENT_TYPE_LABEL_KEYS[e]) : e}
+              {ownEntry(EVENT_TYPE_LABEL_KEYS, e) ? t(EVENT_TYPE_LABEL_KEYS[e]) : e}
             </Tag>
           ))}
         </Space>

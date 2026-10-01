@@ -1,5 +1,6 @@
 import { Form, Input, Select, Switch, Tag, Alert } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 import type { SettingSource } from '../../services/integrationSettings';
 
 interface SelectOption {
@@ -54,7 +55,7 @@ export function SettingsFormFields({ fields, formValues, sources, overridable, o
 
   // A source the server sends that the table does not know shows as itself.
   const sourceLabel = (source: SettingSource): string =>
-    SOURCE_LABEL_KEYS[source] ? t(SOURCE_LABEL_KEYS[source]) : source;
+    ownEntry(SOURCE_LABEL_KEYS, source) ? t(SOURCE_LABEL_KEYS[source]) : source;
 
   const isDeployBootstrap = (source: SettingSource): boolean => {
     return source === 'system_property' || source === 'environment';

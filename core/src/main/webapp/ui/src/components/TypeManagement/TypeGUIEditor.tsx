@@ -48,6 +48,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { TypeDefinition } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
@@ -435,7 +436,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
               <Text type="secondary">{t('typeManagement.guiEditor.collapsedIdLabel')}</Text> {property.id || '-'}
             </Col>
             <Col span={6}>
-              <Text type="secondary">{t('typeManagement.guiEditor.collapsedTypeLabel')}</Text> {PROPERTY_TYPE_LABEL_KEYS[property.propertyType] ? t(PROPERTY_TYPE_LABEL_KEYS[property.propertyType]) : property.propertyType}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedTypeLabel')}</Text> {ownEntry(PROPERTY_TYPE_LABEL_KEYS, property.propertyType) ? t(PROPERTY_TYPE_LABEL_KEYS[property.propertyType]) : property.propertyType}
             </Col>
             <Col span={6}>
               <Text type="secondary">{t('typeManagement.guiEditor.collapsedCardinalityLabel')}</Text> {property.cardinality === 'multi' ? t('typeManagement.guiEditor.collapsedCardinalityMulti') : t('typeManagement.guiEditor.collapsedCardinalitySingle')}

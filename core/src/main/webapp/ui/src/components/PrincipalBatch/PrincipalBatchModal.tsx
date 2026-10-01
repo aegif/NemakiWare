@@ -23,6 +23,7 @@ import {
 } from 'antd';
 import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 import {
   BATCH_COLUMNS,
   BatchExecution,
@@ -273,7 +274,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               {
                 title: t('principalBatch.verdict'),
                 dataIndex: 'verdict',
-                render: (v: string) => <Tag color={VERDICT_COLOR[v]}>{VERDICT_LABEL_KEYS[v] ? t(VERDICT_LABEL_KEYS[v]) : v}</Tag>,
+                render: (v: string) => <Tag color={VERDICT_COLOR[v]}>{ownEntry(VERDICT_LABEL_KEYS, v) ? t(VERDICT_LABEL_KEYS[v]) : v}</Tag>,
               },
               { title: t('principalBatch.reason'), dataIndex: 'reason' },
               { title: t('principalBatch.message'), dataIndex: 'message' },

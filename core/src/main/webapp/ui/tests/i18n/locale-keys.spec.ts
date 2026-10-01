@@ -12,8 +12,10 @@ import * as ts from 'typescript';
  *   (labelKey, a table of label keys, a message key handed to a helper) — except the context
  *   label given to parseJsonResponseBody, which is not a key.
  * - No key is built from a template (`prefix.${x}`), in t() or anywhere a namespaced template
- *   starts: the values such a key takes cannot be checked, so the code names each key literally
- *   (a table per value) and the first rule covers it.
+ *   starts, nor from a namespaced prefix ending in a dot (`'prefix.' + x`): the values such a key
+ *   takes cannot be checked, so the code names each key literally (a table per value) and the
+ *   first rule covers it. Other ways to assemble a key (`[ns, x].join('.')`, an alias of t) are
+ *   not looked for; the code has none.
  * - ja.json and en.json have the same keys, and each key has the same {{…}} variables in both.
  *
  * A missing key renders as the key itself (i18next's fallback), so this measures what a screen
@@ -80,6 +82,9 @@ test('every key the code names is in ja.json and en.json, and the two files agre
         }
       } else if (ts.isTemplateExpression(n) && startsWithNamespace(n.head.text)) {
         problems.push(`${where(n)} key built from a template (${n.head.text}…) — name each key literally`);
+      } else if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n))
+          && /^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)*\.$/.test(n.text) && startsWithNamespace(n.text)) {
+        problems.push(`${where(n)} key prefix ${n.text} — a key built by concatenation; name each key literally`);
       } else if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n))
           && /^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)+$/.test(n.text) && namespaces.has(n.text.split('.')[0])) {
         const parent = n.parent;
