@@ -202,6 +202,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
+import jaJP from 'antd/locale/ja_JP';
+import enUS from 'antd/locale/en_US';
+import { useTranslation } from 'react-i18next';
+import { uiLanguage } from './i18n';
 import { Layout } from './components/Layout/Layout';
 import { SetupWizard } from './components/SetupWizard/SetupWizard';
 import { DocumentList } from './components/DocumentList/DocumentList';
@@ -242,6 +246,13 @@ const customTheme = {
     colorBorder: '#cccccc',
   },
 };
+
+// Ant Design's own texts (empty tables, date pickers, default confirm buttons, empty selects,
+// pagination, default form messages) in the UI language. Without a locale antd shows English,
+// which on the Japanese UI — the default — mixed English into Japanese screens. Static
+// Modal.confirm calls follow it too: the ConfigProvider's locale sets antd's confirm locale
+// (measured: removing a secondary type shows キャンセル / Cancel).
+const antdLocales = { ja: jaJP, en: enUS } as const;
 
 // LocalStorage key for MCP pending login code (must match McpCloudLogin.tsx)
 // Using localStorage instead of sessionStorage because OAuth libraries may interfere
@@ -548,8 +559,10 @@ function AppRoutes() {
 }
 
 function App() {
+  // Re-renders on a language switch (react-i18next listens for it), so antd follows at once.
+  const { i18n } = useTranslation();
   return (
-    <ConfigProvider theme={customTheme}>
+    <ConfigProvider theme={customTheme} locale={antdLocales[uiLanguage(i18n.resolvedLanguage)]}>
       {/* AntApp wraps the entire application to ensure Modal.confirm, message, notification
           static methods properly integrate with React lifecycle and clean up on unmount.
           This prevents the gray overlay issue that occurs when modals are not properly destroyed. */}
