@@ -19,11 +19,13 @@ export type LanguageCode = keyof typeof languages;
 /**
  * The language the UI shows: 'en' when i18next resolved to English, 'ja' otherwise — the same
  * answer the translations use, since 'ja' is the fallback. i18next takes the first exact match
- * among a stored choice, the browser's languages and the page's <html lang="ja">, so English
- * comes from a stored choice or a browser whose list has a plain "en" before any plain "ja"; one
- * listing only en-US or en-GB gets Japanese. Ant Design's built-in texts and dayjs follow this, so
- * a component's own labels and the library's visible texts (empty tables, date pickers, default
- * confirm buttons) agree. Accessible names follow only in part (antd 6.5.1): Modal and
+ * among the stored language, the browser's languages and the page's <html lang="ja">, and stores
+ * what it resolved, so the browser's list counts only while nothing is stored (an origin's first
+ * start, or every start where storage is blocked): English if it has a plain "en" before any plain
+ * "ja", Japanese if it lists only en-US or en-GB. After that the stored language decides — the
+ * header switch's, or what the first start resolved. Ant Design's built-in texts and dayjs follow
+ * this, so a component's own labels and the library's visible texts (empty tables, date pickers,
+ * default confirm buttons) agree. Accessible names follow only in part (antd 6.5.1): Modal and
  * notification close buttons are named "Close" in every language (for a Modal the locale's word
  * lands on a wrapper inside the button), Tag and Drawer close buttons take the locale's word, and
  * an icon with no name of its own is named by its icon ("search").
