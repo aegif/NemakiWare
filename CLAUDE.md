@@ -183,7 +183,7 @@ negative-control) は**まとめて最後に 1 回**流します。理由は速�
 
 - **`mvn test` をクラス指定なしで叩かない。** Jetty が起動します。全ユニットは
   `-Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader'`。
-- **負のコントロールの runner は引数ゼロで全数スイープに入ります** (2026-09-27 時点で 1586 本・約 14 時間)。
+- **負のコントロールの runner は引数ゼロで全数スイープに入ります** (2026-10-01 時点で 1723 本・約 16 時間)。
   バッチ中は `run_negative_controls.py <ID> ...` で狙った本数だけ。
 - **錠は「自分の assertion で落ちる」ときだけ発火と認められます。** 例外が素通りする形は
   `assertDoesNotThrow` で包む。結果だけを見る錠は、無関係な分岐が同じ結果を作ると
