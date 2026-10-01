@@ -107,8 +107,8 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
   }
 
   test('switching the language in the header re-labels antd without a reload', async ({ page }) => {
-    // Japanese from the app's own default (nothing stored before the first load, which stores
-    // 'ja'), then English from the header only.
+    // Japanese at the start (this browser and page, with nothing stored — see the note at the top
+    // of this file), then English from the header only.
     await new AuthHelper(page).login();
     await waitForAppReady(page, { timeout: 30000 });
     await page.goto('/core/ui/#/search');

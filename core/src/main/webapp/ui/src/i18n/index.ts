@@ -18,14 +18,13 @@ export type LanguageCode = keyof typeof languages;
 
 /**
  * The language the UI shows, as 'ja' or 'en': 'en' when i18next's language is English, 'ja'
- * otherwise ('ja' is also the translations' fallback). Which language i18next settles on is up to
- * its detector (the options below), not to this function. For the two languages the app offers,
- * Ant Design's built-in texts and dayjs follow this, so the library's visible texts (empty tables,
- * date pickers, default confirm buttons) are in the language of the app's own labels. Accessible
- * names follow only in part (antd 6.5.1): Modal and notification close buttons are named "Close"
- * in every language (for a Modal the locale's word lands on a wrapper inside the button), Tag and
- * Drawer close buttons take the locale's word, and an icon with no name of its own is named by its
- * icon ("search").
+ * otherwise. This only maps i18next's result; it does not decide the language. For the two
+ * languages the app offers, Ant Design's built-in texts and dayjs follow this, so the library's
+ * visible texts (empty tables, date pickers, default confirm buttons) are in the language of the
+ * app's own labels. Accessible names follow only in part (antd 6.5.1): Modal and notification close
+ * buttons are named "Close" in every language (for a Modal the locale's word lands on a wrapper
+ * inside the button), Tag and Drawer close buttons take the locale's word, and an icon with no name
+ * of its own is named by its icon ("search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';
