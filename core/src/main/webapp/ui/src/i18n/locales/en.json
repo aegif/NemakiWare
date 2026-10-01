@@ -3447,7 +3447,8 @@
     "title": "Select a target folder",
     "selected": "Selected",
     "permissionOk": "You hold management permission on this folder",
-    "noPermission": "You do not hold cmis:all on this folder."
+    "noPermission": "You do not hold cmis:all on this folder.",
+    "loadFailed": "Failed to load folders"
   },
   "importProfileManagement": {
     "loadError": "Failed to load import profiles",
@@ -3661,7 +3662,7 @@
       "idle": "IDLE",
       "actions": "Actions"
     },
-    "idleButton": "IDLE"
+    "imapIdle": "IDLE"
   },
   "evidenceAnchoring": {
     "title": "Evidence and time-stamping",

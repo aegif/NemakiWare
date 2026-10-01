@@ -97,7 +97,7 @@ export function SchedulerStatusTab() {
     { title: t('schedulerStatus.columns.idle'), key: 'idle', width: 80,
       render: (_: unknown, r: ScheduledProfile) =>
         <Tag color={idleProfiles.includes(r.profileId) ? 'blue' : 'default'}>
-          {idleProfiles.includes(r.profileId) ? 'IDLE' : '-'}
+          {idleProfiles.includes(r.profileId) ? t('schedulerStatus.imapIdle') : '-'}
         </Tag>
     },
     { title: t('schedulerStatus.columns.actions'), key: 'actions', width: 200,
@@ -112,7 +112,7 @@ export function SchedulerStatusTab() {
           {record.connectorSystem === 'imap' && !idleProfiles.includes(record.profileId) && (
             <Button icon={<PlayCircleOutlined />} size="small" type="primary" ghost
               onClick={() => handleStartIdle(record.profileId)}>
-              {t('schedulerStatus.idleButton')}
+              {t('schedulerStatus.imapIdle')}
             </Button>
           )}
           {idleProfiles.includes(record.profileId) && (

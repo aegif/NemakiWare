@@ -100,7 +100,7 @@ export function FolderPickerModal({
         }]);
       } catch (err) {
         if (cancelled) return;
-        setRootLoadError(err instanceof Error ? err.message : t('common.unknownError'));
+        setRootLoadError(err instanceof Error ? err.message : t('folderPicker.loadFailed'));
       } finally {
         if (!cancelled) setRootLoading(false);
       }

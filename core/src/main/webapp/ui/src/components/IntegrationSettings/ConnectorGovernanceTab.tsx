@@ -23,7 +23,7 @@ interface ConnectorGovernanceTabProps {
 /** V8 (RC5.1) Principal picker option. */
 interface PrincipalOption {
   value: string;           // principalId
-  label: string;           // "id  ·  Display Name (USER|GROUP)"
+  label: string;           // "id  ·  Display Name (<the principal type, translated>)"
   kind: 'USER' | 'GROUP';
 }
 

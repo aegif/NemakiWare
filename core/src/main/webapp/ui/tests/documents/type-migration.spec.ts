@@ -181,7 +181,7 @@ test.describe('Type Migration Features', () => {
       await expect(modal).toBeVisible({ timeout: 5000 });
 
       // Verify non-standard operation warning is displayed
-      const warningAlert = modal.locator('.ant-alert').filter({ hasText: /CMIS標準外|non-standard/i });
+      const warningAlert = modal.locator('.ant-alert').filter({ hasText: /CMIS標準外|Non-CMIS Standard/i });
       await expect(warningAlert).toBeVisible();
       console.log('CMIS non-standard warning displayed correctly');
     });

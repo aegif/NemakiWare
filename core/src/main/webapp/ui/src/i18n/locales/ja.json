@@ -3203,7 +3203,8 @@
     "title": "対象フォルダを選択",
     "selected": "選択中",
     "permissionOk": "このフォルダの管理権限があります",
-    "noPermission": "このフォルダに cmis:all 権限がありません。"
+    "noPermission": "このフォルダに cmis:all 権限がありません。",
+    "loadFailed": "フォルダの読み込みに失敗しました"
   },
   "importProfileManagement": {
     "loadError": "インポートプロファイルの読み込みに失敗しました",
@@ -3410,7 +3411,7 @@
       "idle": "IDLE",
       "actions": "操作"
     },
-    "idleButton": "IDLE"
+    "imapIdle": "IDLE"
   },
   "evidenceAnchoring": {
     "title": "証拠と時刻証明",
