@@ -9657,10 +9657,12 @@ CONTROLS = [
         id='GD3',
         what="the canon's first statement of the sweep boundary drifts from the second, so the next full sweep is scoped from whichever one a reader finds",
         file='docs/design/fail-closed-reads.md',
-        # Same reason as FZ3: the span brackets the number so the anchor survives the next
-        # batch that adds a control.
-        # Re-pointed after the fifth sweep: the boundary in §1 (KQ3 takes the one in §5 — two
-        # sites, one control each, so a lock reading only the first would be caught).
+        # The anchor is the boundary statement itself, not the count beside it, so it survives a
+        # batch that adds a control; it changes when the next sweep is recorded.
+        # Re-pointed after each recorded sweep — now the boundary in §1 (QJ4, the highest id at the
+        # eighth sweep). GN3 takes the one in §5 — two sites, one control each; a lock that reads
+        # only the first statement is caught by GN3, which drifts the second (measured 2026-10-01:
+        # that lock stays green under GN3).
         find='（境界 QJ4 — 8 回目時点の最大 ID。',
         replace='（境界 QI4 — 8 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
@@ -10890,8 +10892,11 @@ CONTROLS = [
         id='KQ3',
         what="the canon's measurement section states a never-swept count the runner does not have",
         file='docs/design/fail-closed-reads.md',
-        # Re-pointed: the boundary id moves below LM3, so ids above it exist while the sweep
-        # record says nothing was added — the cross-check (declared − swept ≠ ids above) fires.
+        # Re-pointed after each recorded sweep — now the never-swept count stated in §5 beside the
+        # boundary (0 since the eighth sweep), not the boundary: 0 → 5. The boundary does not move,
+        # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
+        # what fails is the stated count against the runner's (measured 2026-10-01: "states the
+        # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
         find='**8 回目以後に足した control は 0 本**（境界 QJ4）。',
         replace='**8 回目以後に足した control は 5 本**（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
@@ -13847,8 +13852,8 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | **8 回目の通し（1723 本）で 1723 発火（1 回の起動）— 不発 0・宣言漏れ 0**（日時・所要・HEAD は正典 §5） | 1723 本 |',
-        replace='| 通し negative-control | **8 回目の通し（1723 本）で 1723 発火（1 回の起動）— 不発 0・宣言漏れ 0**（日時・所要・HEAD は正典 §5） | 1139 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 1723 本 |',
+        replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
     ),
