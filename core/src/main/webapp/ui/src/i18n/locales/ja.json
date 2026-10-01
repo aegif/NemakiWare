@@ -750,8 +750,9 @@
       "retryFailedStarted": "デッドレターの再試行を開始しました",
       "purgeJobHistoryCompleted": "{{count}} 件の古いジョブ状態を削除しました",
       "jobFailed": "ジョブが失敗しました",
-      "jobNotCompleted": "ジョブが完了しませんでした（{{status}}）",
-      "actionFailed": "操作に失敗しました"
+      "actionFailed": "操作に失敗しました",
+      "jobRejected": "ジョブは開始されませんでした（{{status}}）",
+      "jobCompletedWithErrors": "ジョブは最後まで実行されましたが、一部が失敗しました（{{status}}）"
     },
     "purgeJobHistory": {
       "confirmTitle": "ジョブ履歴のパージ",
@@ -3024,7 +3025,9 @@
     "showFeedUrls": "URL表示",
     "pathResolveFailed": "パス解決失敗",
     "rssLabel": "RSS:",
-    "atomLabel": "Atom:"
+    "atomLabel": "Atom:",
+    "disableError": "RSSトークンの無効化に失敗しました",
+    "refreshError": "RSSトークンの期限延長に失敗しました"
   },
   "setup": {
     "title": "NemakiWare セットアップウィザード",
@@ -3804,7 +3807,7 @@
     "runNow": "今すぐ封じて送る",
     "saveFailed": "設定を保存できませんでした",
     "runFailed": "今すぐ封じて送る処理に失敗しました",
-    "nodeLabel": "ノード {{nodeId}}",
+    "nodeLabel": "（ノード {{nodeId}}）",
     "scheduleLimitsLead": "自動封入の条件についての注意"
   },
   "principalBatch": {
@@ -3865,7 +3868,7 @@
     "again": "別のファイルで続ける",
     "previewFailed": "プレビューを作れませんでした",
     "executeFailed": "一括処理を実行できませんでした",
-    "refused": "サーバが一括処理を受け付けませんでした（{{status}} {{reason}}）",
+    "refused": "一括処理の要求はエラーで終わりました（{{code}}）",
     "incidentIdSuffix": "（インシデントID: {{incidentId}}）"
   }
 }

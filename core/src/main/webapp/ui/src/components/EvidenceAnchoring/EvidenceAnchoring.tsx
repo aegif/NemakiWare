@@ -313,7 +313,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                   <>
                     <Descriptions.Item label={t('evidenceAnchoring.oldestUnanchored')}>
                       {unanchored.oldestAt ?? (unanchored.oldestAtUnreadable
-                        ? `${t('evidenceAnchoring.notReadable')} — ${unanchored.oldestAtUnreadable}` : '—')}
+                        ? withDetail(t('evidenceAnchoring.notReadable'), unanchored.oldestAtUnreadable) : '—')}
                     </Descriptions.Item>
                     <Descriptions.Item label={t('evidenceAnchoring.unsealedCount')}>
                       {unanchored.unsealedCount}
@@ -344,7 +344,7 @@ export const EvidenceAnchoring: React.FC<Props> = ({ repositoryId }) => {
                   {runtime?.leader === null || runtime?.leader === undefined
                     ? t('evidenceAnchoring.leaderUnknown')
                     : runtime.leader ? t('evidenceAnchoring.isLeader') : t('evidenceAnchoring.notLeader')}
-                  {runtime?.nodeId ? ` (${t('evidenceAnchoring.nodeLabel', { nodeId: runtime.nodeId })})` : ''}
+                  {runtime?.nodeId ? t('evidenceAnchoring.nodeLabel', { nodeId: runtime.nodeId }) : ''}
                 </Descriptions.Item>
               </Descriptions>
               {runtime && !runtime.leaderElectionEnabled && (

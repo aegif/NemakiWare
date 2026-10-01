@@ -202,9 +202,13 @@ export const PurviewManagement: React.FC<PurviewManagementProps> = ({ repository
       const actionMessage =
         result.status === 'FAILED'
           ? withDetail(t('purviewManagement.messages.jobFailed'), result.errorSummary || serverMessage)
-          : result.status === 'REJECTED' || result.status === 'COMPLETED_WITH_ERRORS'
-            ? withDetail(t('purviewManagement.messages.jobNotCompleted', { status: result.status }), result.errorSummary || serverMessage)
-            : withDetail(t(successMessageKey), serverMessage);
+          // REJECTED: the repository lock was held, so the job never started. COMPLETED_WITH_ERRORS:
+          // the job ran to the end and some items failed. Two different outcomes, two leads.
+          : result.status === 'REJECTED'
+            ? withDetail(t('purviewManagement.messages.jobRejected', { status: result.status }), result.errorSummary || serverMessage)
+            : result.status === 'COMPLETED_WITH_ERRORS'
+              ? withDetail(t('purviewManagement.messages.jobCompletedWithErrors', { status: result.status }), result.errorSummary || serverMessage)
+              : withDetail(t(successMessageKey), serverMessage);
       setActionResult({
         kind: result.status,
         message: actionMessage,

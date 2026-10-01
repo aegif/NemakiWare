@@ -750,8 +750,9 @@
       "retryFailedStarted": "Started dead-letter retry",
       "purgeJobHistoryCompleted": "Purged {{count}} old job states",
       "jobFailed": "The job failed",
-      "jobNotCompleted": "The job did not complete ({{status}})",
-      "actionFailed": "The action failed"
+      "actionFailed": "The action failed",
+      "jobRejected": "The job was not started ({{status}})",
+      "jobCompletedWithErrors": "The job ran to the end, but some items failed ({{status}})"
     },
     "purgeJobHistory": {
       "confirmTitle": "Purge Job History",
@@ -3024,7 +3025,9 @@
     "showFeedUrls": "Show URLs",
     "pathResolveFailed": "Path resolution failed",
     "rssLabel": "RSS:",
-    "atomLabel": "Atom:"
+    "atomLabel": "Atom:",
+    "disableError": "Failed to disable RSS token",
+    "refreshError": "Failed to extend RSS token expiry"
   },
   "setup": {
     "title": "NemakiWare Setup Wizard",
@@ -3804,8 +3807,8 @@
     "runNow": "Seal and send now",
     "saveFailed": "The settings could not be saved",
     "runFailed": "Seal and send now failed",
-    "nodeLabel": "node {{nodeId}}",
-    "scheduleLimitsLead": "About the schedule"
+    "nodeLabel": " (node {{nodeId}})",
+    "scheduleLimitsLead": "Notes on the schedule"
   },
   "principalBatch": {
     "open": "Bulk",
@@ -3865,7 +3868,7 @@
     "again": "Continue with another file",
     "previewFailed": "Could not preview the batch",
     "executeFailed": "Could not apply the batch",
-    "refused": "The server did not accept the batch ({{status}} {{reason}})",
+    "refused": "The batch request ended with an error ({{code}})",
     "incidentIdSuffix": " (incident ID: {{incidentId}})"
   }
 }

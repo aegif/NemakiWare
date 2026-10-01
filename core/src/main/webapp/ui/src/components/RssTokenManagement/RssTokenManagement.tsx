@@ -252,11 +252,11 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
+          withDetail(t('rssManagement.disableError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
-      message.error(t('rssManagement.loadError'));
+      message.error(t('rssManagement.disableError'));
     }
   };
 
@@ -272,11 +272,11 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
+          withDetail(t('rssManagement.refreshError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
-      message.error(t('rssManagement.loadError'));
+      message.error(t('rssManagement.refreshError'));
     }
   };
 

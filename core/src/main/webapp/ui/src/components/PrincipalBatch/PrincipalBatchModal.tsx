@@ -309,8 +309,10 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               type="warning"
               showIcon
               data-testid="principal-batch-refused"
-              message={t('principalBatch.refused', { status: execution.httpStatus, reason: execution.reason ?? execution.status ?? '' })}
-              description={execution.message}
+              message={t('principalBatch.refused', {
+                code: [execution.httpStatus, execution.reason ?? execution.status].filter(v => v != null && v !== '').join(' '),
+              })}
+              description={`${execution.message ?? ''}${execution.incidentId ? t('principalBatch.incidentIdSuffix', { incidentId: execution.incidentId }) : ''}`}
             />
           )}
           {execution.httpStatus === 200 && (

@@ -19,6 +19,14 @@ describe('withDetail', () => {
     expect(withDetail('Save failed', undefined)).toBe('Save failed');
     expect(withDetail('Save failed', '  ')).toBe('Save failed');
     expect(withDetail('Save failed', { status: 500 })).toBe('Save failed');
+    expect(withDetail('Save failed', { status: 500, message: 42 })).toBe('Save failed');
     expect(detailOf(null)).toBeUndefined();
+  });
+
+  it('reads the message a plain object carries, as CMISService throws it', async () => {
+    await i18n.changeLanguage('en');
+    // The shape CMISService.handleHttpError answers (not an Error).
+    const answer = { status: 400, statusText: 'Bad Request', url: '', message: 'HTTP 400: Bad Request' };
+    expect(withDetail('Save failed', answer)).toBe('Save failed (details: HTTP 400: Bad Request)');
   });
 });
