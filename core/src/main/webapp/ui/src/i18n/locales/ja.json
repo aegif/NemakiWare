@@ -613,7 +613,7 @@
     "title": "Microsoft Purview 管理",
     "actions": {
       "testConnection": "接続確認",
-      "lookupGovernance": "Governance 参照",
+      "lookupGovernance": "ガバナンス参照",
       "applyTypeDefinitions": "型定義を適用",
       "fullSync": "フル同期",
       "incrementalSync": "増分同期",
@@ -629,8 +629,8 @@
       "loadFailed": "Purview 状態の読み込みに失敗しました",
       "connectionFailed": "Purview 接続に失敗しました",
       "featureDisabled": "Purview / Atlas どちらも無効です",
-      "applyRequired": "Purview schema の適用が必要です",
-      "applyRequiredDescription": "type definitions を apply してから同期ジョブを流す構成です。",
+      "applyRequired": "Purview スキーマの適用が必要です",
+      "applyRequiredDescription": "型定義を適用してから同期ジョブを流す構成です。",
       "deadLettersPresent": "デッドレターが残っています",
       "deadLettersPresentDescription": "{{count}} 件の再試行対象があります。"
     },
@@ -649,38 +649,38 @@
       "connection": "接続状態",
       "connectionHealthy": "接続済み",
       "connectionUnavailable": "未接続",
-      "applyRequired": "Schema適用状態",
+      "applyRequired": "スキーマの適用状態",
       "endpoint": "エンドポイント",
-      "atlasBasePath": "Atlas のベースパス",
-      "schemaVersion": "Schema のバージョン",
-      "schemaHash": "Schema のハッシュ",
+      "atlasBasePath": "Atlas API ベースパス",
+      "schemaVersion": "スキーマのバージョン",
+      "schemaHash": "スキーマのハッシュ",
       "lastAppliedAt": "最終適用日時",
       "lastAppliedBy": "最終適用者"
     },
     "sections": {
-      "schema": "Schema 差分",
+      "schema": "スキーマの差分",
       "actions": "運用アクション",
-      "governanceLookup": "Governance 参照",
+      "governanceLookup": "ガバナンス参照",
       "state": "状態詳細"
     },
     "governanceLookup": {
       "objectIdPlaceholder": "オブジェクトIDを改行またはカンマ区切りで入力",
-      "failed": "Governance 情報の取得に失敗しました",
+      "failed": "ガバナンス情報の取得に失敗しました",
       "resultSummary": "{{count}} 件の対象を参照しました（成功 {{successCount}} 件）",
       "objectId": "オブジェクトID",
       "status": "状態",
       "qualifiedName": "完全修飾名",
-      "entityType": "エンティティ型",
+      "entityType": "エンティティタイプ",
       "message": "メッセージ",
       "classifications": "分類",
-      "glossaryTerms": "用語集の用語",
+      "glossaryTerms": "用語集ターム",
       "labels": "ラベル"
     },
     "schema": {
-      "current": "現在の schema",
-      "desired": "期待する schema",
-      "customTypes": "カスタム型",
-      "relationshipTypes": "リレーションシップ型",
+      "current": "現在のスキーマ",
+      "desired": "期待するスキーマ",
+      "customTypes": "カスタムタイプ",
+      "relationshipTypes": "リレーションシップタイプ",
       "businessMetadata": "ビジネスメタデータ"
     },
     "actionGroups": {
@@ -699,7 +699,7 @@
     "tables": {
       "jobs": {
         "jobId": "ジョブID",
-        "jobKind": "ジョブの種類",
+        "jobKind": "ジョブ種別",
         "repositoryId": "リポジトリ",
         "status": "状態",
         "processedCount": "処理済み",
@@ -716,14 +716,14 @@
         "lastErrorMessage": "最終エラーの内容"
       },
       "locks": {
-        "jobKind": "ジョブの種類",
+        "jobKind": "ジョブ種別",
         "locked": "ロック中",
-        "ownerJobId": "所有ジョブ",
+        "ownerJobId": "ロックを持つジョブ",
         "lockedAt": "ロック日時"
       },
       "tombstones": {
         "objectId": "オブジェクトID",
-        "typeName": "型",
+        "typeName": "タイプ",
         "status": "状態",
         "dueAt": "期限",
         "qualifiedName": "完全修飾名"
@@ -737,8 +737,8 @@
       }
     },
     "messages": {
-      "governanceLookupCompleted": "Governance 情報を取得しました",
-      "schemaApplied": "Purview schema を適用しました",
+      "governanceLookupCompleted": "ガバナンス情報を取得しました",
+      "schemaApplied": "Purview スキーマを適用しました",
       "fullSyncStarted": "Purview フル同期を開始しました",
       "incrementalSyncStarted": "Purview 増分同期を開始しました",
       "typeReconciliationStarted": "タイプ再整合を開始しました",
@@ -1269,9 +1269,9 @@
       "status": "Purview ガバナンス情報",
       "qualifiedName": "完全修飾名",
       "entityType": "Purview エンティティタイプ",
-      "atlasBasePath": "Atlas のベースパス",
+      "atlasBasePath": "Atlas API ベースパス",
       "classifications": "分類",
-      "glossaryTerms": "用語集の用語",
+      "glossaryTerms": "用語集ターム",
       "labels": "ラベル",
       "businessMetadata": "ビジネスメタデータ",
       "none": "設定なし",
@@ -1731,8 +1731,8 @@
     },
     "purviewGovernance": {
       "title": "Purview ガバナンス概要",
-      "loading": "Governance 情報を読み込み中です",
-      "failed": "Governance 情報の取得に失敗しました",
+      "loading": "ガバナンス情報を読み込み中です",
+      "failed": "ガバナンス情報の取得に失敗しました",
       "scanned": "参照対象 {{count}} 件",
       "synced": "同期済み {{count}} 件",
       "classified": "Classification あり {{count}} 件",
@@ -2727,11 +2727,11 @@
   "cloudSync": {
     "title": "ディレクトリ同期",
     "actions": "操作",
-    "deltaSyncButton": "Delta同期実行",
+    "deltaSyncButton": "差分同期実行",
     "fullReconciliationButton": "完全同期実行",
     "cancelButton": "キャンセル",
     "testConnectionButton": "接続テスト",
-    "deltaSyncStarted": "Delta同期を開始しました",
+    "deltaSyncStarted": "差分同期を開始しました",
     "fullReconciliationStarted": "完全同期を開始しました",
     "fullReconciliationConfirm": "完全同期を実行しますか？全ユーザー・グループの突合を行います。",
     "syncFailed": "同期の開始に失敗しました",
@@ -2742,7 +2742,7 @@
     "syncStatus": "同期ステータス",
     "status": "状態",
     "mode": "モード",
-    "modeDelta": "Delta（差分）",
+    "modeDelta": "差分同期",
     "modeFull": "完全同期",
     "startTime": "開始時刻",
     "endTime": "終了時刻",
@@ -3120,7 +3120,7 @@
       "connectionFailed": "接続失敗",
       "bedrockRegion": "AWSリージョン",
       "bedrockModelId": "モデルID",
-      "bedrockAccessKeyId": "アクセスキー ID",
+      "bedrockAccessKeyId": "アクセスキーID",
       "bedrockSecretAccessKey": "シークレットアクセスキー",
       "bedrockCredentialNote": "空欄の場合は環境変数またはIAMロールで認証します",
       "bedrockCredentials": "認証方式",
@@ -3220,22 +3220,22 @@
     "oidc": {
       "enabled": "OIDC認証を有効化",
       "issuer": "Issuer URL",
-      "clientId": "Client ID"
+      "clientId": "クライアントID"
     },
     "google": {
       "enabled": "Google認証を有効化",
-      "clientId": "Client ID"
+      "clientId": "クライアントID"
     },
     "microsoft": {
       "enabled": "Microsoft認証を有効化",
-      "clientId": "Client ID",
-      "tenantId": "Tenant ID"
+      "clientId": "クライアントID",
+      "tenantId": "テナントID"
     },
     "saml": {
       "enabled": "SAML認証を有効化",
       "idpSsoUrl": "IdP SSO URL",
       "spEntityId": "SP Entity ID",
-      "idpCertificate": "IdP 証明書 (PEM)",
+      "idpCertificate": "IdP署名証明書 (PEM)",
       "sloUrl": "SLO URL",
       "attributeMapping": "属性マッピング (JSON)"
     },
@@ -3479,15 +3479,15 @@
     "simulationLost": "失う connector",
     "simulationOnlyMatchedVia": "現在この principal だけが経由している連結器のみ表示しています",
     "modeLabel": "検索モード",
-    "modePrincipal": "Principal で検索",
-    "modeGroup": "Group メンバー影響",
+    "modePrincipal": "プリンシパルで検索",
+    "modeGroup": "グループメンバーへの影響",
     "groupPlaceholder": "グループ ID を入力",
     "groupRequired": "グループ ID を入力してください",
     "groupLookupFailed": "グループ検索に失敗しました",
     "groupNotResolved": "この ID はグループとして解決できませんでしたが、直接 grant されている connector があれば表示します。",
     "groupSummary": "{{name}} ({{count}} 名)",
     "groupMembersShowing": "{{shown}} / {{total}} 名を表示",
-    "groupMembersTruncated": "メンバー数が memberLimit ({{limit}}) を超えたため一部のみ表示しています",
+    "groupMembersTruncated": "メンバー数が上限 ({{limit}}) を超えたため一部のみ表示しています",
     "includeMembersLabel": "メンバー影響を計算",
     "memberLimitLabel": "メンバー数の上限",
     "directGrantsTitle": "グループ ID に対する直接付与 connector",
