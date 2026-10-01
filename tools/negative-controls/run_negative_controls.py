@@ -9688,6 +9688,10 @@ CONTROLS = [
         id='GG3',
         what='the canon records the latest sweep as running fewer controls than it did, so ids that it ran read as never run together',
         file='docs/design/fail-closed-reads.md',
+        # Measures that a wrong latest RECORD is caught — not one arm of the lock. The first
+        # assertion to fail is the cross-check (declared − swept ≠ ids above the boundary), but
+        # with that check removed the documents' eighth-sweep figures still disagree with the
+        # sabotaged record, so this does not single out the cross-check (c53 subagent P3).
         find='  **8 回目 2026-09-30〜10-01（1723 本、',
         replace='  **8 回目 2026-09-30〜10-01（1721 本、',
         test='EverySupportedCouchDbIsMeasuredTest',
@@ -17939,14 +17943,15 @@ CONTROLS = [
     ),
     dict(
         id='JR4',
-        what="the readiness total's reader takes every four-digit figure for today's total, so a record of what the sixth sweep ran that drifts from the canon's reads as nothing wrong (it only failed while the two numbers differed)",
+        what="the readiness document's record of what the sixth sweep ran drifts to today's total and the reader stops comparing a sweep figure with the canon's record of the round it names (measured 2026-10-01: with that comparison removed, this sabotage leaves the lock green)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
         # The value is TODAY'S TOTAL and moves with it. It sat at 1614 from 2026-09-28 (C-1 c39
-        # moved the total and this was not followed) until the eighth sweep's recording; it kept
-        # firing through the sixth sweep's record, but since the total left the seventh sweep's
-        # figure, that figure alone turns the defective reader red, so one edit cannot tell the
-        # two readers apart any more (canon §5, reading).
+        # moved the total and this was not followed) until the eighth sweep's recording.
+        # NOT what this control tells apart (c53 Codex P1, the old `what`): a reader that takes
+        # every four-digit figure for today's total. The older rounds' figures in the document
+        # turn that reader red on the UNSABOTAGED tree (measured 2026-10-01, canon §5), so one
+        # edit cannot make it green; the defect is caught by the tree, not by this control.
         find='**6 回目の通し（1551 本）が 2026-09-25〜26 に 2 回の起動で、',
         replace='**6 回目の通し（1723 本）が 2026-09-25〜26 に 2 回の起動で、',
         test='ReleaseReadinessIsMeasuredTest',
@@ -18044,9 +18049,12 @@ CONTROLS = [
     ),
     dict(
         id='KB4',
-        what='a sweep figure is compared with the latest sweep whatever round it names, so a record naming the wrong round reads as correct (subagent P3)',
+        what="the readiness document names the wrong round for the latest sweep's figure and the reader stops comparing a sweep figure with the canon's record of the round it names (measured 2026-10-01: with that comparison removed, this sabotage leaves the lock green)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
+        # NOT what this control tells apart (c53 Codex P1, the old `what`): a reader that compares
+        # every figure with the LATEST sweep. The older rounds' figures turn that reader red on
+        # the unsabotaged tree (measured 2026-10-01, canon §5); the tree catches it, not this.
         find='- **8 回目の通し（1723 本）が完走した**（1 回の起動 — 日時は正典 §5）。',
         replace='- **7 回目の通し（1723 本）が完走した**（1 回の起動 — 日時は正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
@@ -18074,9 +18082,13 @@ CONTROLS = [
     ),
     dict(
         id='KE4',
-        what='the sibling count lock compares a sweep figure with the latest sweep whatever round it names, so a record naming the wrong round reads as correct (Codex P2)',
+        what="the plan names the wrong round for the latest sweep's figure and the sibling count lock stops comparing a sweep figure with the canon's record of the round it names (measured 2026-10-01: with that comparison removed, this sabotage leaves the lock green)",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
+        # NOT what this control tells apart (c53 Codex P1, the old `what`): the sibling lock
+        # comparing every figure with the LATEST sweep. The older rounds' figures (the canon's
+        # first sweep, the plan's fifth to seventh) turn that lock red on the unsabotaged tree
+        # (measured 2026-10-01, canon §5); the tree catches it, not this control.
         find='8 回目の通し（1723 本）が、7 回目以後に足した分も',
         replace='7 回目の通し（1723 本）が、7 回目以後に足した分も',
         test='EverySupportedCouchDbIsMeasuredTest',
