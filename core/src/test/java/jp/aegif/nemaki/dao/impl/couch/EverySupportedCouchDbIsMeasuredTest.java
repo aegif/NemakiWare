@@ -61,8 +61,8 @@ class EverySupportedCouchDbIsMeasuredTest {
     /** How many sweep figures each progress document states in the one written form, today. */
     private static final java.util.Map<String, Integer> SWEEP_FORMS_AT_LEAST = java.util.Map.of(
             "fail-closed-reads.md", 5,
-            "v3.4.0-evidence-and-residuals-plan.md", 3,
-            "v3.4-release-readiness.md", 6);
+            "v3.4.0-evidence-and-residuals-plan.md", 4,
+            "v3.4-release-readiness.md", 7);
 
 
     private static final Path WORKFLOW = Path.of("../.github/workflows/integration-tests.yml");
