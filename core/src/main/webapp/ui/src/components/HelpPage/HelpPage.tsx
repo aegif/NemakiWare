@@ -15,17 +15,20 @@ import { fetchAdapterRegistry, AdapterDescriptor } from '../../services/external
 
 const { Title, Paragraph, Text } = Typography;
 
-const HelpImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => (
-  <div style={{ margin: '16px 0', textAlign: 'center' }}>
-    <Image
-      src={`/core/ui/help-images/${src}`}
-      alt={alt}
-      style={{ maxWidth: '100%', border: '1px solid #d9d9d9', borderRadius: 8 }}
-      preview={{ mask: 'クリックで拡大' }}
-    />
-    <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{alt}</div>
-  </div>
-);
+const HelpImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const { t } = useTranslation();
+  return (
+    <div style={{ margin: '16px 0', textAlign: 'center' }}>
+      <Image
+        src={`/core/ui/help-images/${src}`}
+        alt={alt}
+        style={{ maxWidth: '100%', border: '1px solid #d9d9d9', borderRadius: 8 }}
+        preview={{ cover: t('help.imageZoom') }}
+      />
+      <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{alt}</div>
+    </div>
+  );
+};
 
 /**
  * HelpPage — accessible both before and after login.
@@ -158,7 +161,7 @@ const UserGuide: React.FC = () => {
           ]} />
           <Divider />
           <Text strong>{t('help.user.uploadFormats', '対応ファイル形式:')}</Text>
-          <Paragraph>PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx), {t('help.user.uploadFormatsMore', '画像, テキスト, HTML, XML, JSON, その他任意のファイル')}</Paragraph>
+          <Paragraph>{t('help.user.uploadFormatsOffice')}, {t('help.user.uploadFormatsMore', '画像, テキスト, HTML, XML, JSON, その他任意のファイル')}</Paragraph>
         </>
       ),
     },
@@ -627,16 +630,7 @@ const AdminGuide: React.FC = () => {
             message={t('help.admin.ingestDelegationOpsAudit', '監査クエリ例')}
             description={
               <pre style={{ fontSize: 11, margin: 0, padding: 8, background: '#f5f5f5', overflowX: 'auto' }}>
-{`# 委譲プロファイルの作成記録
-grep '"operation":"externalProfileCreated"' audit.log \\
-  | jq 'select(.details.delegated == true)'
-
-# 直近24h の拒否理由集計
-jq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\
-  | sort | uniq -c | sort -nr
-
-# folder-swap escalation の試行
-jq 'select(.details.denialReason == "CMIS_ALL_REQUIRED_NEW")' audit.log`}
+{t('help.admin.ingestDelegationOpsAuditQuery')}
               </pre>
             }
           />
@@ -987,13 +981,13 @@ jq 'select(.details.denialReason == "CMIS_ALL_REQUIRED_NEW")' audit.log`}
           <Paragraph>{t('help.admin.mcpOtherDesc', 'MCP プロトコル対応の任意のクライアントから接続できます。以下の情報を設定してください:')}</Paragraph>
           <Descriptions bordered size="small" column={1}>
             <Descriptions.Item label={t('help.admin.mcpOtherUrl', 'エンドポイント URL')}>
-              http://&lt;{t('help.admin.mcpOtherHost', 'サーバー')}&gt;:8080/core/mcp/message
+              {t('help.admin.mcpOtherUrlValue', { host: t('help.admin.mcpOtherHost', 'サーバー') })}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.mcpOtherTransport', 'トランスポート')}>
               {t('help.admin.mcpOtherTransportDesc', 'Streamable HTTP（HTTP POST）')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.mcpOtherAuthHeader', '認証ヘッダー')}>
-              Authorization: Basic &lt;base64(username:password)&gt;
+              {t('help.admin.mcpOtherAuthHeaderValue')}
             </Descriptions.Item>
             <Descriptions.Item label={t('help.admin.mcpOtherProtocol', 'プロトコルバージョン')}>
               2024-11-05

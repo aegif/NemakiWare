@@ -121,7 +121,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         message.error(result.message || t('filesystemImportExport.import.error'));
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('filesystemImportExport.import.error')}: ${errorMessage}`);
       setImportResult({ status: 'error', message: errorMessage });
     } finally {
@@ -157,7 +157,7 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
         message.error(result.message || t('filesystemImportExport.export.error'));
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('filesystemImportExport.export.error')}: ${errorMessage}`);
       setExportResult({ status: 'error', message: errorMessage });
     } finally {

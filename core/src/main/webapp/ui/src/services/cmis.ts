@@ -275,6 +275,7 @@ import { getResourceBaseErrorMessage } from './http/restResult';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
+import i18n from '../i18n';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
 /**
@@ -1856,7 +1857,7 @@ export class CMISService {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        let errorMessage = 'サーバーエラーが発生しました';
+        let errorMessage = i18n.t('common.errors.serverError');
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
@@ -2071,7 +2072,7 @@ export class CMISService {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        let errorMessage = 'サーバーエラーが発生しました';
+        let errorMessage = i18n.t('common.errors.serverError');
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);

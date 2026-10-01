@@ -54,7 +54,7 @@ export function TokenEntry({ onTokenVerified }: TokenEntryProps) {
             {t('setup.token.description')}
           </Paragraph>
           <Paragraph type="secondary" style={{ fontSize: 12 }}>
-            <code>docker exec &lt;container&gt; cat /usr/local/tomcat/conf/setup-token</code>
+            <code>{t('setup.token.command')}</code>
           </Paragraph>
 
           {error && <Alert type="error" message={error} showIcon />}

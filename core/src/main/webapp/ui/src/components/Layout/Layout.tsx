@@ -452,12 +452,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
         {
           key: '/purview',
           icon: <DeploymentUnitOutlined />,
-          label: <span>{t('navigation.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>Beta</Tag></span>,
+          label: <span>{t('navigation.purview')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{t('common.beta')}</Tag></span>,
         },
         {
           key: '/admin/lineage-journal',
           icon: <DatabaseOutlined />,
-          label: <span>{t('navigation.lineageJournalTitle')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>Beta</Tag></span>,
+          label: <span>{t('navigation.lineageJournalTitle')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 4 }}>{t('common.beta')}</Tag></span>,
         },
         ...(featureToggles['rss.enabled'] ? [{
           key: '/rss-tokens',
@@ -578,9 +578,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
               <Tooltip
                 title={
                   <div style={{ fontSize: '11px' }}>
-                    <div>Core: {coreBuildInfo?.version || '...'}</div>
+                    <div>{t('common.coreLabel')} {coreBuildInfo?.version || '...'}</div>
                     <div style={{ fontSize: '10px', color: '#ccc' }}>{coreBuildInfo?.buildTime || ''}</div>
-                    <div style={{ marginTop: 4 }}>UI: {uiVersion}</div>
+                    <div style={{ marginTop: 4 }}>{t('common.uiLabel')} {uiVersion}</div>
                     <div style={{ fontSize: '10px', color: '#ccc' }}>{uiBuildTime}</div>
                   </div>
                 }
@@ -591,16 +591,16 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
             ) : (
               <>
                 <div style={{ marginBottom: 4 }}>
-                  <span style={{ fontWeight: 500 }}>Core:</span> {coreBuildInfo?.version || '...'}
+                  <span style={{ fontWeight: 500 }}>{t('common.coreLabel')}</span> {coreBuildInfo?.version || '...'}
                   {coreBuildInfo?.gitCommit && (
                     <span style={{ marginLeft: 4, color: '#aaa' }}>({coreBuildInfo.gitCommit})</span>
                   )}
                 </div>
                 <div style={{ fontSize: '10px', color: '#aaa', marginBottom: 6 }}>
-                  {coreBuildInfo?.buildTime || 'loading...'}
+                  {coreBuildInfo?.buildTime || t('common.loading')}
                 </div>
                 <div>
-                  <span style={{ fontWeight: 500 }}>UI:</span> {uiVersion}
+                  <span style={{ fontWeight: 500 }}>{t('common.uiLabel')}</span> {uiVersion}
                 </div>
                 <div style={{ fontSize: '10px', color: '#aaa' }}>
                   {uiBuildTime}

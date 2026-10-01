@@ -33,6 +33,7 @@ import {
   Divider
 } from 'antd';
 import { SwapOutlined, WarningOutlined, FormOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
 import { useAuth } from '../../contexts/AuthContext';
 import { CompatibleType, MigrationPropertyDefinition } from '../../types/typeMigration';
@@ -59,6 +60,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [loadingTypes, setLoadingTypes] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -190,7 +192,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       setCurrentTypeDisplayName(result.currentTypeDisplayName);
       setBaseType(result.baseType);
     } catch (e) {
-      setError(`互換タイプの取得に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('typeMigration.messages.loadError', { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setLoadingTypes(false);
     }
@@ -242,7 +244,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
         // Form validation error - don't show as error message
         return;
       }
-      setError(`タイプの変更に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+      setError(t('typeMigration.messages.changeError', { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setLoading(false);
     }
@@ -275,7 +277,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
     if (cardinality === 'multi') {
       return (
         <Input.TextArea
-          placeholder="複数の値はカンマで区切って入力"
+          placeholder={t('typeMigration.placeholders.multiValue')}
           rows={2}
         />
       );
@@ -284,13 +286,13 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
     // Single-value properties
     switch (propertyType) {
       case 'boolean':
-        return <Switch checkedChildren="True" unCheckedChildren="False" />;
+        return <Switch checkedChildren={t('common.yes')} unCheckedChildren={t('common.no')} />;
 
       case 'integer':
         return (
           <InputNumber
             style={{ width: '100%' }}
-            placeholder="整数値を入力"
+            placeholder={t('typeMigration.placeholders.integer')}
             precision={0}
           />
         );
@@ -299,7 +301,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
         return (
           <InputNumber
             style={{ width: '100%' }}
-            placeholder="小数値を入力"
+            placeholder={t('typeMigration.placeholders.decimal')}
           />
         );
 
@@ -308,14 +310,14 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
           <DatePicker
             showTime
             style={{ width: '100%' }}
-            placeholder="日時を選択"
+            placeholder={t('typeMigration.placeholders.datetime')}
           />
         );
 
       case 'html':
         return (
           <Input.TextArea
-            placeholder="HTMLを入力"
+            placeholder={t('typeMigration.placeholders.html')}
             rows={3}
           />
         );
@@ -323,7 +325,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       case 'uri':
         return (
           <Input
-            placeholder="URIを入力 (例: https://example.com)"
+            placeholder={t('typeMigration.placeholders.uri')}
             type="url"
           />
         );
@@ -331,7 +333,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       case 'id':
       case 'string':
       default:
-        return <Input placeholder="値を入力" />;
+        return <Input placeholder={t('typeMigration.placeholders.default')} />;
     }
   };
 
@@ -340,14 +342,14 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       title={
         <Space>
           <SwapOutlined />
-          <span>オブジェクトタイプの変更</span>
+          <span>{t('typeMigration.title')}</span>
         </Space>
       }
       open={visible}
       onOk={handleMigrate}
       onCancel={handleCancel}
-      okText="タイプを変更"
-      cancelText="キャンセル"
+      okText={t('typeMigration.changeTypeButton')}
+      cancelText={t('common.cancel')}
       okButtonProps={{
         disabled: !selectedType || loading,
         loading: loading,
@@ -359,33 +361,33 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
       {loadingTypes ? (
         <div style={{ textAlign: 'center', padding: '40px 0' }}>
           <Spin size="large" />
-          <Paragraph style={{ marginTop: 16 }}>互換タイプを読み込み中...</Paragraph>
+          <Paragraph style={{ marginTop: 16 }}>{t('typeMigration.loading')}</Paragraph>
         </div>
       ) : (
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           {/* Object Information */}
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="オブジェクト名">{objectName}</Descriptions.Item>
-            <Descriptions.Item label="現在のタイプ">
+            <Descriptions.Item label={t('typeMigration.objectName')}>{objectName}</Descriptions.Item>
+            <Descriptions.Item label={t('typeMigration.currentType')}>
               {currentTypeDisplayName || currentType}
             </Descriptions.Item>
-            <Descriptions.Item label="ベースタイプ">{baseType}</Descriptions.Item>
+            <Descriptions.Item label={t('typeMigration.baseType')}>{baseType}</Descriptions.Item>
           </Descriptions>
 
           {/* Warning about CMIS non-standard operation */}
           <Alert
-            message="注意: CMIS標準外の操作"
-            description="オブジェクトタイプの変更はCMIS 1.1標準では定義されていません。この機能はNemakiWare固有の拡張です。"
+            message={t('typeMigration.cmisWarning.title')}
+            description={t('typeMigration.cmisWarning.description')}
             type="info"
             showIcon
           />
 
           {/* Type selector */}
           <div>
-            <Text strong>新しいタイプを選択:</Text>
+            <Text strong>{t('typeMigration.newType')}</Text>
             <Select
               style={{ width: '100%', marginTop: 8 }}
-              placeholder="タイプを選択してください"
+              placeholder={t('typeMigration.selectTypePlaceholder')}
               value={selectedType}
               onChange={setSelectedType}
               options={typeOptions}
@@ -398,8 +400,8 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
           {/* No compatible types message */}
           {Object.keys(compatibleTypes).length === 0 && !loadingTypes && (
             <Alert
-              message="互換タイプなし"
-              description="このオブジェクトに変更可能な互換タイプがありません。同じベースタイプ（ドキュメント/フォルダ）を持つカスタムタイプを定義してください。"
+              message={t('typeMigration.noCompatibleTypes.title')}
+              description={t('typeMigration.noCompatibleTypes.description')}
               type="warning"
               showIcon
             />
@@ -422,10 +424,10 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
                 message={
                   <Space>
                     <FormOutlined />
-                    <span>追加の必須プロパティ</span>
+                    <span>{t('typeMigration.additionalProperties.title')}</span>
                   </Space>
                 }
-                description="新しいタイプには以下の必須プロパティがあります。値を入力してください。"
+                description={t('typeMigration.additionalProperties.description')}
                 type="warning"
                 showIcon
                 icon={<WarningOutlined />}
@@ -452,7 +454,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
                     rules={[
                       {
                         required: propDef.required,
-                        message: `${propDef.displayName}は必須です`,
+                        message: t('common.validation.required', { field: propDef.displayName }),
                       },
                     ]}
                     tooltip={propDef.description}
@@ -467,7 +469,7 @@ export const TypeMigrationModal: React.FC<TypeMigrationModalProps> = ({
 
           {/* Error message */}
           {error && (
-            <Alert message="エラー" description={error} type="error" showIcon />
+            <Alert message={t('common.error')} description={error} type="error" showIcon />
           )}
         </Space>
       )}

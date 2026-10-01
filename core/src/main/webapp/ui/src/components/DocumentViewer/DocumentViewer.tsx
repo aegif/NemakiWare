@@ -1724,8 +1724,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                     value: type.id
                   }))
                 : [
-                    { label: 'Bidirectional (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
-                    { label: 'Parent-Child (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+                    { label: `${t('documentViewer.relationshipTypeNames.bidirectional')} (nemaki:bidirectionalRelationship)`, value: 'nemaki:bidirectionalRelationship' },
+                    { label: `${t('documentViewer.relationshipTypeNames.parentChild')} (nemaki:parentChildRelationship)`, value: 'nemaki:parentChildRelationship' },
                   ]
               }
             />
@@ -1739,7 +1739,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {selectedTargetObject ? (
                 <div style={{ padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
                   <strong>{t('documentViewer.relationshipModal.selected')}: </strong>
-                  {selectedTargetObject.name} (ID: {selectedTargetObject.id})
+                  {selectedTargetObject.name} {t('common.idWithValue', { id: selectedTargetObject.id })}
                 </div>
               ) : (
                 <div style={{ padding: '8px', backgroundColor: '#fafafa', borderRadius: '4px', color: '#999' }}>
@@ -1786,8 +1786,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       {propDefTyped.propertyType === 'boolean' ? (
                         <Select
                           options={[
-                            { label: 'true', value: true },
-                            { label: 'false', value: false }
+                            { label: t('common.booleanTrue'), value: true },
+                            { label: t('common.booleanFalse'), value: false }
                           ]}
                           allowClear
                           placeholder={t('documentViewer.relationshipModal.selectValue')}
@@ -2052,8 +2052,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           {propDefTyped.propertyType === 'boolean' ? (
                             <Select
                               options={[
-                                { label: 'true', value: true },
-                                { label: 'false', value: false }
+                                { label: t('common.booleanTrue'), value: true },
+                                { label: t('common.booleanFalse'), value: false }
                               ]}
                               allowClear
                             />

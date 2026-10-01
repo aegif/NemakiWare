@@ -388,12 +388,12 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
                     <div key={fid} style={{ marginBottom: 8 }}>
                       <div><strong>{folderLabel}</strong></div>
                       <div style={{ fontSize: 11 }}>
-                        RSS: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'rss') }} style={{ fontSize: 11 }}>
+                        {t('rssManagement.rssLabel')} <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'rss') }} style={{ fontSize: 11 }}>
                           {buildFeedUrl(fid, record.token!, 'rss').substring(0, 50)}...
                         </Text>
                       </div>
                       <div style={{ fontSize: 11 }}>
-                        Atom: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'atom') }} style={{ fontSize: 11 }}>
+                        {t('rssManagement.atomLabel')} <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'atom') }} style={{ fontSize: 11 }}>
                           {buildFeedUrl(fid, record.token!, 'atom').substring(0, 50)}...
                         </Text>
                       </div>
@@ -590,7 +590,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
             {t('rssManagement.copyToken')}
           </Button>,
           <Button key="ok" type="primary" onClick={() => { setNewToken(null); setNewTokenFolders([]); }}>
-            OK
+            {t('common.ok')}
           </Button>,
         ]}
       >

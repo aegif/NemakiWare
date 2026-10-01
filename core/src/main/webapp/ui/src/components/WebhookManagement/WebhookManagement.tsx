@@ -665,7 +665,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label={t('webhookManagement.testModal.responseTime')}>
-                {testResult.responseTime}ms
+                {t('common.durationMs', { value: testResult.responseTime })}
               </Descriptions.Item>
               {testResult.responseBody && (
                 <Descriptions.Item label={t('webhookManagement.testModal.responseBody')}>

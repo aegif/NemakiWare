@@ -465,7 +465,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
             label: (
               <Space>
                 <GoogleOutlined />
-                Google Workspace
+                {t('cloudSync.googleTab')}
               </Space>
             ),
             children: renderProviderPanel('google'),
@@ -475,7 +475,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
             label: (
               <Space>
                 <WindowsOutlined />
-                Microsoft Entra ID
+                {t('cloudSync.microsoftTab')}
               </Space>
             ),
             children: renderProviderPanel('microsoft'),

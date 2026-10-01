@@ -2009,7 +2009,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       : (currentPage - 1) * pageSize + objects.length,
                   onChange: (page) => loadObjects(page),
                   showSizeChanger: false,
-                  showTotal: totalItems > 0 ? (total) => `${total} 件` : undefined,
+                  showTotal: totalItems > 0 ? (total) => t('common.totalItems', { total }) : undefined,
                 }}
                 size="small"
                 rowSelection={{

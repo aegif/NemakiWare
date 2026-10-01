@@ -84,7 +84,16 @@
     "confirmDelete": "この{{item}}を削除しますか？",
     "totalItems": "全 {{total}} 件",
     "copyFailed": "コピーに失敗しました",
-    "noData": "データがありません"
+    "noData": "データがありません",
+    "booleanTrue": "はい (true)",
+    "booleanFalse": "いいえ (false)",
+    "idWithValue": "(ID: {{id}})",
+    "durationMs": "{{value}}ms",
+    "kilobytes": "{{value}} KB",
+    "coreLabel": "Core:",
+    "uiLabel": "UI:",
+    "adminSuffix": " [管理者]",
+    "id": "ID"
   },
   "navigation": {
     "home": "ホーム",
@@ -313,7 +322,14 @@
       "mcpUsageSimilar": "類似検索",
       "mcpUsageSimilarDesc": "「この契約書に関連するドキュメントを探して」と依頼すると、nemakiware_similar_documents で意味的に類似するドキュメントを検索します（RAG 有効時）。",
       "mcpRagNote": "RAG 検索について",
-      "mcpRagNoteDesc": "nemakiware_rag_search と nemakiware_similar_documents はツール一覧に常に表示されますが、RAG（ベクトル検索）が有効でない環境で実行すると「Vector search is not enabled」エラーになります。RAG が無効の場合は nemakiware_search（CMIS SQL）をご利用ください。"
+      "mcpRagNoteDesc": "nemakiware_rag_search と nemakiware_similar_documents はツール一覧に常に表示されますが、RAG（ベクトル検索）が有効でない環境で実行すると「Vector search is not enabled」エラーになります。RAG が無効の場合は nemakiware_search（CMIS SQL）をご利用ください。",
+      "mcpOtherUrlValue": "http://<{{host}}>:8080/core/mcp/message",
+      "mcpOtherAuthHeaderValue": "Authorization: Basic <base64(username:password)>",
+      "ingestDelegationOpsAuditQuery": "# 委譲プロファイルの作成記録\ngrep '\"operation\":\"externalProfileCreated\"' audit.log \\\n  | jq 'select(.details.delegated == true)'\n\n# 直近24h の拒否理由集計\njq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\\n  | sort | uniq -c | sort -nr\n\n# folder-swap escalation の試行\njq 'select(.details.denialReason == \"CMIS_ALL_REQUIRED_NEW\")' audit.log"
+    },
+    "imageZoom": "クリックで拡大",
+    "user": {
+      "uploadFormatsOffice": "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx)"
     }
   },
   "purviewManagement": {
@@ -760,7 +776,8 @@
     "warnings": {
       "nonCmisCompliant": "この操作はCMIS規格に準拠していません",
       "existingDocuments": "このタイプのドキュメントが存在する場合、影響を受ける可能性があります"
-    }
+    },
+    "jsonButton": "JSON"
   },
   "propertyEditor": {
     "propertyId": "プロパティID",
@@ -964,7 +981,8 @@
         "erp": "ERP",
         "chat": "チャット",
         "email": "メール"
-      }
+      },
+      "charCount": "{{count}} 文字"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -1028,6 +1046,10 @@
         "child_updated": "子要素バッチ（更新）",
         "child_deleted": "子要素バッチ（削除）"
       }
+    },
+    "relationshipTypeNames": {
+      "bidirectional": "双方向",
+      "parentChild": "親子"
     }
   },
   "folderBrowser": {
@@ -1373,7 +1395,8 @@
       "repositoryRequired": "リポジトリを選択してください",
       "usernameRequired": "ユーザー名を入力してください",
       "passwordRequired": "パスワードを入力してください"
-    }
+    },
+    "subtitle": "CMIS ドキュメント管理システム"
   },
   "auth": {
     "checkingStatus": "認証状態を確認中...",
@@ -1752,7 +1775,7 @@
     },
     "additionalProperties": {
       "title": "追加の必須プロパティ",
-      "description": "新しいタイプには以下の必須プロパティがあります。値を入力してください."
+      "description": "新しいタイプには以下の必須プロパティがあります。値を入力してください。"
     },
     "cmisWarning": {
       "title": "注意: CMIS標準外の操作",
@@ -1795,7 +1818,8 @@
       "contentsLoadError": "フォルダ内容の取得に失敗しました",
       "searchKeywordRequired": "検索キーワードを入力してください",
       "searchError": "検索に失敗しました"
-    }
+    },
+    "root": "ルート"
   },
   "archiveManagement": {
     "title": "アーカイブ管理",
@@ -1919,7 +1943,8 @@
     "currentFolder": "カレントフォルダ",
     "selected": "選択中",
     "loadRootFolderError": "ルートフォルダの読み込みに失敗しました",
-    "loadTreeError": "フォルダツリーの読み込みに失敗しました"
+    "loadTreeError": "フォルダツリーの読み込みに失敗しました",
+    "repositoryRoot": "リポジトリのルート"
   },
   "solrMaintenance": {
     "title": "Solrインデックスメンテナンス",
@@ -2065,7 +2090,8 @@
       "reindex": "再インデックス",
       "deleteConfirm": "このドキュメントをインデックスから削除しますか？",
       "deleteFromIndex": "インデックスから削除"
-    }
+    },
+    "solrUrl": "Solr URL: {{url}}"
   },
   "semanticSearch": {
     "title": "セマンティック検索",
@@ -2295,7 +2321,9 @@
     "loadEntries": "ログ読込",
     "loadError": "監査ログの読込に失敗しました",
     "clientIp": "クライアントIP",
-    "errorMessage": "エラー"
+    "errorMessage": "エラー",
+    "resultSuccess": "成功",
+    "resultFailure": "失敗"
   },
   "filesystemImportExport": {
     "title": "ファイルシステム インポート/エクスポート",
@@ -2468,7 +2496,9 @@
     "ldapNotConfigured": "LDAP同期は設定されていません。サーバー設定で directory.sync.enabled=true を設定してください。",
     "dryRun": "Dry Run",
     "userSearchBase": "ユーザー検索ベース",
-    "groupSearchBase": "グループ検索ベース"
+    "groupSearchBase": "グループ検索ベース",
+    "googleTab": "Google Workspace",
+    "microsoftTab": "Microsoft Entra ID"
   },
   "accountSettings": {
     "title": "アカウント設定",
@@ -2587,7 +2617,8 @@
       "createError": "APIキーの作成に失敗しました",
       "revokeSuccess": "APIキーを無効化しました",
       "revokeError": "APIキーの無効化に失敗しました",
-      "loadError": "APIキーの読み込みに失敗しました"
+      "loadError": "APIキーの読み込みに失敗しました",
+      "userIdUnavailable": "ユーザー ID を取得できません"
     },
     "confirmRevoke": "このAPIキーを無効化しますか？この操作は元に戻せません。",
     "revoke": "無効化",
@@ -2653,7 +2684,9 @@
     "modifiedTime": "更新日時",
     "size": "サイズ",
     "googleDrive": "Google Drive",
-    "oneDrive": "OneDrive"
+    "oneDrive": "OneDrive",
+    "popupBlocked": "ポップアップがブロックされました。ポップアップを許可してください。",
+    "loginCancelled": "ログインがキャンセルされました"
   },
   "rssManagement": {
     "title": "RSSトークン管理",
@@ -2703,7 +2736,9 @@
     "targetFolders": "対象フォルダ",
     "feedUrlColumn": "フィードURL",
     "showFeedUrls": "URL表示",
-    "pathResolveFailed": "パス解決失敗"
+    "pathResolveFailed": "パス解決失敗",
+    "rssLabel": "RSS:",
+    "atomLabel": "Atom:"
   },
   "setup": {
     "title": "NemakiWare セットアップウィザード",
@@ -2712,7 +2747,8 @@
       "description": "コンテナログまたはトークンファイルからセットアップトークンを取得してください。",
       "placeholder": "セットアップトークンを入力",
       "verify": "確認",
-      "invalid": "トークンが無効です"
+      "invalid": "トークンが無効です",
+      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token"
     },
     "steps": {
       "couchdb": "CouchDB接続",
@@ -2739,7 +2775,8 @@
       "password": "パスワード",
       "testConnection": "接続テスト",
       "connected": "接続成功",
-      "connectionFailed": "接続失敗"
+      "connectionFailed": "接続失敗",
+      "versionTag": "CouchDB {{version}}"
     },
     "probe": {
       "scanning": "リポジトリをスキャン中...",
@@ -2808,7 +2845,8 @@
       "bedrockCredentialNote": "空欄の場合は環境変数またはIAMロールで認証します",
       "bedrockCredentials": "認証方式",
       "bedrockExplicitCredentials": "明示キー",
-      "bedrockDefaultCredentials": "デフォルト（環境変数/IAMロール）"
+      "bedrockDefaultCredentials": "デフォルト（環境変数/IAMロール）",
+      "dimensionTag": "次元数: {{dimension}}"
     },
     "confirm": {
       "apply": "適用",
@@ -3055,7 +3093,8 @@
       "credentialsFile": "サービスアカウント認証ファイルパス",
       "credentialsFileHelp": "サーバー上の JSON キーファイルの絶対パス",
       "notice": "Google Cloud Dataplex Lineage API との連携設定です。サービスアカウントに必要な IAM ロール: roles/datalineage.admin"
-    }
+    },
+    "configuredPlaceholder": "[設定済み]"
   },
   "connectorManagement": {
     "loadError": "コネクタの読み込みに失敗しました",
@@ -3155,7 +3194,10 @@
     "colUserId": "ユーザー ID",
     "colLost": "失う connector",
     "pickerLoadedHint": "{{loaded}} 件 / 全 {{total}} 件",
-    "pickerNarrowSearch": "ディレクトリが大きいため一部のみ表示しています。検索文字列で絞り込んでください。"
+    "pickerNarrowSearch": "ディレクトリが大きいため一部のみ表示しています。検索文字列で絞り込んでください。",
+    "principalTypeUser": "ユーザー",
+    "principalTypeGroup": "グループ",
+    "principalTypeUnknown": "不明"
   },
   "folderPicker": {
     "title": "対象フォルダを選択",
@@ -3246,7 +3288,8 @@
       "preserveOriginalEml": "メール原本 (.eml) 保存",
       "preserveOriginalEmlHint": "抽出済み本文に加え、監査・コンプライアンス用に生の .eml MIMEメッセージを保存",
       "schedulerParamsHint": "定期フェッチのソーススコープパラメータ（JSONキー値ペア、例: channelId, query, folderId）",
-      "enabled": "有効"
+      "enabled": "有効",
+      "schedulerParamRequired": "スケジューラを有効にする場合、{{key}} は必須です"
     },
     "schedulerParamsInvalid": "スケジューラパラメータは有効なJSONである必要があります（例: {\"channelId\": \"C12345\"}）",
     "updatePolicies": {
@@ -3263,7 +3306,8 @@
       "inheritFromFolder": "フォルダから継承",
       "copyFromSource": "ソースからコピー",
       "none": "なし"
-    }
+    },
+    "daysSuffix": "日"
   },
   "manualIngest": {
     "title": "手動インポート",
@@ -3365,7 +3409,8 @@
       "ready": "準備完了",
       "idle": "IDLE",
       "actions": "操作"
-    }
+    },
+    "idleButton": "IDLE"
   },
   "evidenceAnchoring": {
     "title": "証拠と時刻証明",

@@ -84,7 +84,16 @@
     "confirmDelete": "Delete this {{item}}?",
     "totalItems": "Total {{total}} items",
     "copyFailed": "Copy failed",
-    "noData": "No data"
+    "noData": "No data",
+    "booleanTrue": "Yes (true)",
+    "booleanFalse": "No (false)",
+    "idWithValue": "(ID: {{id}})",
+    "durationMs": "{{value}}ms",
+    "kilobytes": "{{value}} KB",
+    "coreLabel": "Core:",
+    "uiLabel": "UI:",
+    "adminSuffix": " [Admin]",
+    "id": "ID"
   },
   "navigation": {
     "home": "Home",
@@ -257,7 +266,8 @@
       "pkDone": "Done",
       "passkeyReq": "Passkeys are only available in HTTPS environments (or localhost). WebAuthn must be enabled in the server settings.",
       "langTitle": "Language Switching",
-      "langDesc": "Switch between Japanese and English using the language selector in the upper right corner. The setting is saved in the browser and persisted across sessions."
+      "langDesc": "Switch between Japanese and English using the language selector in the upper right corner. The setting is saved in the browser and persisted across sessions.",
+      "uploadFormatsOffice": "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx)"
     },
     "admin": {
       "usersTitle": "User Management",
@@ -559,8 +569,12 @@
       "mcpUsageSimilarDesc": "Ask \"Find documents related to this contract\" and it will use nemakiware_similar_documents to search for semantically similar documents (when RAG is enabled).",
       "mcpRagNote": "About RAG Search",
       "mcpRagNoteDesc": "nemakiware_rag_search and nemakiware_similar_documents always appear in the tool list, but executing them when RAG (vector search) is not enabled results in a \"Vector search is not enabled\" error. When RAG is disabled, use nemakiware_search (CMIS SQL) instead.",
-      "toggleNote": "Some admin features below may be disabled by server configuration (feature toggles). Features not shown in the menu are not available in your environment."
-    }
+      "toggleNote": "Some admin features below may be disabled by server configuration (feature toggles). Features not shown in the menu are not available in your environment.",
+      "mcpOtherUrlValue": "http://<{{host}}>:8080/core/mcp/message",
+      "mcpOtherAuthHeaderValue": "Authorization: Basic <base64(username:password)>",
+      "ingestDelegationOpsAuditQuery": "# Profiles created under delegation\ngrep '\"operation\":\"externalProfileCreated\"' audit.log \\\n  | jq 'select(.details.delegated == true)'\n\n# Denial reasons, counted (last 24h)\njq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\\n  | sort | uniq -c | sort -nr\n\n# Attempts at folder-swap escalation\njq 'select(.details.denialReason == \"CMIS_ALL_REQUIRED_NEW\")' audit.log"
+    },
+    "imageZoom": "Click to enlarge"
   },
   "purviewManagement": {
     "title": "Microsoft Purview Management",
@@ -1006,7 +1020,8 @@
     "warnings": {
       "nonCmisCompliant": "This operation is not CMIS compliant",
       "existingDocuments": "Existing documents of this type may be affected"
-    }
+    },
+    "jsonButton": "JSON"
   },
   "propertyEditor": {
     "propertyId": "Property ID",
@@ -1210,7 +1225,8 @@
         "erp": "ERP",
         "chat": "Chat",
         "email": "Email"
-      }
+      },
+      "charCount": "{{count}} chars"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -1274,6 +1290,10 @@
         "child_updated": "Child Batch (Updated)",
         "child_deleted": "Child Batch (Deleted)"
       }
+    },
+    "relationshipTypeNames": {
+      "bidirectional": "Bidirectional",
+      "parentChild": "Parent-Child"
     }
   },
   "folderBrowser": {
@@ -1619,7 +1639,8 @@
       "repositoryRequired": "Please select a repository",
       "usernameRequired": "Please enter your username",
       "passwordRequired": "Please enter your password"
-    }
+    },
+    "subtitle": "CMIS Document Management System"
   },
   "auth": {
     "checkingStatus": "Checking authentication status...",
@@ -2041,7 +2062,8 @@
       "contentsLoadError": "Failed to get folder contents",
       "searchKeywordRequired": "Please enter search keywords",
       "searchError": "Search failed"
-    }
+    },
+    "root": "Root"
   },
   "archiveManagement": {
     "title": "Archive Management",
@@ -2165,7 +2187,8 @@
     "currentFolder": "Current folder",
     "selected": "Selected",
     "loadRootFolderError": "Failed to load root folder",
-    "loadTreeError": "Failed to load folder tree"
+    "loadTreeError": "Failed to load folder tree",
+    "repositoryRoot": "Repository Root"
   },
   "solrMaintenance": {
     "title": "Solr Index Maintenance",
@@ -2311,7 +2334,8 @@
       "reindex": "Reindex",
       "deleteConfirm": "Delete this document from the index?",
       "deleteFromIndex": "Delete from Index"
-    }
+    },
+    "solrUrl": "Solr URL: {{url}}"
   },
   "semanticSearch": {
     "title": "Semantic Search",
@@ -2541,7 +2565,9 @@
     "loadEntries": "Load Logs",
     "loadError": "Failed to load audit log entries",
     "clientIp": "Client IP",
-    "errorMessage": "Error"
+    "errorMessage": "Error",
+    "resultSuccess": "Success",
+    "resultFailure": "Failure"
   },
   "filesystemImportExport": {
     "title": "Filesystem Import/Export",
@@ -2714,7 +2740,9 @@
     "ldapNotConfigured": "LDAP sync is not configured. Set directory.sync.enabled=true in server configuration.",
     "dryRun": "Dry Run",
     "userSearchBase": "User Search Base",
-    "groupSearchBase": "Group Search Base"
+    "groupSearchBase": "Group Search Base",
+    "googleTab": "Google Workspace",
+    "microsoftTab": "Microsoft Entra ID"
   },
   "accountSettings": {
     "title": "Account Settings",
@@ -2833,7 +2861,8 @@
       "createError": "Failed to create API key",
       "revokeSuccess": "API key revoked successfully",
       "revokeError": "Failed to revoke API key",
-      "loadError": "Failed to load API keys"
+      "loadError": "Failed to load API keys",
+      "userIdUnavailable": "User ID not available"
     },
     "confirmRevoke": "Are you sure you want to revoke this API key? This action cannot be undone.",
     "revoke": "Revoke",
@@ -2899,7 +2928,9 @@
     "modifiedTime": "Modified",
     "size": "Size",
     "googleDrive": "Google Drive",
-    "oneDrive": "OneDrive"
+    "oneDrive": "OneDrive",
+    "popupBlocked": "The popup was blocked. Please allow popups for this site.",
+    "loginCancelled": "Sign-in was cancelled"
   },
   "rssManagement": {
     "title": "RSS Token Management",
@@ -2949,7 +2980,9 @@
     "targetFolders": "Target Folders",
     "feedUrlColumn": "Feed URL",
     "showFeedUrls": "Show URLs",
-    "pathResolveFailed": "Path resolution failed"
+    "pathResolveFailed": "Path resolution failed",
+    "rssLabel": "RSS:",
+    "atomLabel": "Atom:"
   },
   "setup": {
     "title": "NemakiWare Setup Wizard",
@@ -2958,7 +2991,8 @@
       "description": "Retrieve the setup token from the container log or token file.",
       "placeholder": "Enter setup token",
       "verify": "Verify",
-      "invalid": "Invalid token"
+      "invalid": "Invalid token",
+      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token"
     },
     "steps": {
       "couchdb": "CouchDB Connection",
@@ -2985,7 +3019,8 @@
       "password": "Password",
       "testConnection": "Test Connection",
       "connected": "Connected",
-      "connectionFailed": "Connection Failed"
+      "connectionFailed": "Connection Failed",
+      "versionTag": "CouchDB {{version}}"
     },
     "probe": {
       "scanning": "Scanning repositories...",
@@ -3054,7 +3089,8 @@
       "bedrockCredentialNote": "Leave blank to use environment variables or IAM role for authentication",
       "bedrockCredentials": "Authentication",
       "bedrockExplicitCredentials": "Explicit Keys",
-      "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)"
+      "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)",
+      "dimensionTag": "Dimension: {{dimension}}"
     },
     "confirm": {
       "apply": "Apply",
@@ -3301,7 +3337,8 @@
       "credentialsFile": "Service Account Credentials File Path",
       "credentialsFileHelp": "Absolute path to the JSON key file on the server",
       "notice": "Google Cloud Dataplex Lineage API integration. Required IAM role: roles/datalineage.admin"
-    }
+    },
+    "configuredPlaceholder": "[configured]"
   },
   "connectorManagement": {
     "loadError": "Failed to load connectors",
@@ -3401,7 +3438,10 @@
     "colUserId": "User ID",
     "colLost": "Connectors lost",
     "pickerLoadedHint": "{{loaded}} of {{total}} loaded",
-    "pickerNarrowSearch": "Directory is large — only a subset is shown. Narrow the search to find more."
+    "pickerNarrowSearch": "Directory is large — only a subset is shown. Narrow the search to find more.",
+    "principalTypeUser": "User",
+    "principalTypeGroup": "Group",
+    "principalTypeUnknown": "Unknown"
   },
   "folderPicker": {
     "title": "Select a target folder",
@@ -3499,7 +3539,8 @@
       "preserveOriginalEml": "Preserve Original .eml",
       "preserveOriginalEmlHint": "Store the raw .eml MIME message alongside extracted body for audit/compliance",
       "schedulerParamsHint": "Source-scope parameters for scheduled fetches (JSON key-value pairs, e.g. channelId, query, folderId)",
-      "enabled": "Enabled"
+      "enabled": "Enabled",
+      "schedulerParamRequired": "{{key}} is required when scheduler is enabled"
     },
     "schedulerParamsInvalid": "Scheduler parameters must be valid JSON (e.g. {\"channelId\": \"C12345\"})",
     "updatePolicies": {
@@ -3516,7 +3557,8 @@
       "inheritFromFolder": "Inherit from folder",
       "copyFromSource": "Copy from source",
       "none": "None"
-    }
+    },
+    "daysSuffix": "d"
   },
   "manualIngest": {
     "title": "Manual Import",
@@ -3618,7 +3660,8 @@
       "ready": "Ready",
       "idle": "IDLE",
       "actions": "Actions"
-    }
+    },
+    "idleButton": "IDLE"
   },
   "evidenceAnchoring": {
     "title": "Evidence and time-stamping",

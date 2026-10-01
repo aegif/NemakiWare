@@ -116,7 +116,7 @@ export const ObjectIdSearch: React.FC<ObjectIdSearchProps> = ({
       width: 200
     },
     {
-      title: 'ID',
+      title: t('common.id'),
       dataIndex: 'id',
       key: 'id',
       width: 300,
@@ -169,7 +169,7 @@ export const ObjectIdSearch: React.FC<ObjectIdSearchProps> = ({
               <Descriptions.Item label={t('search.columns.objectType')}>
                 <Tag>{targetObject.objectType}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="ID">
+              <Descriptions.Item label={t('common.id')}>
                 <Typography.Text copyable code style={{ fontSize: 12 }}>
                   {targetObject.id}
                 </Typography.Text>

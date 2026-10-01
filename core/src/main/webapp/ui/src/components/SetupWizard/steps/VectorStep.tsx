@@ -139,7 +139,7 @@ export function VectorStep({ value, onChange, onValidChange }: VectorStepProps) 
                       {testResult.reachable ? t('setup.vector.connected') : t('setup.vector.connectionFailed')}
                     </Tag>
                     {testResult.reachable && testResult.dimension != null && testResult.dimension > 0 && (
-                      <Tag color="blue">dimension: {testResult.dimension}</Tag>
+                      <Tag color="blue">{t('setup.vector.dimensionTag', { dimension: testResult.dimension })}</Tag>
                     )}
                   </Space>
                   {!testResult.reachable && testResult.error && (

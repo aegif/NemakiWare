@@ -172,13 +172,13 @@ export const AuditDashboard: React.FC = () => {
       key: 'result',
       width: 100,
       render: (val: string) => {
-        if (val === 'SUCCESS') return <Tag color="success">SUCCESS</Tag>;
-        if (val === 'FAILURE') return <Tag color="error">FAILURE</Tag>;
+        if (val === 'SUCCESS') return <Tag color="success">{t('auditDashboard.resultSuccess')}</Tag>;
+        if (val === 'FAILURE') return <Tag color="error">{t('auditDashboard.resultFailure')}</Tag>;
         return <Tag>{val || '-'}</Tag>;
       },
       filters: [
-        { text: 'SUCCESS', value: 'SUCCESS' },
-        { text: 'FAILURE', value: 'FAILURE' },
+        { text: t('auditDashboard.resultSuccess'), value: 'SUCCESS' },
+        { text: t('auditDashboard.resultFailure'), value: 'FAILURE' },
       ],
       onFilter: (value: React.Key | boolean, record: AuditEntry) => record.result === value,
     },

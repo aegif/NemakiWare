@@ -409,7 +409,7 @@ export const TypeManagement: React.FC<TypeManagementProps> = ({ repositoryId }) 
             disabled={!record.deletable && record.id.startsWith('cmis:')}
             title={!record.deletable && record.id.startsWith('cmis:') ? t('typeManagement.cannotEditStandardType') : t('typeManagement.editWithJSON')}
           >
-            JSON
+            {t('typeManagement.jsonButton')}
           </Button>
           {record.deletable !== false && !record.id.startsWith('cmis:') ? (
             <Popconfirm

@@ -101,7 +101,7 @@ export default function LineageJournalStats() {
             <div key={target} style={{ marginBottom: 8 }}>
               <Tag>{target}</Tag>
               {t('integrationSettings.lineage.nonTerminal')}: <strong>{info.nonTerminal}</strong> / {info.maxDocs}
-              {' | '}{t('integrationSettings.lineage.estimatedSize')}: {Math.round(info.estimatedSizeBytes / 1024)} KB
+              {' | '}{t('integrationSettings.lineage.estimatedSize')}: {t('common.kilobytes', { value: Math.round(info.estimatedSizeBytes / 1024) })}
             </div>
           ))}
         </Card>

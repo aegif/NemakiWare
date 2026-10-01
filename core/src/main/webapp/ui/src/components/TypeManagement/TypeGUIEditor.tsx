@@ -55,34 +55,34 @@ const { Text } = Typography;
 
 // CMIS Base Types
 const BASE_TYPES = [
-  { value: 'cmis:document', label: 'ドキュメント (cmis:document)' },
-  { value: 'cmis:folder', label: 'フォルダ (cmis:folder)' },
-  { value: 'cmis:relationship', label: 'リレーションシップ (cmis:relationship)' },
-  { value: 'cmis:policy', label: 'ポリシー (cmis:policy)' },
-  { value: 'cmis:item', label: 'アイテム (cmis:item)' },
-  { value: 'cmis:secondary', label: 'セカンダリ (cmis:secondary)' }
+  { value: 'cmis:document' },
+  { value: 'cmis:folder' },
+  { value: 'cmis:relationship' },
+  { value: 'cmis:policy' },
+  { value: 'cmis:item' },
+  { value: 'cmis:secondary' }
 ];
 
 // Property Types
 const PROPERTY_TYPES = [
-  { value: 'string', label: '文字列 (string)' },
-  { value: 'integer', label: '整数 (integer)' },
-  { value: 'decimal', label: '小数 (decimal)' },
-  { value: 'boolean', label: '真偽値 (boolean)' },
-  { value: 'datetime', label: '日時 (datetime)' }
+  { value: 'string' },
+  { value: 'integer' },
+  { value: 'decimal' },
+  { value: 'boolean' },
+  { value: 'datetime' }
 ];
 
 // Cardinality Options
 const CARDINALITY_OPTIONS = [
-  { value: 'single', label: '単一値 (single)' },
-  { value: 'multi', label: '複数値 (multi)' }
+  { value: 'single' },
+  { value: 'multi' }
 ];
 
 // Updatability Options
 const UPDATABILITY_OPTIONS = [
-  { value: 'readwrite', label: '読み書き可能 (readwrite)' },
-  { value: 'readonly', label: '読み取り専用 (readonly)' },
-  { value: 'oncreate', label: '作成時のみ (oncreate)' }
+  { value: 'readwrite' },
+  { value: 'readonly' },
+  { value: 'oncreate' }
 ];
 
 interface PropertyFormData {

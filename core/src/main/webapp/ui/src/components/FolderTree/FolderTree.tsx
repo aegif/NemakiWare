@@ -293,7 +293,7 @@ export const FolderTree: React.FC<FolderTreeProps> = ({
     // Use plain string for title - styling handled by titleRender
     const currentNode: TreeDataNode = {
       key: currentFolder.id,
-      title: currentFolder.name || 'Repository Root',
+      title: currentFolder.name || t('folderTree.repositoryRoot'),
       icon: <FolderOpenOutlined style={{ color: '#1890ff' }} />,
       children: children.map(child => ({
         key: child.id,

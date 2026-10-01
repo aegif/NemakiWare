@@ -248,7 +248,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
             data-testid="principal-batch-preview-table"
             columns={[
               { title: t('principalBatch.line'), dataIndex: 'line', width: 70 },
-              { title: 'ID', dataIndex: 'id' },
+              { title: t('common.id'), dataIndex: 'id' },
               {
                 title: t('principalBatch.verdict'),
                 dataIndex: 'verdict',
@@ -306,7 +306,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               pagination={{ pageSize: 50 }}
               columns={[
                 { title: t('principalBatch.line'), dataIndex: 'line', width: 70 },
-                { title: 'ID', dataIndex: 'id' },
+                { title: t('common.id'), dataIndex: 'id' },
                 {
                   title: t('principalBatch.outcome'),
                   render: (_: unknown, r: BatchRowOutcome & BatchRowVerdict) =>

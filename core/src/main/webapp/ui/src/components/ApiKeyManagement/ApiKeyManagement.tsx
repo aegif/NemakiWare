@@ -81,7 +81,7 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
 
   const handleCreateKey = async (values: { name: string; description?: string; expiresAt?: Dayjs; expirationPreset?: string }) => {
     if (!targetUserId) {
-      message.error('User ID not available');
+      message.error(t('apiKeyManagement.messages.userIdUnavailable'));
       return;
     }
 
@@ -127,7 +127,7 @@ export const ApiKeyManagement: React.FC<ApiKeyManagementProps> = ({
       setExpirationPreset('never');
     } catch (error: any) {
       console.error('Failed to create API key:', error);
-      message.error(t('apiKeyManagement.messages.createError') + ': ' + (error.message || 'Unknown error'));
+      message.error(t('apiKeyManagement.messages.createError') + ': ' + (error.message || t('common.unknownError')));
     }
   };
 

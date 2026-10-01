@@ -172,14 +172,14 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
       for (const u of usersResp.users) {
         opts.push({
           value: u.id,
-          label: `${u.id} · ${u.name || u.id} (USER)`,
+          label: `${u.id} · ${u.name || u.id} (${t('connectorGovernance.principalTypeUser')})`,
           kind: 'USER',
         });
       }
       for (const g of groupsResp.groups) {
         opts.push({
           value: g.id,
-          label: `${g.id} · ${g.name || g.id} (GROUP)`,
+          label: `${g.id} · ${g.name || g.id} (${t('connectorGovernance.principalTypeGroup')})`,
           kind: 'GROUP',
         });
       }
@@ -348,11 +348,11 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
   };
 
   const principalTypeBadge = (type: ConnectorByPrincipalResponse['principalType']) => {
-    if (type === 'USER') return <Tag color="geekblue">USER</Tag>;
-    if (type === 'GROUP') return <Tag color="purple">GROUP</Tag>;
+    if (type === 'USER') return <Tag color="geekblue">{t('connectorGovernance.principalTypeUser')}</Tag>;
+    if (type === 'GROUP') return <Tag color="purple">{t('connectorGovernance.principalTypeGroup')}</Tag>;
     return (
       <Tooltip title={t('connectorGovernance.unknownHint')}>
-        <Tag color="default">UNKNOWN</Tag>
+        <Tag color="default">{t('connectorGovernance.principalTypeUnknown')}</Tag>
       </Tooltip>
     );
   };
@@ -768,9 +768,9 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
                 <Text strong>{t('connectorGovernance.queriedPrincipal')}</Text>
                 <Text code>{groupResult.groupId}</Text>
                 {groupResult.groupType === 'GROUP'
-                  ? <Tag color="purple">GROUP</Tag>
+                  ? <Tag color="purple">{t('connectorGovernance.principalTypeGroup')}</Tag>
                   : <Tooltip title={t('connectorGovernance.groupNotResolved')}>
-                      <Tag color="default">UNKNOWN</Tag>
+                      <Tag color="default">{t('connectorGovernance.principalTypeUnknown')}</Tag>
                     </Tooltip>}
                 {groupResult.groupName && (
                   <Text type="secondary">

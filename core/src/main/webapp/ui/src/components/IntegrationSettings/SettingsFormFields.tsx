@@ -122,7 +122,7 @@ export function SettingsFormFields({ fields, formValues, sources, overridable, o
                 <Input.Password
                   value={formValues[field.key] || ''}
                   onChange={e => onFieldChange(field.key, e.target.value)}
-                  placeholder={field.sensitive ? '[configured]' : ''}
+                  placeholder={field.sensitive ? t('integrationSettings.configuredPlaceholder') : ''}
                   disabled={locked}
                 />
               ) : field.type === 'textarea' ? (

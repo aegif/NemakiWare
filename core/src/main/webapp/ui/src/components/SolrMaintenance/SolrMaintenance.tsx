@@ -113,7 +113,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       const status = await service.checkIndexHealth(repositoryId);
       setHealthStatus(status);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.healthCheck.error')}: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -138,7 +138,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       const status = await ragService.checkRAGHealth(repositoryId);
       setRagHealthStatus(status);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('ragMaintenance.messages.healthCheckError')}: ${errorMessage}`);
     } finally {
       setRagLoading(false);
@@ -228,7 +228,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.messages.fullReindexStarted'));
       loadReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.fullReindexError')}: ${errorMessage}`);
     }
   };
@@ -243,7 +243,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.messages.folderReindexStarted'));
       loadReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.folderReindexError')}: ${errorMessage}`);
     }
   };
@@ -254,7 +254,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.messages.reindexCancelled'));
       loadReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.cancelError')}: ${errorMessage}`);
     }
   };
@@ -265,7 +265,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.messages.indexCleared'));
       loadHealthStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.clearError')}: ${errorMessage}`);
     }
   };
@@ -275,7 +275,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       await service.optimizeIndex(repositoryId);
       message.success(t('solrMaintenance.messages.indexOptimized'));
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.optimizeError')}: ${errorMessage}`);
     }
   };
@@ -294,7 +294,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       );
       setQueryResult(result);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.queryError')}: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -313,7 +313,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       );
       setCmisQueryResult(result);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.messages.cmisQueryError')}: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -326,7 +326,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('ragMaintenance.messages.fullReindexStarted'));
       loadRagReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('ragMaintenance.messages.fullReindexError')}: ${errorMessage}`);
     }
   };
@@ -341,7 +341,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('ragMaintenance.messages.folderReindexStarted'));
       loadRagReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('ragMaintenance.messages.folderReindexError')}: ${errorMessage}`);
     }
   };
@@ -352,7 +352,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('ragMaintenance.messages.reindexCancelled'));
       loadRagReindexStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('ragMaintenance.messages.cancelError')}: ${errorMessage}`);
     }
   };
@@ -363,7 +363,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('ragMaintenance.messages.indexCleared'));
       loadRagHealthStatus();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('ragMaintenance.messages.clearError')}: ${errorMessage}`);
     }
   };
@@ -376,7 +376,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       const result = await service.getIndexDiscrepancies(repositoryId);
       setDiscrepancyData(result);
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.discrepancy.loadError')}: ${errorMessage}`);
     } finally {
       setDiscrepancyLoading(false);
@@ -389,7 +389,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.discrepancy.reindexSuccess', { objectId }));
       handleShowDiscrepancies('missing');
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.discrepancy.reindexError')}: ${errorMessage}`);
     }
   };
@@ -400,7 +400,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
       message.success(t('solrMaintenance.discrepancy.deleteSuccess', { objectId }));
       handleShowDiscrepancies('orphaned');
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('solrMaintenance.discrepancy.deleteError')}: ${errorMessage}`);
     }
   };
@@ -798,7 +798,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
               >
                 {users.map(user => (
                   <Select.Option key={user.userId} value={user.userId}>
-                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                    {user.userName} ({user.userId}){user.isAdmin ? t('common.adminSuffix') : ''}
                   </Select.Option>
                 ))}
               </Select>
@@ -907,7 +907,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
               >
                 {users.map(user => (
                   <Select.Option key={user.userId} value={user.userId}>
-                    {user.userName} ({user.userId}){user.isAdmin ? ' [Admin]' : ''}
+                    {user.userName} ({user.userId}){user.isAdmin ? t('common.adminSuffix') : ''}
                   </Select.Option>
                 ))}
               </Select>
@@ -1226,7 +1226,7 @@ export const SolrMaintenance: React.FC<SolrMaintenanceProps> = ({ repositoryId }
         <div style={{ marginBottom: 16 }}>
           <h2 style={{ margin: 0 }}>{t('solrMaintenance.title')}</h2>
           {solrUrl && (
-            <Text type="secondary">Solr URL: {solrUrl}</Text>
+            <Text type="secondary">{t('solrMaintenance.solrUrl', { url: solrUrl })}</Text>
           )}
         </div>
         <Tabs items={tabItems} />

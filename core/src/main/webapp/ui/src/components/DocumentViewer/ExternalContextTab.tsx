@@ -166,7 +166,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
             <Title level={5} style={{ margin: 0 }}>
               {t('documentViewer.externalContext.content', 'コンテンツ')}
             </Title>
-            <Tag>{context.length.toLocaleString()} chars</Tag>
+            <Tag>{t('documentViewer.externalContext.charCount', { count: context.length.toLocaleString() })}</Tag>
           </Space>
         }
         extra={

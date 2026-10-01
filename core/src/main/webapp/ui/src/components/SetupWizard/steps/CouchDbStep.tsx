@@ -81,8 +81,8 @@ export function CouchDbStep({ value, onChange, onValidChange }: CouchDbStepProps
             message={t('setup.couchdb.connected')}
             description={
               <Space>
-                <Tag color="green">CouchDB {result.couchDbVersion}</Tag>
-                <Tag>{result.responseTimeMs}ms</Tag>
+                <Tag color="green">{t('setup.couchdb.versionTag', { version: result.couchDbVersion })}</Tag>
+                <Tag>{t('common.durationMs', { value: result.responseTimeMs })}</Tag>
               </Space>
             }
           />

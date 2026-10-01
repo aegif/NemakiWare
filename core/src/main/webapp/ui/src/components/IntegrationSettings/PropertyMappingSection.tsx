@@ -223,7 +223,7 @@ const PropertyMappingSection: React.FC<Props> = ({ repositoryId }) => {
       render: (text: string, record: MappingRow) => (
         <Space>
           <Tag>{text}</Tag>
-          {record.cardinality === 'MULTI' && <Tag color="blue">MULTI</Tag>}
+          {record.cardinality === 'MULTI' && <Tag color="blue">{t('common.multi')}</Tag>}
         </Space>
       ),
     },

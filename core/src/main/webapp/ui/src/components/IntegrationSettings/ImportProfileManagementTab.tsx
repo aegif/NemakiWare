@@ -440,7 +440,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
                   max={9999}
                   value={autoDisabledDays > 0 ? autoDisabledDays : undefined}
                   onChange={(v) => setAutoDisabledDays(typeof v === 'number' && v > 0 ? v : 0)}
-                  addonAfter="d"
+                  addonAfter={t('importProfileManagement.daysSuffix')}
                   style={{ width: 100 }}
                 />
                 <Button
@@ -685,7 +685,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
                     <Form.Item key={key} name={['_schedulerParamsFields', key]}
                       label={key}
                       rules={selectedAdapter.requiredParams.includes(key)
-                        ? [{required: schedulerEnabled, message: `${key} is required when scheduler is enabled`}]
+                        ? [{required: schedulerEnabled, message: t('importProfileManagement.form.schedulerParamRequired', { key })}]
                         : []}
                       style={{marginBottom:4}}>
                       <Input placeholder={key} />

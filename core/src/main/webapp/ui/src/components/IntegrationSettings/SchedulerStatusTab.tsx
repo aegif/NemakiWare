@@ -112,7 +112,7 @@ export function SchedulerStatusTab() {
           {record.connectorSystem === 'imap' && !idleProfiles.includes(record.profileId) && (
             <Button icon={<PlayCircleOutlined />} size="small" type="primary" ghost
               onClick={() => handleStartIdle(record.profileId)}>
-              IDLE
+              {t('schedulerStatus.idleButton')}
             </Button>
           )}
           {idleProfiles.includes(record.profileId) && (
