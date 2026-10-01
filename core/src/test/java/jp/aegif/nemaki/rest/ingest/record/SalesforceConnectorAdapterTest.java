@@ -48,7 +48,7 @@ class SalesforceConnectorAdapterTest {
     @Test
     void shouldSendBearerTokenOnQuery() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withBody("{\"records\":[]}")));
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
         adapter.query("SELECT Id FROM Account");
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
                 .withHeader("Authorization", equalTo("Bearer test-sf-token")));
@@ -59,10 +59,40 @@ class SalesforceConnectorAdapterTest {
     @Test
     void shouldUrlEncodeSoqlQuery() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withBody("{\"records\":[]}")));
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
         adapter.query("SELECT Id, Name FROM Account WHERE Name = 'Acme'");
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
                 .withQueryParam("q", equalTo("SELECT Id, Name FROM Account WHERE Name = 'Acme'")));
+    }
+
+    // ── What a query carries outside its quoted strings ──────────
+
+    /**
+     * A mutation word, a comment or a statement separator is refused outside a quoted string, as a
+     * whole word; inside one it is data, and a field named with the letters is a field. The first
+     * version searched the whole string for the letters.
+     */
+    @Test
+    void aWordInsideAQuotedStringIsNotAMutation() throws Exception {
+        assertNull(SalesforceConnectorAdapter.prohibitedIn(
+                "SELECT Id, Last_Updated__c FROM Account WHERE Status__c = 'Updated' AND Name = 'it\\'s -- ; delete'"));
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
+        adapter.query("SELECT Id FROM Account WHERE Status__c = 'Updated'");
+        wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
+                .withQueryParam("q", equalTo("SELECT Id FROM Account WHERE Status__c = 'Updated'")));
+    }
+
+    /** Outside a quoted string they are refused, and nothing is sent. */
+    @Test
+    void aStatementSeparatorACommentOrAMutationOutsideAQuotedStringIsNotSent() {
+        assertEquals(";", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account WHERE Name = 'a\\';'; x"));
+        assertEquals("--", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account -- x"));
+        assertEquals("UPDATE", SalesforceConnectorAdapter.prohibitedIn("SELECT Id FROM Account FOR update"));
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> adapter.query("SELECT Id FROM Account WHERE Name = 'a'; DELETE FROM Account"));
+        assertTrue(refused.getMessage().contains("refused to send"), refused.getMessage());
+        wireMock.verify(0, getRequestedFor(urlPathEqualTo("/services/data/v59.0/query")));
     }
 
     // ── Record parsing with fields ───────────────────────────────
@@ -71,7 +101,7 @@ class SalesforceConnectorAdapterTest {
     void shouldParseRecordFieldsExcludingAttributes() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
                 .willReturn(aResponse().withBody("""
-                    {"records": [{
+                    {"totalSize": 1, "done": true, "records": [{
                         "attributes": {"type": "Account", "url": "/services/data/v59.0/sobjects/Account/001"},
                         "Id": "001XX0001",
                         "Name": "Acme",
@@ -122,7 +152,7 @@ class SalesforceConnectorAdapterTest {
     @Test
     void shouldAcceptValidSalesforceId() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withBody("{\"records\":[]}")));
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
         // Valid 18-char Salesforce ID
         adapter.getAttachments("001000000000001AAA");
         wireMock.verify(getRequestedFor(urlPathEqualTo("/services/data/v59.0/query"))
@@ -131,10 +161,32 @@ class SalesforceConnectorAdapterTest {
 
     // ── Empty results ────────────────────────────────────────────
 
+    /** An answer without done cannot say whether the result is complete: refused, not read as complete. */
+    @Test
+    void anAnswerWithoutDoneIsRefused() {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"records\":[]}")));
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> adapter.query("SELECT Id FROM Account"));
+        assertTrue(refused.getMessage().contains("without done"), refused.getMessage());
+    }
+
+    /** Every batch of a result: query() follows nextRecordsUrl to the end. */
+    @Test
+    void theQueryReadsEveryBatch() throws Exception {
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
+                .willReturn(aResponse().withBody("{\"totalSize\":2,\"done\":false,\"nextRecordsUrl\":\"/services/data/v59.0/query/01gX-1\","
+                        + "\"records\":[{\"attributes\":{\"type\":\"Account\"},\"Id\":\"001000000000001AAA\"}]}")));
+        wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query/01gX-1"))
+                .willReturn(aResponse().withBody("{\"totalSize\":2,\"done\":true,"
+                        + "\"records\":[{\"attributes\":{\"type\":\"Account\"},\"Id\":\"001000000000002AAA\"}]}")));
+        var records = adapter.query("SELECT Id FROM Account");
+        assertEquals(2, records.size(), records.toString());
+    }
+
     @Test
     void shouldReturnEmptyListForNoRecords() throws Exception {
         wireMock.stubFor(get(urlPathEqualTo("/services/data/v59.0/query"))
-                .willReturn(aResponse().withBody("{\"records\":[]}")));
+                .willReturn(aResponse().withBody("{\"totalSize\":0,\"done\":true,\"records\":[]}")));
         assertTrue(adapter.query("SELECT Id FROM Account").isEmpty());
     }
 

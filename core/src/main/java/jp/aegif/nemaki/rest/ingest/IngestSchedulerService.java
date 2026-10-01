@@ -178,21 +178,93 @@ public class IngestSchedulerService {
         this.imapIdleMonitor = imapIdleMonitor;
     }
 
+    // "not wired on this node", not a bad request. The endpoint classifies a refusal by its
+    // text, and "ImapIdleMonitor not available" carried no marker, so an unwired node answered
+    // 400 — the request blamed for the deployment. A review found it one layer above the same
+    // shape the monitor's own null check had just been corrected for.
+    private static String idleNotWired(String verb) {
+        return "the IMAP IDLE monitor is not wired on this node, so IDLE could not be " + verb
+                + "; retry shortly against a node that runs it";
+    }
+
     public String startIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId) : "ImapIdleMonitor not available";
+        // One message per verb: the first version reused the start's wording for the stop, so
+        // a stop on an unwired node answered "could not be started". A review found it.
+        return imapIdleMonitor != null ? imapIdleMonitor.startIdle(profileId)
+                : idleNotWired("started");
     }
 
     public String stopIdle(String profileId) {
-        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId) : "ImapIdleMonitor not available";
+        return imapIdleMonitor != null ? imapIdleMonitor.stopIdle(profileId)
+                : idleNotWired("stopped");
     }
 
+    /**
+     * The profiles with a live IDLE session ON THIS NODE. Empty means none is running here.
+     *
+     * <p>Refuses when the monitor is not wired, rather than answering the empty list: the two
+     * verbs beside it answer 503 for that state, and a listing that says "none" while the
+     * start says "this node cannot" contradicts itself on the same node. A review found the
+     * pair disagreeing.
+     */
     public List<String> getIdleProfiles() {
-        return imapIdleMonitor != null ? imapIdleMonitor.getIdleProfiles() : List.of();
+        if (imapIdleMonitor == null) {
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the IMAP IDLE monitor is not wired on this node, so its sessions cannot"
+                            + " be listed; retry shortly against a node that runs it");
+        }
+        return imapIdleMonitor.getIdleProfiles();
+    }
+
+    /**
+     * True when a delegated denial means "this node could not ASK", not "the answer is no".
+     *
+     * <p>Lives here because this class produces the reasons. Two consumers had to be corrected
+     * one round apart for treating the whole enum alike — the IMAP per-message arm, then the
+     * IMAP start arm and the webhook dispatch — so the predicate is one place now.
+     */
+    public static boolean denialCouldNotAsk(DenialReason why) {
+        return why == DenialReason.CREATOR_LOOKUP_FAILED
+                || why == DenialReason.SERVICES_UNAVAILABLE
+                || why == DenialReason.TARGET_FOLDER_LOOKUP_FAILED
+                || why == DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED;
+    }
+
+    /**
+     * Messages an IDLE session did not capture AND could not record, per profile.
+     *
+     * <p>Empty when there are none. The count is in memory — the condition that produces one
+     * is the configuration database being unreachable, so there is nowhere durable to put it —
+     * and the decision to keep the session running instead of stopping it rests on this being
+     * VISIBLE. It was not: the counter had no reader anywhere, while its javadoc said it was
+     * surfaced here. Two reviewers found the claim in the same round.
+     */
+    public Map<String, Integer> idleUndurableMisses() {
+        if (imapIdleMonitor == null) {
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the IMAP IDLE monitor is not wired on this node, so its missed-message"
+                            + " counts cannot be read; retry shortly against a node that runs it");
+        }
+        return imapIdleMonitor.undurableMisses();
+    }
+
+    /**
+     * The repository a live IMAP IDLE session for {@code profileId} imports into, or
+     * {@code null} when there is no session, the session's row carried no repositoryId, or
+     * the monitor is not wired. Callers deciding whether a deletion must stop the session
+     * pair this with {@link #getIdleProfiles()}: "no session" and "a session we cannot
+     * attribute" need opposite answers.
+     */
+    public String getIdleRepository(String profileId) {
+        return imapIdleMonitor != null ? imapIdleMonitor.getIdleRepository(profileId) : null;
     }
 
     // ──────────────────────────────────────────────────────────────────
     // RC5 (v2 §12.1) — Scheduled delegated profile helpers
     // ──────────────────────────────────────────────────────────────────
+
+    /** The context, or the reason there is none — the reason the audit already recorded. */
+    private record DelegatedTick(CallContext context, DenialReason why) {}
 
     /**
      * Run the per-tick gate for a delegated profile. Returns a
@@ -219,7 +291,7 @@ public class IngestSchedulerService {
      *       folder. Missing → {@code CREATOR_CMIS_ALL_LOST}.</li>
      * </ol>
      */
-    private CallContext prepareDelegatedTick(ImportProfileDefinition profile) {
+    private DelegatedTick prepareDelegatedTick(ImportProfileDefinition profile) {
         String pid = profile.getProfileId();
 
         // 1. Operator opt-in
@@ -240,7 +312,7 @@ public class IngestSchedulerService {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.DELEGATED_SCHEDULING_DISABLED,
                     "Delegated scheduling disabled by property");
-            return null;
+            return new DelegatedTick(null, DenialReason.DELEGATED_SCHEDULING_DISABLED);
         }
 
         // 2. Required wiring
@@ -250,7 +322,7 @@ public class IngestSchedulerService {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.SERVICES_UNAVAILABLE,
                     "DelegatedCallContextFactory or IngestAuthorizationService not wired");
-            return null;
+            return new DelegatedTick(null, DenialReason.SERVICES_UNAVAILABLE);
         }
 
         // 3. createdByUserId required
@@ -260,37 +332,75 @@ public class IngestSchedulerService {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.CREATOR_USER_INACTIVE,
                     "Profile has no createdByUserId (legacy admin-created record?)");
-            return null;
+            return new DelegatedTick(null, DenialReason.CREATOR_USER_INACTIVE);
         }
 
         // 4. UserItem must exist (== "active" in NemakiWare's model)
-        CallContext ctx = delegatedCallContextFactory.buildOrNull(
-                profile.getRepositoryId(), creatorUser);
+        CallContext ctx;
+        try {
+            ctx = delegatedCallContextFactory.buildOrNull(
+                    profile.getRepositoryId(), creatorUser);
+        } catch (RuntimeException e) {
+            // "Not findable == inactive" is the model's definition, and it holds for an
+            // ANSWER of not-found. A failure to ask is a different fact: denying is still
+            // right (the run must not proceed), but calling it CREATOR_USER_INACTIVE put a
+            // statement about the user into the audit trail, and the streak it fed would
+            // auto-disable a legitimate profile after three CouchDB blips.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_LOOKUP_FAILED,
+                    "Creator " + creatorUser + " could not be looked up: " + e.getMessage());
+            return new DelegatedTick(null, DenialReason.CREATOR_LOOKUP_FAILED);
+        }
         if (ctx == null) {
             handleInactiveCreator(profile, creatorUser);
-            return null;
+            return new DelegatedTick(null, DenialReason.CREATOR_USER_INACTIVE);
         }
         // Reset streak on successful active-user resolution.
         inactiveCreatorStreak.remove(pid);
 
         // 5. cmis:all re-eval
-        String folderId = ingestAuthorizationService.resolveFolderId(
-                profile.getRepositoryId(),
-                profile.getTargetFolderId(), profile.getTargetFolderPath());
+        // Through the reads that REFUSE. resolveFolderId and canManageProfileForFolderAsUser
+        // answer null / false for a store that did not answer, and this method then wrote
+        // TARGET_FOLDER_UNRESOLVABLE / CREATOR_CMIS_ALL_LOST into the audit trail — settled
+        // findings about a folder and a creator that nothing established — and IDLE, which
+        // stops on a settled denial, ended capture for good on one CouchDB blip (R11).
+        String folderId;
+        try {
+            folderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                    profile.getRepositoryId(),
+                    profile.getTargetFolderId(), profile.getTargetFolderPath());
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Not "no longer resolvable": the read did not answer.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                    "Profile's target folder could not be read: " + couldNotAsk.getMessage());
+            return new DelegatedTick(null, DenialReason.TARGET_FOLDER_LOOKUP_FAILED);
+        }
         if (folderId == null) {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.TARGET_FOLDER_UNRESOLVABLE,
                     "Profile's target folder no longer resolvable");
-            return null;
+            return new DelegatedTick(null, DenialReason.TARGET_FOLDER_UNRESOLVABLE);
         }
-        if (!ingestAuthorizationService.canManageProfileForFolderAsUser(
-                creatorUser, profile.getRepositoryId(), folderId)) {
+        boolean creatorHoldsCmisAll;
+        try {
+            creatorHoldsCmisAll = ingestAuthorizationService.canManageProfileForFolderAsUserOrRefuse(
+                    creatorUser, profile.getRepositoryId(), folderId);
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Not "no longer holds": the folder, its ACL or the groups could not be read.
+            auditScheduledDelegatedDenial(profile, null,
+                    DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED,
+                    "Whether creator " + creatorUser + " holds cmis:all on the target folder"
+                            + " could not be established: " + couldNotAsk.getMessage());
+            return new DelegatedTick(null, DenialReason.CREATOR_CMIS_ALL_LOOKUP_FAILED);
+        }
+        if (!creatorHoldsCmisAll) {
             auditScheduledDelegatedDenial(profile, null,
                     DenialReason.CREATOR_CMIS_ALL_LOST,
                     "Creator " + creatorUser + " no longer holds cmis:all on target folder");
-            return null;
+            return new DelegatedTick(null, DenialReason.CREATOR_CMIS_ALL_LOST);
         }
-        return ctx;
+        return new DelegatedTick(ctx, null);
     }
 
     /**
@@ -403,8 +513,36 @@ public class IngestSchedulerService {
                 }
             });
 
-            List<ImportProfileDefinition> profiles = getScheduledProfiles();
-            if (profiles.isEmpty()) return;
+            List<ImportProfileDefinition> profiles;
+            try {
+                profiles = getScheduledProfiles();
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException couldNotAsk) {
+                // "Could not read the schedule" is not "nothing is scheduled". The poll does
+                // the same thing either way — nothing runs — but only one of them is a fault,
+                // and the operator has to be able to tell them apart.
+                logger.error("the scheduled import profiles could not be read; no scheduled"
+                        + " capture ran this poll: {}", couldNotAsk.getMessage());
+                return;
+            }
+            if (profiles.isEmpty()) {
+                // Now genuinely empty: the enumeration is index-free and a read that could
+                // not be answered throws above rather than returning nothing. The log stays
+                // because a schedule that silently stops being configured is still worth
+                // noticing.
+                long quiet = consecutiveEmptyPolls.incrementAndGet();
+                if (quiet == 1) {
+                    logger.info("No scheduled import profiles this poll. The list is read"
+                            + " without an index, so this means none is configured and"
+                            + " enabled — a read that could not be answered is reported"
+                            + " separately");
+                } else if (quiet == 10 || quiet % 60 == 0) {
+                    logger.warn("No scheduled import profiles for {} consecutive polls; if"
+                            + " scheduled capture is expected, check that the profiles are"
+                            + " enabled and scheduler-enabled", quiet);
+                }
+                return;
+            }
+            consecutiveEmptyPolls.set(0);
             logger.debug("Polling {} scheduled profiles", profiles.size());
 
             for (ImportProfileDefinition profile : profiles) {
@@ -429,7 +567,7 @@ public class IngestSchedulerService {
                 // deployments behave exactly like RC3/RC4.
                 CallContext delegatedCtx = null;     // null = admin path / not applicable
                 if (profile.isDelegated()) {
-                    delegatedCtx = prepareDelegatedTick(profile);
+                    delegatedCtx = prepareDelegatedTick(profile).context();
                     if (delegatedCtx == null) {
                         // prepareDelegatedTick already emitted the
                         // appropriate WARN/audit + DenialReason. Skip.
@@ -441,8 +579,21 @@ public class IngestSchedulerService {
                 if (!profile.isDelegated() && !warnedDelegatedSchedulerProfiles.isEmpty()) {
                     warnedDelegatedSchedulerProfiles.remove(profile.getProfileId());
                 }
-                ConnectorDefinition connector = resolveConnectorForProfile(profile);
-                if (connector == null) continue;
+                ConnectorForProfile resolution = resolveConnectorFor(profile);
+                ConnectorDefinition connector = resolution.connector();
+                if (connector == null) {
+                    // Skipping is right either way, but only one of the reasons is a fact.
+                    // The poll used to skip in silence for all of them, so a capture that
+                    // stopped running because a row could not be READ looked exactly like one
+                    // whose connector an operator had disabled on purpose. A review found it.
+                    if (!resolution.answered()) {
+                        logger.error("scheduled capture for profile {} did not run: its"
+                                + " connector could not be resolved ({}); this is not a"
+                                + " statement that the connector is absent or unusable",
+                                profile.getProfileId(), resolution.why());
+                    }
+                    continue;
+                }
 
                 // RC5: for delegated profiles, also re-check connector
                 // delegation against the creator. Catches admin-revoked
@@ -456,10 +607,21 @@ public class IngestSchedulerService {
                     // check returns false on null folderId, so the prior
                     // shape masked folder-resolution failures as connector
                     // denials in the audit trail.
-                    String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
-                            profile.getRepositoryId(),
-                            profile.getTargetFolderId(),
-                            profile.getTargetFolderPath());
+                    String delegatedFolderId;
+                    try {
+                        delegatedFolderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                                profile.getRepositoryId(),
+                                profile.getTargetFolderId(),
+                                profile.getTargetFolderPath());
+                    } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+                        // Could not ask: skipped this tick, recorded as such, not as a folder
+                        // that is gone (R11).
+                        auditScheduledDelegatedDenial(profile, connector,
+                                DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                                "Profile's target folder could not be read: "
+                                        + couldNotAsk.getMessage());
+                        continue;
+                    }
                     if (delegatedFolderId == null) {
                         auditScheduledDelegatedDenial(profile, connector,
                                 DenialReason.TARGET_FOLDER_UNRESOLVABLE,
@@ -597,6 +759,29 @@ public class IngestSchedulerService {
                     }
                     // else: fetched=0, imported=0, no errors → empty fetch, neutral (no change)
                 } catch (Exception e) {
+                    // A configuration-store outage is not the CONNECTOR's failure. The
+                    // credential read refuses from before each orchestrator's own try, so it
+                    // arrives here — and counting it opened the breaker for a connector that
+                    // was never asked. The tick still reports the error and still advances no
+                    // checkpoint. A review found the source comments claiming the refusal
+                    // landed in the orchestrator's outer catch, which it does not.
+                    Throwable settings = e instanceof java.util.concurrent.ExecutionException
+                            ? e.getCause() : e;
+                    if (settings instanceof jp.aegif.nemaki.rest.controller
+                            .IntegrationSettingsService.SettingUnreadableException) {
+                        logger.error("Scheduled fetch for {} could not read its configuration;"
+                                + " NOT counted against connector '{}': {}",
+                                profile.getProfileId(), connectorKey, settings.getMessage());
+                        if (job != null && ingestJobService != null) {
+                            try {
+                                ingestJobService.completeJob(job, new FetchResult(0, 0,
+                                        List.of(settings.getMessage())));
+                            } catch (Exception je) {
+                                logger.debug("Failed to record job failure: {}", je.getMessage());
+                            }
+                        }
+                        continue;
+                    }
                     int newCount = consecutiveFailures.merge(connectorKey, 1, Integer::sum);
                     logger.warn("Connector '{}' exception failure #{}/{}", connectorKey, newCount, circuitBreakerThreshold);
 
@@ -782,40 +967,148 @@ public class IngestSchedulerService {
         this.orchestratorRegistry = orchestratorRegistry;
     }
 
+    /** How many consecutive polls found nothing to run — see the empty branch in the tick. */
+    private final java.util.concurrent.atomic.AtomicLong consecutiveEmptyPolls =
+            new java.util.concurrent.atomic.AtomicLong();
+
     /**
      * Scans all repositories for profiles with schedulerEnabled=true and
      * returns the list of eligible profiles. Does NOT execute ingest —
      * that requires a concrete connector adapter.
      *
-     * @return list of profiles eligible for scheduled execution
+     * @return list of profiles eligible for scheduled execution — EMPTY means none is
+     *         configured and enabled, never "the schedule could not be read"
+     * @throws ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException when the
+     *         listing could not be answered, including when this node is not wired for it.
+     *         ONE caller depends on this now — the poll, which logs and skips. The two
+     *         endpoints moved to {@link #scheduledProfilesWithUnreadable}, which carries the
+     *         rows the walk could not read; an earlier version of this line still said
+     *         "all three callers" after that move.
      */
     public List<ImportProfileDefinition> getScheduledProfiles() {
         if (repositoryInfoMap == null || profileService == null) {
-            return List.of();
+            // "not wired on this node", not "no profile is scheduled". The empty list below
+            // is documented as GENUINELY empty, and this arm quietly broke that: the poll
+            // skipped every capture and GET /status answered count 0.
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the scheduled-profile listing is not wired on this node"
+                            + (repositoryInfoMap == null ? " (no repository map)" : "")
+                            + (profileService == null ? " (no profile service)" : "")
+                            + "; retry shortly against a node that runs it");
         }
-        return repositoryInfoMap.keys().stream()
-                .flatMap(repoId -> profileService.listByRepository(repoId).stream())
-                .filter(ImportProfileDefinition::isEnabled)
-                .filter(ImportProfileDefinition::isSchedulerEnabled)
+        // ONE index-free walk, not a Mango selector per repository. The selector answers
+        // empty while it rebuilds, and this method's empty list is indistinguishable from a
+        // genuinely empty schedule — the poll then skipped every scheduled capture and said
+        // nothing. Logging the ambiguity did not fix it: the read has to be one that cannot
+        // report failure as absence. A review refused the deferral, and it was right to.
+        //
+        // The POLL reads through here, deliberately: it has no caller to answer and one row
+        // it cannot read must not stop every capture. The two endpoints read through
+        // scheduledProfilesWithUnreadable instead, which carries those rows.
+        java.util.Set<String> knownForPoll = new java.util.HashSet<>(repositoryInfoMap.keys());
+        return profileService.listScheduledIndexFree().stream()
+                .filter(profile -> knownForPoll.contains(profile.getRepositoryId()))
                 .toList();
     }
 
     /**
-     * Resolves the default connector for a scheduled profile.
+     * As {@link #getScheduledProfiles}, carrying the rows the walk could not read.
      *
-     * @return the connector to use, or null if none available
+     * <p>The two endpoints need them: a profile whose row this walk refused is otherwise
+     * answered "not found or not scheduler-enabled", and the dashboard's count is short with
+     * nothing saying so. The poll keeps using the list-only form — one broken row must not
+     * stop every capture — and logs them there.
      */
-    public ConnectorDefinition resolveConnectorForProfile(ImportProfileDefinition profile) {
-        if (connectorService == null) return null;
+    public ImportProfileDefinitionService.OwnedProfiles scheduledProfilesWithUnreadable() {
+        if (repositoryInfoMap == null || profileService == null) {
+            // "not wired on this node", not "no profile is scheduled". The empty list the
+            // caller documents as GENUINELY empty depends on this arm: without it the poll
+            // skipped every capture and GET /status answered count 0.
+            throw new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                    "the scheduled-profile listing is not wired on this node"
+                            + (repositoryInfoMap == null ? " (no repository map)" : "")
+                            + (profileService == null ? " (no profile service)" : "")
+                            + "; retry shortly against a node that runs it");
+        }
+        java.util.Set<String> known = new java.util.HashSet<>(repositoryInfoMap.keys());
+        ImportProfileDefinitionService.OwnedProfiles walked =
+                profileService.listScheduledIndexFreeWithUnreadable();
+        return new ImportProfileDefinitionService.OwnedProfiles(
+                walked.profiles().stream()
+                        .filter(profile -> known.contains(profile.getRepositoryId()))
+                        .toList(),
+                walked.uninterpretable());
+    }
 
+    /** Why a connector could not be resolved — and whether that is a FACT about the connector. */
+    public enum Unresolved {
+        /** This node has no connector service. Says nothing about the connector. */
+        NOT_WIRED,
+        /** The read refused: a row is at that id and could not be read as that connector. */
+        NOT_READ,
+        /** The read answered null. That is "no such connector" OR "a row the index cannot
+         *  show" — the two are told apart only by an index-free walk, which this method does
+         *  not do (it runs once per profile on a listing). Not a fact on its own. */
+        ABSENT_OR_HIDDEN,
+        /** The archetype listing REFUSED (its index is not ready). Says nothing about the
+         *  connectors; the fallback search never ran. */
+        LISTING_REFUSED,
+        /** The row was READ and is not usable: disabled, not allowed, wrong archetype. */
+        NOT_USABLE,
+        /** No default is named and no allowed archetype produced a candidate. Counted as an
+         *  answer, with one limit worth knowing: the archetype search reads through the Mango
+         *  selector ({@code listByArchetype}), which shows whatever the index shows. A listing
+         *  that FAILS throws and never reaches here; a listing that is merely short while the
+         *  index rebuilds under-reports, as every listing in this product does. */
+        NO_CANDIDATE
+    }
+
+    /**
+     * One resolution: the connector, or why not.
+     *
+     * <p>{@code resolveConnectorForProfile} answered null for all five reasons alike, and five
+     * callers turned that null into a statement — {@code ready: false} on the admin dashboard,
+     * "No compatible connector found" (400), "No connector resolved" (400), an empty connector
+     * list on a folder, and a silently skipped capture in the poll. Three of the five reasons
+     * are not facts about the connector at all. A review found the whole family.
+     */
+    public record ConnectorForProfile(ConnectorDefinition connector, Unresolved why) {
+        /** Whether this is a fact about the connector. The other three are "could not ask". */
+        public boolean answered() {
+            return why == null || why == Unresolved.NOT_USABLE || why == Unresolved.NO_CANDIDATE;
+        }
+    }
+
+    /** As {@link #resolveConnectorForProfile}, saying why when it did not resolve. */
+    public ConnectorForProfile resolveConnectorFor(ImportProfileDefinition profile) {
+        if (connectorService == null) {
+            return new ConnectorForProfile(null, Unresolved.NOT_WIRED);
+        }
+
+        // What the NAMED default said, kept across the fallback below. Both reasons used to
+        // be returned only for scheduler-enabled profiles; for every other profile they were
+        // discarded and the method ended at NO_CANDIDATE, which says "this profile has no
+        // usable connector" — a statement, for a row that was never read. The folder verbs
+        // serve exactly the profiles that are NOT on a schedule, so the fix of the round
+        // before reached none of them. Two reviewers found it independently.
+        Unresolved fromTheNamedDefault = null;
         // Prefer defaultConnectorId — but still enforce profile's own restrictions
         String defaultId = profile.getDefaultConnectorId();
         if (defaultId != null && !defaultId.isBlank()) {
-            ConnectorDefinition connector = connectorService.get(defaultId);
+            ConnectorDefinition connector;
+            try {
+                connector = connectorService.get(defaultId);
+            } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+                // get() rethrows this when the deterministic id holds another document. It
+                // used to escape as a 500 from the endpoints and to kill the poll's tick.
+                logger.warn("Default connector {} for profile {} could not be read: {}",
+                        defaultId, profile.getProfileId(), refused.getMessage());
+                return new ConnectorForProfile(null, Unresolved.NOT_READ);
+            }
             if (connector != null && connector.isEnabled()
                     && profile.isConnectorAllowed(connector.getConnectorId())
                     && profile.isArchetypeAllowed(connector.getSourceArchetype())) {
-                return connector;
+                return new ConnectorForProfile(connector, null);
             }
             if (connector != null) {
                 logger.warn("Default connector {} for profile {} is not usable " +
@@ -823,29 +1116,48 @@ public class IngestSchedulerService {
                         defaultId, profile.getProfileId(), connector.isEnabled(),
                         profile.isConnectorAllowed(connector.getConnectorId()),
                         profile.isArchetypeAllowed(connector.getSourceArchetype()));
+                fromTheNamedDefault = Unresolved.NOT_USABLE;
             } else {
-                logger.warn("Default connector {} for profile {} does not exist", defaultId, profile.getProfileId());
+                // NOT "does not exist": this read answers null for a row the selector cannot
+                // show while its index rebuilds, exactly as it does for absence.
+                logger.warn("Default connector {} for profile {} did not come back; it is"
+                        + " either absent or not visible to the index", defaultId,
+                        profile.getProfileId());
+                fromTheNamedDefault = Unresolved.ABSENT_OR_HIDDEN;
             }
             // Scheduler-enabled profiles must NOT fall back to a different connector —
-            // doing so would silently switch the data source being polled
+            // doing so would silently switch the data source being polled.
             if (profile.isSchedulerEnabled()) {
-                return null;
+                return new ConnectorForProfile(null, fromTheNamedDefault);
             }
         }
 
         // Fallback for non-scheduled profiles only: find first allowed connector by archetype
         if (profile.getAllowedArchetypes() != null && !profile.getAllowedArchetypes().isEmpty()) {
             for (SourceArchetype archetype : profile.getAllowedArchetypes()) {
-                List<ConnectorDefinition> candidates = connectorService.listByArchetype(archetype);
+                List<ConnectorDefinition> candidates;
+                try {
+                    candidates = connectorService.listByArchetype(archetype);
+                } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException refused) {
+                    // The listing refused. Raw, this escaped to the poll's outer catch and
+                    // ended the tick for every profile after this one, and answered 500 from
+                    // the folder and trigger endpoints. Not a fact about the connectors (R29).
+                    logger.warn("The connectors of archetype {} could not be listed for profile"
+                            + " {}: {}", archetype, profile.getProfileId(), refused.getMessage());
+                    return new ConnectorForProfile(null, Unresolved.LISTING_REFUSED);
+                }
                 for (ConnectorDefinition c : candidates) {
                     if (c.isEnabled() && profile.isConnectorAllowed(c.getConnectorId())) {
-                        return c;
+                        return new ConnectorForProfile(c, null);
                     }
                 }
             }
         }
 
-        return null;
+        // The named default's reason outlives the fallback: "the row could not be read" is
+        // not improved by an archetype search that found nothing.
+        return new ConnectorForProfile(null,
+                fromTheNamedDefault != null ? fromTheNamedDefault : Unresolved.NO_CANDIDATE);
     }
 
     // ── Checkpoint admin API (delegated to CheckpointManager) ─────
@@ -854,8 +1166,16 @@ public class IngestSchedulerService {
         return checkpointManager != null ? checkpointManager.getCheckpoints(profileId) : new LinkedHashMap<>();
     }
 
-    public void resetCheckpoint(String profileId, String scope) {
-        if (checkpointManager != null) checkpointManager.resetCheckpoint(profileId, scope);
+    /** As {@link #getCheckpoints}, carrying whether the profile row took part — see
+     *  {@link CheckpointManager.Enumeration}. */
+    public CheckpointManager.Enumeration enumerateCheckpoints(String profileId) {
+        return checkpointManager != null ? checkpointManager.enumerateCheckpoints(profileId)
+                : new CheckpointManager.Enumeration(new LinkedHashMap<>(), false);
+    }
+
+    public CheckpointManager.ResetSummary resetCheckpoint(String profileId, String scope) {
+        if (checkpointManager == null) return new CheckpointManager.ResetSummary(0, false);
+        return checkpointManager.resetCheckpoint(profileId, scope);
     }
 
     // ── Delegated authorization (shared by scheduler + webhook) ─────
@@ -917,17 +1237,34 @@ public class IngestSchedulerService {
         }
 
         // Stage 1: creator active + cmis:all on target folder (+ opt-in).
-        CallContext delegatedCtx = prepareDelegatedTick(profile);
+        DelegatedTick tick = prepareDelegatedTick(profile);
+        CallContext delegatedCtx = tick.context();
         if (delegatedCtx == null) {
-            // prepareDelegatedTick already emitted WARN/audit + DenialReason.
-            return new DelegatedAuthorization(false, null, DenialReason.CREATOR_CMIS_ALL_LOST);
+            // The reason the audit recorded, not a fixed one. This arm answered
+            // CREATOR_CMIS_ALL_LOST for all seven of prepareDelegatedTick's denials — so an
+            // unwired node, and a creator lookup that FAILED (the reason CREATOR_LOOKUP_FAILED
+            // was added to prevent exactly this substitution), were both reported to an
+            // administrator as a revoked cmis:all. A review found it, and found that the 403
+            // added a round earlier now states the invented reason. Two callers read it: the
+            // IDLE endpoint's refusal text and the webhook receiver's WARN.
+            return new DelegatedAuthorization(false, null, tick.why());
         }
 
         // Stage 2: connector still delegated to the creator for this folder.
-        String delegatedFolderId = ingestAuthorizationService.resolveFolderId(
-                profile.getRepositoryId(),
-                profile.getTargetFolderId(),
-                profile.getTargetFolderPath());
+        String delegatedFolderId;
+        try {
+            delegatedFolderId = ingestAuthorizationService.resolveFolderIdOrRefuse(
+                    profile.getRepositoryId(),
+                    profile.getTargetFolderId(),
+                    profile.getTargetFolderPath());
+        } catch (IngestAuthorizationService.AuthorizationReadFailedException couldNotAsk) {
+            // Could not ask — the same class stage 1 records for the creator lookup (R11).
+            auditScheduledDelegatedDenial(profile, connector,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED,
+                    "Profile's target folder could not be read: " + couldNotAsk.getMessage());
+            return new DelegatedAuthorization(false, null,
+                    DenialReason.TARGET_FOLDER_LOOKUP_FAILED);
+        }
         if (delegatedFolderId == null) {
             auditScheduledDelegatedDenial(profile, connector,
                     DenialReason.TARGET_FOLDER_UNRESOLVABLE,

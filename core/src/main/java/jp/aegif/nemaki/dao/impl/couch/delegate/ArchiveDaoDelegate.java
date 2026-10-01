@@ -69,8 +69,13 @@ public class ArchiveDaoDelegate {
 
 			return null;
 		} catch (Exception e) {
+			// Null is "no archive exists for this original" — the answer tombstone
+			// resolution DELETES catalog entities on, and deleteDocumentArchive orphans
+			// attachment archives on. A failed lookup is neither.
 			log.error("Error getting archive by original ID: " + originalId + " in repository: " + repositoryId, e);
-			return null;
+			throw new IllegalStateException("the archive for original '" + originalId + "' in '"
+					+ repositoryId + "' could not be looked up; this is NOT a finding that"
+					+ " none exists", e);
 		}
 	}
 
@@ -161,7 +166,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting child archives for: " + archive.getId() + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the child archives could not be read for '" + archive.getId() + "' in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -182,7 +187,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives of version series: " + versionSeriesId + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the version-series archives could not be read for '" + versionSeriesId + "' in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -203,11 +208,19 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting all archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
+	/** Rows the most recent getArchives on THIS thread could not decode (view rows or nulls). */
+	private final ThreadLocal<Integer> lastUnreadableArchives = ThreadLocal.withInitial(() -> 0);
+
+	public int lastUnreadableArchiveCount() {
+		return lastUnreadableArchives.get();
+	}
+
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
+		lastUnreadableArchives.set(0);
 		try {
 			// Query allByCreated view with pagination parameters (same as v2.4)
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
@@ -229,6 +242,13 @@ public class ArchiveDaoDelegate {
 			ViewResult result = client.queryView("_repo", "allByCreated", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
 
+			if (result.getRows() == null) {
+				// The door getChildren closed first: "answered without rows" is not "there are
+				// no archives", and the caller diffs this list against a snapshot and deletes
+				// by absence — an empty page here would reconcile the whole catalog away.
+				throw new IllegalStateException("the archive view answered without rows for '"
+						+ repositoryId + "'; that is not the same as there being no archives");
+			}
 			if (result.getRows() != null) {
 				for (ViewResultRow row : result.getRows()) {
 					// The 'allByCreated' view emits: emit(doc.created, doc)
@@ -240,18 +260,33 @@ public class ArchiveDaoDelegate {
 							CouchArchive ca = mapper.convertValue(docValue, CouchArchive.class);
 							if (ca != null) {
 								archives.add(ca.convert());
+							} else {
+								lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 							}
 						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
+							// COUNTED, not just logged. A row the view returned and this code
+							// could not decode is an archive that exists; dropping it makes the
+							// list shorter than the archive database, and the Purview sync
+							// diffs that list against its snapshot — so a dropped row read as
+							// a DELETED archive and was reconciled out of the catalog.
+							lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+							log.warn("Failed to convert archive document (counted as unreadable,"
+									+ " not as absent): " + e.getMessage());
 						}
+					} else {
+						lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 					}
 				}
 			}
 
 			return archives;
 		} catch (Exception e) {
+			// NOT an empty list. "The archive view could not be asked" and "there are no
+			// archives" are different facts, and the callers of this list include a diff
+			// that deletes by absence — the exact substitution getChildren stopped making.
 			log.error("Error getting archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archive view could not be read for '"
+					+ repositoryId + "'; this is NOT a finding that there are no archives", e);
 		}
 	}
 
@@ -263,47 +298,67 @@ public class ArchiveDaoDelegate {
 			// Cloudant SDK auto-serializes key to JSON, so pass raw string without quotes
 			queryParams.put("key", creator);
 
+			lastUnreadableArchives.set(0);
 			ViewResult result = client.queryView("_repo", "byCreator", queryParams);
+			// The byArchivedBy standard, applied to its twin: this listing is UNIONed into
+			// the non-admin trash, so a row dropped here is a document the user cannot find
+			// or restore, presented inside a listing that claims to be complete.
+			if (result == null || result.getRows() == null) {
+				throw new IllegalStateException("the byCreator view answered without rows in '"
+						+ repositoryId + "'; that is not the same as the trash being empty");
+			}
 			List<Archive> archives = new ArrayList<Archive>();
-
-			if (result != null && result.getRows() != null) {
-				ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-				for (ViewResultRow row : result.getRows()) {
-					// Use row.getDoc() instead of row.getValue() because the emit value
-					// contains raw timestamps (long) that cannot be deserialized to GregorianCalendar.
-					// includeDocs=true is set in queryView, so getDoc() returns the full document.
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
-						try {
-							Map<String, Object> docMap = doc.getProperties();
-							if (docMap != null) {
-								if (!docMap.containsKey("_id") && doc.getId() != null) {
-									docMap.put("_id", doc.getId());
-								}
-								if (!docMap.containsKey("_rev") && doc.getRev() != null) {
-									docMap.put("_rev", doc.getRev());
-								}
-								String jsonString = mapper.writeValueAsString(docMap);
-								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
-								if (ca != null) {
-									archives.add(ca.convert());
-								}
-							}
-						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
-						}
-					}
+			int unreadable = 0;
+			ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+			for (ViewResultRow row : result.getRows()) {
+				// Use row.getDoc() instead of row.getValue() because the emit value
+				// contains raw timestamps (long) that cannot be deserialized to GregorianCalendar.
+				// includeDocs=true is set in queryView, so getDoc() returns the full document.
+				com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
+				if (doc == null) {
+					unreadable++;
+					continue;
 				}
+				try {
+					Map<String, Object> docMap = doc.getProperties();
+					if (docMap == null) {
+						unreadable++;
+						continue;
+					}
+					if (!docMap.containsKey("_id") && doc.getId() != null) {
+						docMap.put("_id", doc.getId());
+					}
+					if (!docMap.containsKey("_rev") && doc.getRev() != null) {
+						docMap.put("_rev", doc.getRev());
+					}
+					String jsonString = mapper.writeValueAsString(docMap);
+					CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
+					if (ca != null) {
+						archives.add(ca.convert());
+					} else {
+						unreadable++;
+					}
+				} catch (Exception e) {
+					unreadable++;
+					log.warn("Failed to convert archive document: " + e.getMessage());
+				}
+			}
+			lastUnreadableArchives.set(unreadable);
+			if (unreadable > 0) {
+				throw new IllegalStateException(unreadable + " archive row(s) by creator could"
+						+ " not be read in '" + repositoryId + "'; serving the remainder as"
+						+ " the whole trash would hide restorable documents");
 			}
 
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by creator in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives by creator could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
 	public List<Archive> getArchivesByArchivedBy(String repositoryId, String archivedBy) {
+		lastUnreadableArchives.set(0);
 		try {
 			String archiveRepositoryId = repositoryInfoMap.getArchiveId(repositoryId);
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
@@ -314,11 +369,21 @@ public class ArchiveDaoDelegate {
 			ViewResult result = client.queryView("_repo", "byArchivedBy", queryParams);
 			List<Archive> archives = new ArrayList<Archive>();
 
-			if (result != null && result.getRows() != null) {
+			if (result == null || result.getRows() == null) {
+				// Same rule as getArchives: "answered without rows" is not "there are none".
+				throw new IllegalStateException("the byArchivedBy view answered without rows"
+						+ " for '" + repositoryId + "'; that is not the same as there being"
+						+ " no archives");
+			}
+			{
 				ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
 				for (ViewResultRow row : result.getRows()) {
 					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					if (doc != null) {
+					if (doc == null) {
+						lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+						continue;
+					}
+					{
 						try {
 							Map<String, Object> docMap = doc.getProperties();
 							if (docMap != null) {
@@ -332,10 +397,18 @@ public class ArchiveDaoDelegate {
 								CouchArchive ca = mapper.readValue(jsonString, CouchArchive.class);
 								if (ca != null) {
 									archives.add(ca.convert());
+								} else {
+									lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 								}
+							} else {
+								lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
 							}
 						} catch (Exception e) {
-							log.warn("Failed to convert archive document: " + e.getMessage());
+							// COUNTED, per the same-file rule getArchives set: a row that will
+							// not decode is an archive that exists.
+							lastUnreadableArchives.set(lastUnreadableArchives.get() + 1);
+							log.warn("Failed to convert archive document (counted as"
+									+ " unreadable, not as absent): " + e.getMessage());
 						}
 					}
 				}
@@ -344,7 +417,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by archivedBy in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -639,6 +712,23 @@ public class ArchiveDaoDelegate {
 	}
 
 	public void restoreAttachment(String repositoryId, Archive archive) {
+		restoreAttachmentRecording(repositoryId, archive);
+	}
+
+	/**
+	 * {@link #restoreAttachment}, reporting the bytes written back (W11, E1).
+	 *
+	 * <p>The digest is taken IN THE PASS that writes the bytes back — a {@code DigestInputStream}
+	 * under the PUT — not by reading the archive again, which would be a second observation.
+	 * When the length CouchDB stored differs from the bytes counted going past, the digest is
+	 * not vouched for (null): the ADR's rule that a write shorter than it declared has no digest.
+	 */
+	public jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restoreAttachmentRecording(
+			String repositoryId, Archive archive) {
+		// NOTHING until bytes go past: the no-attachment, no-document and no-binary paths all end
+		// with nothing written back, which is a known outcome, not an unreported one (null).
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 		if (archive == null) {
 			// getAttachmentArchive returns null, by design, when the document archive carries
 			// no attachmentNodeId (it logs a WARN and returns) or when the attachments view
@@ -652,7 +742,7 @@ public class ArchiveDaoDelegate {
 			// archive had no attachmentNodeId.
 			log.info("restoreAttachment: nothing to restore — the document archive names no "
 					+ "attachment (repository " + repositoryId + ")");
-			return;
+			return jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 		}
 		try {
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
@@ -668,7 +758,7 @@ public class ArchiveDaoDelegate {
 			com.ibm.cloud.cloudant.v1.model.Document archivedDoc = archiveClient.get(archiveId);
 			if (archivedDoc == null) {
 				log.warn("Archive attachment document not found: " + archiveId);
-				return;
+				return jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.NOTHING;
 			}
 
 			// Build restored document from raw properties
@@ -716,7 +806,37 @@ public class ArchiveDaoDelegate {
 							? (String) docMap.get("mimeType") : "application/octet-stream";
 						if (mimeType.isEmpty()) mimeType = "application/octet-stream";
 
-						client.createAttachment(originalId, revision, "content", body, mimeType);
+						// E1 (W11): digest and count the bytes as they go past, in this one pass.
+						java.security.MessageDigest digestOfRestored = java.security.MessageDigest.getInstance("SHA-256");
+						long[] bytesCounted = { 0L };
+						java.io.InputStream counted = new java.io.FilterInputStream(
+								new java.security.DigestInputStream(body, digestOfRestored)) {
+							@Override
+							public int read() throws java.io.IOException {
+								int b = super.read();
+								if (b >= 0) {
+									bytesCounted[0]++;
+								}
+								return b;
+							}
+
+							@Override
+							public int read(byte[] buffer, int off, int len) throws java.io.IOException {
+								int n = super.read(buffer, off, len);
+								if (n > 0) {
+									bytesCounted[0] += n;
+								}
+								return n;
+							}
+						};
+						client.createAttachment(originalId, revision, "content", counted, mimeType);
+						String restoredDigest = hexOf(digestOfRestored.digest());
+						// The bytes went past. From here on the answer is never NOTHING: if the
+						// confirmation read below does not answer, the digest is not vouched for
+						// (null) and the caller keeps its row OPEN — but "we could not confirm" must
+						// not become "nothing was written", which abandons the row over bytes that
+						// are back (Codex review, P1).
+						restored = new jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes(originalId, null, -1L);
 
 						// Update length metadata, preserving _attachments stubs
 						com.ibm.cloud.cloudant.v1.model.Document updatedDoc = client.get(originalId);
@@ -724,6 +844,9 @@ public class ArchiveDaoDelegate {
 							Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
 							if (atts != null && atts.get("content") != null) {
 								long actualLength = atts.get("content").length();
+								// Vouched for only when what CouchDB stored is what went past.
+								restored = new jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes(originalId,
+										actualLength == bytesCounted[0] ? restoredDigest : null, actualLength);
 								Map<String, Object> updateMap = new HashMap<>();
 								updateMap.put("_id", originalId);
 								updateMap.put("_rev", updatedDoc.getRev());
@@ -756,7 +879,28 @@ public class ArchiveDaoDelegate {
 					throw new RuntimeException("Failed to restore binary attachment for: " + originalId
 						+ " (binary exists in archive)", attachmentError);
 				}
-				log.info("restoreAttachment: no binary content in archive for " + originalId);
+				// WHY there is no binary, recorded ON the restored row — R57.
+				//
+				// The restore finishes here without bytes and used to answer NOTHING, the same
+				// value it answers when the archive row could not be read at all. For a
+				// cold-MOVEd version that is the permanent state: the content is in cold
+				// storage, this product has no read-back path (adapter.get has no callers), and
+				// every later checkOut / checkIn / copy is refused with "if a restore is in
+				// progress, retry shortly" — a restore that has already finished. The archive
+				// row is the only place that can tell the two apart, and the copy above
+				// deliberately drops its cold fields, so the reason is written explicitly.
+				jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence =
+						movedToCold(archive, archivedDoc)
+								? jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+										.ContentAbsence.MOVED_TO_COLD
+								: jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+										.ContentAbsence.ARCHIVE_HAD_NO_CONTENT;
+				recordContentAbsence(client, originalId, absence,
+						archivedDoc == null ? null : archivedDoc.getProperties());
+				restored = jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+						.nothingBecause(absence);
+				log.info("restoreAttachment: no binary content in archive for " + originalId
+						+ " (" + absence + ")");
 			}
 
 			log.info("Attachment restored from archive: " + archiveId + " to original ID: " + originalId);
@@ -765,9 +909,88 @@ public class ArchiveDaoDelegate {
 			log.error("Error restoring attachment from archive: " + archive.getId() + " in repository: " + repositoryId, e);
 			throw new RuntimeException("Failed to restore attachment from archive", e);
 		}
+		return restored;
+	}
+
+	private static String hexOf(byte[] hash) {
+		StringBuilder out = new StringBuilder(hash.length * 2);
+		for (byte b : hash) {
+			out.append(Character.forDigit((b >> 4) & 0xF, 16));
+			out.append(Character.forDigit(b & 0xF, 16));
+		}
+		return out.toString();
+	}
+
+	/** The property a restored row carries when it finished without bytes — R57. */
+	public static final String CONTENT_ABSENCE_FIELD = "contentAbsentBecause";
+
+	/** Where the bytes went, kept beside the reason so an operator can find them. */
+	public static final String CONTENT_REF_FIELD = "contentRefAtRestore";
+
+	/**
+	 * Was the content MOVED to cold storage rather than simply never present?
+	 *
+	 * <p>Read from the archive row, which is the only thing that knows: the restored document
+	 * deliberately drops {@code coldMoveMode} and {@code contentRef}. A COPY leaves the binary
+	 * in the archive, so only a MOVE ends here.
+	 */
+	static boolean movedToCold(Archive archive, com.ibm.cloud.cloudant.v1.model.Document archivedDoc) {
+		if (archive != null && "MOVE".equalsIgnoreCase(archive.getColdMoveMode())) {
+			return true;
+		}
+		if (archive != null && Archive.STATE_ARCHIVED_COLD.equals(archive.getArchiveState())
+				&& archive.getContentRef() != null) {
+			return true;
+		}
+		Map<String, Object> properties = archivedDoc == null ? null : archivedDoc.getProperties();
+		if (properties == null) {
+			return false;
+		}
+		return "MOVE".equalsIgnoreCase(String.valueOf(properties.get("coldMoveMode")));
+	}
+
+	/**
+	 * Writes the reason onto the restored row. Never fails the restore.
+	 *
+	 * <p>A restore that finished is still a restore; refusing to report it because the note
+	 * could not be written would turn a recording problem into a business failure. What the
+	 * caller gets back says the same thing, so the answer is not lost even when this is.
+	 */
+	private void recordContentAbsence(CloudantClientWrapper client, String originalId,
+			jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence,
+			Map<String, Object> archiveProperties) {
+		try {
+			com.ibm.cloud.cloudant.v1.model.Document row = client.get(originalId);
+			if (row == null) {
+				log.warn("restoreAttachment: the restored row " + originalId + " could not be "
+						+ "read back, so why it has no body is not recorded on it");
+				return;
+			}
+			Map<String, Object> update = new HashMap<>();
+			update.put("_id", originalId);
+			update.put("_rev", row.getRev());
+			Map<String, Object> properties = row.getProperties();
+			if (properties != null) {
+				update.putAll(properties);
+			}
+			update.put(CONTENT_ABSENCE_FIELD, absence.name());
+			if (archiveProperties != null && archiveProperties.get("contentRef") != null) {
+				update.put(CONTENT_REF_FIELD, archiveProperties.get("contentRef"));
+			}
+			client.update(update);
+		} catch (Exception couldNotRecord) {
+			log.warn("restoreAttachment: could not record why " + originalId + " has no body ("
+					+ couldNotRecord + "). The restore itself stands", couldNotRecord);
+		}
 	}
 
 	public void restoreDocumentWithArchive(String repositoryId, Archive contentArchive) {
+		restoreDocumentWithArchiveRecording(repositoryId, contentArchive);
+	}
+
+	/** {@link #restoreDocumentWithArchive}, reporting the bytes written back (W11, E1). */
+	public jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restoreDocumentWithArchiveRecording(
+			String repositoryId, Archive contentArchive) {
 		// LOOK BEFORE RESTORING. Separating "there is none" from "we could not get it" has to
 		// happen before the document is written, or the failure this method reports is the
 		// exact shape it was written to fix: the document is back and the caller is told the
@@ -780,7 +1003,8 @@ public class ArchiveDaoDelegate {
 		restoreContent(repositoryId, contentArchive);
 		Archive attachmentArchive = lookup instanceof AttachmentArchiveLookup.Found found
 				? found.archive() : null;
-		restoreAttachment(repositoryId, attachmentArchive);
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				restoreAttachmentRecording(repositoryId, attachmentArchive);
 
 		// DEFENSIVE FIX: After both document and attachment are restored,
 		// ensure the document's mimeType is set correctly.
@@ -836,6 +1060,7 @@ public class ArchiveDaoDelegate {
 		} catch (Exception e) {
 			log.warn("restoreDocumentWithArchive: Failed to fix mimeType from attachment node: " + e.getMessage());
 		}
+		return restored;
 	}
 
 	public void restoreVersionSeries(String repositoryId, String versionSeriesId) {
@@ -884,7 +1109,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting archives by state: " + state + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -906,7 +1131,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting paged archives in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -917,8 +1142,11 @@ public class ArchiveDaoDelegate {
 			// Count-only query: includeDocs=false, limit=0, returns only total_rows
 			return client.queryViewCount("_repo", "archivesByArchivedAt");
 		} catch (Exception e) {
+			// 0 is "the trash is empty", which this failure does not establish — the pager
+			// built on it renders an empty listing over archives that still exist.
 			log.error("Error getting archive count in repository: " + repositoryId, e);
-			return 0;
+			throw new IllegalStateException("the archives could not be counted in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -935,7 +1163,7 @@ public class ArchiveDaoDelegate {
 			return archives;
 		} catch (Exception e) {
 			log.error("Error getting paged archives by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -945,8 +1173,10 @@ public class ArchiveDaoDelegate {
 			CloudantClientWrapper client = connectorPool.getClient(archiveRepositoryId);
 			return client.queryViewCountByKey("_repo", "searchableArchives", state);
 		} catch (Exception e) {
+			// Same rule as the unfiltered count above: a failed count is not zero.
 			log.error("Error getting archive count by state" + (state != null ? " (state=" + state + ")" : "") + " in repository: " + repositoryId, e);
-			return 0;
+			throw new IllegalStateException("the archives could not be counted in '"
+					+ repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -973,7 +1203,7 @@ public class ArchiveDaoDelegate {
 			return candidates;
 		} catch (Exception e) {
 			log.error("Error getting archives for cold transition in repository: " + repositoryId, e);
-			return new ArrayList<Archive>();
+			throw new IllegalStateException("the archives could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
 	}
 
@@ -1108,7 +1338,15 @@ public class ArchiveDaoDelegate {
 					client.queryView("_repo", "documentsByExpirationDate", params);
 
 			List<String> ids = new ArrayList<String>();
-			if (viewResult != null && viewResult.getRows() != null) {
+			if (viewResult == null || viewResult.getRows() == null) {
+				// The catch below refuses a failed sweep; an unanswered view is the same
+				// failure through the other door, and the scheduler records it as a
+				// completed pass that found no candidates.
+				throw new IllegalStateException("the retention view did not answer for '"
+						+ repositoryId + "'; that is not the same as there being no"
+						+ " candidates");
+			}
+			{
 				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
 					if (row.getValue() != null) {
 						ids.add(row.getValue().toString().replace("\"", ""));
@@ -1117,8 +1355,14 @@ public class ArchiveDaoDelegate {
 			}
 			return ids;
 		} catch (Exception e) {
-			log.warn("Error querying documentsByExpirationDate view (may not exist yet): " + e.getMessage());
-			return new ArrayList<String>();
+			// An empty list here is "nothing has expired", and the scheduler records that as
+			// a completed sweep. A retention policy that could not be evaluated has not been
+			// evaluated — the direction is safe (nothing is archived) but the audit record
+			// would say the opposite. The scheduler catches this per repository and logs it
+			// as an error rather than as "0 candidates".
+			log.error("Error querying documentsByExpirationDate view: " + e.getMessage(), e);
+			throw new IllegalStateException("the expired documents of '" + repositoryId
+					+ "' could not be listed; this is NOT a finding that none have expired", e);
 		}
 	}
 
@@ -1140,7 +1384,15 @@ public class ArchiveDaoDelegate {
 					client.queryView("_repo", "documentsByLastModification", params);
 
 			List<String> ids = new ArrayList<String>();
-			if (viewResult != null && viewResult.getRows() != null) {
+			if (viewResult == null || viewResult.getRows() == null) {
+				// The catch below refuses a failed sweep; an unanswered view is the same
+				// failure through the other door, and the scheduler records it as a
+				// completed pass that found no candidates.
+				throw new IllegalStateException("the retention view did not answer for '"
+						+ repositoryId + "'; that is not the same as there being no"
+						+ " candidates");
+			}
+			{
 				for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : viewResult.getRows()) {
 					if (row.getValue() != null) {
 						ids.add(row.getValue().toString().replace("\"", ""));
@@ -1149,8 +1401,10 @@ public class ArchiveDaoDelegate {
 			}
 			return ids;
 		} catch (Exception e) {
-			log.warn("Error querying documentsByLastModification view (may not exist yet): " + e.getMessage());
-			return new ArrayList<String>();
+			// Same rule as the expiration sweep above.
+			log.error("Error querying documentsByLastModification view: " + e.getMessage(), e);
+			throw new IllegalStateException("the stale documents of '" + repositoryId
+					+ "' could not be listed; this is NOT a finding that none are stale", e);
 		}
 	}
 

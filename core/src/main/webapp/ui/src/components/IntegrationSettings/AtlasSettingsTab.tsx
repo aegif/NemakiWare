@@ -55,7 +55,7 @@ export function AtlasSettingsTab() {
       <Alert
         message={
           <Space>
-            <Tag color="blue">Beta</Tag>
+            <Tag color="blue">{t('common.beta')}</Tag>
             {t('integrationSettings.atlas.notice')}
           </Space>
         }

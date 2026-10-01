@@ -193,6 +193,14 @@ public class LineageCatalogReconciliationServiceImpl
         for (int skip = 0; skip < total; skip += CHILD_PAGE_SIZE) {
             List<Content> page = contentDaoService.getChildrenPaged(
                     repositoryId, folderId, skip, CHILD_PAGE_SIZE);
+            // A clean reconciliation report over a decode-shortened walk certifies folders
+            // nobody looked at. Same rule, same day, as the backfill's walk one class over.
+            if (contentDaoService.lastUnreadableChildCount() > 0) {
+                throw new IllegalStateException("folder " + folderId + "'s listing lost "
+                        + contentDaoService.lastUnreadableChildCount() + " row(s) to decode"
+                        + " failures; a reconciliation report built on it would read as a"
+                        + " clean pass over subtrees that were never walked");
+            }
             if (page == null || page.isEmpty()) {
                 break;
             }

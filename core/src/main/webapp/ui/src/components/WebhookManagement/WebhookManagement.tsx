@@ -25,6 +25,7 @@ import {
   ExperimentOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
@@ -179,7 +180,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         }
       } else if (data.status === 'failure') {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.loadError'))
+          withDetail(t('webhookManagement.messages.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch (e) {
@@ -225,7 +226,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         setConfigRows(rows);
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.configsLoadError'))
+          withDetail(t('webhookManagement.configsLoadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch (e) {
@@ -265,7 +266,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         loadDeliveryLogs();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.retryError'))
+          withDetail(t('webhookManagement.messages.retryError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -300,7 +301,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
         });
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('webhookManagement.messages.testError'))
+          withDetail(t('webhookManagement.messages.testError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -665,7 +666,7 @@ export const WebhookManagement: React.FC<WebhookManagementProps> = ({ repository
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label={t('webhookManagement.testModal.responseTime')}>
-                {testResult.responseTime}ms
+                {t('common.durationMs', { value: testResult.responseTime })}
               </Descriptions.Item>
               {testResult.responseBody && (
                 <Descriptions.Item label={t('webhookManagement.testModal.responseBody')}>

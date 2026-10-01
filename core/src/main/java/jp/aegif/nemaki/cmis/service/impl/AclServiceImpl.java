@@ -1307,6 +1307,19 @@ public class AclServiceImpl implements AclService {
 			List<Content> children = null;
 			try {
 				children = contentService.getChildren(repositoryId, content.getId());
+				// A SHORT listing is the quiet twin of the catch below: rows the repository
+				// cannot decode are absent without an exception, so those children's Solr ACL
+				// (and epoch stamp) would simply never be refreshed — invisible to the verdict,
+				// which only judges documents the index already holds. Recorded to the same
+				// reconcile queue as a thrown enumeration, so the re-drive picks the folder up.
+				if (contentService.lastUnreadableChildCount() > 0) {
+					log.warn(contentService.lastUnreadableChildCount() + " child row(s) of "
+							+ content.getId() + " could not be decoded during search-index ACL "
+							+ "refresh; the folder is queued for reconciliation");
+					recordNodeFailure(reconcile, counters, repositoryId, content.getId(),
+							jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.TRAVERSAL_FAILURE,
+							epochObligation);
+				}
 			} catch (Exception e) {
 				log.warn("Failed to list children of " + content.getId()
 						+ " during search-index ACL refresh (subtree skipped): " + e.getMessage());
@@ -1403,6 +1416,14 @@ public class AclServiceImpl implements AclService {
 
 			if (current.isFolder()) {
 				List<Content> children = contentService.getChildren(repositoryId, current.getId());
+				if (contentService.lastUnreadableChildCount() > 0) {
+					// Their caches cannot be cleared by id (the ids are exactly what could not
+					// be read); the staleness is bounded by the cache TTL, so a WARN is the
+					// proportionate answer — but silence was not.
+					log.warn(contentService.lastUnreadableChildCount() + " child row(s) of "
+							+ current.getId() + " could not be decoded during ACL cache "
+							+ "clearing; their cached ACLs stay stale until TTL");
+				}
 				if (!CollectionUtils.isEmpty(children)) {
 					for (Content child : children) {
 						// Only clear cache for children that inherit ACL (their calculated ACL depends on parent)
@@ -1448,6 +1469,11 @@ public class AclServiceImpl implements AclService {
 			}
 
 			List<Content> children = contentService.getChildren(repositoryId, content.getId());
+			if (contentService.lastUnreadableChildCount() > 0) {
+				log.warn(contentService.lastUnreadableChildCount() + " child row(s) of "
+						+ content.getId() + " could not be decoded while queueing change "
+						+ "events; those children get no change event for this ACL change");
+			}
 			if(CollectionUtils.isEmpty(children)){
 				return;
 			}

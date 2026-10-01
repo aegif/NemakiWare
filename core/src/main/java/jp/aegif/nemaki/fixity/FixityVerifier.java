@@ -27,6 +27,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Re-reads stored bytes and checks them against the digest the capture recorded.
  *
@@ -48,6 +51,8 @@ import java.util.List;
  * {@link FixityOutcome#NOT_RECORDED} — outside the check, not failures of it.
  */
 public final class FixityVerifier {
+
+    private static final Logger logger = LoggerFactory.getLogger(FixityVerifier.class);
 
     /** Where the capture records the digest of what it fetched. */
     public static final String INTEGRATION_ASPECT = "nemaki:externalIntegration";
@@ -140,9 +145,15 @@ public final class FixityVerifier {
         } catch (IOException | NoSuchAlgorithmException e) {
             // "We could not look" is not "we looked and it was wrong". Reporting a read failure
             // as a mismatch would send an operator hunting corruption that may not exist.
+            // And the exception's own text stays in the log: this reason reaches clients through
+            // the authenticity report and the scan findings (CodeQL #1410, owner decision
+            // 2026-09-28). The class name says what kind of failure; the incident id finds it.
+            String incidentId = java.util.UUID.randomUUID().toString();
+            logger.warn("Fixity: the stored bytes of {} could not be hashed [incident {}]: {}",
+                    content == null ? null : content.getId(), incidentId, e.getMessage());
             return Result.unverifiable(recorded,
-                    "the stored bytes could not be hashed: " + e.getClass().getSimpleName()
-                            + ": " + e.getMessage());
+                    "the stored bytes could not be hashed (" + e.getClass().getSimpleName()
+                            + "); the details were logged under incident " + incidentId);
         } finally {
             closeQuietly(bytes);
         }

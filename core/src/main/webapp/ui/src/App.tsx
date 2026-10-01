@@ -202,6 +202,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, Spin } from 'antd';
+import jaJP from 'antd/locale/ja_JP';
+import enUS from 'antd/locale/en_US';
+import { useTranslation } from 'react-i18next';
+import { uiLanguage } from './i18n';
 import { Layout } from './components/Layout/Layout';
 import { SetupWizard } from './components/SetupWizard/SetupWizard';
 import { DocumentList } from './components/DocumentList/DocumentList';
@@ -222,6 +226,7 @@ import { CloudDirectorySync } from './components/CloudDirectorySync/CloudDirecto
 import { ConfigViewer } from './components/ConfigViewer/ConfigViewer';
 import { IntegrationSettings } from './components/IntegrationSettings/IntegrationSettings';
 import LineageJournalPage from './components/LineageJournal/LineageJournalPage';
+import { EvidenceAnchoring } from './components/EvidenceAnchoring/EvidenceAnchoring';
 import { PurviewManagement } from './components/PurviewManagement/PurviewManagement';
 import { RssTokenManagement } from './components/RssTokenManagement/RssTokenManagement';
 import { AccountSettings } from './components/AccountSettings/AccountSettings';
@@ -241,6 +246,15 @@ const customTheme = {
     colorBorder: '#cccccc',
   },
 };
+
+// Ant Design's own texts (empty tables, date pickers, default confirm buttons, empty selects,
+// pagination, default form messages) in the UI language. Without a locale antd shows English,
+// which on the Japanese UI — the default — mixed English into Japanese screens. The app's static
+// Modal.confirm / Modal.error calls pass their own button texts or show only OK (the same in both
+// languages), so they do not depend on antd's own confirm locale; the ConfigProvider sets that too
+// (antd 6.5.1: LocaleProvider → changeConfirmLocale, read), but nothing here relies on it and it is
+// not measured.
+const antdLocales = { ja: jaJP, en: enUS } as const;
 
 // LocalStorage key for MCP pending login code (must match McpCloudLogin.tsx)
 // Using localStorage instead of sessionStorage because OAuth libraries may interfere
@@ -507,6 +521,13 @@ function AppRoutes() {
               </AdminRoute>
             </ProtectedRoute>
           } />
+          <Route path="/evidence-anchoring" element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <EvidenceAnchoring repositoryId={authToken.repositoryId} />
+              </AdminRoute>
+            </ProtectedRoute>
+          } />
           <Route path="/config-viewer" element={
             <ProtectedRoute>
               <AdminRoute>
@@ -540,8 +561,10 @@ function AppRoutes() {
 }
 
 function App() {
+  // Re-renders on a language switch (react-i18next listens for it), so antd follows at once.
+  const { i18n } = useTranslation();
   return (
-    <ConfigProvider theme={customTheme}>
+    <ConfigProvider theme={customTheme} locale={antdLocales[uiLanguage(i18n.resolvedLanguage)]}>
       {/* AntApp wraps the entire application to ensure Modal.confirm, message, notification
           static methods properly integrate with React lifecycle and clean up on unmount.
           This prevents the gray overlay issue that occurs when modals are not properly destroyed. */}

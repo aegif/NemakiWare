@@ -281,13 +281,23 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                 
                 com.ibm.cloud.cloudant.v1.model.ViewResult result = client.queryView("_repo", "children", queryParams);
                 
+                int unreadableRows = 0;
                 if (result.getRows() != null && !result.getRows().isEmpty()) {
                     if (log.isDebugEnabled()) {
                         log.debug("Direct CouchDB query found " + result.getRows().size() + " raw rows");
                     }
                     
                     for (com.ibm.cloud.cloudant.v1.model.ViewResultRow row : result.getRows()) {
-                        if (row.getDoc() != null) {
+                        if (row.getDoc() == null) {
+                            // Counted, not skipped: the row that will not decode may BE the
+                            // .system folder, and walking past it lets the caller create a
+                            // second one — the exact healthy-looking-absence failure this
+                            // patch documents for the view-rebuild case. The views-answering
+                            // gate cannot see this: the view IS answering, per-row.
+                            unreadableRows++;
+                            continue;
+                        }
+                        {
                             try {
                                 // CRITICAL FIX: Extract document ID correctly from ViewResultRow
                                 // Primary method: Get document ID from row itself
@@ -381,7 +391,9 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                                     }
                                 }
                             } catch (Exception docEx) {
-                                log.warn("Error processing document in system folder search", docEx);
+                                unreadableRows++;
+                                log.warn("Error processing document in system folder search"
+                                        + " — counted as unreadable, not as absent", docEx);
                             }
                         }
                     }
@@ -391,6 +403,16 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                     }
                 }
                 
+                if (unreadableRows > 0) {
+                    // No .system among the READABLE rows, and rows exist that could not be
+                    // read. "Not found" is not established — throwing lands in
+                    // AbstractNemakiPatch's catch, the history row is withheld, and the next
+                    // start retries against a repaired listing instead of creating a
+                    // duplicate .system folder nothing can merge afterwards.
+                    throw new IllegalStateException(unreadableRows + " child row(s) of the root"
+                            + " folder could not be decoded, so whether a .system folder"
+                            + " already exists is unknown; refusing to create one");
+                }
                 if (log.isDebugEnabled()) {
                     log.debug("No existing system folders found via direct CouchDB query");
                 }
@@ -401,6 +423,7 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
 
                 // Fallback: use ContentService.getChildren() which works even without views
                 // (the cached DAO falls back to nonCachedContentDaoService when tree cache is empty)
+                int fallbackUnreadable = 0;
                 try {
                     java.util.List<jp.aegif.nemaki.model.Content> children = contentService.getChildren(repositoryId, rootFolderId);
                     if (children != null) {
@@ -421,14 +444,70 @@ public class Patch_SystemFolderSetup extends AbstractNemakiPatch {
                             }
                         }
                     }
+                    // The quiet twin of the catch below: rows the store cannot DECODE are
+                    // absent from `children` without any exception, and one of them may be the
+                    // .system folder itself. The direct CouchDB path above refuses for this
+                    // (its refusal lands HERE, as directEx) — so a fallback that does not
+                    // apply the same rule would undo it one branch later.
+                    //
+                    // Read inside the try, thrown AFTER the catch: thrown here it would be
+                    // caught by the very catch below and re-worded as "could not be
+                    // enumerated" — refused either way, but for a reason that sends the
+                    // operator to the wrong place.
+                    fallbackUnreadable = contentService.lastUnreadableChildCount();
                 } catch (Exception fallbackEx) {
-                    log.warn("ContentService fallback also failed: " + fallbackEx.getMessage());
+                    // "We could not look" must not become "there is none" HERE of all places:
+                    // the caller's response to null is to CREATE a .system folder, and this
+                    // class's own comment records what that cost last time — two .system
+                    // folders in bedroom and a broken /.system path resolution.
+                    //
+                    // It became easier to reach on 2026-08-28, when getChildren was changed to
+                    // refuse an unanswered view rather than report an empty folder. That
+                    // correction is right, and it makes this branch throw wherever the
+                    // enumeration genuinely fails — a design document being rebuilt, a
+                    // repository not seeded from a dump.
+                    //
+                    // NOT on every fresh install, which is what the first version of this
+                    // comment said. DatabasePreInitializer is @Order(1) and the patch runner is
+                    // @Order(3), and both shipped dumps already contain the `children` view —
+                    // so on the standard path the view is there before this runs. Checked
+                    // rather than reasoned from the patch order, after asserting the opposite.
+                    //
+                    // So: no answer, no creation. The throw below is caught by
+                    // AbstractNemakiPatch, which logs it and does NOT reach createPathHistory,
+                    // so the history row is withheld and the patch is retried on the next start
+                    // — by which time the view is there — and startup is not stopped. (Named
+                    // reportIncomplete here once; this class never calls it. Same outcome, but
+                    // a reader following the name found nothing.)
+                    log.warn("The root folder of " + repositoryId + " could not be enumerated ("
+                            + fallbackEx.getMessage() + "), so whether a .system folder already "
+                            + "exists is UNKNOWN. Not creating one: this patch is retried on the "
+                            + "next start rather than risking a second .system folder.",
+                            fallbackEx);
+                    throw new IllegalStateException("the root folder of " + repositoryId
+                            + " could not be enumerated, so it is unknown whether a .system "
+                            + "folder already exists", fallbackEx);
+                }
+                if (fallbackUnreadable > 0) {
+                    throw new IllegalStateException(fallbackUnreadable + " child row(s) of the"
+                            + " root folder could not be decoded, so whether a .system folder"
+                            + " already exists is unknown; refusing to create one");
                 }
 
                 return null;
             }
             
         } catch (Exception e) {
+            // "Could not check" is not "there is none", and this method's answer is read by a
+            // caller whose response to null is to CREATE a second .system folder. The refusal
+            // added to the fallback below was landing HERE and being turned straight back into
+            // an absence — an outer catch swallowing a guard added to an inner one, which is
+            // the shape this project keeps finding and had already found twice this week.
+            if (e instanceof IllegalStateException) {
+                log.error("Refusing to report the .system folder as absent for " + repositoryId
+                        + ": " + e.getMessage(), e);
+                throw (IllegalStateException) e;
+            }
             log.warn("Error checking for existing System folder", e);
             return null;
         }

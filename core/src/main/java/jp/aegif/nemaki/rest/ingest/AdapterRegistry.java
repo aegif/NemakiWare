@@ -37,7 +37,7 @@ public final class AdapterRegistry {
                 "gmail_mail", "Gmail",
                 SourceArchetype.MESSAGE_CONTEXT,
                 Set.of(),
-                Set.of("query", "limit"),
+                Set.of("query", "limit", "gmailListMaxRequests", "gmailCheckpointLagMinutes"),
                 List.of(),
                 3, "{\"query\":\"in:inbox is:unread\"}"));
 
@@ -48,7 +48,7 @@ public final class AdapterRegistry {
                 "m365_mail", "M365 Mail",
                 SourceArchetype.MESSAGE_CONTEXT,
                 Set.of(),
-                Set.of("userId", "folderId", "limit"),
+                Set.of("userId", "folderId", "limit", "m365MessageMaxRequests"),
                 List.of("userId", "folderId"),
                 3, "{\"userId\":\"user@contoso.com\",\"folderId\":\"inbox\"}"));
 
@@ -57,7 +57,7 @@ public final class AdapterRegistry {
                 "slack", "Slack",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("channelId"),
-                Set.of("limit"),
+                Set.of("limit", "slackHistoryMaxRequests"),
                 List.of("channelId"),
                 3, "{\"channelId\":\"C01ABCD2345\"}"));
 
@@ -65,7 +65,7 @@ public final class AdapterRegistry {
                 "teams", "Microsoft Teams",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("teamId", "channelId"),
-                Set.of("limit"),
+                Set.of("limit", "teamsMessageMaxRequests"),
                 List.of("teamId", "channelId"),
                 3, "{\"teamId\":\"...\",\"channelId\":\"...\"}"));
 
@@ -73,7 +73,7 @@ public final class AdapterRegistry {
                 "mattermost", "Mattermost",
                 SourceArchetype.CHAT_CONTEXT,
                 Set.of("channelId"),
-                Set.of("limit"),
+                Set.of("limit", "mattermostPostMaxRequests"),
                 List.of("channelId"),
                 3, "{\"channelId\":\"...\"}"));
 
@@ -99,9 +99,9 @@ public final class AdapterRegistry {
                 "salesforce", "Salesforce",
                 SourceArchetype.BUSINESS_RECORD,
                 Set.of(),
-                Set.of("soql", "limit"),
+                Set.of("soql", "limit", "salesforceQueryMaxRequests", "salesforceCheckpointLagMinutes"),
                 List.of(),
-                2, "{\"soql\":\"SELECT Id,Name,LastModifiedDate FROM Account\"}"));
+                2, "{\"soql\":\"SELECT Id, Name FROM Account\"}"));
 
         // ── FILE_SHARE ──
         // Box webhooks carry the parent folder id, so folderId is a webhook

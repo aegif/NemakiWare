@@ -251,6 +251,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Select, DatePicker, InputNumber, Button, message } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { ActionForm, ActionFormField } from '../../types/cmis';
 import { ActionService } from '../../services/action';
 
@@ -305,10 +306,10 @@ export const ActionFormRenderer: React.FC<ActionFormRendererProps> = ({
     try {
       const result = await actionService.executeAction(repositoryId, actionId, objectId, values);
       if (result.success) {
-        message.success(result.message || t('actionForm.messages.executeSuccess'));
+        message.success(withDetail(t('actionForm.messages.executeSuccess'), result.message));
         onComplete();
       } else {
-        message.error(result.message || t('actionForm.messages.executeFailed'));
+        message.error(withDetail(t('actionForm.messages.executeFailed'), result.message));
       }
     } catch (error) {
       // Action execution failed

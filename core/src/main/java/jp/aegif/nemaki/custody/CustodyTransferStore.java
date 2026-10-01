@@ -66,4 +66,17 @@ public interface CustodyTransferStore {
     default int unreadableCount() {
         return 0;
     }
+
+    /**
+     * Whether the last {@code findByObject} on THIS thread could not be asked at all.
+     *
+     * <p>Separate from {@link #unreadableCount()} because they are different facts and folding
+     * them into one integer made the consumer state an existence nobody had established. A view
+     * that did not answer was counted as ONE unreadable row, and the API then said "at least 1
+     * stored transfer could not be read" — which asserts that a transfer is there. There may be
+     * none. "At least" does not fix it: it still says one or more.
+     */
+    default boolean lastQueryFailed() {
+        return false;
+    }
 }

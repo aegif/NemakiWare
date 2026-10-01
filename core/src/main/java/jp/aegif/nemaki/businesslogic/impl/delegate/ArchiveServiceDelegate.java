@@ -47,13 +47,151 @@ public class ArchiveServiceDelegate {
 	private final ContentService contentService;
 	private final Supplier<SolrUtil> solrUtilSupplier;
 	private final BiConsumer<CallContext, NodeBase> signatureSetter;
+	/** E1's recorder, or a supplier of null where none is wired (then nothing is recorded). */
+	private final Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier;
 
 	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
 			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter) {
+		this(contentDaoService, contentService, solrUtilSupplier, signatureSetter, () -> null);
+	}
+
+	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
+			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter,
+			Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier) {
 		this.contentDaoService = contentDaoService;
 		this.contentService = contentService;
 		this.solrUtilSupplier = solrUtilSupplier;
 		this.signatureSetter = signatureSetter;
+		this.recorderSupplier = recorderSupplier == null ? () -> null : recorderSupplier;
+	}
+
+	// ///////////////////////////////////////
+	// E1: transitions of a version's bytes (W11 / W13 / W14)
+	// ///////////////////////////////////////
+
+	/** Opens the journal row BEFORE the bytes move. Null when no recorder is wired. */
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openTransition(String repositoryId,
+			String versionObjectId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind kind) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || versionObjectId == null) {
+			return null;
+		}
+		return recorder.openBeforeWriting(repositoryId, versionObjectId, versionObjectId, kind,
+				java.time.Instant.now().toString());
+	}
+
+	/** Records the transition and closes the row. Never fails the operation it belongs to. */
+	private void closeTransition(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition transition,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow bytesNow) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || pending == null) {
+			return;
+		}
+		recorder.recordTransition(pending, transition, bytesNow);
+	}
+
+	/**
+	 * E1 (W11). A restore RECEIVES bytes, so it is a state statement — {@code RESTORED}, the
+	 * fourth commitment kind — with the digest the DAO took as the bytes were written back.
+	 *
+	 * <p>Three outcomes, three different records: bytes vouched for → RESTORED statement; bytes
+	 * written but not vouched for → the row stays OPEN (a gap that is listable); no binary
+	 * written back → the row is closed as abandoned, because nothing was written and an open row
+	 * would report a gap that is not one. A DAO that cannot report (null) leaves the row open:
+	 * "not known" is not "nothing".
+	 *
+	 * <p>The abandoned row carries WHY. {@code wroteBytes()} is false for three different
+	 * situations — the archive had no content, the content was moved to cold storage, and the
+	 * archive row could not be read — and the sentence is persisted, so one sentence for all
+	 * three puts a falsehood in the journal for two of them.
+	 */
+	private void recordRestored(String repositoryId, Archive archive,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored) {
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder = recorderSupplier.get();
+		if (recorder == null || pending == null) {
+			return;
+		}
+		String versionId = archive.getOriginalId();
+		if (restored == null) {
+			log.warn("E1 (W11): the restore of {} did not report what it wrote back, so no statement "
+					+ "was recorded. The journal row stays open.", versionId);
+			return;
+		}
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence absence =
+				restored.absence();
+		if (!restored.wroteBytes()
+				&& (absence == null
+						|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+								.ContentAbsence.NOT_DETERMINED
+						|| absence == jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes
+								.ContentAbsence.NONE)) {
+			// The row stays OPEN. `abandon` closes a row because the write VERIFIABLY did not
+			// happen; NOT_DETERMINED is "the archive row could not be read", which is not that.
+			// Closing it took an unresolved gap off the list of unresolved gaps — "we could not
+			// look" recorded as "there was nothing", one state transition further in than the
+			// sentence (Codex, ninth review, P1).
+			//
+			// NONE and null belong here too. NONE means "bytes were written back, OR nothing has
+			// been determined" (ContentDaoService), so reaching this point with NONE is the
+			// second half of that — undetermined. It used to fall into the `default` arm below
+			// and have "the archived version carried no content of its own" PERSISTED about it
+			// (subagent, tenth review, P3); null used to raise an NPE in the switch.
+			log.warn("E1 (W11): the restore of {} did not report WHY nothing was written back, "
+					+ "so the journal row stays open rather than being closed as abandoned.",
+					versionId);
+			return;
+		}
+		if (!restored.wroteBytes()) {
+			// THE REASON, not one sentence for three situations. This wrote "the archive
+			// carried no binary content" for a cold MOVE — where the archive DID carry
+			// content, and it is in cold storage — and for an archive row this node could not
+			// read at all. The sentence is PERSISTED by journal.abandon, so the false one stays
+			// in the content-write journal (subagent, eighth review, P2). R57 gave the answer a
+			// reason; this is the only product reader of it.
+			//
+			// EVERY constant is named and there is no `default`: a new ContentAbsence value then
+			// fails to compile here rather than silently inheriting a sentence about a situation
+			// nobody checked it against.
+			recorder.abandon(pending, switch (absence) {
+				case MOVED_TO_COLD -> "the archived content was MOVED to cold storage, so the "
+						+ "restore brought back metadata only. The bytes are not lost: they are "
+						+ "in cold storage, and this product has no path that reads them back";
+				case ARCHIVE_HAD_NO_CONTENT -> "the archived version carried no content of its "
+						+ "own; nothing was written back";
+				// UNREACHABLE TODAY, and named rather than left to a `default`: the branch above
+				// returns for both of these whenever nothing was written, and that is the only
+				// way here. Kept so a NEW ContentAbsence value fails to compile instead of
+				// inheriting a sentence about a situation nobody checked it against — and
+				// written as a true sentence in case the branch above ever narrows (subagent,
+				// eleventh review, P3).
+				case NONE, NOT_DETERMINED -> "why nothing was written back is NOT stated by the "
+						+ "restore, so this row records only that nothing was";
+			});
+			return;
+		}
+		if (restored.contentDigest() == null) {
+			log.warn("E1 (W11): the bytes written back for {} could not be vouched for (stored length "
+					+ "differs from what went past), so no statement was recorded. The journal row "
+					+ "stays open.", versionId);
+			return;
+		}
+		try {
+			jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+					new jp.aegif.nemaki.evidence.RecordContentStatementV1(repositoryId, versionId, versionId,
+							restored.attachmentId(), restored.contentDigest(), restored.length(),
+							jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.RESTORED, null,
+							java.time.Instant.now().toString());
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
+					recorder.recordAndClose(pending, statement);
+			if (!result.inChain()) {
+				log.warn("E1 (W11): the RESTORED statement for {} is not in the chain ({}).", versionId,
+						result.outcome());
+			}
+		} catch (RuntimeException e) {
+			log.warn("E1 (W11): no content statement was recorded for {}.", versionId, e);
+		}
 	}
 
 	// ///////////////////////////////////////
@@ -298,7 +436,13 @@ public class ArchiveServiceDelegate {
 
 		// Restore only the specific requested archive (not all archived versions of the series).
 		// This enforces one-at-a-time restoration consistent with one-at-a-time deletion.
-		contentDaoService.restoreDocumentWithArchive(repositoryId, archive);
+		// E1 (W11): the row is opened BEFORE the bytes are written back and closed with the
+		// RESTORED statement carrying the digest taken as they went past.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending restoreRow = openTransition(repositoryId,
+				archive.getOriginalId(), jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.RESTORE);
+		jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes restored =
+				contentDaoService.restoreDocumentWithArchiveRecording(repositoryId, archive);
+		recordRestored(repositoryId, archive, restoreRow, restored);
 		contentDaoService.deleteDocumentArchive(repositoryId, archive.getId());
 
 		// Track the restored document's ID so we can ensure it gets indexed
@@ -499,9 +643,27 @@ public class ArchiveServiceDelegate {
 			Archive attachmentArchive = contentDaoService.getAttachmentArchive(repositoryId, version);
 
 			if (attachmentArchive != null) {
+				// E1 (W13 / W14): opened before the row that holds the bytes goes. A cold-moved
+				// version's blob is not touched by this path and not checked either, so its
+				// transition says the bytes are now UNKNOWN — not COLD, which nothing here verified.
+				boolean coldMoved = version.getColdArchivedAt() != null
+						|| Archive.STATE_ARCHIVED_COLD.equals(version.getEffectiveArchiveState());
+				jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending destroyRow = openTransition(repositoryId,
+						version.getOriginalId(), coldMoved
+								? jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.DESTROY_ARCHIVE_LEAVING_COLD_BLOB
+								: jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.DESTROY_ARCHIVE);
 				String deletedAttachmentId = contentDaoService.deleteArchive(repositoryId, attachmentArchive.getId());
 				if (deletedAttachmentId == null) {
+					// Whether the bytes went is not known; the row stays open and is listed.
 					log.warn("destroyDocument: attachment archive deletion returned null, attachmentId=" + attachmentArchive.getId());
+				} else if (coldMoved) {
+					closeTransition(destroyRow,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVE_DESTROYED_LEAVING_COLD_BLOB,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.UNKNOWN);
+				} else {
+					closeTransition(destroyRow,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVE_DESTROYED,
+							jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.NONE);
 				}
 			} else {
 				log.warn("destroyDocument: attachment archive not found, versionId=" + version.getId());
@@ -687,19 +849,18 @@ public class ArchiveServiceDelegate {
 	}
 
 	public Long getAttachmentActualSize(String repositoryId, String attachmentId) {
-		try {
-			Long actualSize = contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
-			if (actualSize != null && actualSize >= 0) {
-				log.debug("Retrieved actual attachment size from CouchDB: " + actualSize + " bytes for attachment " + attachmentId);
-				return actualSize;
-			}
-
-			log.warn("Could not retrieve actual attachment size from CouchDB for attachment: " + attachmentId);
-			return null;
-
-		} catch (Exception e) {
-			log.error("Error retrieving actual attachment size for " + attachmentId + ": " + e.getMessage(), e);
-			return null;
+		// No catch. This is the PUBLIC route to the size — ContentService reaches the store
+		// through here — and the DAO under it was made to refuse rather than answer "no
+		// measurable size". Catching that refusal and returning null put the flattening back
+		// one layer up, on the only path a caller actually uses: the DAO's own test passed
+		// while the service answered null. Genuine absence still comes back as null, because
+		// the DAO returns it for a document that carries no content attachment.
+		Long actualSize = contentDaoService.getAttachmentActualSize(repositoryId, attachmentId);
+		if (actualSize != null && actualSize >= 0) {
+			log.debug("Retrieved actual attachment size from CouchDB: " + actualSize + " bytes for attachment " + attachmentId);
+			return actualSize;
 		}
+		log.debug("No content attachment to measure for: " + attachmentId);
+		return null;
 	}
 }

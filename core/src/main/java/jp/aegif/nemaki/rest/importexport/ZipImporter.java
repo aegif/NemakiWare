@@ -557,7 +557,14 @@ public class ZipImporter {
             importTypeDefinitions(repositoryId, zf, result);
 
             for (String path : entryNames) {
-                if (path.endsWith(META_SUFFIX) || isVersionFile(path)) {
+                if (path.endsWith(META_SUFFIX) || isVersionFile(path)
+                        || isExportStagingFile(path)) {
+                    // The staging residue a failed FILESYSTEM export can leave. An
+                    // administrator who zips such a directory and uploads it as the custom
+                    // format was handing the truncated bytes of the failed copy to this loop,
+                    // which imported them as an ordinary document — the FilesystemImporter
+                    // got this skip in round 5 and this, the same consumer one format over,
+                    // did not. A sibling sweep caught it.
                     continue;
                 }
 
@@ -594,6 +601,18 @@ public class ZipImporter {
 
                     Content existingChild = null;
                     List<Content> siblings = cs.getChildren(repositoryId, parentFolderId);
+                    // A short listing must refuse, not import. A duplicate whose row cannot be
+                    // decoded is simply not seen here, and this entry would be created a second
+                    // time — the same door CanonicalImportServiceImpl closed; this importer had
+                    // the identical scan and nobody swept it. The throw lands in the per-entry
+                    // catch and is reported for THIS entry; the rest of the zip continues.
+                    if (cs.lastUnreadableChildCount() > 0) {
+                        throw new IllegalStateException("the target folder's listing is "
+                                + "incomplete (" + cs.lastUnreadableChildCount() + " child "
+                                + "row(s) could not be read), so it is unknown whether '"
+                                + fileName + "' is already there; the entry was refused rather "
+                                + "than risking a duplicate");
+                    }
                     for (Content sibling : siblings) {
                         if (fileName.equals(sibling.getName())) {
                             existingChild = sibling;
@@ -987,6 +1006,13 @@ public class ZipImporter {
         String folderName = getFileName(path);
 
         List<Content> siblings = cs.getChildren(repositoryId, parentFolderId);
+        // Same rule as the document arm above: an unreadable sibling row may BE this folder.
+        if (cs.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("the target folder's listing is incomplete ("
+                    + cs.lastUnreadableChildCount() + " child row(s) could not be read), so it "
+                    + "is unknown whether folder '" + folderName + "' is already there; the "
+                    + "entry was refused rather than risking a duplicate");
+        }
         for (Content sibling : siblings) {
             if (folderName.equals(sibling.getName()) && sibling instanceof Folder) {
                 String existingFolderId = sibling.getId();

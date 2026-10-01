@@ -33,6 +33,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -86,6 +88,7 @@ class IngestDedupeFailuresReachCallerTest {
         profile.setRepositoryId("bedroom");
         profile.setDedupePolicy(dedupePolicy);
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -93,6 +96,7 @@ class IngestDedupeFailuresReachCallerTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 any(), any(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn("new-obj-id");
@@ -146,6 +150,66 @@ class IngestDedupeFailuresReachCallerTest {
 
     @Test
     @Timeout(30)
+    @DisplayName("an empty page that still claims more is an incomplete listing, not an end")
+    void anEmptyPageClaimingMoreIsIncomplete() {
+        // The plan is formed by a read now, and the read used to stop on an empty page without
+        // looking at hasMoreItems — returning the ids collected so far as a COMPLETE plan. The
+        // deletion would then remove part of the edges and report success, leaving the rest
+        // with no warning at all. Same silent-truncation shape as the size cap; a review found
+        // it surviving the cap fix.
+        wire("replace_relationships_on_resync");
+
+        org.apache.chemistry.opencmis.commons.data.ObjectList empty =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectList.class);
+        when(empty.getObjects()).thenReturn(new ArrayList<>());
+        when(empty.hasMoreItems()).thenReturn(Boolean.TRUE);
+        when(relationshipService.getObjectRelationships(any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any())).thenReturn(empty);
+
+        ExternalIngestResult result = run();
+
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("did not remove")),
+                "an incomplete listing was treated as a complete plan and nothing was said. "
+                        + "Got: " + result.warnings());
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("not established")),
+                "the warning asserts what remains instead of saying it could not be checked. "
+                        + "Got: " + result.warnings());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @Timeout(30)
+    @DisplayName("a listing beyond the cap refuses instead of deleting part of the edges")
+    void aListingBeyondTheCapRefuses() {
+        // The cap used to return what it had collected, so the resync deleted 10,000 edges,
+        // reported success, and left the rest without either warning.
+        wire("replace_relationships_on_resync");
+
+        java.util.List<org.apache.chemistry.opencmis.commons.data.ObjectData> many =
+                new ArrayList<>();
+        for (int i = 0; i < 600; i++) {
+            org.apache.chemistry.opencmis.commons.data.ObjectData rel =
+                    mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+            when(rel.getId()).thenReturn("rel-" + i);
+            many.add(rel);
+        }
+        org.apache.chemistry.opencmis.commons.data.ObjectList page =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectList.class);
+        when(page.getObjects()).thenReturn(many);
+        when(page.hasMoreItems()).thenReturn(Boolean.TRUE);   // never ends
+        when(relationshipService.getObjectRelationships(any(), anyString(), anyString(), any(),
+                any(), any(), any(), any(), any(), any(), any())).thenReturn(page);
+
+        ExternalIngestResult result = run();
+
+        assertTrue(result.warnings().stream().anyMatch(w -> w.contains("did not remove")),
+                "a listing too large to replace was treated as a complete plan. Got: "
+                        + result.warnings());
+        verify(objectService, never()).deleteObject(any(), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    @Timeout(30)
     @DisplayName("resync terminates and reports when every relationship delete fails")
     void failedResyncTerminatesAndIsReported() {
         wire("replace_relationships_on_resync");
@@ -170,5 +234,31 @@ class IngestDedupeFailuresReachCallerTest {
                 "the policy promises the object is left with only the incoming relationships; "
                         + "stale edges surviving is not something to keep to the log. Got: "
                         + result.warnings());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("an unwired relationship service is not an empty edge list")
+    void anUnwiredRelationshipServiceIsNotAnEmptyEdgeList() throws Exception {
+        // An empty list is "this object has no relationships", and the caller acts on it:
+        // replace_relationships_on_resync deletes nothing, warns about nothing, and reports
+        // success — while its promise is that the object ends up with ONLY the incoming edges.
+        // This file's own subject closed the identical arm twice before, in lookUpRelationship
+        // and findExistingDocument, whose comments name each other. A review found the third.
+        CanonicalImportServiceImpl bare = new CanonicalImportServiceImpl();
+        java.lang.reflect.Method collect = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "collectExistingRelationshipIds",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                String.class, String.class);
+        collect.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> collect.invoke(bare, null, "bedroom", "doc-1"),
+                        "an unwired relationship service answered 'this object has no edges',"
+                                + " and the resync then reported success without replacing any");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                wrapped.getCause().getMessage().contains("not wired"),
+                "the refusal does not say what happened: " + wrapped.getCause().getMessage());
     }
 }

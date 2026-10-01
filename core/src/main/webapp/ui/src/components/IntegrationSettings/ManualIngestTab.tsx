@@ -259,7 +259,7 @@ export function ManualIngestTab({ repositoryId }: Props) {
     <Form.Item name="connectorId" label={t('manualIngest.form.connector')}
       rules={[{ required: true }]}
       extra={!isAdmin && !watchedProfileId
-        ? t('manualIngest.form.selectProfileFirst', { defaultValue: 'Select a profile first.' })
+        ? t('manualIngest.form.selectProfileFirst')
         : undefined}>
       <Select placeholder={t('manualIngest.form.selectConnector')}
         onChange={handleConnectorChange}

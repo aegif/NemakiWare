@@ -89,7 +89,11 @@ public class Patch_DefaultCloudDriveConnectorProfile extends AbstractNemakiPatch
             }
 
             String profileId = "cloud-import-" + repositoryId;
-            if (!profileService.exists(profileId)) {
+            // exists() is a selector: while its index rebuilds it answers "no" for a row
+            // that is there, and the create below is then refused by the index-free count
+            // — a WARN on every such startup for a profile that exists. Ask index-free too.
+            if (!profileService.exists(profileId)
+                    && !profileService.existsIndexFree(profileId, repositoryId)) {
                 // Get root folder ID for the repository
                 String rootFolderId = null;
                 try {

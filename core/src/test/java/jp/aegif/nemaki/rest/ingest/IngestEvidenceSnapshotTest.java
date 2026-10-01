@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * What the provenance event actually records about the thing that was captured.
@@ -171,6 +173,18 @@ class IngestEvidenceSnapshotTest {
         // the code that CHOOSES, which is where every previous version of this logic was wrong
         // (external review): metadata-only and no-change updates retain their attachment.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.businesslogic.ContentService contentService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         java.lang.reflect.Field f = CanonicalImportServiceImpl.class
@@ -286,6 +300,18 @@ class IngestEvidenceSnapshotTest {
     @DisplayName("a blank or unresolvable attachment reference is not 'stored'")
     void attachmentReferenceIsResolved() throws Exception {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.businesslogic.ContentService contentService =
                 org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
         java.lang.reflect.Field f = CanonicalImportServiceImpl.class
@@ -331,6 +357,18 @@ class IngestEvidenceSnapshotTest {
         // getUsername() would leave them all green (external review). So this drives the real
         // import and reads what the emitter was actually handed.
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -357,6 +395,7 @@ class IngestEvidenceSnapshotTest {
         profile.setDelegated(true);
         profile.setCreatedByUserId("otsuka");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -364,6 +403,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("google_drive");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),
@@ -470,6 +510,18 @@ class IngestEvidenceSnapshotTest {
     /** Drives a real re-import of an already-imported document whose recorded hash matches. */
     private static RecordingEmitter runReimport(String updatePolicy) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -496,6 +548,7 @@ class IngestEvidenceSnapshotTest {
         profile.setDedupePolicy("create_new_version");
         profile.setUpdatePolicy(updatePolicy);
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -503,6 +556,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("google_drive");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
 
         // An already-imported document whose recorded hash MATCHES the incoming bytes.
         Aspect integration = new Aspect();
@@ -800,6 +854,18 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runNoteFilesOnlyImport(NoteAttachmentStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -834,6 +900,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -842,6 +909,7 @@ class IngestEvidenceSnapshotTest {
                 jp.aegif.nemaki.rest.ingest.SourceArchetype.COMPOUND_NOTE);
         connector.setSourceSystem("notion");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         // Every argument matched loosely: an attachment request differs from the page one in
         // content stream and mime type, and a strict stub silently returns null (the document
         // "is not found after creation" and the hook never runs).
@@ -906,6 +974,18 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runBusinessRecordImport(ArchetypeStore store,
             RecordingEmitter emitter) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -943,6 +1023,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -951,6 +1032,7 @@ class IngestEvidenceSnapshotTest {
                 jp.aegif.nemaki.rest.ingest.SourceArchetype.BUSINESS_RECORD);
         connector.setSourceSystem("salesforce");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),
@@ -1057,6 +1139,18 @@ class IngestEvidenceSnapshotTest {
     private static ExternalIngestResult runChatImport(ChatStore store, boolean objectIsNew,
             RecordingEmitter emitter, IngestMetadataService metadataService) {
         CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        // A delegated import re-asks cmis:all against the folder it actually writes into, so
+        // an unwired fixture refuses. (The gate, the scheduler, the webhook and IDLE each
+        // authorise earlier; the check that binds it to the write lives in the service.)
+        service.setIngestAuthorizationService(alwaysAuthorized());
         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService connectorService =
                 org.mockito.Mockito.mock(
                         jp.aegif.nemaki.rest.ingest.ConnectorDefinitionService.class);
@@ -1080,6 +1174,7 @@ class IngestEvidenceSnapshotTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         org.mockito.Mockito.when(profileService.get("p1")).thenReturn(profile);
+        org.mockito.Mockito.when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -1087,6 +1182,7 @@ class IngestEvidenceSnapshotTest {
         connector.setSourceArchetype(jp.aegif.nemaki.rest.ingest.SourceArchetype.CHAT_CONTEXT);
         connector.setSourceSystem("slack");
         org.mockito.Mockito.when(connectorService.get("c1")).thenReturn(connector);
+        org.mockito.Mockito.when(connectorService.countIndexFree("c1")).thenReturn(1);
         org.mockito.Mockito.when(objectService.createDocument(
                         org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("bedroom"),
@@ -1281,4 +1377,366 @@ class IngestEvidenceSnapshotTest {
         return ctx;
     }
 
+
+    /** A wired authorization service that grants cmis:all — the delegated re-check needs one. */
+    private static IngestAuthorizationService alwaysAuthorized() {
+        IngestAuthorizationService auth = org.mockito.Mockito.mock(IngestAuthorizationService.class);
+        org.mockito.Mockito.when(auth.isAuthenticatedRepository(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.when(auth.canManageProfileForFolder(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        // The write point re-asks the CONNECTOR delegation too: revoking it during a fetch
+        // used to leave the subsequent write unexamined.
+        org.mockito.Mockito.when(auth.canUseConnectorForDelegatedProfile(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        return auth;
+    }
+
+    @Test
+    @DisplayName("a profile row that could not be READ is not attributed as an unrecorded one")
+    void anUnreadProfileRowIsNotAttributedAsUnrecorded() {
+        // With a null profile the attribution reads "scheduler: admin profile unknown,
+        // schedule configured-by unrecorded" — three statements, and "unrecorded" is defined
+        // in this file as "the row carries no such field". None is established when the read
+        // refused, and this string is persisted as evidence. A review found the swallow in
+        // confinedProfile and this as its consequence.
+        var refused = CanonicalImportServiceImpl.resolveExecutionAttribution(
+                null, null, false, "p1");
+
+        assertTrue(refused.executedBy().contains("could not be read"),
+                "a row that was never read was attributed anyway: " + refused.executedBy());
+        assertFalse(refused.executedBy().contains("unrecorded"),
+                "a read that refused was reported as a row with no such field: "
+                        + refused.executedBy());
+        assertNull(refused.onBehalfOf(),
+                "delegation was asserted from a row that was not read");
+
+        // The control: a row that WAS read and genuinely carries nothing still says so.
+        var read = CanonicalImportServiceImpl.resolveExecutionAttribution(null, null, true, "p1");
+        assertTrue(read.executedBy().contains("unrecorded"),
+                "an established absence stopped being reported as one: " + read.executedBy());
+    }
+
+    @Test
+    @DisplayName("the re-import event carries the read's outcome, not just the static "
+            + "attribution — the wiring, not the helper")
+    void theReimportEventSaysTheProfileRowCouldNotBeRead() throws Exception {
+        // The lock above calls the static attribution directly, so making confinedProfileRead
+        // answer "read" for everything would leave it green: the helper is measured and the
+        // CALL SITE is not. This drives the emit itself.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        IngestLineageEmitter emitter = mock(IngestLineageEmitter.class);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        ImportProfileDefinitionService profiles = mock(ImportProfileDefinitionService.class);
+        ConnectorDefinition connector = new ConnectorDefinition();
+        connector.setConnectorId("c1");
+        connector.setSourceArchetype(SourceArchetype.MESSAGE_CONTEXT);
+        when(connectors.get("c1")).thenReturn(connector);
+        when(profiles.getForRepository("p1", "bedroom")).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "the profile row could not be read"));
+        inject(service, "ingestLineageEmitter", emitter);
+        inject(service, "connectorDefinitionService", connectors);
+        inject(service, "importProfileDefinitionService", profiles);
+        inject(service, "contentService", mock(jp.aegif.nemaki.businesslogic.ContentService.class));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setProfileId("p1");
+        request.setConnectorId("c1");
+        request.setRepositoryId("bedroom");
+        request.setSourceObjectId("src-1");
+        // objectId must be present: the emit returns early without one.
+        ExternalIngestResult result =
+                ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null);
+
+        java.lang.reflect.Method emit = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "emitReimportEvent",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                ExternalIngestRequest.class,
+                ExternalIngestResult.class, java.util.List.class, java.util.List.class,
+                java.util.List.class);
+        emit.setAccessible(true);
+        emit.invoke(service, (Object) null, request, result, java.util.List.of("subject"),
+                java.util.List.of(), new java.util.ArrayList<String>());
+
+        org.mockito.ArgumentCaptor<String> executedBy =
+                org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emitter).emitLineageEvent(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                executedBy.capture(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        assertTrue(executedBy.getValue().contains("could not be read"),
+                "the event attributed a run from a profile row that was never read: "
+                        + executedBy.getValue());
+        assertFalse(executedBy.getValue().contains("unrecorded"),
+                "a read that refused was written into evidence as a row with no such field: "
+                        + executedBy.getValue());
+    }
+
+    private static void inject(Object target, String field, Object value) throws Exception {
+        java.lang.reflect.Field f = CanonicalImportServiceImpl.class.getDeclaredField(field);
+        f.setAccessible(true);
+        f.set(target, value);
+    }
+
+    @Test
+    @DisplayName("a re-import event that cannot be attributed says so instead of vanishing")
+    void anUnattributableReimportEventIsNotSilent() throws Exception {
+        // get() answers null for a read that did not answer as readily as for an absent
+        // connector, and this method is only entered when evidence WAS written or refused.
+        // The early return left no event and, unlike the catch at the end of the method, no
+        // warning — the pass reported success with nothing recording that evidence changed.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        // The duplicate check refuses an unwired content store now (it used to answer
+        // "there is no existing document", which the caller reads as permission to
+        // create one). An empty folder is what these fixtures mean.
+        jp.aegif.nemaki.dao.ContentDaoService emptyFolder =
+                mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        org.mockito.Mockito.when(emptyFolder.getChildren(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(java.util.List.of());
+        service.setContentDaoService(emptyFolder);
+        IngestLineageEmitter emitter = mock(IngestLineageEmitter.class);
+        ConnectorDefinitionService connectors = mock(ConnectorDefinitionService.class);
+        when(connectors.get("c1")).thenReturn(null);
+        inject(service, "ingestLineageEmitter", emitter);
+        inject(service, "connectorDefinitionService", connectors);
+        inject(service, "importProfileDefinitionService",
+                mock(ImportProfileDefinitionService.class));
+        inject(service, "contentService", mock(jp.aegif.nemaki.businesslogic.ContentService.class));
+
+        ExternalIngestRequest request = new ExternalIngestRequest();
+        request.setProfileId("p1");
+        request.setConnectorId("c1");
+        request.setRepositoryId("bedroom");
+        ExternalIngestResult result =
+                ExternalIngestResult.success("src-1", "obj-1", "1.0", false, null);
+
+        java.util.List<String> warnings = new java.util.ArrayList<>();
+        java.lang.reflect.Method emit = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "emitReimportEvent",
+                org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                ExternalIngestRequest.class, ExternalIngestResult.class,
+                java.util.List.class, java.util.List.class, java.util.List.class);
+        emit.setAccessible(true);
+        emit.invoke(service, (Object) null, request, result,
+                java.util.List.of("subject"), java.util.List.of(), warnings);
+
+        org.mockito.Mockito.verify(emitter, org.mockito.Mockito.never()).emitLineageEvent(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+        // The measurable trace. `verify(never())` alone does not discriminate — it was true
+        // before the fix too — so what is asserted is that the caller is TOLD the event did
+        // not happen. A log line is not a record.
+        assertEquals(1, warnings.size(),
+                "the pass changed evidence and said nothing about the missing event: "
+                        + warnings);
+        assertTrue(warnings.get(0).contains("no re-import lineage event was recorded"),
+                "the warning does not say what is missing: " + warnings);
+    }
+
+    @Test
+    @DisplayName("the duplicate check refuses an unwired store instead of answering 'no "
+            + "existing document'")
+    void theDuplicateCheckRefusesAnUnwiredStore() throws Exception {
+        // The caller reads null as permission to CREATE, so an unwired store produced a
+        // duplicate and reported success. The catch fourteen lines below already refuses an
+        // enumeration that could not be answered, and lookUpRelationship refuses its own
+        // unwired arm — the two helpers answered the same question opposite ways.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        java.lang.reflect.Method find = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "findExistingDocument", String.class, String.class, String.class,
+                String.class, String.class, String.class, String.class);
+        find.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> find.invoke(service, "bedroom", "folder-1", "f.txt", "box", "src-1",
+                        "file", "source_id"),
+                "an unwired content store answered 'there is no existing document'");
+        assertTrue(wrapped.getCause() instanceof IllegalStateException,
+                "the refusal is not the typed one: " + wrapped.getCause());
+        assertTrue(wrapped.getCause().getMessage().contains("not wired on this node"),
+                "the refusal does not say what is wrong: " + wrapped.getCause().getMessage());
+    }
+
+    @Test
+    @DisplayName("a target folder PATH that could not be resolved is not 'the profile has "
+            + "neither field'")
+    void anUnresolvableTargetFolderPathIsNotAMissingSetting() throws Exception {
+        // A permission denial or a store failure answered the same null as "there is no such
+        // path", and the caller then said the profile configured NEITHER field — provably
+        // false, since control only reaches the path branch because targetFolderPath is set.
+        // Worse, that return happens before the try that saves to the DLQ, so the source item
+        // left no trace at all. A review found both halves.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/b");
+
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a path this node could not resolve answered 'there is no folder'");
+        assertTrue(wrapped.getCause()
+                        instanceof CanonicalImportServiceImpl.TargetFolderUnreadableException,
+                "the refusal is not the typed one: " + wrapped.getCause());
+        assertTrue(wrapped.getCause().getMessage().contains("could not be resolved"),
+                "the refusal does not say what happened: " + wrapped.getCause().getMessage());
+        // The control for the pair: a read that did not answer IS a retry.
+        assertTrue(((CanonicalImportServiceImpl.TargetFolderUnreadableException)
+                        wrapped.getCause()).isRetryable(),
+                "a read that could not answer stopped being retryable");
+    }
+
+    @Test
+    @DisplayName("a target folder path that resolves to a DOCUMENT is not 'the profile has "
+            + "neither field' either")
+    void aTargetFolderPathThatIsNotAFolderIsNotAMissingSetting() throws Exception {
+        // The read ANSWERED, with something that is neither "no such path" nor a failure.
+        // Returning null made the caller say the profile configured neither field — the
+        // sentence the failure arm had just been corrected for. Two reviewers found the two
+        // arms left behind in the same round.
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.cmis.service.ObjectService objects =
+                mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        org.apache.chemistry.opencmis.commons.data.ObjectData doc =
+                mock(org.apache.chemistry.opencmis.commons.data.ObjectData.class);
+        when(doc.getId()).thenReturn("obj-1");
+        org.apache.chemistry.opencmis.commons.data.Properties props =
+                mock(org.apache.chemistry.opencmis.commons.data.Properties.class);
+        @SuppressWarnings("rawtypes")
+        org.apache.chemistry.opencmis.commons.data.PropertyData baseType =
+                mock(org.apache.chemistry.opencmis.commons.data.PropertyData.class);
+        when(baseType.getFirstValue()).thenReturn("cmis:document");
+        when(props.getProperties()).thenReturn(java.util.Map.of("cmis:baseTypeId", baseType));
+        when(doc.getProperties()).thenReturn(props);
+        when(objects.getObjectByPath(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(doc);
+        inject(service, "objectService", objects);
+
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/not-a-folder");
+
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a path that resolves to a document answered 'there is no folder'");
+        assertTrue(wrapped.getCause().getMessage().contains("not a folder"),
+                "the refusal does not say what was found: " + wrapped.getCause().getMessage());
+        // The token the STATUS CLASSIFIER keys on, asserted here because it is a contract
+        // between two files and nothing else joined them: drop it from this message and the
+        // endpoint falls back to 500 while every test stays green. A review found the gap.
+        assertTrue(wrapped.getCause().getMessage().contains("fix the profile"),
+                "the message lost the token ExternalIngestController.classifyErrorStatus "
+                        + "matches to answer 400: " + wrapped.getCause().getMessage());
+        // Asserting the token measures one end of the contract. Delete the arm from
+        // classifyErrorStatus and the token is still there, so this stayed green while the
+        // endpoint went back to 500. Run the real message through the real classifier.
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST,
+                ExternalIngestController.classifyErrorStatus(ExternalIngestResult.error(
+                        "req", wrapped.getCause().getMessage())),
+                "an answered profile misconfiguration was delivered as a server fault: "
+                        + wrapped.getCause().getMessage());
+        // And NOT in the vocabulary of a failed read. Both new arms throw from inside the
+        // method's own try, and its generic catch re-wrapped them as "could not be resolved" —
+        // so an ANSWERED "this path is a document, fix the profile" was delivered as a retry,
+        // and execute() appended "; retry shortly". Asserting only the substring above let
+        // that through; two reviewers found it.
+        assertFalse(wrapped.getCause().getMessage().contains("could not be resolved"),
+                "an answered read was reported in the words of a failed one: "
+                        + wrapped.getCause().getMessage());
+        // And the CALLER must not append "; retry shortly" to it. Asserting only on this
+        // method's own message measured the wording while the classification happened two
+        // layers up, where the suffix turned a standing misconfiguration into a 503. Two
+        // reviewers found that gap.
+        assertFalse(((CanonicalImportServiceImpl.TargetFolderUnreadableException)
+                        wrapped.getCause()).isRetryable(),
+                "a standing misconfiguration was marked retryable, so the caller appends "
+                        + "'; retry shortly' and the endpoint answers 503");
+    }
+
+    @Test
+    @DisplayName("a target folder path the importing user may not read is not a retry, and is 403")
+    void aTargetFolderPathTheUserMayNotReadIsNotARetry() throws Exception {
+        // A permission denial is an ANSWER: every retry gets the same one. It was folded into
+        // the generic arm and came back as "; retry shortly" / 503 (R31).
+        CanonicalImportServiceImpl service = new CanonicalImportServiceImpl();
+        jp.aegif.nemaki.cmis.service.ObjectService objects =
+                mock(jp.aegif.nemaki.cmis.service.ObjectService.class);
+        when(objects.getObjectByPath(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenThrow(
+                new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException(
+                        "Permission denied"));
+        inject(service, "objectService", objects);
+        ImportProfileDefinition profile = new ImportProfileDefinition();
+        profile.setProfileId("p1");
+        profile.setRepositoryId("bedroom");
+        profile.setTargetFolderPath("/a/b");
+        java.lang.reflect.Method resolve = CanonicalImportServiceImpl.class.getDeclaredMethod(
+                "resolveTargetFolderId", ImportProfileDefinition.class, String.class,
+                org.apache.chemistry.opencmis.commons.server.CallContext.class);
+        resolve.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException wrapped =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> resolve.invoke(service, profile, "bedroom", null),
+                        "a permission denial answered 'there is no folder'");
+        Throwable cause = wrapped.getCause();
+        assertTrue(cause instanceof CanonicalImportServiceImpl.TargetFolderUnreadableException,
+                "the refusal is not the typed one: " + cause);
+        assertFalse(((CanonicalImportServiceImpl.TargetFolderUnreadableException) cause).isRetryable(),
+                "a permission denial was made a retry");
+        assertTrue(cause.getMessage().contains("permission denied for the importing user"),
+                "the refusal does not name the denial: " + cause.getMessage());
+        org.junit.jupiter.api.Assertions.assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
+                ExternalIngestController.classifyErrorStatus(
+                        ExternalIngestResult.error("r", cause.getMessage())),
+                "a permission denial on the target folder was not answered 403");
+    }
 }

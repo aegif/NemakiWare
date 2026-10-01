@@ -1,10 +1,7 @@
 package jp.aegif.nemaki.dao.impl.couch.delegate;
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.json.JsonMapper;
+
 
 /**
  * Shared helper for DAO delegate classes.
@@ -13,19 +10,15 @@ import tools.jackson.databind.json.JsonMapper;
 public class DaoHelper {
 
 	/**
-	 * Creates a properly configured ObjectMapper for Cloudant/CouchDB serialization.
-	 * This ensures all fields from the object hierarchy are properly serialized.
+	 * The mapper the DAO delegates decode with.
+	 *
+	 * <p>The DEFINITION moved to {@link jp.aegif.nemaki.config.ObjectMapperFactory} (R52). It
+	 * lived here and — byte for byte except the stored-timestamps module — in
+	 * {@code ContentDaoServiceImpl} as well, so fixing one did not reach the other. That is the
+	 * shape the factory's own javadoc has claimed not to have since Jackson 3 landed.
 	 */
 	public ObjectMapper createConfiguredObjectMapper() {
-		return JsonMapper.builderWithJackson2Defaults()
-				.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-				.changeDefaultVisibility(vc -> vc
-						.withVisibility(PropertyAccessor.ALL, Visibility.NONE)
-						.withVisibility(PropertyAccessor.SETTER, Visibility.ANY)
-						.withVisibility(PropertyAccessor.CREATOR, Visibility.ANY)
-						.withVisibility(PropertyAccessor.GETTER, Visibility.ANY)
-						.withVisibility(PropertyAccessor.IS_GETTER, Visibility.ANY))
-				.build();
+		return jp.aegif.nemaki.config.ObjectMapperFactory.createDaoDelegateObjectMapper();
 	}
 
 	/**

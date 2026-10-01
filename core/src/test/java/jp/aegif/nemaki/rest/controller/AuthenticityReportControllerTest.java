@@ -164,4 +164,29 @@ class AuthenticityReportControllerTest {
                 "expected the flag on both the JSON and HTML endpoints but found " + checked
                         + "; if an endpoint was added or renamed this test stopped covering it");
     }
+
+    @Test
+    @DisplayName("a store that cannot be read puts no exception text into the HTML report (#1410)")
+    void anUnreadableStoresTextStaysOutOfTheHtmlReport() {
+        // The REAL assembler behind the real controller: CodeQL #1410's sink is this endpoint's
+        // asHtml() (line 111), fed by the assembler's UNAVAILABLE reasons. The handler-side fix
+        // (GlobalExceptionHandler) is a different path; this lock is the report path.
+        String marker = "jdbc://db.internal:5984/nemaki_conf rev 3-abc SECRET";
+        AuthenticityReportAssembler assembler = new AuthenticityReportAssembler();
+        jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore store =
+                mock(jp.aegif.nemaki.rest.ingest.capture.CaptureMaintenanceStore.class);
+        when(store.listCapturedForObject(anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenThrow(new IllegalStateException(marker));
+        assembler.setMaintenanceStore(store);
+        AuthenticityReportController controller = controllerFor(true, assembler);
+
+        ResponseEntity<String> html = controller.reportHtml("bedroom", "doc-1", false);
+
+        assertEquals(HttpStatus.OK, html.getStatusCode());
+        assertNotNull(html.getBody());
+        assertFalse(html.getBody().contains(marker),
+                "the store's exception text reached the HTML report: " + html.getBody());
+        assertTrue(html.getBody().contains("incidentId"),
+                "the report names no incident id, so the operator cannot find the logged text");
+    }
 }

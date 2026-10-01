@@ -28,6 +28,7 @@ import {
   DatabaseOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import {
   CloudSyncStatus,
   LdapConfig,
@@ -129,7 +130,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
       setSyncStatus(prev => ({ ...prev, [provider]: result }));
       message.success(t('cloudSync.deltaSyncStarted'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : t('cloudSync.syncFailed'));
+      message.error(withDetail(t('cloudSync.syncFailed'), e));
     } finally {
       setLoading(prev => ({ ...prev, [provider]: false }));
     }
@@ -142,7 +143,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
       setSyncStatus(prev => ({ ...prev, [provider]: result }));
       message.success(t('cloudSync.fullReconciliationStarted'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : t('cloudSync.syncFailed'));
+      message.error(withDetail(t('cloudSync.syncFailed'), e));
     } finally {
       setLoading(prev => ({ ...prev, [provider]: false }));
     }
@@ -184,7 +185,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
       setSyncStatus(prev => ({ ...prev, ldap: result }));
       message.success(dryRun ? t('cloudSync.ldapPreviewStarted') : t('cloudSync.ldapSyncStarted'));
     } catch (e: unknown) {
-      message.error(e instanceof Error ? e.message : t('cloudSync.syncFailed'));
+      message.error(withDetail(t('cloudSync.syncFailed'), e));
     } finally {
       setLoading(prev => ({ ...prev, ldap: false }));
     }
@@ -465,7 +466,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
             label: (
               <Space>
                 <GoogleOutlined />
-                Google Workspace
+                {t('cloudSync.googleTab')}
               </Space>
             ),
             children: renderProviderPanel('google'),
@@ -475,7 +476,7 @@ export const CloudDirectorySync: React.FC<CloudDirectorySyncProps> = ({ reposito
             label: (
               <Space>
                 <WindowsOutlined />
-                Microsoft Entra ID
+                {t('cloudSync.microsoftTab')}
               </Space>
             ),
             children: renderProviderPanel('microsoft'),

@@ -82,4 +82,65 @@ class PatchSystemFolderConfigDedupTest {
         assertNull(Patch_SystemFolderSetup.duplicateToDelete(null,
                 List.of(doc("a"), doc("b"))));
     }
+
+    @Test
+    @DisplayName("a root folder that could not be enumerated does not create a second .system")
+    void anUnknownRootDoesNotCreateASecondSystemFolder() throws Exception {
+        // This patch's own comment records what the alternative cost: bedroom held two .system
+        // folders, and CMIS path resolution broke because two objects answered to /.system.
+        //
+        // The branch became easier to reach on 2026-08-28, when getChildren was changed to
+        // refuse an unanswered view instead of reporting an empty folder. Not on every fresh
+        // install — the dumps ship the `children` view and load at @Order(1), before the patch
+        // runner — but wherever the enumeration genuinely fails. The correction is right;
+        // without this the patch answered "there is none" and created a second .system folder.
+        //
+        // Driven through the private finder, because the decision this pins is made there: no
+        // answer must produce no answer, never an absence.
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        org.mockito.Mockito.when(contentService.getChildren(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenThrow(new IllegalStateException(
+                        "the children view did not answer for parent 'root'"));
+        Patch_SystemFolderSetup patch = new Patch_SystemFolderSetup();
+        java.lang.reflect.Method finder = Patch_SystemFolderSetup.class.getDeclaredMethod(
+                "findExistingSystemFolder", jp.aegif.nemaki.businesslogic.ContentService.class,
+                String.class, String.class);
+        finder.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException thrown =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        java.lang.reflect.InvocationTargetException.class,
+                        () -> finder.invoke(patch, contentService, "bedroom", "root"),
+                        "a root folder nobody could enumerate answered 'there is no .system "
+                                + "folder', and the caller's response to that is to create one");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(thrown.getCause().getMessage()).contains("unknown"),
+                "the refusal does not say the answer is unknown: " + thrown.getCause());
+    }
+
+    @Test
+    @DisplayName("a root folder that really has no .system still answers null — the control")
+    void aRootWithNoSystemFolderStillAnswersNull() throws Exception {
+        // Without this, refusing every lookup would satisfy the test above and no deployment
+        // could ever get its .system folder created.
+        jp.aegif.nemaki.businesslogic.ContentService contentService =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.businesslogic.ContentService.class);
+        org.mockito.Mockito.when(contentService.getChildren(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of());
+        Patch_SystemFolderSetup patch = new Patch_SystemFolderSetup();
+        java.lang.reflect.Method finder = Patch_SystemFolderSetup.class.getDeclaredMethod(
+                "findExistingSystemFolder", jp.aegif.nemaki.businesslogic.ContentService.class,
+                String.class, String.class);
+        finder.setAccessible(true);
+
+        org.junit.jupiter.api.Assertions.assertNull(finder.invoke(patch, contentService,
+                "bedroom", "root"),
+                "a root folder that genuinely holds no .system folder was refused, so the "
+                        + "patch could never create one");
+    }
 }

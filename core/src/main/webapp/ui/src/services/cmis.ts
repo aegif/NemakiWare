@@ -275,6 +275,7 @@ import { getResourceBaseErrorMessage } from './http/restResult';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
+import i18n from '../i18n';
 import { CompatibleType, MigrationPropertyDefinition, MigrationPropertyType } from '../types/typeMigration';
 
 /**
@@ -1305,6 +1306,26 @@ export class CMISService {
       const response = await this.httpClient.postUrlEncoded(url, params);
 
       if (response.status === 200 || response.status === 204) {
+        // deleteTree answers 200 even when some objects could NOT be deleted — the Browser
+        // Binding reports them in the body as { ids: [...] }. The server used to discard that
+        // list and always send {}, so a folder RETAINED by a server-side guard (its listing
+        // could not be fully read, or a descendant failed) looked like a clean success here
+        // while the folder stayed. An empty body or {} still means everything was deleted.
+        if (isFolder && typeof response.responseText === 'string' && response.responseText.length > 2) {
+          try {
+            const body = JSON.parse(response.responseText);
+            if (Array.isArray(body?.ids) && body.ids.length > 0) {
+              throw new Error(
+                `Delete did not complete: ${body.ids.length} object(s) could not be deleted ` +
+                `(first: ${body.ids[0]}). The folder was kept rather than orphaning them.`);
+            }
+          } catch (parseError) {
+            if (parseError instanceof Error && parseError.message.startsWith('Delete did not complete')) {
+              throw parseError;
+            }
+            // Not JSON — the old empty-body success shape.
+          }
+        }
         return;
       }
 
@@ -1836,7 +1857,7 @@ export class CMISService {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        let errorMessage = 'サーバーエラーが発生しました';
+        let errorMessage = i18n.t('common.errors.serverError');
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
@@ -1844,7 +1865,7 @@ export class CMISService {
           if (errorResponse.error) errorDetails = errorResponse.error;
           if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          errorDetails = response.responseText || 'Unknown server error';
+          errorDetails = response.responseText || i18n.t('common.unknownError');
         }
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
@@ -2051,7 +2072,7 @@ export class CMISService {
           throw new Error('Invalid response format');
         }
       } else if (response.status === 500) {
-        let errorMessage = 'サーバーエラーが発生しました';
+        let errorMessage = i18n.t('common.errors.serverError');
         let errorDetails = '';
         try {
           const errorResponse = JSON.parse(response.responseText);
@@ -2059,7 +2080,7 @@ export class CMISService {
           if (errorResponse.error) errorDetails = errorResponse.error;
           if (errorResponse.errorType) errorDetails += ` (${errorResponse.errorType})`;
         } catch (e) {
-          errorDetails = response.responseText || 'Unknown server error';
+          errorDetails = response.responseText || i18n.t('common.unknownError');
         }
         const error = new Error(errorMessage);
         (error as any).details = errorDetails;
@@ -3952,6 +3973,11 @@ export class CMISService {
       authError: data.authError === true,
       canManageCredential: data.canManageCredential === true,
       errors: Array.isArray(data.errors) ? data.errors.map(String) : undefined,
+      // The server says whether the run saw the whole source. Copying only the counters is
+      // what let a run that stopped at its limit reach the screen as "done".
+      sawEverything: data.sawEverything !== false,
+      incompleteReads: Array.isArray(data.incompleteReads)
+        ? data.incompleteReads.map(String) : undefined,
     };
   }
 
@@ -4002,6 +4028,13 @@ export interface FolderConnectorRunResult {
   /** True when the caller (an admin) may re-set the connector credential. */
   canManageCredential?: boolean;
   errors?: string[];
+  /**
+   * Whether the run saw the whole source. False is NOT a failure: the run stopped at its
+   * limit and imported what it read. It still must not be reported as "done".
+   */
+  sawEverything: boolean;
+  /** Why it did not, when it did not. */
+  incompleteReads?: string[];
 }
 
 export interface FolderConnectorCredentialResult {

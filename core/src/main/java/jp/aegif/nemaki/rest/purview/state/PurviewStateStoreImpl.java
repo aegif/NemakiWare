@@ -514,6 +514,17 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
 
     private Map<String, Object> getConfigurationMap() {
         Configuration configuration = contentDaoService.getConfiguration(SystemConst.NEMAKI_CONF_DB);
+        if (configuration != null && configuration.isLoadFailed()) {
+            // The flag exists precisely so a caller can tell "no settings" from "could not
+            // read the settings"; this read threw it away and answered an empty map, which
+            // getString turns into "". Every repository lock is stored here and read as
+            // "held if the owner string is non-blank", so an outage made every lock look
+            // FREE and a second job took a lock another job holds.
+            // getOrCreateSystemConfiguration eight hundred lines down already refuses on
+            // this flag.
+            throw new IllegalStateException("the Purview state configuration could not be"
+                    + " read; this is NOT a finding that it is empty");
+        }
         if (configuration == null || configuration.getConfiguration() == null) {
             return Map.of();
         }
@@ -549,8 +560,15 @@ public class PurviewStateStoreImpl implements PurviewStateStore {
                     return value;
                 }
             }
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (RuntimeException e) {
-            log.debug("Failed to read from purview state DB for key " + key + ": " + e.getMessage());
+            // The DAO layer now throws for a failed read and returns null only for a genuine
+            // absence, so swallowing here reconstructs the answer it was fixed away from —
+            // and the fallback below reads as "no value", i.e. an unheld lock.
+            log.error("Failed to read from purview state DB for key " + key + ": " + e.getMessage(), e);
+            throw new IllegalStateException("the Purview state value for '" + key + "' could"
+                    + " not be read; this is NOT a finding that it is unset", e);
         }
         return null;
     }

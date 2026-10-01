@@ -37,13 +37,19 @@ import java.util.Map;
  * record is worth having, because a derived copy recorded without it reads as an equivalent of
  * the original — and the whole reason to record a duplication is that it is not one.
  *
- * <h2>This product converts to PDF. It does not produce PDF/A.</h2>
+ * <h2>A PDF here is a convenience copy, whether or not a PDF/A profile was requested</h2>
  *
- * <p>The rendition path runs LibreOffice through jodconverter with no PDF/A profile and no
- * validation. That produces a <b>convenience copy</b>: readable, useful, and not a preservation
- * format. Recording it as a preservation act would be the exact overclaim this layer exists to
- * prevent, so {@link Converter} carries the disclosure and the disclosure travels with every
- * entry.
+ * <p>This said "This product converts to PDF. <b>It does not produce PDF/A.</b>" and that the
+ * path runs "with no PDF/A profile and no validation". Both stopped being true when P3-2 §10–§12
+ * wired {@code rendition.pdfa.validate.flavour}: {@code JodRenditionManagerImpl} maps it to
+ * {@code SelectPdfVersion} and veraPDF validates the bytes. This very class takes a
+ * {@code PdfAValidation} and folds it into the entry's digest, so the file contradicted itself.
+ *
+ * <p>What remains true is the part that matters: a copy produced here is a <b>convenience
+ * copy</b>. A conforming PDF/A is still a derived rendering, and recording it as a preservation
+ * act would be the overclaim this layer exists to prevent — so {@link Converter} carries the
+ * disclosure and the disclosure travels with every entry. Where no flavour is configured,
+ * nothing is requested and nothing is checked, and the entry says so.
  *
  * <h2>Fail-open, and why that is right here specifically</h2>
  *
@@ -76,7 +82,8 @@ public class FormatDuplicationRecorder {
         /**
          * LibreOffice via jodconverter, the office-document path.
          *
-         * <p>No PDF/A profile is requested and no validation is performed, so the output is a
+         * <p>Where {@code rendition.pdfa.validate.flavour} is unset, no PDF/A profile is
+         * requested and no validation is performed, so the output is a
          * viewing copy. Layout is reflowed to whatever fonts the server has, which is the most
          * common way a converted document stops looking like the original.
          */
@@ -86,7 +93,7 @@ public class FormatDuplicationRecorder {
                         + "embedded objects, form state and document-level metadata are not "
                         + "guaranteed to survive."),
 
-        /** The CAD path. Same lack of a PDF/A profile, plus its own losses. */
+        /** The CAD path. Same profile question as above, plus its own losses. */
         CAD_RENDITION("nemaki/cad",
                 "A CAD drawing rendered for viewing loses its model: layers, dimensions as "
                         + "data, and any 3D geometry become flat marks."),
@@ -275,6 +282,30 @@ public class FormatDuplicationRecorder {
         }
     }
 
+    /**
+     * How many persisted duplications have failed to reach the chain since startup.
+     *
+     * <p><b>The gap had one destination and it was the log.</b> This class's contract says "a
+     * gap is reported, not raised", and the three fail-open recorders report theirs three
+     * different ways: capture returns a warning to its caller AND counts here (surfaced as
+     * {@code chainGapsOnThisReplicaSinceStartup}); the fixity pass puts {@code chained} and
+     * {@code chainWarning} on its response; a duplication only logged. Its caller
+     * ({@code ContentServiceImpl.createRendition}) returns a {@code Rendition} with nowhere to
+     * put a warning, and the three REST rendition endpoints carry none — so on a deployment
+     * whose ledger is failing, every convenience copy goes unchained and the only trace is a
+     * log line nobody is reading.
+     *
+     * <p>Per-JVM and per-replica, said in the name for the same reason capture's is: a number
+     * that looks repository-wide and is not understates the hole.
+     */
+    private final java.util.concurrent.atomic.AtomicLong gapCount =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** How many persisted duplications have failed to reach the chain since startup. */
+    public long gapsSinceStartup() {
+        return gapCount.get();
+    }
+
     private EvidenceLedgerService ledgerService;
 
     @Autowired(required = false)
@@ -334,8 +365,18 @@ public class FormatDuplicationRecorder {
             TargetFormat target, jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa, String actor,
             String occurredAt) {
         if (ledgerService == null) {
+            // Debug, matching EvidenceLedgerRecorder: p1-3 §7.6 establishes that this branch is
+            // UNREACHABLE where the component scan runs -- EvidenceLedgerService is a
+            // @Component in this very package, and serviceContext.xml scans it.
+            //
+            // This was briefly changed to a once-per-JVM WARN on the argument that "every
+            // duplication went unchained and said so nowhere anyone would see". That deployment
+            // does not exist, and §7.6 is the section the argument cited. Reverted, and the
+            // three fail-open recorders here now agree; DispositionRecorder warns because it is
+            // fail-CLOSED and the operation is refused, which is a different situation.
             logger.debug("No evidence ledger is wired; the duplication of {} is not chained",
                     sourceObjectId);
+            gapCount.incrementAndGet();
             return Recorded.gap(null);
         }
         EvidenceLedgerService.AppendResult result;
@@ -348,6 +389,7 @@ public class FormatDuplicationRecorder {
         } catch (RuntimeException e) {
             logger.warn("A format duplication of {} could not be chained: {}", sourceObjectId,
                     e.getMessage());
+            gapCount.incrementAndGet();
             return Recorded.gap("A copy of this document was produced in another format, but "
                     + "the duplication could not be added to the evidence chain ("
                     + e.getMessage() + "). The copy exists and the original is unchanged; the "
@@ -358,19 +400,13 @@ public class FormatDuplicationRecorder {
         }
         logger.warn("A format duplication of {} was not chained: {}", sourceObjectId,
                 result.reason());
+        gapCount.incrementAndGet();
         return Recorded.gap("A copy of this document was produced in another format, but the "
                 + "duplication was not added to the evidence chain (" + result.reason()
                 + "). The copy exists and the original is unchanged; the chain is missing this "
                 + "entry and will not be back-filled.");
     }
 
-    /**
-     * The canonical digest of a duplication.
-     *
-     * <p>Commits to WHICH original, WHAT came out, and BY WHAT. The converter id rather than its
-     * disclosure text: the text is a property of the id and would otherwise make every entry
-     * change when a sentence is reworded, which would look like the facts had changed.
-     */
     /**
      * The V1 field list, kept so an entry written before 2026-08-26 can still be reproduced.
      *
@@ -387,6 +423,13 @@ public class FormatDuplicationRecorder {
                 target == null ? null : target.mediaType(), actor);
     }
 
+    /**
+     * The canonical digest of a duplication.
+     *
+     * <p>Commits to WHICH original, WHAT came out, and BY WHAT. The converter id rather than its
+     * disclosure text: the text is a property of the id and would otherwise make every entry
+     * change when a sentence is reworded, which would look like the facts had changed.
+     */
     static String duplicationDigest(String repositoryId, String sourceObjectId,
             String sourceDigest, String producedDigest, Converter converter,
             TargetFormat target, String actor) {

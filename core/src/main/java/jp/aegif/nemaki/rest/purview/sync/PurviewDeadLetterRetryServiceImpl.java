@@ -26,6 +26,10 @@ import jp.aegif.nemaki.model.Content;
 @Service
 public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetryService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(PurviewDeadLetterRetryServiceImpl.class);
+
+
     private static final String JOB_KIND = "RETRY_FAILED";
     private static final String STREAM_KIND = "content-change-log";
     private static final String CURSOR_KIND = "changeToken";
@@ -35,6 +39,8 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
     private static final String CLOUD_METADATA_STREAM_KIND = "cloud-metadata-snapshot";
     private static final String CLOUD_METADATA_CURSOR_KIND = "snapshot";
     private static final String CLOUD_LINEAGE_STREAM_KIND = "cloud-sync-lineage";
+    /** Written by PurviewDocumentPublishServiceImpl when a document's entity fails to publish. */
+    private static final String DOCUMENT_ENTITY_STREAM_KIND = "document-entity";
 
     private final PurviewSchemaPlannerService schemaPlannerService;
     private final PurviewLockStateService lockStateService;
@@ -168,6 +174,10 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
             retryCloudLineageDeadLetter(repositoryId, deadLetterState);
             return;
         }
+        if (DOCUMENT_ENTITY_STREAM_KIND.equals(deadLetterState.getStreamKind())) {
+            retryDocumentEntityDeadLetter(repositoryId, deadLetterState);
+            return;
+        }
         throw new IllegalStateException("Unsupported dead-letter stream kind " + deadLetterState.getStreamKind());
     }
 
@@ -186,6 +196,15 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
         PurviewCursorState currentCursorState = getCursorStateOrDefault(repositoryId, CLOUD_METADATA_STREAM_KIND, CLOUD_METADATA_CURSOR_KIND);
         PurviewCloudMetadataSyncResult syncResult = cloudMetadataPublishService
                 .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCursorState.getCursor());
+        if (syncResult.isWalkIncomplete()) {
+            // The sync's incomplete arm is a PARTIAL success — it published what it saw and
+            // reconciled nothing. Reading it as success here deleted the dead letter, which is
+            // the only durable signal that this retry is still owed. The letter stays; the
+            // cursor stays (the result carries the previous snapshot anyway).
+            log.warn("Cloud-metadata retry for " + repositoryId + " ran over an incomplete "
+                    + "walk; the dead letter is kept so the retry stays owed");
+            return;
+        }
         deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
         saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, syncResult.getSnapshot());
     }
@@ -201,6 +220,43 @@ public class PurviewDeadLetterRetryServiceImpl implements PurviewDeadLetterRetry
                 .syncRepositoryArchivesIfChanged(repositoryId, currentCursorState.getCursor());
         deadLetterStateService.deleteDeadLetterState(repositoryId, deadLetterState.getStreamKind(), deadLetterState.getEntryKey());
         saveSuccessCursorState(repositoryId, deadLetterState.getStreamKind(), now, syncResult.getSnapshot());
+    }
+
+    /**
+     * Re-publishes one document whose ENTITY failed.
+     *
+     * <p>These letters had no arm at all: the dispatch threw "Unsupported", so every retry run
+     * counted each of them as a fresh failure and bumped its failureCount, and the letter
+     * outlived the recovery — the cloud baseline republishes the document on its own next
+     * round, so a letter could sit there for ever describing a problem that no longer exists.
+     * A permanent residue makes the real failures unreadable, which is the opposite of what a
+     * dead letter is for.
+     *
+     * <p>The entry key is the entity's qualified name ({@code nemaki://repo/objects/{id}});
+     * the object id is its last segment.
+     */
+    private void retryDocumentEntityDeadLetter(String repositoryId,
+            PurviewDeadLetterState deadLetterState) {
+        String entryKey = deadLetterState.getEntryKey();
+        String objectId = entryKey == null || !entryKey.contains("/")
+                ? entryKey
+                : entryKey.substring(entryKey.lastIndexOf('/') + 1);
+        Content content = contentDaoService.getContent(repositoryId, objectId);
+        if (content == null) {
+            // The object is genuinely gone (getContent throws for a failed read), so the
+            // letter describes work that can never succeed. Reconciliation owns removing the
+            // stale entity; keeping the letter would keep failing for ever.
+            deadLetterStateService.deleteDeadLetterState(repositoryId,
+                    deadLetterState.getStreamKind(), entryKey);
+            return;
+        }
+        documentPublishService.upsertContents(repositoryId, List.of(content));
+        if (documentPublishService.lastEntityPublishFailureCount() > 0) {
+            throw new IllegalStateException("the entity for '" + objectId + "' still could not"
+                    + " be published; keeping the dead letter");
+        }
+        deadLetterStateService.deleteDeadLetterState(repositoryId,
+                deadLetterState.getStreamKind(), entryKey);
     }
 
     private void retryArchiveLineageDeadLetter(String repositoryId, PurviewDeadLetterState deadLetterState) {

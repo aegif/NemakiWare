@@ -269,18 +269,21 @@ import { CMISService } from '../../services/cmis';
 import { getPasswordPolicy } from '../../services/passwordPolicy';
 import { User, Group } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 interface UserManagementProps {
   repositoryId: string;
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+import { PrincipalBatchModal } from '../PrincipalBatch/PrincipalBatchModal';
 
 export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchText, setSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -330,7 +333,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('userManagement.messages.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -384,7 +387,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
       
       message.error(errorMessage);
@@ -422,7 +425,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       } else if (error.status === 403) {
         errorMessage = t('userManagement.messages.deletePermissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
       
       message.error(errorMessage);
@@ -448,7 +451,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
       message.success(t('userManagement.messages.passwordResetSuccess'));
       resetPasswordForm.resetFields();
     } catch (error: any) {
-      message.error(error.message || t('userManagement.messages.passwordResetError'));
+      message.error(withDetail(t('userManagement.messages.passwordResetError'), error));
     } finally {
       setResetPasswordLoading(false);
     }
@@ -586,14 +589,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ repositoryId }) 
         <h2 style={{ margin: 0 }}>
           <UserOutlined /> {t('userManagement.title')}
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          {t('common.create')}
-        </Button>
+        <Space>
+          <Button onClick={() => setBatchOpen(true)} data-testid="principal-batch-open">
+            {t('principalBatch.open')}
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            {t('common.create')}
+          </Button>
+        </Space>
       </div>
+      <PrincipalBatchModal
+        open={batchOpen}
+        repositoryId={repositoryId}
+        kinds={['users']}
+        onClose={() => setBatchOpen(false)}
+        onApplied={() => loadUsers(1, searchText)}
+      />
 
       <Input.Search
         placeholder={t('userManagement.searchPlaceholder')}

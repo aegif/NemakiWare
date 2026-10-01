@@ -100,8 +100,9 @@ public class ContentServiceImplUserUpdateDeleteTest {
         // every group in the repository and scanning its member list. g2 is deliberately absent
         // from that answer, and the assertions below still require it to be left untouched.
         doReturn(List.of("g1")).when(service).getGroupIdsDirectlyContainingUser(REPO, "u1");
-        // membership cleanup re-fetches each referencing group for a revision-bearing doc
-        doReturn(g1).when(service).getGroupItemById(REPO, "g1");
+        // membership cleanup re-fetches each referencing group FRESH (revision-bearing,
+        // and immune to a stale cache from another replica)
+        doReturn(g1).when(service).getGroupItemByIdFresh(REPO, "g1");
 
         assertTrue(service.deleteUser(REPO, "u1"));
 

@@ -1,0 +1,438 @@
+{
+  "_note": "Shared by EvidenceProfileV1VectorsTest (Java) and reference_verify.py (from the spec). Neither can be edited to match a changed algorithm without the other going red.",
+  "canonicalHash": {
+    "canon_empty": {
+      "parts": []
+    },
+    "canon_ab_c": {
+      "parts": [
+        "ab",
+        "c"
+      ]
+    },
+    "canon_a_bc": {
+      "parts": [
+        "a",
+        "bc"
+      ]
+    },
+    "canon_null": {
+      "parts": [
+        null
+      ]
+    },
+    "canon_emptystring": {
+      "parts": [
+        ""
+      ]
+    },
+    "canon_long_zero": {
+      "parts": [
+        0
+      ]
+    },
+    "canon_long_max": {
+      "parts": [
+        9223372036854775807
+      ]
+    },
+    "canon_bool_true": {
+      "parts": [
+        true
+      ]
+    },
+    "canon_nested_list": {
+      "parts": [
+        [
+          "a",
+          "b"
+        ]
+      ]
+    },
+    "canon_map": {
+      "parts": [
+        {
+          "b": "2",
+          "a": "1"
+        }
+      ]
+    },
+    "canon_unicode": {
+      "parts": [
+        "日本語"
+      ]
+    }
+  },
+  "entryHash": {
+    "entry_genesis": {
+      "domain": "bedroom",
+      "sequence": 0,
+      "subjectKind": "GENESIS",
+      "subjectId": null,
+      "payloadDigest": null,
+      "occurredAt": "2026-01-01T00:00:00Z",
+      "prevEntryHash": null
+    },
+    "entry_first": {
+      "domain": "bedroom",
+      "sequence": 1,
+      "subjectKind": "CAPTURE_COMPLETED",
+      "subjectId": "obj-1",
+      "payloadDigest": "aa",
+      "occurredAt": "2026-01-02T00:00:00Z",
+      "prevEntryHash": "bb"
+    },
+    "entry_sequence_matters": {
+      "domain": "bedroom",
+      "sequence": 2,
+      "subjectKind": "CAPTURE_COMPLETED",
+      "subjectId": "obj-1",
+      "payloadDigest": "aa",
+      "occurredAt": "2026-01-02T00:00:00Z",
+      "prevEntryHash": "bb"
+    }
+  },
+  "checkpointHash": {
+    "checkpoint_first": {
+      "domain": "bedroom",
+      "fromSequence": 1,
+      "toSequence": 4,
+      "merkleRoot": "cc",
+      "prevCheckpointHash": null,
+      "createdAt": "2026-01-03T00:00:00Z"
+    },
+    "checkpoint_chained": {
+      "domain": "bedroom",
+      "fromSequence": 5,
+      "toSequence": 9,
+      "merkleRoot": "dd",
+      "prevCheckpointHash": "ee",
+      "createdAt": "2026-01-04T00:00:00Z"
+    }
+  },
+  "merkle": {
+    "merkle_one": {
+      "leaves": [
+        "a"
+      ]
+    },
+    "merkle_two": {
+      "leaves": [
+        "a",
+        "b"
+      ]
+    },
+    "merkle_three": {
+      "leaves": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "merkle_four": {
+      "leaves": [
+        "a",
+        "b",
+        "c",
+        "d"
+      ]
+    }
+  },
+  "expected": {
+    "canon_empty": "a665e6b115dd56fd3e0c89be631e6eda8e9666b822e0bd7026bf0822c4bbc68f",
+    "canon_ab_c": "14bacf0c3af5f2736b210f0edb9e7e12caabdb4c763bab2754209e1fc20d4a02",
+    "canon_a_bc": "6e7c1d9fe517528d9a880ae855040033a961e483bffb67edf7572d07f43a9fa2",
+    "canon_null": "9d0689e46d7c710571256af5b8e8638f0dbc6b008f5ea4688c1c70f3005943e4",
+    "canon_emptystring": "ca28a8559e1114f44c49b1aa3f956ed12e1a4be970e5aa43cde5ca59792f35e7",
+    "canon_long_zero": "254e9cce589405c1ed6b6a6efdb441447054a21db4f88e2e3db21cf24c565c61",
+    "canon_long_max": "b8fa50c6a012291fb71c66a059be4c34eb1d78388aae4726c132b18157439356",
+    "canon_bool_true": "6c614b295f14d90080516a9007bc0f473fcc8cb5f860354b6cc6c9f2ca7ab521",
+    "canon_nested_list": "7b087bf245dc8e557d0b432fee5fe3215ff19e3353ffb8c2265477f3e1a5c28c",
+    "canon_map": "7ac485b14cd2a455f161023678fa408ae2c27319bebdb9bd4f8e510a78abb592",
+    "canon_unicode": "a27f404760bb5000544fd9d061420e304eaadf9ab03e83deb2aeaca85954b8f6",
+    "entry_genesis": "c7b2c6d8c3350bf4ed0ab67549cf9711b2c4442b293b26e94f42087e97232b3b",
+    "entry_first": "5dc53fae6d1ca0572a7755d9a882f01d394ba9d4141cb9ba22451b5ce07a4138",
+    "entry_sequence_matters": "2e4acee02087c9a981c47db97412aaf54729e5cd4b1317e6bf43df466c91db29",
+    "checkpoint_first": "cd26c03a3005cdd762ac061fc1a23c6f53761be8cd2e007260ac03ef00d17123",
+    "checkpoint_chained": "2dd5f97a111f94a2c87e896db28d2fde0de0e88c4ff469fe8d824eafe1976338",
+    "merkle_one": "022a6979e6dab7aa5ae4c3e5e45f7e977112a7e63593820dbec1ec738a24f93c",
+    "merkle_two": "4c64254e6636add7f281ff49278beceb26378bd0021d1809974994e6e233ec35",
+    "merkle_three": "506ca1fda9c643406e0ab9eb83a0c9db7dff8727f286af947eefc74aa9eb1df9",
+    "merkle_four": "9dc1674ae1ee61c90ba50b6261e8f9a47f7ea07d92612158edfe3c2a37c6d74c",
+    "docKeysOutOfOrder": "5a548f51856ed485a74d4cdcb41c4e31b70c381a7a8955ccc5716bb749558436",
+    "docKeysSorted": "5a548f51856ed485a74d4cdcb41c4e31b70c381a7a8955ccc5716bb749558436",
+    "docEmptyObject": "88420266dfd64d604627234a8a6c75cf6477c6fd5505df0d17c59959ae9ce234",
+    "docNullVsEmpty": "2defc47aadfeff737a3e04d606488f26f76553af7057cdfe318c6f7219ff81a2",
+    "docNested": "9b82e826bcadb1c94b83c14fb11bfc70cb547a0f3b15eec2e744d065d2f74a62",
+    "docUnicodeKeys": "e996fe81e082f4f23b75d53b69f0b7532ca3108e59b1e9aed72a9d78b6b9d0e1",
+    "docNegativeAndBounds": "9f4e17af51f6cf097ba755b1bf38e93096b2f2e122fced5d02d410d75c91e765",
+    "docRestoredStatement": "162d8d832aebd018876a6a769be9f1da699d4d118f5ad4b42839b4f83d7fcf57",
+    "docTransitionUnknownPrior": "28923f2ed537a6aa12aebc2c37e6b8840c52c670188c0a1dec74a5d56107d8fe",
+    "docTransitionWithPrior": "43d16a764a85ccd1ab220d053fadb655ad3a3d14268b714d76c2c871e518cd84"
+  },
+  "proof": {
+    "leaf": "c",
+    "root": "9dc1674ae1ee61c90ba50b6261e8f9a47f7ea07d92612158edfe3c2a37c6d74c",
+    "path": [
+      {
+        "siblingHash": "d070dc5b8da9aea7dc0f5ad4c29d89965200059c9a0ceca3abd5da2492dcb71d",
+        "siblingIsLeft": false
+      },
+      {
+        "siblingHash": "4c64254e6636add7f281ff49278beceb26378bd0021d1809974994e6e233ec35",
+        "siblingIsLeft": true
+      }
+    ]
+  },
+  "documentDigest": {
+    "docKeysOutOfOrder": {
+      "json": "{\"b\":2,\"a\":\"x\"}",
+      "why": "key order in the file must not change the digest"
+    },
+    "docKeysSorted": {
+      "json": "{\"a\":\"x\",\"b\":2}",
+      "why": "same document, written the other way round — same digest as docKeysOutOfOrder"
+    },
+    "docEmptyObject": {
+      "json": "{}",
+      "why": "an empty MAP is a value, not nothing"
+    },
+    "docNullVsEmpty": {
+      "json": "{\"n\":null,\"e\":\"\"}",
+      "why": "NULL and a zero-length STRING are different tags"
+    },
+    "docNested": {
+      "json": "{\"a\":{\"z\":[1,true,null],\"y\":{}},\"b\":[]}",
+      "why": "MAP and LIST nest, and an empty one of each is still encoded"
+    },
+    "docUnicodeKeys": {
+      "json": "{\"\\u00e9\":1,\"e\":2,\"\\uD83D\\uDE00\":3}",
+      "why": "keys sort by UTF-8 bytes, not by UTF-16 code unit — the emoji sorts AFTER U+00E9"
+    },
+    "docNegativeAndBounds": {
+      "json": "{\"lo\":-9223372036854775808,\"hi\":9223372036854775807,\"z\":0}",
+      "why": "int64 two's complement at both ends"
+    },
+    "docRestoredStatement": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"contentStreamId\":\"att-1\",\"contentDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"contentLength\":12,\"commitmentKind\":\"RESTORED\",\"captureIntentId\":null,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a RESTORED state statement (W11, 2026-09-22): the fourth commitment kind is a STRING like the other three, and captureIntentId null is tagged, not dropped"
+    },
+    "docTransitionUnknownPrior": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"transition\":\"ARCHIVE_DESTROYED_LEAVING_COLD_BLOB\",\"bytesNow\":\"UNKNOWN\",\"priorContentDigest\":null,\"priorStatementEntrySequence\":null,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a transition statement with no prior: both prior fields are NULL-tagged, and 'not known' digests differently from any digest"
+    },
+    "docTransitionWithPrior": {
+      "json": "{\"repositoryId\":\"bedroom\",\"objectId\":\"doc-1\",\"versionObjectId\":\"doc-1\",\"transition\":\"MOVED_TO_COLD\",\"bytesNow\":\"COLD\",\"priorContentDigest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"priorStatementEntrySequence\":7,\"recordedAt\":\"2026-09-22T00:00:00Z\"}",
+      "why": "a transition statement copying a prior digest and the LONG sequence it came from"
+    }
+  },
+  "documentRefusals": {
+    "duplicateKey": {
+      "json": "{\"a\":1,\"a\":2}",
+      "because": "the document would have two canonical forms depending on which key the parser kept"
+    },
+    "nonIntegral": {
+      "json": "{\"a\":1.5}",
+      "because": "the encoding has no tag for it and rounding digests a value the document does not contain"
+    },
+    "exponent": {
+      "json": "{\"a\":1e3}",
+      "because": "same reason: a float literal, even one whose value is integral"
+    },
+    "tooWide": {
+      "json": "{\"a\":9223372036854775808}",
+      "because": "an integer wider than int64 has no tag, and saturating hides that"
+    },
+    "trailing": {
+      "json": "{\"a\":1} {\"b\":2}",
+      "because": "two documents in one file is not one document"
+    },
+    "notJson": {
+      "json": "{\"a\":1",
+      "because": "truncated input is a refusal, never a digest of the part that parsed"
+    },
+    "nestedDuplicate": {
+      "json": "{\"a\":{\"b\":1,\"b\":2}}",
+      "because": "the refusal is not only at the top level"
+    }
+  },
+  "chain": {
+    "chainOfOne": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        }
+      ],
+      "break": null,
+      "verdict": "PASS",
+      "why": "covering and anchor target are the same checkpoint — a legitimate chain of length 1"
+    },
+    "chainLinked": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        },
+        {
+          "from": 11,
+          "to": 20,
+          "root": "bb"
+        },
+        {
+          "from": 21,
+          "to": 30,
+          "root": "cc"
+        }
+      ],
+      "break": null,
+      "verdict": "PASS"
+    },
+    "chainEmpty": {
+      "links": [],
+      "break": null,
+      "verdict": "FAIL",
+      "why": "no chain at all must not read as a chain that held"
+    },
+    "chainBrokenLink": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        },
+        {
+          "from": 11,
+          "to": 20,
+          "root": "bb"
+        }
+      ],
+      "break": "prev",
+      "verdict": "FAIL"
+    },
+    "chainReversed": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        },
+        {
+          "from": 11,
+          "to": 20,
+          "root": "bb"
+        }
+      ],
+      "break": "order",
+      "verdict": "FAIL"
+    },
+    "chainFieldsMoved": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        },
+        {
+          "from": 11,
+          "to": 20,
+          "root": "bb"
+        }
+      ],
+      "break": "fields",
+      "verdict": "FAIL",
+      "why": "a field rewritten under an untouched hash — the chain still looks linked"
+    },
+    "chainStandstill": {
+      "links": [
+        {
+          "from": 1,
+          "to": 10,
+          "root": "aa"
+        },
+        {
+          "from": 5,
+          "to": 10,
+          "root": "bb"
+        }
+      ],
+      "break": null,
+      "verdict": "FAIL",
+      "why": "two checkpoints ending at the same sequence are two answers for one period; the walk must move FORWARD, not stand still"
+    }
+  },
+  "composition": {
+    "allRequiredPassed": {
+      "all": [
+        "PASSED",
+        "PASSED"
+      ],
+      "required": [
+        "PASSED",
+        "PASSED"
+      ],
+      "verdict": "VERIFIED"
+    },
+    "oneRequiredAbsent": {
+      "all": [
+        "PASSED",
+        "NOT_PRESENT"
+      ],
+      "required": [
+        "PASSED",
+        "NOT_PRESENT"
+      ],
+      "verdict": "INDETERMINATE",
+      "why": "absence must not be promoted to assurance"
+    },
+    "oneRequiredUnavailable": {
+      "all": [
+        "PASSED",
+        "UNAVAILABLE"
+      ],
+      "required": [
+        "PASSED",
+        "UNAVAILABLE"
+      ],
+      "verdict": "INDETERMINATE"
+    },
+    "failBeatsAbsent": {
+      "all": [
+        "FAILED",
+        "NOT_PRESENT"
+      ],
+      "required": [
+        "FAILED",
+        "NOT_PRESENT"
+      ],
+      "verdict": "FAILED",
+      "why": "a finding must not be diluted into 'could not tell'"
+    },
+    "failInAnUnrequiredCheck": {
+      "all": [
+        "PASSED",
+        "FAILED"
+      ],
+      "required": [
+        "PASSED"
+      ],
+      "verdict": "FAILED",
+      "why": "the package is inconsistent whether or not this profile required the check"
+    },
+    "nothingRequired": {
+      "all": [
+        "PASSED"
+      ],
+      "required": [],
+      "verdict": "INDETERMINATE",
+      "why": "a verifier that required nothing established nothing"
+    },
+    "nothingAtAll": {
+      "all": [],
+      "required": [],
+      "verdict": "INDETERMINATE"
+    }
+  }
+}

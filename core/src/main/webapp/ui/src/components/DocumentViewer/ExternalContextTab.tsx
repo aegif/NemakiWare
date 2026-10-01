@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, Tag, Button, Space, Alert, Typography, Tooltip, message, Descriptions } from 'antd';
 import { CopyOutlined, CheckOutlined, WarningOutlined, CloudOutlined, ApiOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 import { formatServerDate } from '../../utils/dateUtils';
 
 const { Text, Title } = Typography;
@@ -13,13 +14,14 @@ interface ExternalContextTabProps {
   updatedAt: string | null;
 }
 
-// Source type display configuration
-const SOURCE_TYPE_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
-  cloud_sync: { color: 'blue', icon: <CloudOutlined /> },
-  crm: { color: 'purple', icon: <ApiOutlined /> },
-  erp: { color: 'orange', icon: <ApiOutlined /> },
-  chat: { color: 'green', icon: <ApiOutlined /> },
-  email: { color: 'cyan', icon: <ApiOutlined /> },
+// Source type display configuration. Each label is a literal key so tests/i18n/locale-keys.spec.ts
+// can check it; a source type the server sends that is not listed here shows as itself.
+const SOURCE_TYPE_CONFIG: Record<string, { color: string; icon: React.ReactNode; labelKey: string }> = {
+  cloud_sync: { color: 'blue', icon: <CloudOutlined />, labelKey: 'documentViewer.externalContext.types.cloud_sync' },
+  crm: { color: 'purple', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.crm' },
+  erp: { color: 'orange', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.erp' },
+  chat: { color: 'green', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.chat' },
+  email: { color: 'cyan', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.email' },
 };
 
 // Source ID display configuration
@@ -82,22 +84,22 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
     try {
       await navigator.clipboard.writeText(context);
       setCopied(true);
-      message.success(t('documentViewer.externalContext.copySuccess', 'コピーしました'));
+      message.success(t('documentViewer.externalContext.copySuccess'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      message.error(t('common.copyFailed', 'コピーに失敗しました'));
+      message.error(t('common.copyFailed'));
     }
   };
 
   // Get source type display info
-  const sourceTypeConfig = sourceType ? SOURCE_TYPE_CONFIG[sourceType] : null;
+  const sourceTypeConfig = ownEntry(SOURCE_TYPE_CONFIG, sourceType);
   const sourceIdConfig = sourceId ? SOURCE_ID_CONFIG[sourceId] : null;
   const formattedUpdatedAt = formatDate(updatedAt);
 
   if (!context) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: '#888' }}>
-        {t('documentViewer.externalContext.noData', '外部コンテキストデータがありません')}
+        {t('documentViewer.externalContext.noData')}
       </div>
     );
   }
@@ -108,21 +110,21 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
       <Card size="small">
         <Descriptions column={3} size="small">
           <Descriptions.Item
-            label={t('documentViewer.externalContext.sourceType', 'ソース種別')}
+            label={t('documentViewer.externalContext.sourceType')}
           >
             {sourceType ? (
               <Tag
                 color={sourceTypeConfig?.color || 'default'}
                 icon={sourceTypeConfig?.icon}
               >
-                {t(`documentViewer.externalContext.types.${sourceType}`, sourceType)}
+                {sourceTypeConfig ? t(sourceTypeConfig.labelKey) : sourceType}
               </Tag>
             ) : (
               <Text type="secondary">-</Text>
             )}
           </Descriptions.Item>
           <Descriptions.Item
-            label={t('documentViewer.externalContext.sourceId', 'ソースID')}
+            label={t('documentViewer.externalContext.sourceId')}
           >
             {sourceId ? (
               <Tag color={sourceIdConfig?.color || 'default'}>
@@ -133,7 +135,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
             )}
           </Descriptions.Item>
           <Descriptions.Item
-            label={t('documentViewer.externalContext.updatedAt', '最終更新')}
+            label={t('documentViewer.externalContext.updatedAt')}
           >
             {formattedUpdatedAt ? (
               <Text>{formattedUpdatedAt}</Text>
@@ -151,8 +153,8 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
           icon={<WarningOutlined />}
           message={
             isTruncated
-              ? t('documentViewer.externalContext.truncatedWarning', 'データが切り捨てられています（5000文字上限）')
-              : t('documentViewer.externalContext.parseError', 'JSONの解析に失敗しました')
+              ? t('documentViewer.externalContext.truncatedWarning')
+              : t('documentViewer.externalContext.parseError')
           }
           showIcon
         />
@@ -164,13 +166,13 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
         title={
           <Space>
             <Title level={5} style={{ margin: 0 }}>
-              {t('documentViewer.externalContext.content', 'コンテンツ')}
+              {t('documentViewer.externalContext.content')}
             </Title>
-            <Tag>{context.length.toLocaleString()} chars</Tag>
+            <Tag>{t('documentViewer.externalContext.charCount', { count: context.length.toLocaleString() })}</Tag>
           </Space>
         }
         extra={
-          <Tooltip title={t('documentViewer.externalContext.copy', 'コピー')}>
+          <Tooltip title={t('documentViewer.externalContext.copy')}>
             <Button
               type="text"
               icon={copied ? <CheckOutlined style={{ color: 'green' }} /> : <CopyOutlined />}

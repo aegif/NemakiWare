@@ -53,10 +53,11 @@ import static org.mockito.Mockito.when;
  *
  * <h2>Nothing new is timestamped, so nothing new is claimed</h2>
  *
- * <p>The checkpoint hash IS the SHA-256 of the checkpoint's canonical bytes, and the RFC 3161
- * anchor over that checkpoint is a token whose imprint is exactly that value. So the record is
- * an assembly, not a new attestation — and every reason it cannot be assembled is a statement
- * about what this deployment has anchored, never about the records the checkpoint covers.
+ * <p>The RFC 3161 anchor over a checkpoint is a token whose imprint is exactly that
+ * checkpoint's {@code merkleRoot}, as bytes — NOT its {@code checkpointHash}, which is a
+ * different value no token here covers (R70). So the record is an assembly, not a new
+ * attestation — and every reason it cannot be assembled is a statement about what this
+ * deployment has anchored, never about the records the checkpoint covers.
  */
 class EvidenceRecordServiceTest {
 
@@ -105,8 +106,16 @@ class EvidenceRecordServiceTest {
         return response.getTimeStampToken().getEncoded();
     }
 
+    /** A Merkle root the way the ledger writes one. */
+    private static final String ROOT =
+            "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
     private static EvidenceCheckpoint checkpoint() {
-        return EvidenceCheckpoint.of(DOMAIN, 0, 4, "mh1:root", null, "2026-08-26T00:00:00Z");
+        // A real Merkle root: 64 lowercase hex characters, because that is what the ledger
+        // writes and what AnchorService hands to the TSA. "mh1:root" was not even hex, so
+        // every test here ran against a checkpoint this product cannot produce (measured when
+        // the data object moved to the root, R70).
+        return EvidenceCheckpoint.of(DOMAIN, 0, 4, ROOT, null, "2026-08-26T00:00:00Z");
     }
 
     private static AnchorReceipt confirmedOver(String digest, byte[] token) throws Exception {
@@ -137,9 +146,9 @@ class EvidenceRecordServiceTest {
     @DisplayName("a confirmed RFC 3161 anchor becomes an evidence record that verifies")
     void anAnchorBecomesAnEvidenceRecord() throws Exception {
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         EvidenceRecordService service = serviceWith(checkpoint,
-                List.of(confirmedOver(checkpoint.checkpointHash(), tokenOver(imprint))));
+                List.of(confirmedOver(checkpoint.merkleRoot(), tokenOver(imprint))));
 
         EvidenceRecordService.Built built = service.latest(DOMAIN);
 
@@ -175,8 +184,8 @@ class EvidenceRecordServiceTest {
         // "checkpoint" while its proof covers the merkle root — a value also to hand at
         // anchoring time — assembles cleanly and is about something else.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] merkleRoot = MessageDigest.getInstance("SHA-256").digest("mh1:root".getBytes());
-        AnchorReceipt lying = confirmedOver(checkpoint.checkpointHash(), tokenOver(merkleRoot));
+        byte[] somethingElse = MessageDigest.getInstance("SHA-256").digest("another value".getBytes());
+        AnchorReceipt lying = confirmedOver(checkpoint.merkleRoot(), tokenOver(somethingElse));
 
         EvidenceRecordService.Built built =
                 serviceWith(checkpoint, List.of(lying)).latest(DOMAIN);
@@ -193,7 +202,7 @@ class EvidenceRecordServiceTest {
     @DisplayName("an unreadable token is not built from, and is not called wrong")
     void anUnreadableTokenIsNotAFinding() throws Exception {
         EvidenceCheckpoint checkpoint = checkpoint();
-        AnchorReceipt garbage = confirmedOver(checkpoint.checkpointHash(),
+        AnchorReceipt garbage = confirmedOver(checkpoint.merkleRoot(),
                 "this is not a token".getBytes());
 
         EvidenceRecordService.Built built =
@@ -210,9 +219,9 @@ class EvidenceRecordServiceTest {
         // goes to another organisation, and "it came out of the exporter" is not a reason for
         // them to accept it.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         EvidenceRecordService.Built built = serviceWith(checkpoint,
-                List.of(confirmedOver(checkpoint.checkpointHash(), tokenOver(imprint))))
+                List.of(confirmedOver(checkpoint.merkleRoot(), tokenOver(imprint))))
                 .latest(DOMAIN);
 
         assertTrue(built.present(), built.unavailable());
@@ -228,11 +237,11 @@ class EvidenceRecordServiceTest {
         // assembled record still fails §4.2 step 5, because the tree and the timestamp are not
         // about the same algorithm. Without the read-back this ships.
         EvidenceCheckpoint checkpoint = checkpoint();
-        byte[] imprint = HexFormat.of().parseHex(checkpoint.checkpointHash());
+        byte[] imprint = HexFormat.of().parseHex(checkpoint.merkleRoot());
         // SHA3-256: also 32 bytes, so the imprint BYTES still equal the checkpoint hash and
         // every earlier check passes. The record declares SHA-256, and §4.2 step 5 says the
         // timestamp's algorithm must be the tree's — so the assembled record does not verify.
-        AnchorReceipt mislabelled = confirmedOver(checkpoint.checkpointHash(),
+        AnchorReceipt mislabelled = confirmedOver(checkpoint.merkleRoot(),
                 tokenOverWithAlgorithm(imprint, "2.16.840.1.101.3.4.2.8"));
 
         EvidenceRecordService.Built built =
@@ -320,5 +329,49 @@ class EvidenceRecordServiceTest {
         assertEquals("limits", List.copyOf(absent.keySet()).get(0), absent.keySet().toString());
         assertTrue(String.valueOf(absent.get("limits")).contains("not a document"),
                 String.valueOf(absent.get("limits")));
+    }
+
+    @Test
+    @DisplayName("receipt rows that could not be read are not 'this checkpoint has no token'")
+    void droppedReceiptRowsAreNotAnAbsentToken() {
+        // This absence statement does not stay in a response: EarkSipExporter writes it into
+        // nemaki-evidence.json, inside the package that leaves the organisation, where it
+        // cannot be corrected. The store drops rows it cannot decode and counts them for
+        // exactly this reason -- AnchorService reads that count in both of its verbs -- and
+        // this caller, the one whose sentence travels furthest, did not.
+        EvidenceCheckpoint checkpoint = checkpoint();
+        EvidenceLedgerStore ledger = mock(EvidenceLedgerStore.class);
+        when(ledger.isActive()).thenReturn(true);
+        when(ledger.latestCheckpoint(anyString())).thenReturn(checkpoint);
+        AnchorReceiptStore lossy = mock(AnchorReceiptStore.class);
+        when(lossy.isActive()).thenReturn(true);
+        when(lossy.forCheckpoint(anyString(), anyLong())).thenReturn(List.of());
+        when(lossy.unreadableCount()).thenReturn(2);
+        EvidenceRecordService service = new EvidenceRecordService();
+        service.setLedgerStore(ledger);
+        service.setAnchorReceiptStore(lossy);
+
+        EvidenceRecordService.Built built = service.latest(DOMAIN);
+
+        org.junit.jupiter.api.Assertions.assertFalse(built.present(), built.toString());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(built.unavailable()).contains("NOT a finding"),
+                "an unreadable row was reported as an absent token, in a sentence that gets "
+                        + "packaged and shipped: " + built.unavailable());
+    }
+
+    @Test
+    @DisplayName("a clean read with no token still says there is none — the control")
+    void aCleanReadStillReportsAnAbsentToken() {
+        // Without this, hedging every absence would satisfy the test above and no deployment
+        // could ever be told it has not anchored with RFC 3161.
+        EvidenceRecordService service = serviceWith(checkpoint(), List.of());
+
+        EvidenceRecordService.Built built = service.latest(DOMAIN);
+
+        org.junit.jupiter.api.Assertions.assertFalse(built.present());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(built.unavailable()).contains("no CONFIRMED RFC 3161"),
+                "a store that answered cleanly did not give the plain answer: " + built.unavailable());
     }
 }

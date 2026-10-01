@@ -53,7 +53,7 @@ public class AnchorWiringConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(AnchorWiringConfig.class);
 
-    /** The sidecar's base URL, e.g. {@code http://ots:8080}. Empty means rung 2 is off. */
+    /** The sidecar's base URL, e.g. {@code http://ots:8082} (the port docker/ots listens on). Empty means rung 2 is off. */
     @Value("${anchor.opentimestamps.sidecar.url:}")
     private String otsSidecarUrl;
 
@@ -84,6 +84,17 @@ public class AnchorWiringConfig {
     @Value("${anchor.rfc3161.trust-anchor.path:}")
     private String tsaTrustAnchorPath;
 
+    /**
+     * Whether anchoring fetches the TSA signer's CRL at issuance.
+     *
+     * <p>Default false — and wired only now, after the fetch was moved onto the send-time-
+     * pinned outbound path. The setter existed without a caller until then, which meant the
+     * runbook's "off by default" was really "cannot be switched on" (R65). Turning it on makes
+     * this node contact whatever distribution point the TSA's certificate names.
+     */
+    @Value("${anchor.rfc3161.revocation.collect-at-issuance:false}")
+    private boolean collectRevocationAtIssuance;
+
     @Bean
     public OpenTimestampsAnchorTarget openTimestampsAnchorTarget() {
         // Constructed either way so the rung can report NOT_CONFIGURED for itself. Returning
@@ -101,10 +112,16 @@ public class AnchorWiringConfig {
         if (isBlank(tsaUrl)) {
             logger.info("Anchor rung 3 (RFC 3161) is off: no anchor.rfc3161.tsa.url");
         }
-        return new Rfc3161AnchorTarget(isBlank(tsaUrl) ? null : tsaUrl,
+        Rfc3161AnchorTarget target = new Rfc3161AnchorTarget(isBlank(tsaUrl) ? null : tsaUrl,
                 isBlank(tsaPolicyOid) ? null : tsaPolicyOid,
                 isBlank(tsaAccreditation) ? null : tsaAccreditation,
                 loadTrustAnchor(tsaTrustAnchorPath));
+        target.setCollectRevocationAtIssuance(collectRevocationAtIssuance);
+        if (collectRevocationAtIssuance) {
+            logger.info("Anchor rung 3 will fetch the TSA signer's CRL at issuance "
+                    + "(anchor.rfc3161.revocation.collect-at-issuance=true)");
+        }
+        return target;
     }
 
     /**

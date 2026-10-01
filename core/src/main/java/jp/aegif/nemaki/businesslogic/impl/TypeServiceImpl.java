@@ -17,6 +17,7 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -192,7 +193,12 @@ public class TypeServiceImpl implements TypeService{
 			return;
 		}
 
-		//Delete unnecessary property definitions with proper error handling
+		// Delete unnecessary property definitions. The reads below now REFUSE rather than
+		// answer "not there" when they fail, and this loop must not put that answer back:
+		// a failure here means we cannot tell whether a core is still referenced, and
+		// deleting the type on top of that leaves details and cores behind that nothing
+		// points at any more. Failures are collected and the type delete is refused.
+		List<String> unresolvedDetails = new ArrayList<String>();
 		List<String> detailIds = ntd.getProperties();
 		if (detailIds != null && !detailIds.isEmpty()) {
 			for(String detailId : detailIds){
@@ -224,9 +230,16 @@ public class TypeServiceImpl implements TypeService{
 					}
 				} catch (Exception e) {
 					log.error("Error deleting property definition detail " + detailId + " for type " + typeId, e);
-					// Continue with other deletions even if one fails
+					unresolvedDetails.add(detailId + " (" + e.getMessage() + ")");
 				}
 			}
+		}
+
+		if (!unresolvedDetails.isEmpty()) {
+			throw new CmisRuntimeException("type '" + typeId + "' was not deleted: its property"
+					+ " definitions could not be resolved " + unresolvedDetails
+					+ " — deleting the type on an unknown property graph orphans the"
+					+ " definitions it owned");
 		}
 
 		//Delete the type definition

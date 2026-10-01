@@ -188,11 +188,13 @@ public class CatalogPropertyMappingResolver {
                 // skip the mapping entirely to avoid schema/payload mismatch.
                 NemakiPropertyDefinitionCore core = null;
                 if (typeService != null) {
-                    try {
-                        core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisPropertyId);
-                    } catch (Exception e) {
-                        logger.debug("Could not resolve property core for {}: {}", cmisPropertyId, e.getMessage());
-                    }
+                    // No catch. A type definition that could not be READ is not a mapping
+                    // whose property was deleted: skipping it drops the property from every
+                    // payload this repository sends to the catalog — and the result is
+                    // CACHED below, so one transient failure keeps dropping it until the
+                    // cache is cleared. The skip below still stands for the genuine absence
+                    // the store now reserves null for.
+                    core = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisPropertyId);
                 }
                 if (core == null || core.getPropertyType() == null) {
                     logger.warn("Skipping property mapping '{}' in repository '{}': "

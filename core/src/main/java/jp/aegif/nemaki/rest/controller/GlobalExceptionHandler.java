@@ -23,6 +23,7 @@ package jp.aegif.nemaki.rest.controller;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,12 +51,20 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleGeneralException(
             Exception ex, WebRequest request) {
         
-        log.error("Unhandled exception in REST API: " + ex.getMessage(), ex);
+        // The message stays in the log, under an incident id the client is given instead. An
+        // unexpected exception's text is whatever the failing layer wrote — a JDBC URL, a file
+        // path, a class name — and it used to be copied into the body verbatim (CodeQL
+        // java/error-message-exposure #1410; owner decision 2026-09-28: fix, not accept). The 400
+        // below is different and keeps its message: that one is the product's own answer.
+        String incidentId = UUID.randomUUID().toString();
+        log.error("Unhandled exception in REST API [incident " + incidentId + "]: "
+                + ex.getMessage(), ex);
         
         Map<String, Object> response = new HashMap<>();
         response.put("status", "error");
         response.put("message", "Internal server error");
-        response.put("error", ex.getMessage());
+        response.put("error", "Internal server error. The details were logged under incidentId.");
+        response.put("incidentId", incidentId);
         response.put("timestamp", System.currentTimeMillis());
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
@@ -105,12 +114,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleRuntimeException(
             RuntimeException ex, WebRequest request) {
         
-        log.error("Runtime exception in REST API: " + ex.getMessage(), ex);
+        // Same rule as the general handler above: the text goes to the log under an incident
+        // id, the client gets the id (#1410).
+        String incidentId = UUID.randomUUID().toString();
+        log.error("Runtime exception in REST API [incident " + incidentId + "]: "
+                + ex.getMessage(), ex);
         
         Map<String, Object> response = new HashMap<>();
         response.put("status", "error");
         response.put("message", "Processing error");
-        response.put("error", ex.getMessage());
+        response.put("error", "Processing error. The details were logged under incidentId.");
+        response.put("incidentId", incidentId);
         response.put("timestamp", System.currentTimeMillis());
         
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);

@@ -819,10 +819,23 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         message.error(result.message || t('documentList.runConnectorError'));
         return;
       }
-      message.success(t('documentList.runConnectorDone', {
+      // A run that stopped at its limit is not "done", and neither is one where items failed.
+      // Both arrive as status "partial" — keying on sawEverything alone covered the first and
+      // left the second showing a green tick over five failures (both round-3 reviews). The
+      // sibling ZIP import on this same screen has always branched on status; this now matches.
+      const done = t('documentList.runConnectorDone', {
         imported: result.imported ?? 0,
         skipped: result.skipped ?? 0,
-      }));
+      });
+      if (result.status === 'partial') {
+        // The server sends the reason. Stating one here instead would be this screen asserting
+        // which of the two causes it was.
+        const why = (result.incompleteReads ?? result.errors ?? []).join('; ')
+          || t('documentList.runConnectorIncomplete');
+        message.warning(`${done} — ${why}`);
+      } else {
+        message.success(done);
+      }
       await loadObjects();
     } catch (e: any) {
       message.error(e?.message || t('documentList.runConnectorError'));
@@ -1996,7 +2009,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       : (currentPage - 1) * pageSize + objects.length,
                   onChange: (page) => loadObjects(page),
                   showSizeChanger: false,
-                  showTotal: totalItems > 0 ? (total) => `${total} 件` : undefined,
+                  showTotal: totalItems > 0 ? (total) => t('common.totalItems', { total }) : undefined,
                 }}
                 size="small"
                 rowSelection={{

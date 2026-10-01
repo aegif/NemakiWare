@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Table, Modal, Input, Space, Typography, Tag, message, Popconfirm } from 'antd';
 import { KeyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { WebAuthnService, PasskeyCredential } from '../../services/webauthn';
 
 const { Title, Text } = Typography;
@@ -28,7 +29,7 @@ const PasskeyManagement: React.FC<PasskeyManagementProps> = ({ repositoryId }) =
       const creds = await webauthnService.listCredentials(repositoryId);
       setCredentials(creds);
     } catch (err: any) {
-      message.error(err.message || t('passkey.messages.loadError'));
+      message.error(withDetail(t('passkey.messages.loadError'), err));
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ const PasskeyManagement: React.FC<PasskeyManagementProps> = ({ repositoryId }) =
       if (err.name === 'NotAllowedError') {
         message.warning(t('passkey.messages.cancelled'));
       } else {
-        message.error(err.message || t('passkey.messages.registerError'));
+        message.error(withDetail(t('passkey.messages.registerError'), err));
       }
     } finally {
       setRegisterLoading(false);
@@ -79,7 +80,7 @@ const PasskeyManagement: React.FC<PasskeyManagementProps> = ({ repositoryId }) =
       message.success(t('passkey.messages.deleteSuccess'));
       loadCredentials();
     } catch (err: any) {
-      message.error(err.message || t('passkey.messages.deleteError'));
+      message.error(withDetail(t('passkey.messages.deleteError'), err));
     }
   };
 

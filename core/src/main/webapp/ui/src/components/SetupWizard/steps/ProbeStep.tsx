@@ -3,6 +3,7 @@ import { Table, Tag, Alert, Spin, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { setupApi, RepositoryOverview } from '../../../services/setupApi';
 import type { CouchDbConfig } from './CouchDbStep';
+import { withDetail } from '../../../i18n/withDetail';
 
 interface ProbeStepProps {
   couchdb: CouchDbConfig;
@@ -79,7 +80,7 @@ export function ProbeStep({ couchdb, onValidChange }: ProbeStepProps) {
       key: 'judgment',
       render: (_: unknown, record: RepositoryOverview) => {
         if (record.error) {
-          return <Tag color="red">{record.error}</Tag>;
+          return <Tag color="red">{withDetail(t('setup.probe.error'), record.error)}</Tag>;
         }
         const colorMap: Record<string, string> = {
           current: 'green',

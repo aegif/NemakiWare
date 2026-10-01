@@ -450,6 +450,17 @@ public class LineageFolderCompanionBackfillImpl implements LineageFolderCompanio
         for (int skip = 0; skip < total; skip += CHILD_PAGE_SIZE) {
             List<Content> page =
                     contentDaoService.getChildrenPaged(repositoryId, folderId, skip, CHILD_PAGE_SIZE);
+            // A decode-shortened page silently drops folders from the frontier, and once the
+            // shortened frontier empties, the cursor persists COMPLETE — the resumable state
+            // that tells every operator the backfill is done. Throwing lands in runOneBatch's
+            // caller, which records the batch as failed with the cursor intact; a retry after
+            // the row is repaired resumes from the same frontier.
+            if (contentDaoService.lastUnreadableChildCount() > 0) {
+                throw new IllegalStateException("folder " + folderId + "'s listing lost "
+                        + contentDaoService.lastUnreadableChildCount() + " row(s) to decode"
+                        + " failures; continuing would let the backfill record COMPLETE over"
+                        + " a frontier that silently dropped subtrees");
+            }
             if (page == null || page.isEmpty()) {
                 break;
             }

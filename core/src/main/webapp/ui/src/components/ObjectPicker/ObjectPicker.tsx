@@ -86,7 +86,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       const rootFolder = await cmisService.getRootFolder(repositoryId);
       const rootNode: TreeNode = {
         key: rootFolder.id,
-        title: rootFolder.name || 'Root',
+        title: rootFolder.name || t('objectPicker.root'),
         icon: <FolderOutlined />,
         isLeaf: false,
         data: rootFolder,
@@ -326,7 +326,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
         <div style={{ marginBottom: '16px', padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
           <strong>{t('objectPicker.selectedObject')}: </strong>
           {selectedObject.baseType === 'cmis:folder' ? <FolderOutlined /> : <FileOutlined />}
-          {' '}{selectedObject.name} (ID: {selectedObject.id})
+          {' '}{selectedObject.name} {t('common.idWithValue', { id: selectedObject.id })}
         </div>
       )}
       <Tabs

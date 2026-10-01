@@ -89,6 +89,18 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
         return sidecarUrl != null;
     }
 
+    /** Where rung 2 sends, for display only — the settings screen shows it and cannot change it. */
+    public String sidecarUrl() {
+        return sidecarUrl;
+    }
+
+    /** {@link Rfc3161AnchorTarget#USER_INFO_REFUSED} when the sidecar URL carries an {@code @} (R132). */
+    @Override
+    public String refusal() {
+        return isConfigured() && Rfc3161AnchorTarget.carriesAt(sidecarUrl)
+                ? Rfc3161AnchorTarget.USER_INFO_REFUSED : null;
+    }
+
     @Override
     public AnchorReceipt anchor(String hexDigest) {
         // Validate first, even when unconfigured: a caller bug should surface now rather than
@@ -98,6 +110,11 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             return AnchorReceipt.notConfigured(kind(), hexDigest);
         }
         Instant attemptedAt = Instant.now();
+        if (Rfc3161AnchorTarget.carriesAt(sidecarUrl)) {
+            // Not sent, not parsed, not named (R132).
+            logger.warn("OpenTimestamps anchoring refused: {}", Rfc3161AnchorTarget.USER_INFO_REFUSED);
+            return AnchorReceipt.failed(kind(), hexDigest, attemptedAt, Rfc3161AnchorTarget.USER_INFO_REFUSED);
+        }
         try {
             JsonNode response = post("/stamp", "{\"digest\":\"" + hexDigest + "\"}");
             String status = response.path("status").asString("");
@@ -138,9 +155,25 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
      */
     @Override
     public AnchorReceipt upgrade(AnchorReceipt pending) {
-        if (pending == null || pending.status() != AnchorStatus.PENDING
-                || pending.kind() != kind() || pending.proof() == null || !isConfigured()) {
+        if (pending == null || pending.status() != AnchorStatus.PENDING || pending.kind() != kind()) {
+            // Not this rung's to move: handed back as it came (AnchorTarget#upgrade).
             return pending;
+        }
+        // The three arms below, the digest check and the catch at the end used to hand the pending
+        // receipt back unchanged — which the upgrade pass reads as "asked; nothing had settled yet"
+        // (c46).
+        if (!isConfigured()) {
+            throw new AnchorUpgradeException("the OpenTimestamps rung is not configured on this node, "
+                    + "so the sidecar was not asked; the commitment stays pending");
+        }
+        if (pending.proof() == null) {
+            throw new AnchorUpgradeException("the pending receipt carries no proof, so there is nothing "
+                    + "to upgrade and the sidecar was not asked");
+        }
+        if (Rfc3161AnchorTarget.carriesAt(sidecarUrl)) {
+            // The sidecar is not asked; the commitment stays pending (R132).
+            logger.warn("OpenTimestamps upgrade refused: {}", Rfc3161AnchorTarget.USER_INFO_REFUSED);
+            throw new AnchorUpgradeException(Rfc3161AnchorTarget.USER_INFO_REFUSED);
         }
         try {
             byte[] current = pending.proof();
@@ -161,10 +194,16 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
             if (!info.path("digestMatches").asBoolean(false)) {
                 logger.warn("OpenTimestamps proof does not belong to digest {}: {}",
                         pending.anchoredDigest(), info.path("error").asString(""));
-                return pending;
+                // An answer, and not "not yet": this proof will not settle for this digest.
+                throw new AnchorUpgradeException("the sidecar says the stored proof does not belong to "
+                        + "this digest, so it cannot be upgraded; the commitment stays pending");
             }
 
             Map<String, String> attrs = new LinkedHashMap<>(pending.attributes());
+            // A receipt stored before a URL with an @ was refused (R132) may still carry one; the
+            // upgraded receipt is returned to the caller, and stored when it confirms —
+            // upgradePending discards one that stays PENDING (c41, P1; subagent, c42).
+            attrs.computeIfPresent("sidecarUrl", (key, url) -> Rfc3161AnchorTarget.withoutUserInfo(url));
             if (changed && latest.length > 0) {
                 // Progress that may not be completion: keep the newer bytes rather than relying
                 // on calendars still holding the same intermediate data next time.
@@ -212,10 +251,14 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
                     null, candidate, Rfc3161AnchorTarget.sha256Hex(candidate), attrs,
                     AnchorKind.TimeSemantics.UPPER_BOUND_ONLY);
 
+        } catch (AnchorUpgradeException e) {
+            throw e;
         } catch (Exception e) {
             logger.warn("OpenTimestamps upgrade failed for {}: {}",
                     pending.anchoredDigest(), e.toString());
-            return pending;
+            // Named by its type only: a transport error's message can carry the sidecar's address.
+            throw new AnchorUpgradeException("the sidecar could not be asked, or answered with an error ("
+                    + e.getClass().getSimpleName() + "); the commitment stays pending");
         }
     }
 

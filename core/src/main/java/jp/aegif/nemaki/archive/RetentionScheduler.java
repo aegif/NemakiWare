@@ -305,6 +305,10 @@ public class RetentionScheduler {
                     }
 
                 } catch (Exception e) {
+                    // Counted, not just logged: the persisted migration log is the record of
+                    // what this sweep did, and a repository whose candidates could not even
+                    // be listed must not read there as a sweep that found nothing to do.
+                    result.incrementFailed();
                     log.error("Error during local-archive for repository " + repositoryId + ": " + e.getMessage(), e);
                 }
 
@@ -571,6 +575,10 @@ public class RetentionScheduler {
         final String lineageOperationId = java.util.UUID.randomUUID().toString();
         boolean coldPutSucceeded = false;
         String storageRef = null;
+        // E1 (W12): method scope, because the outer cleanup below has to reach it. Declared
+        // inside the try it was out of reach there, and a cold write undone by that cleanup
+        // left a row open for ever (Codex review, P1).
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending coldRow = null;
 
         // Set transitional state
         contentService.updateArchiveState(repositoryId, archiveId,
@@ -592,6 +600,8 @@ public class RetentionScheduler {
                 metadata.put("mimeType", archive.getMimeType() != null ? archive.getMimeType() : "");
                 metadata.put("originalId", originalId != null ? originalId : "");
 
+                // E1 (W12): opened before the bytes leave for cold storage.
+                coldRow = openColdTransfer(repositoryId, originalId);
                 storageRef = adapter.put(repositoryId, originalId, contentStream, metadata);
                 coldPutSucceeded = true;
                 adapter.enforceImmutability(repositoryId, originalId);
@@ -615,6 +625,12 @@ public class RetentionScheduler {
                 }
 
                 contentService.updateArchiveColdMoveMode(repositoryId, archiveId, coldMoveMode);
+                if (keepLocalCopy) {
+                    // COPY: the bytes are in cold storage AND still in the archive database.
+                    closeColdTransfer(coldRow,
+                            jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.COPIED_TO_COLD,
+                            jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.ARCHIVE_DB);
+                }
 
                 // Delete local content only in MOVE mode
                 if (!keepLocalCopy) {
@@ -647,12 +663,19 @@ public class RetentionScheduler {
                             log.warn("removeProtection failed while undoing a refused cold move "
                                     + "(will still attempt delete): " + rpEx.getMessage());
                         }
+                        boolean coldUndone = false;
                         try {
                             adapter.delete(repositoryId, originalId, storageRef);
+                            coldUndone = true;
                         } catch (Exception delEx) {
                             log.error("Failed to delete the cold object while undoing a refused "
                                     + "cold move: " + delEx.getMessage());
                         }
+                        if (coldUndone) {
+                            abandonColdTransfer(coldRow, "the cold write was undone after the "
+                                    + "disposition was refused: " + authorisation.refusedReason());
+                        }
+                        // Not undone: the row stays open — a blob may remain, and that is listable.
                         contentService.resetColdMoveMetadata(repositoryId, archiveId);
                         if (result != null) {
                             result.incrementRefused();
@@ -669,16 +692,25 @@ public class RetentionScheduler {
                             log.warn("removeProtection failed during cleanup (will still attempt delete): "
                                     + rpEx.getMessage());
                         }
+                        boolean coldUndone = false;
                         try {
                             adapter.delete(repositoryId, originalId, storageRef);
+                            coldUndone = true;
                         } catch (Exception delEx) {
                             log.error("Failed to delete cold object after local delete failure: "
                                     + delEx.getMessage());
+                        }
+                        if (coldUndone) {
+                            abandonColdTransfer(coldRow, "the cold write was undone after the local "
+                                    + "delete failed");
                         }
                         contentService.resetColdMoveMetadata(repositoryId, archiveId);
                         return false;
                     }
                     log.info("Move mode: deleted local archive content after cold storage write: " + archiveId);
+                    closeColdTransfer(coldRow,
+                            jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.MOVED_TO_COLD,
+                            jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.COLD);
                 }
 
                 // Lineage: one version-free fact. The typed ARCHIVE endpoint requires the
@@ -743,8 +775,10 @@ public class RetentionScheduler {
                     log.warn("removeProtection failed during cleanup (will still attempt delete): "
                             + rpEx.getMessage());
                 }
+                boolean coldUndone = false;
                 try {
                     adapter.delete(repositoryId, originalId, storageRef);
+                    coldUndone = true;
                     log.info("Cleaned up orphaned cold storage blob: originalId=" + originalId
                             + ", storageRef=" + storageRef);
                 } catch (Exception delEx) {
@@ -752,7 +786,14 @@ public class RetentionScheduler {
                             + ", storageRef=" + storageRef + " — manual cleanup may be required: "
                             + delEx.getMessage());
                 }
+                if (coldUndone) {
+                    abandonColdTransfer(coldRow, "the cold move failed after the write and the "
+                            + "cold object was deleted again: " + e.getMessage());
+                }
+                // Not undone: the row stays open — a blob may remain, and that is listable.
             }
+            // Failed before or at the put: the row stays open, because whether a partial write
+            // reached cold storage is not known.
 
             try {
                 contentService.resetColdMoveMetadata(repositoryId, archiveId);
@@ -892,6 +933,49 @@ public class RetentionScheduler {
     public void setDispositionRecorder(
             jp.aegif.nemaki.evidence.DispositionRecorder dispositionRecorder) {
         this.dispositionRecorder = dispositionRecorder;
+    }
+
+    /**
+     * E1's recorder (W12). Autowired like the disposition recorder above; absent, no
+     * transition is recorded and the cold move proceeds as before.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private jp.aegif.nemaki.evidence.RecordContentStateRecorder recordContentState;
+
+    public void setRecordContentState(jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder) {
+        this.recordContentState = recorder;
+    }
+
+    /** Opens the COLD_TRANSFER row BEFORE the bytes are written to cold storage. */
+    private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openColdTransfer(String repositoryId,
+            String versionObjectId) {
+        if (recordContentState == null || versionObjectId == null) {
+            return null;
+        }
+        return recordContentState.openBeforeWriting(repositoryId, versionObjectId, versionObjectId,
+                jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.COLD_TRANSFER,
+                java.time.Instant.now().toString());
+    }
+
+    private void closeColdTransfer(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+            jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition transition,
+            jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow bytesNow) {
+        if (recordContentState == null || pending == null) {
+            return;
+        }
+        recordContentState.recordTransition(pending, transition, bytesNow);
+    }
+
+    /**
+     * The cold write was undone and the undo VERIFIABLY succeeded, so the row is closed with no
+     * statement. An undo that failed leaves the row open: whether a blob remains is not known.
+     */
+    private void abandonColdTransfer(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+            String reason) {
+        if (recordContentState == null || pending == null) {
+            return;
+        }
+        recordContentState.abandon(pending, reason);
     }
 
     public void setContentService(ContentService contentService) {

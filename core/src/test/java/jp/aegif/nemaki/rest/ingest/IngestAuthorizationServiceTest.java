@@ -449,4 +449,57 @@ class IngestAuthorizationServiceTest {
         c.setAllowedFolderIds(List.of(FOLDER));
         return c;
     }
+
+    // ── R11: the reads that REFUSE instead of answering null / false ──
+
+    @Test
+    void resolveFolderIdOrRefuse_refusesWhenThePathReadThrows() {
+        when(contentService.getContentByPath(REPO, "/a/b"))
+                .thenThrow(new RuntimeException("connection reset"));
+        assertThrows(IngestAuthorizationService.AuthorizationReadFailedException.class,
+                () -> svc.resolveFolderIdOrRefuse(REPO, null, "/a/b"),
+                "a path read that failed answered 'there is no such path'");
+        // The answering variant keeps its contract for the callers not yet given the split.
+        assertNull(svc.resolveFolderId(REPO, null, "/a/b"));
+    }
+
+    @Test
+    void resolveFolderIdOrRefuse_answersNullForAMissingPath() {
+        when(contentService.getContentByPath(REPO, "/a/b")).thenReturn(null);
+        assertNull(svc.resolveFolderIdOrRefuse(REPO, null, "/a/b"));
+        when(contentService.getContentByPath(REPO, "/a/c")).thenThrow(
+                new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException("no such path"));
+        assertNull(svc.resolveFolderIdOrRefuse(REPO, null, "/a/c"),
+                "an answered absence was reported as a failed read");
+    }
+
+    @Test
+    void canManageOrRefuse_refusesWhenTheFolderReadThrows() {
+        when(contentService.getFolder(REPO, FOLDER)).thenThrow(new RuntimeException("connection reset"));
+        assertThrows(IngestAuthorizationService.AuthorizationReadFailedException.class,
+                () -> svc.canManageProfileForFolderAsUserOrRefuse(USER, REPO, FOLDER),
+                "a folder read that failed answered 'does not hold cmis:all'");
+        assertFalse(svc.canManageProfileForFolderAsUser(USER, REPO, FOLDER));
+    }
+
+    @Test
+    void canManageOrRefuse_refusesWhenTheAclReadThrows() {
+        Folder f = mockFolder(FOLDER);
+        when(contentService.getFolder(REPO, FOLDER)).thenReturn(f);
+        doThrow(new RuntimeException("connection reset")).when(contentService).calculateAcl(REPO, f);
+        assertThrows(IngestAuthorizationService.AuthorizationReadFailedException.class,
+                () -> svc.canManageProfileForFolderAsUserOrRefuse(USER, REPO, FOLDER),
+                "an ACL read that failed answered 'does not hold cmis:all'");
+    }
+
+    @Test
+    void canManageOrRefuse_answersForAnAclItRead() {
+        Folder f = mockFolder(FOLDER);
+        when(contentService.getFolder(REPO, FOLDER)).thenReturn(f);
+        doReturn(aclWith(ace(USER, CmisPermission.ALL))).when(contentService).calculateAcl(REPO, f);
+        assertTrue(svc.canManageProfileForFolderAsUserOrRefuse(USER, REPO, FOLDER));
+        doReturn(aclWith(ace("someone-else", CmisPermission.ALL))).when(contentService).calculateAcl(REPO, f);
+        assertFalse(svc.canManageProfileForFolderAsUserOrRefuse(USER, REPO, FOLDER),
+                "an ACL that grants nothing to the user was answered true");
+    }
 }

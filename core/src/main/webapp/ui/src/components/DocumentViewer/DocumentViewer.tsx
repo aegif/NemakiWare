@@ -739,7 +739,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const pullObjectId = isPWC ? object.id : (checkedOutId || object.id);
       console.log('[CloudDrive] pullObjectId:', pullObjectId, 'current objectId:', objectId, 'isPWC:', isPWC);
       await pullFromCloud(repositoryId, pullObjectId, provider, accessToken, cloudMetadata.cloudFileId);
-      message.success(t('documentViewer.messages.cloudPullSuccess', 'クラウドからコンテンツを取得しました'));
+      message.success(t('documentViewer.messages.cloudPullSuccess'));
       // Regenerate rendition (PDF preview) from the updated content
       try {
         await cmisService.generateRenditions(repositoryId, pullObjectId, true);
@@ -771,7 +771,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setPreviewVersion(v => v + 1);
     } catch (error) {
       console.error('Cloud pull failed:', error);
-      message.error(t('documentViewer.messages.cloudPullError', 'クラウドからの取得に失敗しました'));
+      message.error(t('documentViewer.messages.cloudPullError'));
     } finally {
       setCloudPullLoading(false);
     }
@@ -1281,7 +1281,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     // External Context Tab (only shown when nemaki:externalIntegration secondary type is present) (2026-02-04)
     ...(externalContext ? [{
       key: 'externalContext',
-      label: t('documentViewer.externalContext.tab', '外部コンテキスト'),
+      label: t('documentViewer.externalContext.tab'),
       children: (
         <ExternalContextTab
           context={externalContext}
@@ -1469,7 +1469,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       onClick={() => handleCloudPush('google')}
                     >
                       {cloudMetadata?.provider === 'google'
-                        ? t('documentViewer.updateInGoogleDrive', 'Google Driveを更新')
+                        ? t('documentViewer.updateInGoogleDrive')
                         : t('documentViewer.editInGoogleDrive')}
                     </Button>
                   )}
@@ -1480,7 +1480,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       onClick={() => handleCloudPush('microsoft')}
                     >
                       {cloudMetadata?.provider === 'microsoft'
-                        ? t('documentViewer.updateInOneDrive', 'OneDriveを更新')
+                        ? t('documentViewer.updateInOneDrive')
                         : t('documentViewer.editInOneDrive')}
                     </Button>
                   )}
@@ -1491,7 +1491,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                         loading={cloudPullLoading}
                         onClick={handleCloudPull}
                       >
-                        {t('documentViewer.pullFromCloud', 'クラウドから取得')}
+                        {t('documentViewer.pullFromCloud')}
                       </Button>
                       <Button
                         icon={<LinkOutlined />}
@@ -1519,7 +1519,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           window.open(url, '_blank', 'noopener,noreferrer');
                         }}
                       >
-                        {t('documentViewer.openInCloud', 'クラウドで開く')}
+                        {t('documentViewer.openInCloud')}
                       </Button>
                     </>
                   )}
@@ -1724,8 +1724,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                     value: type.id
                   }))
                 : [
-                    { label: 'Bidirectional (nemaki:bidirectionalRelationship)', value: 'nemaki:bidirectionalRelationship' },
-                    { label: 'Parent-Child (nemaki:parentChildRelationship)', value: 'nemaki:parentChildRelationship' },
+                    { label: `${t('documentViewer.relationshipTypeNames.bidirectional')} (nemaki:bidirectionalRelationship)`, value: 'nemaki:bidirectionalRelationship' },
+                    { label: `${t('documentViewer.relationshipTypeNames.parentChild')} (nemaki:parentChildRelationship)`, value: 'nemaki:parentChildRelationship' },
                   ]
               }
             />
@@ -1739,7 +1739,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
               {selectedTargetObject ? (
                 <div style={{ padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px' }}>
                   <strong>{t('documentViewer.relationshipModal.selected')}: </strong>
-                  {selectedTargetObject.name} (ID: {selectedTargetObject.id})
+                  {selectedTargetObject.name} {t('common.idWithValue', { id: selectedTargetObject.id })}
                 </div>
               ) : (
                 <div style={{ padding: '8px', backgroundColor: '#fafafa', borderRadius: '4px', color: '#999' }}>
@@ -1786,8 +1786,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       {propDefTyped.propertyType === 'boolean' ? (
                         <Select
                           options={[
-                            { label: 'true', value: true },
-                            { label: 'false', value: false }
+                            { label: t('common.booleanTrue'), value: true },
+                            { label: t('common.booleanFalse'), value: false }
                           ]}
                           allowClear
                           placeholder={t('documentViewer.relationshipModal.selectValue')}
@@ -2052,8 +2052,8 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           {propDefTyped.propertyType === 'boolean' ? (
                             <Select
                               options={[
-                                { label: 'true', value: true },
-                                { label: 'false', value: false }
+                                { label: t('common.booleanTrue'), value: true },
+                                { label: t('common.booleanFalse'), value: false }
                               ]}
                               allowClear
                             />

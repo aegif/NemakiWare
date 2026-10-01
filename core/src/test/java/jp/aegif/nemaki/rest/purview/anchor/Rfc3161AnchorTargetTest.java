@@ -35,6 +35,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -74,6 +75,33 @@ class Rfc3161AnchorTargetTest {
         if (server != null) {
             server.stop(0);
         }
+    }
+
+    /**
+     * What {@code target} logged, at INFO and above, while {@code action} ran. The level is
+     * raised for the duration so a test configuration that hides INFO cannot make "the log
+     * carries no password" true by carrying nothing.
+     */
+    static String logOf(Class<?> target, java.util.concurrent.Callable<?> action) throws Exception {
+        ch.qos.logback.classic.Logger log =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(target);
+        ch.qos.logback.classic.Level previous = log.getLevel();
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        log.addAppender(appender);
+        log.setLevel(ch.qos.logback.classic.Level.INFO);
+        try {
+            action.call();
+        } finally {
+            log.detachAppender(appender);
+            log.setLevel(previous);
+        }
+        StringBuilder all = new StringBuilder();
+        for (ch.qos.logback.classic.spi.ILoggingEvent event : appender.list) {
+            all.append(event.getFormattedMessage()).append('\n');
+        }
+        return all.toString();
     }
 
     // ---------------------------------------------------------------- configuration
@@ -207,6 +235,56 @@ class Rfc3161AnchorTargetTest {
             assertTrue(receipt.failureReason().contains("503"), receipt.failureReason());
         }
 
+        /**
+         * Every URL with an {@code @} is refused, whatever else it holds (R132). These are the
+         * shapes three review rounds found leaking through a rule that read the user-info back
+         * out of the string: a raw {@code %} (the parser's message repeated the URL), a raw
+         * {@code #} (the parser named the password's first part as a port), an {@code @} and a
+         * {@code #} together (the authority ended inside the password), and an {@code @} in the
+         * user name with a {@code /} in the password.
+         */
+        @Test
+        @DisplayName("every URL with an @ is refused, whatever else it holds, and no part of it is written")
+        void everyUrlWithAnAtIsRefused() throws Exception {
+            for (String[] shape : new String[][] {
+                    {"https://svc:Pa%ss@tsa.example/tsr", "Pa%ss"},
+                    {"https://svc:pa#ss@tsa.example/tsr", "pa#ss"},
+                    {"https://svc:@secret#tail@tsa.example/tsr", "secret"},
+                    {"https://alice@example.com:s3cr/et@tsa.example/tsr", "s3cr"}}) {
+                java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                        new java.util.concurrent.atomic.AtomicReference<>();
+
+                String logged = logOf(Rfc3161AnchorTarget.class, () -> {
+                    receipt.set(new Rfc3161AnchorTarget(shape[0], null, null).anchor(DIGEST));
+                    return null;
+                });
+
+                String reason = receipt.get().failureReason();
+                assertEquals(AnchorStatus.FAILED, receipt.get().status(), shape[0]);
+                assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, reason, shape[0]);
+                assertFalse(logged.contains(shape[1]) || logged.contains("tsa.example"),
+                        "the log names the refused URL: " + logged);
+            }
+        }
+
+        /**
+         * The display rule: a URL with an {@code @} anywhere is not shown — the user-info, a path's
+         * own {@code @}, a query's, a fragment's — and a URL with none is shown as it is (R132:
+         * no rule that reads a user-info back out of the string survived review).
+         */
+        @Test
+        @DisplayName("a URL with an @ anywhere is not shown, and one without is shown as it is")
+        void aUrlWithAnAtIsNotShown() {
+            for (String withAt : new String[] {"https://u:p@ss@h/", "https://svc:@secret#tail@tsa.example/tsr",
+                    "https://alice@example.com:s3cr/et@tsa.example/tsr", "https://h/a@b",
+                    "https://tsa.example/ts?user=a@b", "https://tsa.example/#ops@example"}) {
+                String shown = Rfc3161AnchorTarget.withoutUserInfo(withAt);
+                assertTrue(shown.startsWith("(not shown"), withAt + " was shown as " + shown);
+            }
+            assertEquals("http://127.0.0.1:3180/", Rfc3161AnchorTarget.withoutUserInfo("http://127.0.0.1:3180/"),
+                    "a URL with no @ at all is shown as it is");
+        }
+
         @Test
         @DisplayName("an unreachable TSA fails the anchor, not the caller")
         void unreachableTsaDoesNotThrow() {
@@ -313,6 +391,90 @@ class Rfc3161AnchorTargetTest {
 
         private String startTsa(boolean withAccuracy) throws Exception {
             return startTsaGenerating(withAccuracy);
+        }
+
+        /**
+         * What the TSA is actually asked to timestamp.
+         *
+         * <p>The Merkle root is already a SHA-256 digest, so {@code anchor()} decodes it and
+         * sends the 32 bytes: {@code hex(messageImprint) == merkleRoot}. Every verifier
+         * comparison in this product and in the independent verifier rests on that, and until
+         * the fourth review NOTHING measured the request — {@code decodeSha256Hex} was tested
+         * in isolation, and the stub TSA echoed whatever it was given, so a second hash added
+         * here would have left every test and every control green while making the shipped
+         * tokens unverifiable (both reviewers, 2026-09-22).
+         */
+        @Test
+        @DisplayName("the request carries the root's BYTES — the writer's side of the imprint rule")
+        void theRequestCarriesTheRootsBytes() throws Exception {
+            java.util.concurrent.atomic.AtomicReference<String> imprintSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            String url = startTsaRecording(imprintSeen);
+
+            AnchorReceipt receipt = new Rfc3161AnchorTarget(url, null, null).anchor(DIGEST);
+
+            assertEquals(AnchorStatus.CONFIRMED, receipt.status(), receipt.failureReason());
+            assertEquals(DIGEST, imprintSeen.get(),
+                    "the TSA was asked to timestamp " + imprintSeen.get() + " and the digest "
+                            + "handed to anchor() was " + DIGEST + ". A verifier compares a "
+                            + "token's imprint with the checkpoint's root, so anything else "
+                            + "here makes every token this deployment produces unverifiable");
+        }
+
+        /** The success stub, with the imprint it was asked for recorded. */
+        private String startTsaRecording(
+                java.util.concurrent.atomic.AtomicReference<String> imprintSeen) throws Exception {
+            java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048);
+            java.security.KeyPair kp = kpg.generateKeyPair();
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Recording TSA");
+            java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+            java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+            org.bouncycastle.cert.X509v3CertificateBuilder builder =
+                    new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                            subject, BigInteger.TEN, from, to, subject, kp.getPublic());
+            builder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            java.security.cert.X509Certificate cert =
+                    new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter().getCertificate(
+                            builder.build(new org.bouncycastle.operator.jcajce
+                                    .JcaContentSignerBuilder("SHA256withRSA").build(kp.getPrivate())));
+            org.bouncycastle.tsp.TimeStampTokenGenerator tokenGen =
+                    new org.bouncycastle.tsp.TimeStampTokenGenerator(
+                            new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                                    .build("SHA256withRSA", kp.getPrivate(), cert),
+                            new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
+                                    .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                            new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                                    "2.16.840.1.101.3.4.2.1"))),
+                            new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.3.4.1"));
+            tokenGen.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                    java.util.List.of(cert)));
+            tokenGen.setAccuracySeconds(1);
+            org.bouncycastle.tsp.TimeStampResponseGenerator responseGen =
+                    new org.bouncycastle.tsp.TimeStampResponseGenerator(
+                            tokenGen, java.util.Set.of("2.16.840.1.101.3.4.2.1"));
+            return startServer("/tsr", exchange -> {
+                byte[] body;
+                try {
+                    TimeStampRequest request =
+                            new TimeStampRequest(exchange.getRequestBody().readAllBytes());
+                    imprintSeen.set(java.util.HexFormat.of()
+                            .formatHex(request.getMessageImprintDigest()));
+                    body = responseGen.generate(request, BigInteger.valueOf(99), new Date())
+                            .getEncoded();
+                } catch (Exception e) {
+                    body = new byte[0];
+                }
+                exchange.getResponseHeaders().add("Content-Type",
+                        Rfc3161AnchorTarget.RESPONSE_CONTENT_TYPE);
+                exchange.sendResponseHeaders(200, body.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(body);
+                }
+            });
         }
 
         /** Serve tokens signed by the given key, presenting the given certificates. */
@@ -430,6 +592,39 @@ class Rfc3161AnchorTargetTest {
             assertEquals("1.2.3.4.1", receipt.attributes().get("policyOid"));
             assertEquals("1.0", receipt.attributes().get("accuracySeconds"));
             assertEquals("1", receipt.attributes().get("embeddedCertificateCount"));
+        }
+
+        /**
+         * A TSA URL that carries an {@code @} is refused: the TSA is never asked, and neither the
+         * receipt nor the log names the URL (R132 — the user's decision after three rounds found
+         * user:password reaching the screen, the receipt or a log by another shape each time).
+         * The control beside it: the same TSA, asked through a URL without one, answers.
+         */
+        @Test
+        @DisplayName("a TSA URL with an @ is refused — never sent, and named nowhere")
+        void aUrlWithAnAtIsRefusedAndNeverSent() throws Exception {
+            java.util.concurrent.atomic.AtomicReference<String> imprintSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            String url = startTsaRecording(imprintSeen);
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> receipt =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            String logged = logOf(Rfc3161AnchorTarget.class, () -> {
+                receipt.set(new Rfc3161AnchorTarget(url.replace("http://", "http://operator:s3cr3t@"),
+                        null, "NONE").anchor(DIGEST));
+                return null;
+            });
+
+            assertEquals(AnchorStatus.FAILED, receipt.get().status());
+            assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, receipt.get().failureReason());
+            assertNull(imprintSeen.get(), "the TSA was asked through a URL that carries an @");
+            assertTrue(logged.contains("refused"), "the refusal was not logged: " + logged);
+            assertFalse(logged.contains("s3cr3t") || logged.contains("operator"),
+                    "the log names the refused URL: " + logged);
+
+            AnchorReceipt answered = new Rfc3161AnchorTarget(url, null, "NONE").anchor(DIGEST);
+            assertEquals(AnchorStatus.CONFIRMED, answered.status(), answered.failureReason());
+            assertEquals(url, answered.attributes().get("tsaUrl"));
         }
 
         @Test
@@ -713,6 +908,280 @@ class Rfc3161AnchorTargetTest {
             assertEquals(1, receipt.proof()[0], "mutating a returned copy must not alter the receipt");
 
             assertThrows(UnsupportedOperationException.class, () -> receipt.attributes().put("x", "y"));
+        }
+    }
+
+    @Nested
+    class RevocationCollection {
+
+        private java.security.KeyPair keyPair;
+        private java.security.cert.X509Certificate certificate;
+
+        private String escapeBefore;
+
+        @org.junit.jupiter.api.BeforeEach
+        void allowTheLocalStub() {
+            // The CRL fetch rides the send-time-pinned path, which refuses loopback — as it
+            // should in production. The stub below IS loopback, so the test-only escape the
+            // adapter tests use is set here and put back after (R65). Put back, not cleared:
+            // a JVM started with the property set would otherwise leave this class with it
+            // off (Codex review, P3).
+            escapeBefore = System.getProperty("nemaki.ingest.allowLocalhost");
+            System.setProperty("nemaki.ingest.allowLocalhost", "true");
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void putTheEscapeBack() {
+            if (escapeBefore == null) {
+                System.clearProperty("nemaki.ingest.allowLocalhost");
+            } else {
+                System.setProperty("nemaki.ingest.allowLocalhost", escapeBefore);
+            }
+        }
+
+        /** A token whose signer certificate names {@code crlUrl} as its CRL distribution point. */
+        private org.bouncycastle.tsp.TimeStampToken tokenWithDistributionPoint(String crlUrl)
+                throws Exception {
+            java.security.KeyPairGenerator kpg = java.security.KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(2048);
+            keyPair = kpg.generateKeyPair();
+            org.bouncycastle.asn1.x500.X500Name subject =
+                    new org.bouncycastle.asn1.x500.X500Name("CN=Test TSA with CRL DP");
+            java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+            java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+            org.bouncycastle.cert.X509v3CertificateBuilder certBuilder =
+                    new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(
+                            subject, BigInteger.TWO, from, to, subject, keyPair.getPublic());
+            certBuilder.addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                    new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                            org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping));
+            org.bouncycastle.asn1.x509.GeneralName uri = new org.bouncycastle.asn1.x509.GeneralName(
+                    org.bouncycastle.asn1.x509.GeneralName.uniformResourceIdentifier, crlUrl);
+            org.bouncycastle.asn1.x509.DistributionPoint point =
+                    new org.bouncycastle.asn1.x509.DistributionPoint(
+                            new org.bouncycastle.asn1.x509.DistributionPointName(
+                                    new org.bouncycastle.asn1.x509.GeneralNames(uri)), null, null);
+            certBuilder.addExtension(org.bouncycastle.asn1.x509.Extension.cRLDistributionPoints,
+                    false, new org.bouncycastle.asn1.x509.CRLDistPoint(
+                            new org.bouncycastle.asn1.x509.DistributionPoint[] { point }));
+            org.bouncycastle.operator.ContentSigner signer =
+                    new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withRSA")
+                            .build(keyPair.getPrivate());
+            certificate = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                    .getCertificate(certBuilder.build(signer));
+
+            org.bouncycastle.tsp.TimeStampTokenGenerator tokenGen =
+                    new org.bouncycastle.tsp.TimeStampTokenGenerator(
+                            new org.bouncycastle.cms.jcajce.JcaSimpleSignerInfoGeneratorBuilder()
+                                    .build("SHA256withRSA", keyPair.getPrivate(), certificate),
+                            new org.bouncycastle.operator.bc.BcDigestCalculatorProvider()
+                                    .get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(
+                                            new org.bouncycastle.asn1.ASN1ObjectIdentifier(
+                                                    "2.16.840.1.101.3.4.2.1"))),
+                            new org.bouncycastle.asn1.ASN1ObjectIdentifier("1.2.3.4.1"));
+            tokenGen.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                    java.util.List.of(certificate)));
+            org.bouncycastle.tsp.TimeStampRequestGenerator reqGen =
+                    new org.bouncycastle.tsp.TimeStampRequestGenerator();
+            reqGen.setCertReq(true);
+            org.bouncycastle.tsp.TimeStampRequest request = reqGen.generate(
+                    new org.bouncycastle.asn1.ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"),
+                    new byte[32], BigInteger.ONE);
+            return tokenGen.generate(request, BigInteger.ONE, new java.util.Date());
+        }
+
+        private Rfc3161AnchorTarget collecting() {
+            Rfc3161AnchorTarget target = new Rfc3161AnchorTarget(null, null, null);
+            target.setCollectRevocationAtIssuance(true);
+            return target;
+        }
+
+        /**
+         * A stub reached by NAME, so the fetch takes the HTTP pinning branch production takes:
+         * the URI rewritten to the resolved literal and the {@code Host} header carried over,
+         * which needs the {@code jdk.httpclient.allowRestrictedHeaders=host} flag surefire
+         * sets. With the escape narrowed to loopback, this branch is no longer skipped for a
+         * local stub (subagent review, P2-4: until then no test in the suite sent through it).
+         * That the rewrite itself happens for a loopback NAME under the escape is measured
+         * directly in {@code TheTestEscapeIsLoopbackOnlyTest}; here, the fetch succeeding
+         * through it is the claim.
+         */
+        @Test
+        @DisplayName("with collection on, the signer's CRL is captured through the pinned path")
+        void materialIsCapturedThroughThePinnedPath() throws Exception {
+            byte[] crl = "-- a CRL, as far as this test is concerned --".getBytes(StandardCharsets.UTF_8);
+            java.util.concurrent.atomic.AtomicReference<String> hostSeen =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            // Bound by the same name the URL carries, so the stub sits on whichever loopback
+            // address "localhost" resolves to first — the one the pin picks.
+            server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+            server.createContext("/ca.crl", exchange -> {
+                hostSeen.set(exchange.getRequestHeaders().getFirst("Host"));
+                exchange.sendResponseHeaders(200, crl.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(crl);
+                }
+            });
+            server.start();
+            String url = "http://localhost:" + server.getAddress().getPort() + "/ca.crl";
+
+            RevocationMaterial material = collecting()
+                    .collectRevocationMaterial(tokenWithDistributionPoint(url));
+
+            assertEquals(RevocationMaterial.Status.CAPTURED, material.status(), material.detail());
+            assertArrayEquals(crl, material.der());
+            assertEquals(url, material.source());
+            // The Host header is what the pin carries over; a client that did not pin would
+            // send the same value from the URI, so this does NOT identify the branch — the
+            // rewrite itself is measured in TheTestEscapeIsLoopbackOnlyTest. What it holds is
+            // that the pinned fetch arrived with the name the stub expects (subagent, P3).
+            assertEquals("localhost:" + server.getAddress().getPort(), hostSeen.get(),
+                    "the stub saw Host " + hostSeen.get() + "; the pin carries the original "
+                            + "name in Host, and a name-based virtual host would answer for the "
+                            + "wrong site without it");
+        }
+
+        /**
+         * The body has its own clock. {@code HttpRequest.timeout} ends at the headers, and a
+         * distribution point that sends one byte and stops would otherwise park the anchoring
+         * — and the admin request waiting on it — for ever (both reviews, 2026-09-22).
+         */
+        @Test
+        @DisplayName("a distribution point that starts answering and stops is UNAVAILABLE within the body budget")
+        void aStalledBodyIsUnavailableWithinTheBudget() throws Exception {
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            String url = startServer("/slow.crl", exchange -> {
+                exchange.sendResponseHeaders(200, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write(0x30);
+                os.flush();
+                try {
+                    release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                try {
+                    os.close();
+                } catch (IOException ignored) {
+                    // the client is gone by then, which is the point
+                }
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            Rfc3161AnchorTarget target = collecting();
+            target.crlBodyBudget = java.time.Duration.ofMillis(500);
+            try {
+                // Preemptive: if the budget is not on the path, the fetch never returns, and a
+                // test that waits for it never fails. This one fails on its own clock.
+                RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                        java.time.Duration.ofSeconds(10), () -> target.collectRevocationMaterial(token));
+
+                assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                        "a stalled body was reported as " + material.status() + ". The material "
+                                + "is one byte of a CRL; shipping it as CAPTURED would be a "
+                                + "truncated presence, and NOT_ATTEMPTED would deny the fetch "
+                                + "was made");
+                assertTrue(material.detail().contains("CRL_READ_TIMEOUT"), material.detail());
+            } finally {
+                release.countDown();
+            }
+        }
+
+        /**
+         * "Not now" is an answer. The retry loop the connectors use sleeps 2, 4 and 8 seconds
+         * (or {@code Retry-After}, up to 120 s each) before giving up, which is right for a
+         * poll and wrong on the request thread this anchoring runs on (subagent review).
+         *
+         * <p>Measured by COUNTING the requests the stub saw, not by the clock: the stub says
+         * {@code Retry-After: 0}, so a retry loop would come back at once and the count would
+         * read 4 instead of 1 — deterministic on any CI (Codex / subagent, third review; the
+         * first version asserted 1.5 s, which measures neither a retry nor its absence). The
+         * 503 also carries a body that never finishes: the status is read first and the body
+         * never, so the fetch returns without waiting for the body budget either.
+         */
+        @Test
+        @DisplayName("a 503 from the distribution point is UNAVAILABLE at once, not retried on the request thread")
+        void notNowIsNotRetried() throws Exception {
+            java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+            String url = startServer("/busy.crl", exchange -> {
+                requests.incrementAndGet();
+                exchange.getResponseHeaders().add("Retry-After", "0");
+                exchange.sendResponseHeaders(503, 0);
+                OutputStream os = exchange.getResponseBody();
+                os.write("<html>busy".getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                try {
+                    release.await(30, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                try {
+                    os.close();
+                } catch (IOException ignored) {
+                    // the client is gone by then
+                }
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            Rfc3161AnchorTarget target = collecting();
+            target.crlBodyBudget = java.time.Duration.ofSeconds(5);
+            try {
+                // Preemptive as a hang guard only (a body read would wait out the 5 s budget);
+                // the claim is the count below.
+                RevocationMaterial material = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                        java.time.Duration.ofSeconds(3), () -> target.collectRevocationMaterial(token));
+
+                assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(), material.detail());
+                assertTrue(material.detail().contains("503"), material.detail());
+                assertEquals(1, requests.get(),
+                        "the distribution point saw " + requests.get() + " request(s) for one "
+                                + "fetch. With Retry-After: 0 a retry loop comes straight back, "
+                                + "so anything above 1 is the loop this fetch must not be on");
+            } finally {
+                release.countDown();
+            }
+        }
+
+        @Test
+        @DisplayName("a CRL over the cap is UNAVAILABLE, never a truncated capture")
+        void tooLargeIsUnavailable() throws Exception {
+            byte[] huge = new byte[(int) Rfc3161AnchorTarget.MAX_CRL_BYTES + 1];
+            String url = startServer("/big.crl", exchange -> {
+                exchange.sendResponseHeaders(200, huge.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(huge);
+                }
+            });
+            RevocationMaterial material = collecting()
+                    .collectRevocationMaterial(tokenWithDistributionPoint(url));
+
+            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                    "material over the cap was reported as " + material.status()
+                            + ". A truncated CRL shipped as CAPTURED is an absence dressed as a "
+                            + "presence — the verifier would evaluate the wrong bytes");
+            assertTrue(material.detail().contains("CRL_TOO_LARGE"), material.detail());
+        }
+
+        @Test
+        @DisplayName("with the localhost escape off, the loopback distribution point is refused — the guard is on the path")
+        void theGuardIsOnThePath() throws Exception {
+            String url = startServer("/ca.crl", exchange -> {
+                exchange.sendResponseHeaders(200, 1);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(new byte[] { 0x30 });
+                }
+            });
+            org.bouncycastle.tsp.TimeStampToken token = tokenWithDistributionPoint(url);
+            System.clearProperty("nemaki.ingest.allowLocalhost");
+
+            RevocationMaterial material = collecting().collectRevocationMaterial(token);
+
+            // Refused at send time by the pinned path, and reported as UNAVAILABLE — asked, and
+            // refused to ask a loopback address — never as NOT_ATTEMPTED and never captured.
+            assertEquals(RevocationMaterial.Status.UNAVAILABLE, material.status(),
+                    "a loopback distribution point was " + material.status() + " with the "
+                            + "localhost escape off. If it was CAPTURED, the fetch is not on the "
+                            + "guarded path");
+            assertTrue(material.detail().contains("SecurityException"), material.detail());
         }
     }
 }

@@ -164,6 +164,63 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         return tsaUrl != null;
     }
 
+    /** Where rung 3 sends, for display only — the settings screen shows it and cannot change it. */
+    public String tsaUrl() {
+        return tsaUrl;
+    }
+
+    /** {@link #USER_INFO_REFUSED} when the configured URL carries an {@code @}; see R132. */
+    @Override
+    public String refusal() {
+        return isConfigured() && carriesAt(tsaUrl) ? USER_INFO_REFUSED : null;
+    }
+
+    /**
+     * The reason a destination whose URL carries an {@code @} is refused. It names no URL.
+     *
+     * <p>Three review rounds each found another way the user:password in a destination URL
+     * reached the screen, the stored receipt or a log (c41 R129, c42 R131, c43 R132): read back
+     * out of the string, the end of a user-info cannot be told when the password holds a raw
+     * {@code @}, {@code #}, {@code /} or {@code ?}, and the JDK's own network log prints the URL
+     * it is handed. The user-info is not used for authentication — {@code HttpURLConnection}
+     * does not read it — so a URL with an {@code @} is refused instead: never sent, never parsed,
+     * never shown by this product (the user's decision, 2026-09-29). Tomcat's own start-up log
+     * prints a {@code -D} value as it was given, and that is not this product's to change (c45). A
+     * path that needs one writes {@code %40}.
+     */
+    public static final String USER_INFO_REFUSED = "the configured URL carries an @ (a user-info), "
+            + "which is not used for authentication and is refused so that this product writes it "
+            + "to none of its logs, receipts or screens; remove it — a user-info cannot be written "
+            + "in any form, and %40 is only for an @ inside a path";
+
+    /** Whether a configured destination URL is refused for carrying an {@code @}. */
+    public static boolean carriesAt(String url) {
+        return url != null && url.indexOf('@') >= 0;
+    }
+
+    /**
+     * The URL as it may be shown, kept or logged: whole when it carries no {@code @}, and not at
+     * all when it does — such a destination is refused ({@link #USER_INFO_REFUSED}), and no rule
+     * that reads a user-info back out of the string survived review (c43, R132).
+     */
+    public static String withoutUserInfo(String url) {
+        if (url == null) {
+            return null;
+        }
+        return url.indexOf('@') < 0 ? url
+                : "(not shown: the URL carries an @, and a destination with one is refused)";
+    }
+
+    /** The policy OID requested, or null when the TSA's default is accepted. Display only. */
+    public String requestedPolicyOid() {
+        return reqPolicyOid;
+    }
+
+    /** Whether a trust anchor was configured (and, since start-up refuses an unreadable one, loaded). */
+    public boolean hasTrustAnchor() {
+        return trustAnchor != null;
+    }
+
     @Override
     public AnchorReceipt anchor(String hexDigest) {
         byte[] imprint = decodeSha256Hex(hexDigest);
@@ -171,6 +228,11 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             return AnchorReceipt.notConfigured(kind(), hexDigest);
         }
         Instant attemptedAt = Instant.now();
+        if (carriesAt(tsaUrl)) {
+            // Not sent, not parsed, not named: see USER_INFO_REFUSED (R132).
+            logger.warn("RFC 3161 anchoring refused: {}", USER_INFO_REFUSED);
+            return AnchorReceipt.failed(kind(), hexDigest, attemptedAt, USER_INFO_REFUSED);
+        }
         try {
             TimeStampRequestGenerator gen = new TimeStampRequestGenerator();
             // Pitfall 2: without this the TSA is REQUIRED to omit its certificate.
@@ -247,7 +309,12 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                     : "PKIX path validation to the configured anchor; revocation NOT checked");
             // Not a TODO: revocation data genuinely cannot be captured retroactively, so its
             // absence is part of the evidence rather than a gap to paper over.
-            attrs.put("revocationDataCapturedAt", "never");
+            // Plan §11: what was captured about the signer's revocation status AT ISSUANCE.
+            // Collection is OFF by default and the attributes then say NOT_ATTEMPTED — which is
+            // a different fact from "asked and got nothing", and the verifier reads the two
+            // differently. Turning it on is a deployment decision because it makes the anchor
+            // path reach a CRL/OCSP endpoint.
+            attrs.putAll(collectRevocationMaterial(token).asAttributes());
 
             logger.info("RFC 3161 token obtained from {} (serial {}, genTime {})",
                     tsaUrl, info.getSerialNumber(), info.getGenTime().toInstant());
@@ -274,6 +341,180 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
             logger.warn("RFC 3161 anchoring failed against {}: {}", tsaUrl, e.toString());
             return AnchorReceipt.failed(kind(), hexDigest, attemptedAt,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /** The most a CRL may be before it is refused as UNAVAILABLE rather than captured. */
+    static final long MAX_CRL_BYTES = 8L * 1024 * 1024;
+
+    /**
+     * The longest the body of a CRL may take to arrive once its headers have.
+     *
+     * <p>Separate from the request timeout, which covers the headers only: with
+     * {@code ofInputStream()} the body is read by this class, outside any timer the client
+     * keeps, and a distribution point that sends one byte and stops parks the anchoring — and
+     * the admin request thread waiting on it — until the JVM is killed. Both reviews of the
+     * first R65 batch found the byte cap and no time cap (2026-09-22).
+     */
+    static final java.time.Duration CRL_BODY_BUDGET = java.time.Duration.ofSeconds(20);
+
+    /** {@link #CRL_BODY_BUDGET} except in tests, which cannot wait 20 seconds for a stall. */
+    java.time.Duration crlBodyBudget = CRL_BODY_BUDGET;
+
+    private boolean collectRevocationAtIssuance;
+
+    /**
+     * Whether to fetch the signer's revocation material while the token is being obtained.
+     *
+     * <p>Default false, and deliberately so: turning it on makes anchoring reach a CRL or OCSP
+     * endpoint, which is a decision about what this node talks to. What the default does NOT do
+     * is pretend — with collection off the receipt says {@code NOT_ATTEMPTED}, and a verifier
+     * reading it answers {@code INDETERMINATE} for P3 rather than passing.
+     */
+    public void setCollectRevocationAtIssuance(boolean collectRevocationAtIssuance) {
+        this.collectRevocationAtIssuance = collectRevocationAtIssuance;
+    }
+
+    /**
+     * The signer's CRL, fetched now, because "now" is issuance.
+     *
+     * <p>Never throws: a revocation endpoint that does not answer must not fail the anchoring
+     * it was part of. What it must not do instead is stay quiet — the three states are all
+     * reported.
+     */
+    RevocationMaterial collectRevocationMaterial(
+            org.bouncycastle.tsp.TimeStampToken token) {
+        if (!collectRevocationAtIssuance) {
+            return RevocationMaterial.notAttempted(
+                    "collection at issuance is off on this node, so nothing is known about the "
+                            + "signer's revocation status when the token was made");
+        }
+        String url = null;
+        try {
+            java.security.cert.X509Certificate signer = null;
+            for (Object holder : token.getCertificates().getMatches(token.getSID())) {
+                signer = new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                        .getCertificate((org.bouncycastle.cert.X509CertificateHolder) holder);
+                break;
+            }
+            if (signer == null) {
+                return RevocationMaterial.unavailable(null,
+                        "the token carries no signer certificate, so there is no distribution "
+                                + "point to ask");
+            }
+            url = crlDistributionPointOf(signer);
+            if (url == null) {
+                return RevocationMaterial.unavailable(null,
+                        "the signer certificate names no CRL distribution point");
+            }
+            // The URL came out of the TSA's certificate, not out of this node's configuration,
+            // so it is treated as the input of a party this node did not choose. It goes through
+            // AdapterHttpClient.sendPinned — the pin every other outbound call in this product
+            // takes — which re-resolves the host AT SEND TIME and pins HTTP to the validated
+            // address (HTTPS is TLS-bounded; see that method's javadoc for the window it does
+            // not close). A one-shot check before connecting is not used: it leaves the
+            // resolve-then-connect gap, and its enforce flag defaults to off (R65). Pinned
+            // ONCE, not sendWithRetry: a 503 from a distribution point is "not now", reported
+            // below as UNAVAILABLE, and the retry loop's sleeps would hold the admin request
+            // thread this anchoring runs on.
+            java.net.http.HttpClient client = jp.aegif.nemaki.rest.ingest.AdapterHttpClient.shared();
+            java.net.http.HttpResponse<java.io.InputStream> response =
+                    jp.aegif.nemaki.rest.ingest.AdapterHttpClient.sendPinned(client,
+                            java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                                    .timeout(java.time.Duration.ofSeconds(20)).GET().build(),
+                            java.net.http.HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() != 200) {
+                // Answered, and the answer is "not now" or "not here". Closed without reading:
+                // the body of a 503 is not a CRL, and reading it first would let a stalled error
+                // page hold this thread for the whole body budget while the runbook promises
+                // an immediate UNAVAILABLE (Codex, third review).
+                try (java.io.InputStream ignored = response.body()) {
+                    // closed, not drained
+                }
+                return RevocationMaterial.unavailable(url,
+                        "the distribution point answered " + response.statusCode());
+            }
+            byte[] body;
+            // Bounded twice. In bytes: a CRL can be megabytes and an unbounded read is the
+            // RESOURCE_LIMIT shape the verifier already refuses; over the cap the material is
+            // UNAVAILABLE, never a truncated CAPTURED. In time: the request timeout above ends
+            // at the headers, so the body read gets its own watchdog, which closes the stream
+            // when the distribution point starts answering and does not finish.
+            jp.aegif.nemaki.rest.ingest.BodyBudget budget = null;
+            try (java.io.InputStream in = response.body()) {
+                budget = new jp.aegif.nemaki.rest.ingest.BodyBudget(in, crlBodyBudget);
+                body = in.readNBytes((int) MAX_CRL_BYTES + 1);
+            } catch (java.io.IOException e) {
+                if (budget != null && budget.fired()) {
+                    return RevocationMaterial.unavailable(url, "CRL_READ_TIMEOUT: the "
+                            + "distribution point started answering and had not finished after "
+                            + crlBodyBudget.toMillis() + " ms; a stalled body must not hold "
+                            + "the anchoring");
+                }
+                throw e;
+            } finally {
+                if (budget != null) {
+                    budget.close();
+                }
+            }
+            if (body.length == 0) {
+                return RevocationMaterial.unavailable(url,
+                        "the distribution point answered 200 with an empty body");
+            }
+            if (body.length > MAX_CRL_BYTES) {
+                return RevocationMaterial.unavailable(url, "CRL_TOO_LARGE: the distribution "
+                        + "point sent more than " + MAX_CRL_BYTES + " bytes; a truncated CRL "
+                        + "would be an absence dressed as a presence");
+            }
+            return RevocationMaterial.captured(body, sha256Hex(body), java.time.Instant.now(), url);
+        } catch (Exception e) {
+            // Including an interrupt: the flag is restored and the answer is "we asked and did
+            // not get one", which is true.
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return RevocationMaterial.unavailable(url,
+                    e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    /** The first HTTP CRL distribution point, or null. */
+    static String crlDistributionPointOf(java.security.cert.X509Certificate certificate) {
+        try {
+            byte[] extension = certificate.getExtensionValue("2.5.29.31");
+            if (extension == null) {
+                return null;
+            }
+            org.bouncycastle.asn1.ASN1Primitive octets =
+                    org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
+                            ((org.bouncycastle.asn1.ASN1OctetString)
+                                    org.bouncycastle.asn1.ASN1Primitive.fromByteArray(extension))
+                                    .getOctets());
+            org.bouncycastle.asn1.x509.CRLDistPoint points =
+                    org.bouncycastle.asn1.x509.CRLDistPoint.getInstance(octets);
+            for (org.bouncycastle.asn1.x509.DistributionPoint point : points.getDistributionPoints()) {
+                if (point.getDistributionPoint() == null) {
+                    continue;
+                }
+                org.bouncycastle.asn1.ASN1Encodable name = point.getDistributionPoint().getName();
+                if (!(name instanceof org.bouncycastle.asn1.x509.GeneralNames names)) {
+                    continue;
+                }
+                for (org.bouncycastle.asn1.x509.GeneralName general : names.getNames()) {
+                    if (general.getTagNo() == org.bouncycastle.asn1.x509.GeneralName.uniformResourceIdentifier) {
+                        String value = general.getName().toString();
+                        // HTTP only. An ldap:// or file:// point is not something this node
+                        // should be reaching for, and silently skipping it is better than
+                        // failing the anchor over a scheme nobody configured.
+                        if (value.startsWith("http://") || value.startsWith("https://")) {
+                            return value;
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (Exception unreadable) {
+            return null;
         }
     }
 

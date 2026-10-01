@@ -297,6 +297,7 @@ public class BulkCheckInResource extends ResourceBase {
 			) throws Exception {
 
 		JSONArray resultArray = new JSONArray();
+		java.util.List<File> tempFiles = new java.util.ArrayList<>();
 		String csrfError = validateCsrfProtection(httpRequest);
 		if (csrfError != null) {
 			JSONObject errorResult = new JSONObject();
@@ -324,8 +325,12 @@ public class BulkCheckInResource extends ResourceBase {
 
 			Folder parentFolder = getContentService().getFolder(repositoryId, parentFolderId);
 			if ( parentFolder == null) {
+				// The empty-200 body this method's outer catch was just cured of, one branch
+				// up: it said neither that it failed nor why.
 				log.warn("folder not found:" + parentFolderId);
-				return "";
+				JSONObject errorResult = new JSONObject();
+				errorResult.put("error", "folder not found: " + parentFolderId);
+				return errorResult.toString();
 			}
 
 			Document firstDoc = null;
@@ -340,6 +345,7 @@ public class BulkCheckInResource extends ResourceBase {
 				InputStream inputStream = body.getInputStream();
 
 				File tempFile = this.saveToTempFile(inputStream);
+				tempFiles.add(tempFile);
 
 				String fileName = multiPart.getField("files[" + i + "]").getContentDisposition().getFileName();
 				String checkInComment = null;
@@ -384,10 +390,20 @@ public class BulkCheckInResource extends ResourceBase {
 					}
 				}
 
-				ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
-
 				if ( docName != null) {
 					List<Content> children = getContentService().getChildren(repositoryId, parentFolder.getId());
+					// A short listing here turns a CHECK-IN into a duplicate CREATE: the row
+					// that would not decode may be the previous version of this very document,
+					// and missing it forks the version history instead of extending it.
+					// BEFORE the FileInputStream below, so the refusal does not leak a file
+					// descriptor per attempt on top of refusing.
+					if (getContentService().lastUnreadableChildCount() > 0) {
+						throw new IllegalStateException("the target folder's listing is"
+								+ " incomplete (" + getContentService().lastUnreadableChildCount()
+								+ " child row(s) could not be read), so whether '" + docName
+								+ "' already exists is unknown; the bulk check-in entry was"
+								+ " refused rather than risking a duplicate document");
+					}
 					if (CollectionUtils.isNotEmpty(children)){
 						for(Content content : children) {
 							if ( content instanceof Document){
@@ -400,6 +416,8 @@ public class BulkCheckInResource extends ResourceBase {
 						}
 					}
 				}
+
+				ContentStream contentStream = new ContentStreamImpl(fileName, BigInteger.valueOf(tempFile.length()), "binary/octet-stream", new FileInputStream(tempFile));
 				if ( prevDoc == null) {
 					//first create document
 					firstDoc = getContentService().createDocument(context, repositoryId,
@@ -435,11 +453,23 @@ public class BulkCheckInResource extends ResourceBase {
 			return resultJson.toString();
 		}
 		catch(Throwable t) {
+			// An empty HTTP-200 body said nothing at all: not that it failed, not why. The
+			// short-listing refusal above lands here too, and an operator retrying an answer
+			// that looks like "nothing happened" is how a refusal designed to PREVENT a
+			// duplicate quietly causes repeated attempts instead.
 			log.error("Exception occurred during bulk check-in", t);
-			return "";
+			JSONObject errorResult = new JSONObject();
+			errorResult.put("error", "bulk check-in failed: " + t.getMessage());
+			return errorResult.toString();
 		}
 		finally {
-
+			// The per-file delete() sits on the success path, so any throw above it — the
+			// refusal included — left the temp file behind, once per attempt.
+			for (File leftover : tempFiles) {
+				if (leftover != null && leftover.exists() && !leftover.delete()) {
+					log.warn("Bulk check-in temp file could not be deleted: " + leftover);
+				}
+			}
 		}
 	}
 

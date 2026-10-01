@@ -338,10 +338,10 @@ test.describe('H2: Simulate (audit) button UI flow', () => {
       .first()
       .click();
 
-    // Wait for the result panel to render — "Queried principal:" /
-    // "検索対象 principal:" header text is the cleanest marker.
+    // Wait for the result panel to render — the "Queried principal:" /
+    // "検索対象プリンシパル:" header text is the cleanest marker.
     await expect(
-      page.getByText(/Queried principal|検索対象 principal/),
+      page.getByText(/Queried principal|検索対象プリンシパル/),
     ).toBeVisible({ timeout: 15000 });
 
     // Audit button must NOT be present yet — simulateRemove is empty.

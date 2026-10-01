@@ -231,12 +231,57 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
         return false;
     }
 
+    /**
+     * How many rows the last read on THIS THREAD could not decode.
+     *
+     * <p><b>A row that cannot be read is not an absent receipt.</b> {@code decode} answers null
+     * for a malformed row and the three list methods dropped it silently, so an unreadable
+     * PENDING or CONFIRMED receipt looked to every caller like a rung that had never been
+     * anchored. {@code retryUnsettled} then contacts that rung again — minting a second
+     * OpenTimestamps commitment, or <b>buying a second RFC 3161 token</b>, which is the outcome
+     * that method's own javadoc says it exists to prevent.
+     *
+     * <p>Thread-local and per-call, exactly as {@code CouchCustodyTransferStore} does it: the
+     * custody sibling has carried this count since it was written and this store never did.
+     */
+    private final ThreadLocal<Integer> lastUnreadable = ThreadLocal.withInitial(() -> 0);
+
+    /** Set when a view did not answer at all — a different fact from rows that would not decode. */
+    private final ThreadLocal<Boolean> queryFailed = ThreadLocal.withInitial(() -> false);
+
+    /**
+     * What the most recent read on this thread could not account for: rows that would not
+     * decode, plus a view that did not answer at all (which is counted as one).
+     */
+    @Override
+    public boolean lastQueryFailed() {
+        return queryFailed.get();
+    }
+
+    @Override
+    public int unreadableCount() {
+        return lastUnreadable.get();
+    }
+
+    private AnchorReceipt decodeCounting(Map<String, Object> doc) {
+        AnchorReceipt receipt = decode(doc);
+        if (receipt == null) {
+            lastUnreadable.set(lastUnreadable.get() + 1);
+            logger.warn("An anchor receipt row could not be decoded and is NOT reported as an "
+                    + "absent receipt; a caller that treats it as one may re-anchor a rung that "
+                    + "is already committed");
+        }
+        return receipt;
+    }
+
     @Override
     public List<AnchorReceipt> forCheckpoint(String domain, long toSequence) {
         List<AnchorReceipt> receipts = new ArrayList<>();
+        lastUnreadable.set(0);
+        queryFailed.set(false);
         for (Map<String, Object> doc : rows(VIEW_BY_CHECKPOINT, domain, toSequence, toSequence,
                 200)) {
-            AnchorReceipt receipt = decode(doc);
+            AnchorReceipt receipt = decodeCounting(doc);
             if (receipt != null) {
                 receipts.add(receipt);
             }
@@ -247,9 +292,11 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
     @Override
     public List<PendingReceipt> pending(String domain, int limit) {
         List<PendingReceipt> out = new ArrayList<>();
+        lastUnreadable.set(0);
+        queryFailed.set(false);
         for (Map<String, Object> doc : rows(VIEW_PENDING, domain, 0, Long.MAX_VALUE,
                 limit <= 0 ? 100 : limit)) {
-            AnchorReceipt receipt = decode(doc);
+            AnchorReceipt receipt = decodeCounting(doc);
             if (receipt == null || receipt.status() != AnchorStatus.PENDING) {
                 // The view says pending; the decoded receipt is what actually matters, and a
                 // row that decodes to something else is not one to hand to upgrade().
@@ -264,9 +311,11 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
     @Override
     public List<PendingReceipt> confirmed(String domain, int limit) {
         List<PendingReceipt> out = new ArrayList<>();
+        lastUnreadable.set(0);
+        queryFailed.set(false);
         for (Map<String, Object> doc : rows(VIEW_CONFIRMED, domain, 0, Long.MAX_VALUE,
                 limit <= 0 ? 100 : limit)) {
-            AnchorReceipt receipt = decode(doc);
+            AnchorReceipt receipt = decodeCounting(doc);
             if (receipt == null || receipt.status() != AnchorStatus.CONFIRMED) {
                 // The view says confirmed; the DECODED receipt is what counts, and the codec
                 // downgrades a row that says CONFIRMED but cannot support it.
@@ -316,15 +365,41 @@ public class CouchAnchorReceiptStore implements AnchorReceiptStore {
         ViewResult result = client().queryView(CouchEvidenceLedgerStore.DESIGN_DOC, view, params);
         List<Map<String, Object>> docs = new ArrayList<>();
         if (result == null || result.getRows() == null) {
+            // NOT an empty result. The view did not answer, and handing back [] makes "this
+            // store could not be asked" the same value as "asked, and there are none" — the
+            // reading AnchorReceiptStore.isActive()'s javadoc forbids callers to make. Nothing
+            // upstream catches it either: isActive() only asks whether a client object exists,
+            // so a reachable database with an unusable view passes every guard above this line.
+            //
+            // The row-level counter is what the callers already consult (AnchorService refuses
+            // to retry or to report "nothing settled" while it is non-zero), and an answer that
+            // never came back leaves at least as much unaccounted for as a row that would not
+            // decode. Counting it here fixes forCheckpoint, pending and confirmed at once,
+            // rather than one arm of the three.
+            queryFailed.set(true);
+            lastUnreadable.set(lastUnreadable.get() + 1);
+            logger.warn("The anchor receipt view {} returned no result for {}; this is NOT "
+                    + "reported as 'there are no receipts'", view, domain);
             return docs;
         }
         for (ViewResultRow row : result.getRows()) {
+            // Counted, not skipped. The sibling ledger store counts exactly this shape
+            // (documentOf -> null -> decodeCounting -> +1) and this one dropped it on the floor
+            // one call earlier, so a row the view returned without a document was invisible.
+            //
+            // The consumer is a guard, not a display: AnchorService refuses to re-anchor a rung
+            // when anything is unaccounted for, and its comment says why — an unread receipt
+            // may be the settled one, so re-anchoring buys a second RFC 3161 token for a rung
+            // that already has one. A guard that cannot see the gap does not fire.
             if (row == null || row.getDoc() == null) {
+                lastUnreadable.set(lastUnreadable.get() + 1);
                 continue;
             }
             Object properties = row.getDoc().getProperties();
             if (properties instanceof Map) {
                 docs.add((Map<String, Object>) properties);
+            } else {
+                lastUnreadable.set(lastUnreadable.get() + 1);
             }
         }
         return docs;

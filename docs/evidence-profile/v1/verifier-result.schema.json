@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nemakiware.org/evidence-profile/v1/verifier-result",
+  "title": "NemakiWare evidence verifier result (profile v1)",
+  "description": "The object `nemaki-evidence verify --json` prints. A CONTRACT OF SHAPE, not of meaning: conforming output is not a correct verdict. `checks` order is the CLI's, not semantic. `detail` is human-readable and NOT a contract — a machine branches on `reasonCode`. `profile` is deliberately not an enum: an unknown profile is refused by the CLI (exit 4) before any output exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "verdict",
+    "checks",
+    "limits"
+  ],
+  "properties": {
+    "profile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "FAILED",
+        "INDETERMINATE"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "outcome"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "PASSED",
+              "FAILED",
+              "NOT_PRESENT",
+              "UNAVAILABLE"
+            ]
+          },
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "AMBIGUOUS_PAYLOAD",
+              "AMBIGUOUS_PREMIS",
+              "ANCHOR_NOT_PARSED",
+              "CERTIFICATE_UNREADABLE",
+              "DUPLICATE_ENTRY",
+              "LEGACY_PACKAGE_LAYOUT",
+              "METS_NOT_PARSED",
+              "MULTIPLE_PACKAGES",
+              "NOT_A_ZIP",
+              "NO_BLOCK_HEADER_SOURCE",
+              "OTS_NOT_PARSED",
+              "PKIX_UNAVAILABLE",
+              "PREMIS_NOT_PARSED",
+              "RESOURCE_LIMIT",
+              "REVOCATION_NOT_CAPTURED",
+              "REVOCATION_NOT_PARSED",
+              "REVOCATION_NOT_REQUIRED",
+              "SIGNATURE_NOT_COMPUTED",
+              "TRANSITION_PRIOR_NOT_IN_PACKAGE",
+              "UNKNOWN_ALGORITHM",
+              "UNSAFE_PATH",
+              "UNSUPPORTED_ERS_VERSION",
+              "UNSUPPORTED_PROFILE_VERSION"
+            ],
+            "description": "Present exactly when outcome is UNAVAILABLE (enforced below with if/then/else, and by the verifier's own constructor). The enum is the verifier's registry Outcome.Check.REASON_CODES; a lock keeps the two equal in both directions."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Not a contract. Do not branch on it."
+          }
+        },
+        "if": {
+          "properties": {
+            "outcome": {
+              "const": "UNAVAILABLE"
+            }
+          },
+          "required": [
+            "outcome"
+          ]
+        },
+        "then": {
+          "required": [
+            "reasonCode"
+          ]
+        },
+        "else": {
+          "not": {
+            "required": [
+              "reasonCode"
+            ]
+          }
+        }
+      }
+    },
+    "limits": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What a pass does NOT establish. Required and non-empty: a schema that admitted an empty limits string would admit a CLI that dropped them."
+    }
+  }
+}

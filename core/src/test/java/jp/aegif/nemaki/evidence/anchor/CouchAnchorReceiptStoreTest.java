@@ -18,6 +18,8 @@ package jp.aegif.nemaki.evidence.anchor;
 
 import com.ibm.cloud.cloudant.v1.model.Document;
 import com.ibm.cloud.cloudant.v1.model.DocumentResult;
+import com.ibm.cloud.cloudant.v1.model.ViewResult;
+import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.evidence.CouchEvidenceLedgerStore;
@@ -29,12 +31,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -335,5 +340,115 @@ class CouchAnchorReceiptStoreTest {
         org.junit.jupiter.api.Assertions.assertNotEquals(tsa, ots,
                 "two rungs share a document id at the same checkpoint");
         assertTrue(tsa.contains(AnchorKind.RFC3161_TSA.name()), tsa);
+    }
+
+    @Test
+    @DisplayName("a view that did not answer is not 'there are no receipts'")
+    void aViewThatDidNotAnswerIsNotAnEmptyStore() throws Exception {
+        // AnchorService.upgradePending was just given a failure channel so that "the store is
+        // not wired" stops reading as "nothing had settled yet ... do not re-anchor". It asks
+        // isActive() and unreadableCount(). Neither notices THIS: isActive() only checks that a
+        // client object exists, and a view answering nothing dropped no row, so both said the
+        // store was fine and every read came back empty. The correction had been applied one
+        // layer up from where the substitution actually happens.
+        for (com.ibm.cloud.cloudant.v1.model.ViewResult answer : viewsThatDidNotAnswer()) {
+            CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+            when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(answer);
+            CouchAnchorReceiptStore store = storeWith(client);
+
+            org.junit.jupiter.api.Assertions.assertTrue(store.pending(DOMAIN, 10).isEmpty());
+            org.junit.jupiter.api.Assertions.assertTrue(store.unreadableCount() > 0,
+                    "pending() came back empty and reported nothing unaccounted for, so a "
+                            + "caller cannot tell it from 'asked, none are pending'");
+            org.junit.jupiter.api.Assertions.assertTrue(store.confirmed(DOMAIN, 10).isEmpty());
+            org.junit.jupiter.api.Assertions.assertTrue(store.unreadableCount() > 0,
+                    "confirmed() lost the same distinction");
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    store.forCheckpoint(DOMAIN, 9).isEmpty());
+            org.junit.jupiter.api.Assertions.assertTrue(store.unreadableCount() > 0,
+                    "forCheckpoint() lost the same distinction");
+        }
+    }
+
+    @Test
+    @DisplayName("a view that answered with no rows counts nothing unreadable — the control")
+    void anAnsweredEmptyViewIsNotUnreadable() throws Exception {
+        // Without this, counting every read as unreadable would satisfy the test above and make
+        // a repository with no receipts yet refuse to anchor for ever.
+        com.ibm.cloud.cloudant.v1.model.ViewResult empty =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(empty.getRows()).thenReturn(java.util.List.of());
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(empty);
+        CouchAnchorReceiptStore store = storeWith(client);
+
+        org.junit.jupiter.api.Assertions.assertTrue(store.pending(DOMAIN, 10).isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(0, store.unreadableCount(),
+                "an answered, empty view was reported as unreadable");
+    }
+
+    private static com.ibm.cloud.cloudant.v1.model.ViewResult[] viewsThatDidNotAnswer() {
+        com.ibm.cloud.cloudant.v1.model.ViewResult nullRows =
+                mock(com.ibm.cloud.cloudant.v1.model.ViewResult.class);
+        when(nullRows.getRows()).thenReturn(null);
+        return new com.ibm.cloud.cloudant.v1.model.ViewResult[] { null, nullRows };
+    }
+
+    @Test
+    @DisplayName("a row the view returned without a document is counted, not dropped")
+    void aRowWithNoDocumentIsCounted() throws Exception {
+        // The sibling ledger store counts exactly this shape; this one skipped it one call
+        // earlier, so a row that came back without a document was invisible.
+        //
+        // The consumer is a GUARD, not a display: AnchorService refuses to re-anchor a rung
+        // when anything is unaccounted for, because an unread receipt may be the settled one
+        // and re-anchoring buys a second RFC 3161 token for a rung that already has one. A
+        // guard that cannot see the gap does not fire.
+        ViewResult rows = mock(ViewResult.class);
+        ViewResultRow noDoc = mock(ViewResultRow.class);
+        when(noDoc.getDoc()).thenReturn(null);
+        when(rows.getRows()).thenReturn(List.of(noDoc));
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(rows);
+        CouchAnchorReceiptStore store = storeWith(client);
+
+        assertTrue(store.forCheckpoint(DOMAIN, 1L).isEmpty(),
+                "fixture check: the row decoded after all, so nothing was dropped to count");
+        assertEquals(1, store.unreadableCount(),
+                "a row the view returned with no document vanished without a trace, so the "
+                        + "re-anchor guard sees a complete answer and lets a second timestamp "
+                        + "be bought for a rung that already has one");
+    }
+
+    @Test
+    @DisplayName("'the view did not answer' is a separate fact from 'N rows would not decode'")
+    void anUnansweredViewIsNotARowCount() throws Exception {
+        // Folded into the count alone, a view that did not answer became "1 receipt row could
+        // not be read" in every consumer's sentence — which asserts a row exists, and there may
+        // be none. The custody store was split for this a round earlier; this sibling was not.
+        // The count itself stays at 1 so every guard that only asks "is anything unaccounted
+        // for" keeps refusing.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(null);
+        CouchAnchorReceiptStore store = storeWith(client);
+
+        assertTrue(store.forCheckpoint(DOMAIN, 1L).isEmpty());
+        assertTrue(store.unreadableCount() > 0,
+                "an unanswered view no longer counts as unaccounted-for, so the re-anchor "
+                        + "guard lets a second RFC 3161 token be bought");
+        assertTrue(store.lastQueryFailed(),
+                "an unanswered view reads as 'a row would not decode', so the operator is told "
+                        + "a receipt exists that nobody established");
+
+        // The control: a row-level decode failure is NOT a query failure.
+        ViewResult rows = mock(ViewResult.class);
+        ViewResultRow noDoc = mock(ViewResultRow.class);
+        when(noDoc.getDoc()).thenReturn(null);
+        when(rows.getRows()).thenReturn(List.of(noDoc));
+        when(client.queryView(anyString(), anyString(), anyMap())).thenReturn(rows);
+        assertTrue(store.forCheckpoint(DOMAIN, 1L).isEmpty());
+        assertFalse(store.lastQueryFailed(),
+                "a decode failure was reported as 'could not be queried', so an operator is "
+                        + "sent to the network for a data problem");
     }
 }

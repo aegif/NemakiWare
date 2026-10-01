@@ -32,17 +32,17 @@ NemakiWare の取り込みは **コネクタ定義** と **インポートプロ
 
 | サービス | `sourceSystem`（接続先） | `sourceArchetype`（種別） | `endpoint` の要否 | 実トークンの種類（`credentialRef` キーで参照、§2） | 必須 `schedulerParams` | Webhook |
 |---|---|---|---|---|---|---|
-| Slack | `slack` | `CHAT_CONTEXT` | 任意（既定 slack.com/api） | Bot Token (`xoxb-…`) | `channelId` | あり |
+| Slack | `slack` | `CHAT_CONTEXT` | 任意（既定 slack.com/api） | Bot Token (`xoxb-…`) | `channelId`, `slackHistoryMaxRequests`（既定 50） | あり |
 | Microsoft Teams | `teams` | `CHAT_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `teamId`, `channelId` | あり |
 | Mattermost | `mattermost` | `CHAT_CONTEXT` | **必須**（サーバ URL） | Personal Access / Bot Token | `channelId` | なし |
 | Chatwork | `chatwork` | `CHAT_CONTEXT` | 任意（既定 API） | API Token | `roomId` | あり（汎用） |
 | IMAP メール | `imap` | `MESSAGE_CONTEXT` | **必須**（`host:port`） | メールパスワード（または OAuth2） | `mailbox`（既定 INBOX） | なし |
 | Gmail | `gmail_mail` | `MESSAGE_CONTEXT` | 不要 | OAuth2 アクセストークン | `query`（既定 in:inbox is:unread） | なし |
 | Microsoft 365 メール | `m365_mail` | `MESSAGE_CONTEXT` | 任意（既定 Graph） | Graph アクセストークン | `folderId`（既定 inbox）, 任意 `userId` | あり |
-| Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意） | なし |
+| Notion | `notion` | `COMPOUND_NOTE` | 任意（既定 API） | Integration Token | `query`（任意）, `notionSearchMaxRequests`（既定 50）, `notionIndexLagMinutes`（既定 10） | なし |
 | Salesforce | `salesforce` | `BUSINESS_RECORD` | **必須**（インスタンス URL） | OAuth2 アクセストークン | `soql`（任意・既定テンプレあり） | なし |
-| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0） | なし |
-| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート） | なし |
+| Box | `box` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderId`（既定 0）, `boxListMaxRequests`（既定 50）, `boxCheckpointLagMinutes`（既定 5） | なし |
+| Dropbox | `dropbox` | `FILE_SHARE` | 不要 | OAuth2 アクセストークン | `folderPath`（既定 空=ルート）, `dropboxListMaxRequests`（既定 50）, `dropboxCheckpointLagMinutes`（既定 5） | なし |
 
 > `tenantId` は IMAP のみ「メールアドレス（ログインユーザ名）」として **必須**。
 > 他サービスでは任意です。
@@ -232,7 +232,16 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   （アプリの Basic Information → App Credentials）を設定。
 
 **C. プロファイル**
-- `schedulerParams`：`channelId = C01ABCD2345`（必須）、任意 `limit`。
+- `schedulerParams`：`channelId = C01ABCD2345`（必須）、任意 `limit`（1 回の実行で取り込むメッセージ数。
+  古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したメッセージは数に入らないが、試みるのは
+  `limit` の 4 倍まで）、任意 `slackHistoryMaxRequests`（1 回の listing で `conversations.history` を呼ぶ回数の
+  上限。1 回 200 件、既定 50 = 10,000 件。checkpoint 以降がそれを超えると**何も取り込まず** `PARTIAL` で
+  止まるので上げる）。**checkpoint より新しいメッセージは毎回全部読む**。checkpoint はメッセージの `ts`。
+  記録できなかった失敗が 1 つでもあると checkpoint は進まない。添付の download 失敗は死信キューに
+  URL 付きで記録され、再送時に Slack から取り直す（この版より前に書かれた行は URL を持たず、再送は拒否される）。
+  download URL の無いファイル（`mode` が `tombstone` / `hidden_by_limit` など — 削除済みやプランの上限で
+  隠されたもの）も「読めていない」として記録される（再送はできない）。Slack が外部サービスにリンクして
+  いるだけのファイル（`mode` が `external`）は添付として扱わず飛ばす。
 
 **（任意）Webhook 設定**
 - Slack アプリの **Event Subscriptions** を ON。
@@ -270,7 +279,17 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
   サブスクリプションの `clientState` を設定。
 
 **C. プロファイル**
-- `schedulerParams`：`teamId` と `channelId`（両方必須）、任意 `limit`。
+- `schedulerParams`：`teamId` と `channelId`（両方必須）、任意 `limit`（1 回の実行で取り込むメッセージ数。
+  ページの途中で尽きたらそのページは次回もう一度読む。試みるのは `limit` の 4 倍まで）、任意
+  `teamsMessageMaxRequests`（1 回の実行で Graph の delta feed に投げるページ要求の上限、既定 50。切れても
+  読めたところまでの link を保存して次回続く）。
+  チャンネルの一覧（返信チェーンの最終更新順で返る）は読まず、Graph の delta feed を追う。checkpoint は
+  `delta:<Graph の delta link>`。消すと feed の最初から読み直す（Graph は直近 8 か月として文書化。取り込み
+  済みは重複判定が答える）。この版より前の checkpoint（作成時刻）はその 1 ミリ秒前から読む。記録できなかった
+  失敗が 1 つでもあるとそのページは進まない。
+  添付の download 失敗は死信キューに content URL 付きで記録され、再送時に Teams から取り直す（この版より
+  前に書かれた行は URL を持たず、再送は拒否される）。content URL の無いファイル添付も「読めていない」として
+  記録される（再送はできない）。
 
 **（任意）Webhook**
 - Graph の change notification subscription を作成し、notificationUrl に
@@ -295,7 +314,17 @@ INGEST_NOTION_SITES_TOKEN=ntn_...
 - credentialRef = キー（実値は Personal Access / Bot Token、§2 で provision）。
 
 **C. プロファイル**
-- `schedulerParams`：`channelId`（必須）、任意 `limit`。
+- `schedulerParams`：`channelId`（必須）、任意 `limit`（1 回の実行で取り込む投稿数。古い順に取り、残りは
+  次回に回って `PARTIAL`。試みるのは `limit` の 4 倍まで）、任意 `mattermostPostMaxRequests`（1 回の listing で
+  投稿のページを読む回数の上限。1 回 200 件、既定 50 = 10,000 件。checkpoint より新しい投稿がそれを超えると
+  **何も取り込まず** `PARTIAL` で止まるので上げる。ページは `before` cursor で読み、同じミリ秒の投稿がページ
+  境界で失われないよう次のページは「末尾の時刻より新しい最後の投稿」の前から読む — 同じミリ秒の投稿が 200 件を
+  超えるとその先へ進めず `PARTIAL` で止まり続ける。上限を上げても checkpoint を消しても効かない — 残件 R113）。
+  checkpoint は `<作成時刻を UTC に正規化>|<id>,…`（旧形式の `create_at` ミリ秒もそのまま読める）。記録できなかった
+  失敗が 1 つでもあると checkpoint は進まない。添付の情報取得・download の失敗は死信キューに file id 付きで記録され、
+  再送時に Mattermost から取り直す（この版より前に書かれた行も file id を持つので取り直せる。情報取得に失敗して
+  id を名前にした行も再送で名前と種別を取り直す）。`before` の cursor の投稿が消えていて空のページが返ると
+  `PARTIAL`（次回やり直す）。
 
 Webhook はこのコネクタでは未対応（ポーリングのみ）。
 
@@ -317,8 +346,11 @@ Webhook はこのコネクタでは未対応（ポーリングのみ）。
 
 **C. プロファイル**
 - `schedulerParams`：`roomId`（必須）、任意 `limit`。
-- 注意：Chatwork API は 1 回あたり最大 100 件・タイムスタンプ絞り込み不可。
-  メッセージ流量が多いルームは取りこぼし警告がログに出ます（短い間隔での取り込みを推奨）。
+- 注意：Chatwork API はルームの最新 100 件しか返さない（それより古いものは取れない）。答えが上限の 100 件に
+  達していて、その一番古いメッセージが checkpoint より新しいと、間にメッセージがあってもそれは取れない — ただし
+  本当にあったかは答えからは分からない（ちょうど 100 件届いただけでも同じ答え）。そのときは「欠落の可能性」を
+  死信キューに記録して（ルームと id の範囲。再送はできないので、確かめたら消す）先へ進む。メッセージ流量が多い
+  ルームは短い間隔で取り込むこと。任意 `limit`（1 回の実行で取り込むメッセージ数。試みるのは 4 倍まで）。
 
 ---
 
@@ -361,8 +393,17 @@ Webhook 非対応（ポーリング。アダプタ内部では IDLE による継
 - endpoint 不要。
 
 **C. プロファイル**
-- `schedulerParams`：`query`（Gmail 検索式、既定 `in:inbox is:unread`。
-  例 `newer_than:1d`, `label:invoices`）、任意 `limit`。
+- `schedulerParams`：`query`（Gmail 検索式、既定 `in:inbox is:unread` — poll の前に既読にしたメールは
+  取り込まない。全部取り込むなら `in:inbox`。例 `newer_than:1d`, `label:invoices`）、任意 `limit`（1 回の実行で
+  取り込むメール数。取り込み済みで飛ばしたメールも数える。試みるのは `limit` の 4 倍まで）、任意
+  `gmailListMaxRequests`（1 回の実行で投げる一覧要求の上限、既定 50。時間の窓を探す要求もこれに数える。切れたら
+  読み終えた窓までを保存して次回続く）、任意 `gmailCheckpointLagMinutes`（checkpoint を一覧開始の何分前までに
+  止めるか、既定 5。Gmail の検索索引の遅れの見込み）。
+  checkpoint から今までを時間の窓に分けて古い順に読み（一覧の順序は文書化されていないので、メールごとに
+  internal date を読んで並べる）、checkpoint は取り込み終えた最新のメールの internal date と id
+  （`<時刻>|<id>`）。この版より前の日付の checkpoint は、その日の UTC 0 時から読み直す。
+  checkpoint が過ぎた後で query に合うようになったメール（ラベルの付与、受信箱へ戻す、未読に戻す）は取り込まない
+  （残件 R114）。
 
 Webhook 非対応。アクセストークンは短命なので継続運用ではリフレッシュ運用が必要。
 
@@ -383,7 +424,18 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 **C. プロファイル**
 - `schedulerParams`：`folderId`（メールフォルダ ID または `inbox` 等の既知名、既定 `inbox`）。
   クライアント資格情報フローで特定ユーザのメールを読む場合は `userId`
-  （`user@contoso.com` または UPN）も指定（未指定なら委任認証の `/me`）。任意 `limit`。
+  （`user@contoso.com` または UPN）も指定（未指定なら委任認証の `/me`）。任意 `limit`（1 回の実行で取り込む
+  メール数。ページの途中で尽きたらそのページは次回もう一度読む。試みるのは `limit` の 4 倍まで）、任意
+  `m365MessageMaxRequests`（1 回の実行で Graph の mail delta feed に投げるページ要求の上限、既定 50。切れても
+  読めたところまでの link を保存して次回続く）。
+  フォルダの一覧は読まず、Graph の mail folder の delta feed を追う（フォルダへ移動されてきたメールも取り込む）。
+  checkpoint は `delta:<フォルダの id>|<Graph の delta link>`（フォルダの id は Graph がそのフォルダに答える id で、
+  毎回問い合わせて完全一致で比べる）。トークンの持ち主・`userId`・`folderId` が別のフォルダを指すようになると
+  エラー — 消すと今のフォルダを最初から読む。同じメールボックスを UPN から object id に替えただけならそのまま続く
+  （Graph が返す link の綴りが設定と違うと、ページごとにフォルダの id を 1 回問い合わせる）。
+  この版より前の checkpoint（受信日時）はフォルダを名指していないので照合できず、今のフォルダを最初から読み直す
+  （Graph は filter 付きの delta を 5,000 件で打ち切るため、その時刻からは読まない）。記録できなかった失敗が 1 つでも
+  あるとそのページは進まない。
 
 **（任意）Webhook**
 - Graph subscription の notificationUrl に
@@ -408,7 +460,17 @@ Webhook 非対応。アクセストークンは短命なので継続運用では
 
 **C. プロファイル**
 - `schedulerParams`：`query`（任意。Notion search のキーワード。未指定なら共有された
-  全ページが対象）、任意 `limit`。
+  全ページが対象）、任意 `limit`（1 回の実行で取り込むページ数。古い順に取り、残りは
+  次回に回って実行結果は `PARTIAL`。失敗したページは数に入らないが、1 回の実行で試みるのは `limit` の 4 倍まで。checkpoint の分以降でその数以上のページが失敗し続けると、後ろのページは失敗が直るか `limit` を上げるまで試されない）、任意 `notionSearchMaxRequests`（1 回の listing で
+  `/search` を呼ぶ回数の上限。sort を拒否されたときの読み直しも数える。1〜1,000,000、
+  既定 50 = 5,000 行。checkpoint より新しい行がこれを超えると**何も取り込まず** `PARTIAL`
+  で止まるので、初回取込が大きい workspace では上げる。Notion 自身は 1 query 10,000 件で
+  打ち切る）、任意 `notionIndexLagMinutes`（編集の分が終わってから checkpoint がその分を
+  名指すまでの猶予。0〜43,200、既定 10。Notion の `last_edited_time` は分に切り下げられ、
+  検索索引は即時ではないため。猶予内のページは次回も読み直すが、既定の dedupe では import
+  は skip になる）。範囲外・非数値は既定に置き換えず実行がエラーになる。
+- checkpoint（`ingest.checkpoint.<profileId>.notion`）は `<分>|<id>,<id>` の形。旧形式
+  `<分>` はそのまま読め、その分のページを一度だけ取り直す。
 
 Webhook 非対応。
 
@@ -428,11 +490,19 @@ Webhook 非対応。
 - credentialRef = キー（実値はアクセストークン、§2 で provision）。
 
 **C. プロファイル**
-- `schedulerParams`：`soql`（取得対象の SELECT クエリ。例
-  `SELECT Id,Name,LastModifiedDate FROM Account`。未指定なら Account の既定テンプレ）。任意 `limit`。
-  - 安全のため `DELETE`/`UPDATE`/`INSERT`、`--` コメント、`;` を含む SOQL は拒否されます。
-  - `LastModifiedDate` での増分取得が自動で WHERE に注入されます（SELECT に
-    `LastModifiedDate` を含めると確実）。
+- `schedulerParams`：`soql`（取得対象の `SELECT … FROM … [WHERE …]`。例
+  `SELECT Id, Name FROM Account WHERE Type = 'Customer'`。未指定なら `SELECT Id, Name FROM Account`）。
+  一番外側に `ORDER BY` / `LIMIT` / `OFFSET` / `GROUP BY` / `HAVING` / `FOR` / `WITH` / `USING` は書けない（コネクタが
+  SystemModstamp と Id の順・件数・checkpoint の条件を付けるため。書くとエラーで何も読まない）。任意 `limit`（1 回の
+  実行で取り込むレコード数。試みるのは 4 倍まで）、任意 `salesforceQueryMaxRequests`（1 回の実行で答えの batch を
+  読む要求の上限、既定 50）、任意 `salesforceCheckpointLagMinutes`（checkpoint を一覧開始の何分前までに止めるか、既定 5）。
+  - 安全のため、文字列の外に `DELETE`/`UPDATE`/`INSERT`（語として）、`--` コメント、`;` がある SOQL は、
+    プロファイルの誤りとして拒否されます（何も送らない）。文字列の中（`WHERE Status = 'Updated'`）と名前の一部
+    （`Last_Updated__c`）は構わない。
+  - `Id` / `SystemModstamp` は一番外側のフィールドに無ければコネクタが足す（副問い合わせや `TYPEOF` の中の
+    `Id` は別のオブジェクトのもの）。同じ秒のレコードは Id を大小区別で比べた順に読み、その順でない答えは拒否する。
+  - checkpoint は `key:<SystemModstamp>|<Id>`。この版より前の checkpoint（LastModifiedDate）は効いていなかったので、
+    最初から読み直す（取り込み済みは重複判定が飛ばす）。
 
 Webhook 非対応。
 
@@ -453,7 +523,25 @@ Webhook 非対応。
 - endpoint 不要（API は `https://api.box.com/2.0` 固定）。
 
 **C. プロファイル**
-- `schedulerParams`：`folderId`（既定 `0`=ルート）、任意 `limit`。
+- `schedulerParams`：`folderId`（既定 `0` = ルート）、任意 `limit`（1 回の実行で取り込む
+  ファイル数。古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したファイルは
+  数に入らないが、試みるのは `limit` の 4 倍まで — その数以上が失敗し続けると後ろは失敗が直るか
+  `limit` を上げるまで試されない）、任意 `boxListMaxRequests`（1 回の listing で
+  `/folders/{id}/items` を呼ぶ回数の上限。1 回 1,000 件、既定 50 = 50,000 件。フォルダがそれを
+  超えると**何も取り込まず** `PARTIAL` で止まるので上げる）。**フォルダは毎回全部列挙する**
+  （Box はフォルダを更新時刻順に返さないため。marker 方式）。checkpoint は `<modified_at を UTC に
+  正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は進まない — 死信キューが
+  書けない間はずっと進まず（意図した停止）、失敗するファイルが `limit` の 4 倍以上あるとその実行は
+  新しいファイルに届かない。任意 `boxCheckpointLagMinutes`（listing 開始のこの分前までしか
+  checkpoint を進めない猶予。既定 5、上限 43,200。listing 中に追加・移動されたファイルを次回に
+  回すため。**増やすと**、猶予が checkpoint に追いつくまで checkpoint は進まず、その差の分の
+  ファイルが毎回候補になる — dedupe で skip、`limit` を消費）。id の無い項目（folder を含む
+  全項目）・読めない checkpoint が 1 つでもあると実行はエラーで止まる。更新時刻が無い・読めないファイルは毎回候補になり（置ける
+  ファイルの予算の後に別枠で `limit` 件まで）、取り込んでも checkpoint に名指されず、実行結果は
+  `PARTIAL` で理由に id が付く（エラーではない。dedupe は download の後なので、その数だけ毎回転送が
+  起きる。試行は `limit` の 4 倍までで失敗は数えるので、失敗し続けるものが並ぶと後ろは届かず、理由に
+  「N 本は今回試していない」と付く）。download に失敗したファイルの死信キュー行は、再送時に Box
+  から取り直す（健全な保存済み payload が無いとき。再送時点の bytes）。
 
 Webhook 非対応。
 
@@ -473,7 +561,19 @@ Webhook 非対応。
 - endpoint 不要（API は `https://api.dropboxapi.com/2` / content 固定）。
 
 **C. プロファイル**
-- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`。
+- `schedulerParams`：`folderPath`（既定 空文字＝ルート。例 `/Documents`）、任意 `limit`（1 回の実行で
+  取り込むファイル数。古い順に取り、残りは次回に回って実行結果は `PARTIAL`。失敗したファイルは
+  数に入らないが、試みるのは `limit` の 4 倍まで — その数以上が失敗し続けると後ろは失敗が直るか
+  `limit` を上げるまで試されない）、任意 `dropboxListMaxRequests`（`list_folder` + `continue` の回数の
+  上限。1 回 2,000 件、既定 50 = 100,000 件。超えると何も取り込まず `PARTIAL`）、任意
+  `dropboxCheckpointLagMinutes`（既定 5、上限 43,200。Box と同じ猶予 — 増やしたときの一時停止も同じ）。
+  id の無い file（folder は列挙に使わない）・読めない checkpoint が 1 つでもあると実行はエラーで
+  止まる。更新時刻が読めないファイルは毎回候補になり（別枠で `limit` 件まで）、名指されず、`PARTIAL` で報告（Box と同じ）。
+  死信キュー行の再送は、健全な保存済み payload があればそれ（失敗時点の bytes）を使い、無いときだけ
+  ファイル id で Dropbox から取り直す（パスは動くため。poll の download も id）。**フォルダは毎回全部列挙する**。
+  checkpoint は `<server_modified を UTC に正規化>|<id>,…`。記録できなかった失敗が 1 つでもあると checkpoint は
+  進まない — 死信キューが書けない間はずっと進まず（意図した停止）、失敗するファイルが `limit` の
+  4 倍以上あるとその実行は新しいファイルに届かない。
 
 Webhook 非対応。
 

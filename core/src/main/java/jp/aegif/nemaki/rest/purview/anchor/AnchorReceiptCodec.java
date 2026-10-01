@@ -123,7 +123,14 @@ public final class AnchorReceiptCodec {
             // An unreadable semantics is not an excuse to assume the kind's usual one: an RFC
             // 3161 token without accuracy is deliberately downgraded, and guessing would undo
             // that downgrade on every reload.
-            semantics = AnchorKind.TimeSemantics.UPPER_BOUND_ONLY;
+            //
+            // But UPPER_BOUND_ONLY on its own was not a downgrade for every rung. ATLAS_CATALOG
+            // claims NOT_A_TIME_PROOF, so falling back to UPPER_BOUND_ONLY PROMOTED a corrupt
+            // catalog row to "the commitment existed no later than that time" -- this class's
+            // own contract is that reload must not strengthen a receipt, and one rung of three
+            // was the arm nobody checked. Take the weaker of the two.
+            semantics = AnchorKind.TimeSemantics.weakerOf(
+                    AnchorKind.TimeSemantics.UPPER_BOUND_ONLY, kind.timeSemantics());
         }
         return AnchorReceipt.confirmed(kind, digest, attemptedAt, anchoredAt, proof, proofDigest,
                 attributes, semantics);

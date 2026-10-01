@@ -39,8 +39,18 @@ export function SchedulerStatusTab() {
   const handleTrigger = async (profileId: string) => {
     try {
       const result = await triggerProfile(profileId);
-      if (result.status === 'success' || result.status === 'partial') {
+      if (result.status === 'success') {
         message.success(t('schedulerStatus.triggerSuccess'));
+      } else if (result.status === 'partial') {
+        // "partial" covers two things now — some items failed, OR nothing failed and the run
+        // did not see the whole source. Either way it is not the green tick it used to get.
+        const why = Array.isArray(result.incompleteReads)
+          ? (result.incompleteReads as string[])
+          : Array.isArray(result.errors) ? (result.errors as string[]) : [];
+        // No fallback string: "partial" always carries one of the two lists (it is produced by
+        // hasErrors() or by !sawEverything(), and each fills its own), so a default here would
+        // be a branch that cannot run pretending to be one that can.
+        message.warning(`${t('schedulerStatus.triggerPartial')}: ${why.join('; ')}`);
       } else {
         message.error(String(result.errors ?? result.message ?? t('schedulerStatus.triggerFailed')));
       }
@@ -87,7 +97,7 @@ export function SchedulerStatusTab() {
     { title: t('schedulerStatus.columns.idle'), key: 'idle', width: 80,
       render: (_: unknown, r: ScheduledProfile) =>
         <Tag color={idleProfiles.includes(r.profileId) ? 'blue' : 'default'}>
-          {idleProfiles.includes(r.profileId) ? 'IDLE' : '-'}
+          {idleProfiles.includes(r.profileId) ? t('schedulerStatus.imapIdle') : '-'}
         </Tag>
     },
     { title: t('schedulerStatus.columns.actions'), key: 'actions', width: 200,
@@ -102,7 +112,7 @@ export function SchedulerStatusTab() {
           {record.connectorSystem === 'imap' && !idleProfiles.includes(record.profileId) && (
             <Button icon={<PlayCircleOutlined />} size="small" type="primary" ghost
               onClick={() => handleStartIdle(record.profileId)}>
-              IDLE
+              {t('schedulerStatus.imapIdle')}
             </Button>
           )}
           {idleProfiles.includes(record.profileId) && (

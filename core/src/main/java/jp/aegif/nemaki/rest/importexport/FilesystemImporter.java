@@ -123,7 +123,12 @@ public class FilesystemImporter {
         for (java.nio.file.Path filePath : files) {
             String relativePath = sourceDir.relativize(filePath).toString().replace("\\", "/");
 
-            if (relativePath.endsWith(META_SUFFIX) || isVersionFile(relativePath)) {
+            if (relativePath.endsWith(META_SUFFIX) || isVersionFile(relativePath)
+                    || isExportStagingFile(relativePath)) {
+                // The staging file an export writes beside its destination. It is bytes with
+                // no sidecar, which this loop would otherwise take as a document — the exact
+                // substitution the export refusals exist to prevent, arriving from the other
+                // direction.
                 continue;
             }
 

@@ -91,6 +91,13 @@ public record FixityScanReport(Verdict verdict, String repositoryId, long scanne
         body.put("mismatch", mismatch);
         body.put("unverifiable", unverifiable);
         body.put("notRecorded", notRecorded);
+        // Said out loud, like every other truncation in this layer. The list is capped at
+        // MAX_FINDINGS and the cap was silent: a reader comparing `findings.size()` with
+        // `mismatch + unverifiable` could infer it, and nobody reads a report that way. (The
+        // ledger digest was never affected -- FixityLedgerRecorder commits to the COUNTS.)
+        // The exact predicate, not `size() >= MAX_FINDINGS`: exactly 500 findings with none
+        // dropped is not a truncation, and the counts on this record say how many there were.
+        body.put("findingsTruncated", mismatch + unverifiable > findings.size());
         body.put("findings", findings.stream().map(f -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("objectId", f.objectId());

@@ -164,6 +164,51 @@ class SolrUtilAttachmentSingleReadTest {
 	}
 
 	/**
+	 * A length that could not be read is UNKNOWN, and unknown is not zero.
+	 *
+	 * <p>Both reads failing used to produce {@code content_length = 0}, which the indexer wrote
+	 * to Solr — so the index stated a size the document does not have, and a range query
+	 * answered it confidently. The field is left out instead: an absent field is answered
+	 * honestly by Solr, a wrong one is not. Recorded as a known gap for two rounds under
+	 * "the indexer degrades deliberately", which is true of the TEXT and was not true of this.
+	 */
+	@Test
+	void aLengthThatCouldNotBeReadIsNotZero() {
+		when(contentService.getAttachment(REPO, ATTACHMENT))
+				.thenThrow(new IllegalStateException("the attachment could not be read"));
+		when(contentService.getAttachmentRef(REPO, ATTACHMENT))
+				.thenThrow(new IllegalStateException("nor could its metadata"));
+
+		SolrUtil.AttachmentContent result = solrUtil.readAttachment(REPO, ATTACHMENT);
+
+		assertNull(result.text);
+		assertEquals(SolrUtil.AttachmentContent.LENGTH_UNKNOWN, result.length,
+				"a length nobody could read was reported as 0, and the index then carried "
+						+ "content_length=0 for a document with content");
+	}
+
+	/**
+	 * An unknown length is left OUT of the index, not written as a sentinel.
+	 *
+	 * <p>The javadoc of the change claimed "the field is left out"; the test only pinned the
+	 * value {@code lengthFromMetadata} returns. An audit named the edit that keeps that green
+	 * while the index is still wrong: drop the guard at the write site and Solr receives
+	 * {@code content_length = -1} — a different wrong number in the same field.
+	 */
+	@Test
+	void anUnknownLengthIsNotWrittenToTheIndex() throws Exception {
+		String source = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
+				jp.aegif.nemaki.util.test.JavaSource.read(
+						"src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java"));
+		int writeAt = source.indexOf("doc.addField(\"content_length\"");
+		assertTrue(writeAt > 0, "content_length is no longer indexed at all");
+		String before = source.substring(Math.max(0, writeAt - 400), writeAt);
+		assertTrue(before.contains("!= AttachmentContent.LENGTH_UNKNOWN"),
+				"content_length is written unconditionally again, so a length nobody could "
+						+ "read reaches the index as a sentinel value: " + before);
+	}
+
+	/**
 	 * With nothing to extract, the body must not be opened at all — that is the F3 separation
 	 * between the metadata path and the body path.
 	 */

@@ -99,7 +99,11 @@ public class ChatworkConnectorAdapter {
         if (response.statusCode() == 204) return List.of();
 
         JsonNode root = MAPPER.readTree(response.body());
-        if (!root.isArray()) return List.of();
+        // Not a list is not "no messages": read as none, the room would look empty.
+        if (!root.isArray()) {
+            throw new IllegalStateException("Chatwork answered the messages of room " + roomId
+                    + " with something other than a list; nothing was read");
+        }
 
         List<ChatworkMessage> messages = new ArrayList<>();
         for (JsonNode msg : root) {

@@ -7,8 +7,8 @@
 ## 0. 第 1 段が実装するのは ERS ではない (第 2 段で実装した)
 
 **この節は第 1 段 (2026-08-25) について書かれている。** 第 2 段 (2026-08-26) で
-**RFC 4998 の生成と検証を実装した** — §8 を読むこと。data object は checkpoint の
-正規化バイト列であって文書ではなく、TSA 署名は検証していない。
+**RFC 4998 の生成と検証を実装した** — §8 を読むこと。data object hash は checkpoint の
+**merkleRoot** であって文書ではなく、TSA 署名は検証していない。
 
 第 1 段が実装したのは、**ERS が「本文書の範囲外」と明記して肩代わりしてくれない部分**である。
 
@@ -190,7 +190,7 @@ P3-1 が CSIP 2.2.0 を選んだので答えられるようになった。
 |---|---|---|
 | 既存トークンとの符号化 | **RFC 3161 のトークンは CMS SignedData そのもの**。同じ符号化で包める | ASN.1 を base64 で XML に戻すことになり、**符号化の境界が 1 つ増える** |
 | 実装の存在 | アーカイブ用タイムスタンプ製品が実際に出荷している | 仕様は在るが実装が乏しい。**受け側が読めない形式は相互運用ではない** |
-| CSIP との相性 | パッケージは METS+XML だが、**evidence record は記述メタデータではなく保存オブジェクトとして置かれる**。マニフェストが XML であることは、参照先の中身までは及ばない | — |
+| CSIP との相性 | パッケージは METS+XML だが、**マニフェストが XML であることは参照先の中身までは及ばない** (`mdRef` が外部ファイルを指すだけ)。**2026-08-27 訂正**: ここには「保存オブジェクトとして置かれる」と 書いていたが、現在は `dmdSec` から参照する形で `metadata/other/ers.der` に置いており、RODA は AIP で `metadata/descriptive/` へ移す。CSIP32 が `digiprovMD` を PREMIS の枠と定めているためで、経緯は [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11 | — |
 
 **却下側の利点も書いておく**: XMLERS なら ASN.1 デコーダ無しで構造が読め、
 パッケージの他の中身と同じように検分できる。**これは本物の損失**であり、
@@ -198,9 +198,31 @@ P3-1 が CSIP 2.2.0 を選んだので答えられるようになった。
 
 ### 置き場所
 
-`metadata/preservation` — PREMIS の隣。evidence record は**保存メタデータ**であって
-記述メタデータでも documentation でもない。1 か所で決めておかないと、
-実装する日にエクスポータがもう一度、別の答えで決める。
+`metadata/other` (**2026-08-27 変更**)。
+
+当初は `metadata/preservation` — 「evidence record は保存メタデータであって記述メタデータでも
+documentation でもない」— としていた。**これは OAIS の分類を CSIP のディレクトリに載せた
+読み違いだった。ただし間違っていたのはフォルダではない。**
+
+フォルダを決めているのは exporter が呼ぶ API で、`addPreservationMetadata` は METS の
+`<amdSec><digiprovMD>` に宣言を書く。**CSIP32 が preservation 情報に PREMIS を使うと
+述べているのがその枠**なので、ASN.1 の DER をそこに宣言していたのが defect である。
+
+**「フォルダは SHOULD にすぎず CSIP32 が拘束する」という論の立て方はしない** —
+CSIP32 も CSIPSTR6 と同じ **SHOULD** (`0..n`) で、しかも「PREMIS ⇒ `digiprovMD` 1 つ」の
+片方向しか書いていない。**規格違反ではなく、PREMIS のための枠に PREMIS でないものを
+載せた**、が言える範囲である ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
+
+実測で浮いた: そこに置いた SIP を RODA 6.3.0 に投げると、`digiprovMD` の中身を
+`PremisV3Utils.binaryToGenericPremis` に通そうとして `Failed to load PREMIS` になり、
+**package ごと rollback** する。
+`metadata/other` へ移すと取り込まれ、記録も残った (RODA 側で `metadata/descriptive/` へ
+移されて)。**測ったのはスタブの DER で、本物の RFC 3161 ベース ERS では測っていない。**経緯と対照は
+[`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10 追試 1 / §11。
+
+**1 か所で決めておく方針は変えていない**が、`ErsFormat.CSIP_LOCATION` は位置を
+*記述*しているだけで、*決めて*いるのは exporter が `addPreservationMetadata` と
+`addOtherMetadata` のどちらを呼ぶかである。**変えるときは両方**。
 
 ### 何も生成していない
 
@@ -220,27 +242,49 @@ renewal monitor が既に在るからである — `RenewalNeed` は「そろそ
 
 §7 で形式を決めた。ここで作った。`ErsRecord` (生成・DER 往復) と `ErsVerifier` (検証)。
 
-### data object は checkpoint の**正規化バイト列**であって checkpoint hash ではない
+### `h` は anchor target の **merkleRoot** である（checkpoint hash でも正規化バイト列でもない）
 
 **2026-08-26 訂正 (Codex 指摘・RFC 本文で確認)。** 最初の実装はここを取り違えており、
 その結果**どの標準ツールでも読めない記録**を出していた。自前の検証器が同じ取り違えを
 していたので、テストは緑だった。
 
 RFC 4998 §4.3 は検証器に **`h = H(d)` を計算させ、最初のハッシュリストに `h` が
-在ることを確かめさせる**。checkpoint hash `C` を「data object」と呼びながら
-リストに `C` を入れると、検証器は `H(C)` を探して `C` を見つけ、
-**token を見る前に**落とす。
+在ることを確かめさせる**。ある値 `X` を「data object」と呼びながらリストに `X` を入れると、
+検証器は `H(X)` を探して `X` を見つけ、**token を見る前に**落とす。
 
-正しくはもっと単純だった。`C` は既に `H(checkpoint の正規化バイト列)` であり、
-本製品の RFC 3161 アンカーは **message imprint がちょうど `C` の token** である。
-つまり data object はその正規化バイト列で、`h = C`。そして **reducedHashtree は
-要らない** — RFC 4998 §4.2 が明示的に許している:「An Archive Timestamp may consist
-... only of a timestamp with no hash value lists」。§4.3 は
-「root hash value must correspond to hashedMessage」に縮退し、root は `h` そのもの。
+**制約は 1 つだけ**: この記録は**既に在る token を再利用する**。token が覆えるのは
+anchor された値 1 つだけである。`Rfc3161AnchorTarget` が anchor するのは
+`checkpoint.merkleRoot()` を**デコードした bytes**（root は既に SHA-256 digest なので
+再度 hash しない）。したがって `h` は **root の bytes** 以外にありえない。
 
-この形は**適合し、かつ既存アンカーをそのまま使える**。代案 —— `H(C)` を 1 ノードの
-木に入れる —— は `H(H(C))` を覆う**新しい token** が要る。§4.3 step 3 は
-要素が 1 つでもリストを hash するからである (単一要素の例外は RFC に無い。本文で確認)。
+> **2026-09-22 の訂正（R70）。** この節は 2 度誤っている。最初は「data object = checkpoint hash `C`」
+> （上の縮退）。次に「data object = checkpoint の正規化バイト列、`h = C`」— hash の話としては
+> 正しいが anchor の話としては誤りで、**`C` を覆う token は存在しない**。2 名のレビューアが
+> 独立に指摘し、製品・仕様・verifier・本文書を `merkleRoot` に揃えた。
+> **`C` と root は別の値である。** 同一視する文をここに書かないこと。
+
+`h` = root なので **reducedHashtree は要らない** — RFC 4998 §4.2 が明示的に許している:
+「An Archive Timestamp may consist ... only of a timestamp with no hash value lists」。§4.3 は
+「root hash value must correspond to hashedMessage」に縮退し、その root は `h` そのもの。
+
+この形は**適合し、かつ既存アンカーをそのまま使える**。
+
+> **2026-09-22 の訂正（2 度目）。** ここは当初「代案 —— `H(root)` を 1 ノードの木に入れる —— は
+> `H(H(root))` を覆う**新しい token** が要る。§4.3 step 3 は要素が 1 つでもリストを hash する
+> からである（単一要素の例外は RFC に無い。本文で確認）」と書いていた。**これは誤り。**
+> RFC 4998 §4.2 は「For each data group containing **more than one document**, its respective
+> document hashes are binary sorted in ascending order, concatenated, and hashed」と規定しており、
+> **要素 1 つのリストの node hash はその値そのもの**である。BouncyCastle の
+> `ERSUtil.computeNodeHash` も `values.length > 1` のときだけ hash する（bytecode で確認）。
+> したがって `root` を 1 ノードの木に入れた記録は、**いま在る token でそのまま検証できる**。
+> **採る形（木を持たない）は変えない** — こちらのほうが単純で、同じく適合する。変えたのは理由付けだけ。
+> この誤りは verifier 2 つ（`ErsVerifier` と `LongTermErs`）にも入っていて、
+> **標準ツールが作った reduced tree を必ず拒否していた**。両方を `nodeHash` に揃えた。
+
+**この形が捨てているもの**（自明ではないので書く）: `h` の元である data object `d` —
+Merkle 木が縮約する連結 —— は**どの package にも入っていない**。受け取る側は §4.3 step 1 を
+自分では実行できず、**「package が述べる root を記録が覆っているか」までしか確かめられない**。
+§9 が 2 度目の TSA 往復を禁じている以上、これは選択の結果である。
 
 **採らなかった案**: entry を RFC 4998 の規則で縮約する。checkpoint ごとに
 2 つ目の root と 2 つ目のアンカーが要る (手元の token は RFC 6962 root ではなく
@@ -345,8 +389,8 @@ boolean と件数しか無かったので、**呼び手が新アルゴリズム�
 
 ### 新しくタイムスタンプは取らない
 
-§8 の帰結。checkpoint hash は **checkpoint の正規化バイト列の SHA-256** であり、
-本製品の RFC 3161 アンカーは **message imprint がちょうどその値の token** である。
+§8 の帰結。本製品の RFC 3161 アンカーは **message imprint がちょうど
+`checkpoint.merkleRoot()` の bytes の token** である（`checkpointHash` ではない —— 両者は別の値）。
 だから evidence record は**既に在るものの組み立て**であって、
 2 度目の TSA 往復も 2 つ目のアンカーも要らず、**新しい主張も生まれない**。
 
@@ -368,7 +412,7 @@ imprint は**当局が実際に署名した対象**である。別の事実で�
 まさにフィールドだけ読むと素通りする組み合わせだった。
 
 いまは 2 段階で見る: 安い診断としてフィールドを見て、そのあと
-**proof を parse して token の `hashedMessage` を checkpoint hash と突き合わせる**。
+**proof を parse して token の `hashedMessage` を `merkleRoot` と突き合わせる**。
 
 さらに、**組み立てたものを `ErsVerifier` に通してから返す**。組み立ては安く、
 標準ツールが落とす記録を他組織へ送るのは高い。「exporter から出てきた」は
@@ -384,8 +428,10 @@ checkpoint 行自体が自己検証しないときも組み立てない
 
 ### SIP への同梱
 
-`metadata/preservation/ers.der` — `ErsFormat.CSIP_LOCATION` が宣言している位置。
-PREMIS の隣で、evidence record は保存メタデータだからである。
+`metadata/other/ers.der` — `ErsFormat.CSIP_LOCATION` が宣言している位置。
+**`digiprovMD` からは参照しない**: CSIP32 がそこを PREMIS の枠と定めており、
+DER を宣言すると少なくとも 1 つの受け手 (RODA 6.3.0) が package ごと拒否する
+(上記「置き場所」と [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
 
 **受け手が誤読しないように**: `ers.der` は記録の隣に在るが、その data object は
 **checkpoint** であって隣の文書ではない。evidence package の `evidenceRecord` 節と
@@ -393,7 +439,7 @@ PREMIS の隣で、evidence record は保存メタデータだからである。
 
 | 壊した箇所 | 落ちたテスト |
 |---|---|
-| token の imprint を checkpoint hash と照合しない | `aTokenAboutSomethingElseIsRefused` |
+| token の imprint を `merkleRoot` と照合しない | `aTokenAboutSomethingElseIsRefused` |
 | OpenTimestamps 受領証を代用にする | `otsDoesNotSubstitute` |
 | 自己検証しない checkpoint の上に組み立てる | `anEditedCheckpointIsNotDressedUp` |
 
