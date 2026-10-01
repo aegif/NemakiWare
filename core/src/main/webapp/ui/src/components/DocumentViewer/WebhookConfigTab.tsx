@@ -52,12 +52,27 @@ interface WebhookFormValues {
   enabled: boolean;
 }
 
-const EVENT_TYPES = [
-  'created', 'updated', 'deleted', 'security', 'content_updated',
-  'child_created', 'child_updated', 'child_deleted',
-];
+// Literal label keys, so tests/i18n/locale-keys.spec.ts can check each one. An event name the
+// server returns that is not listed here shows as itself.
+const EVENT_TYPE_LABEL_KEYS: Record<string, string> = {
+  created: 'documentViewer.webhooks.eventTypes.created',
+  updated: 'documentViewer.webhooks.eventTypes.updated',
+  deleted: 'documentViewer.webhooks.eventTypes.deleted',
+  security: 'documentViewer.webhooks.eventTypes.security',
+  content_updated: 'documentViewer.webhooks.eventTypes.content_updated',
+  child_created: 'documentViewer.webhooks.eventTypes.child_created',
+  child_updated: 'documentViewer.webhooks.eventTypes.child_updated',
+  child_deleted: 'documentViewer.webhooks.eventTypes.child_deleted',
+};
+const EVENT_TYPES = Object.keys(EVENT_TYPE_LABEL_KEYS);
 
-const AUTH_TYPES = ['none', 'basic', 'bearer', 'hmac'];
+const AUTH_TYPE_LABEL_KEYS: Record<string, string> = {
+  none: 'documentViewer.webhooks.authTypeNone',
+  basic: 'documentViewer.webhooks.authTypeBasic',
+  bearer: 'documentViewer.webhooks.authTypeBearer',
+  hmac: 'documentViewer.webhooks.authTypeHmac',
+};
+const AUTH_TYPES = Object.keys(AUTH_TYPE_LABEL_KEYS);
 
 export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId, objectId }) => {
   const { t } = useTranslation();
@@ -246,7 +261,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
         <Space wrap>
           {events?.map((e: string) => (
             <Tag key={e} color="blue">
-              {t(`documentViewer.webhooks.eventTypes.${e}`, e)}
+              {EVENT_TYPE_LABEL_KEYS[e] ? t(EVENT_TYPE_LABEL_KEYS[e]) : e}
             </Tag>
           ))}
         </Space>
@@ -340,7 +355,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
               <Space wrap>
                 {EVENT_TYPES.map((et) => (
                   <Checkbox key={et} value={et}>
-                    {t(`documentViewer.webhooks.eventTypes.${et}`, et)}
+                    {t(EVENT_TYPE_LABEL_KEYS[et])}
                   </Checkbox>
                 ))}
               </Space>
@@ -351,7 +366,7 @@ export const WebhookConfigTab: React.FC<WebhookConfigTabProps> = ({ repositoryId
             <Select>
               {AUTH_TYPES.map((at) => (
                 <Select.Option key={at} value={at}>
-                  {t(`documentViewer.webhooks.authType${at.charAt(0).toUpperCase() + at.slice(1)}`)}
+                  {t(AUTH_TYPE_LABEL_KEYS[at])}
                 </Select.Option>
               ))}
             </Select>

@@ -50,6 +50,27 @@ interface Props {
 }
 
 const VERDICT_COLOR: Record<string, string> = { expected: 'green', unexpected: 'orange', forbidden: 'red' };
+// Literal label keys, so tests/i18n/locale-keys.spec.ts can check each one. The kind and
+// operation tables cover their unions (the compiler checks it); a verdict the server returns that
+// is not listed here shows as itself.
+const KIND_LABEL_KEYS: Record<BatchKind, string> = {
+  users: 'principalBatch.kind.users',
+  groups: 'principalBatch.kind.groups',
+  memberships: 'principalBatch.kind.memberships',
+};
+const OPERATION_LABEL_KEYS: Record<BatchOperation, string> = {
+  create: 'principalBatch.operation.create',
+  update: 'principalBatch.operation.update',
+  delete: 'principalBatch.operation.delete',
+  add: 'principalBatch.operation.add',
+  remove: 'principalBatch.operation.remove',
+  replace: 'principalBatch.operation.replace',
+};
+const VERDICT_LABEL_KEYS: Record<string, string> = {
+  expected: 'principalBatch.verdictName.expected',
+  unexpected: 'principalBatch.verdictName.unexpected',
+  forbidden: 'principalBatch.verdictName.forbidden',
+};
 const OUTCOME_COLOR: Record<string, string> = {
   applied: 'green', skipped: 'orange', forbidden: 'red', not_applied: 'default', failed: 'red',
 };
@@ -177,19 +198,19 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               data-testid="principal-batch-kind"
             >
               {kinds.map((k) => (
-                <Radio.Button key={k} value={k}>{t(`principalBatch.kind.${k}`)}</Radio.Button>
+                <Radio.Button key={k} value={k}>{t(KIND_LABEL_KEYS[k])}</Radio.Button>
               ))}
             </Radio.Group>
           )}
           <Radio.Group value={operation} onChange={(e) => setOperation(e.target.value)} data-testid="principal-batch-operation">
             {operations.map((op) => (
-              <Radio.Button key={op} value={op} data-testid={`principal-batch-op-${op}`}>{t(`principalBatch.operation.${op}`)}</Radio.Button>
+              <Radio.Button key={op} value={op} data-testid={`principal-batch-op-${op}`}>{t(OPERATION_LABEL_KEYS[op])}</Radio.Button>
             ))}
           </Radio.Group>
           <Paragraph type="secondary">
             {t('principalBatch.columns')}: <Text code>{(BATCH_COLUMNS[kind][operation] || []).join(',')}</Text>
           </Paragraph>
-          <Paragraph type="secondary">{t(`principalBatch.blankMeans.${operation === 'replace' ? 'replace' : 'other'}`)}</Paragraph>
+          <Paragraph type="secondary">{operation === 'replace' ? t('principalBatch.blankMeans.replace') : t('principalBatch.blankMeans.other')}</Paragraph>
           <Button type="primary" onClick={() => setStep(1)} data-testid="principal-batch-next">{t('common.next')}</Button>
         </Space>
       )}
@@ -252,7 +273,7 @@ export const PrincipalBatchModal: React.FC<Props> = ({ open, repositoryId, kinds
               {
                 title: t('principalBatch.verdict'),
                 dataIndex: 'verdict',
-                render: (v: string) => <Tag color={VERDICT_COLOR[v]}>{t(`principalBatch.verdictName.${v}`)}</Tag>,
+                render: (v: string) => <Tag color={VERDICT_COLOR[v]}>{VERDICT_LABEL_KEYS[v] ? t(VERDICT_LABEL_KEYS[v]) : v}</Tag>,
               },
               { title: t('principalBatch.reason'), dataIndex: 'reason' },
               { title: t('principalBatch.message'), dataIndex: 'message' },

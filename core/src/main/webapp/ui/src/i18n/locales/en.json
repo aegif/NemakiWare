@@ -3377,7 +3377,7 @@
     },
     "configuredPlaceholder": "[configured]",
     "mcp": {
-      "description": "Manages the MCP (Model Context Protocol) server settings: how AI tools such as Claude Code behave when they access the repository.",
+      "description": "Manages the MCP (Model Context Protocol) server settings: how the server behaves when AI tools such as Claude Code access the repository.",
       "endpointHealth": "Health check (always public)",
       "endpointInfo": "Server information (always public)",
       "endpointMessage": "Main endpoint (JSON-RPC)",

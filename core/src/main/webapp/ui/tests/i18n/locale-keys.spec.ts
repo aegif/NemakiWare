@@ -4,13 +4,16 @@ import * as path from 'path';
 import * as ts from 'typescript';
 
 /**
- * The locale files and the code agree (UI i18n batch 3). Reads files only — no browser, no server.
+ * The locale files and the code agree (UI i18n batch 3). The test reads files only — no browser —
+ * though the Playwright run around it still needs the backend (the global setup checks it).
  *
- * - Every key the code names is in both ja.json and en.json: the literal first argument of t() /
- *   i18n.t(), and a dotted string that starts with a locale namespace anywhere else (labelKey,
- *   helpKey, a message key handed to a helper) — except the context label given to
- *   parseJsonResponseBody, which is not a key. For a key built from a template (`prefix.${x}`),
- *   its static prefix must exist; the values it takes are not enumerated here.
+ * - Every key the code names is a text in both ja.json and en.json: the literal first argument
+ *   of t() / i18n.t(), and a dotted string that starts with a locale namespace anywhere else
+ *   (labelKey, a table of label keys, a message key handed to a helper) — except the context
+ *   label given to parseJsonResponseBody, which is not a key.
+ * - No key is built from a template (`prefix.${x}`), in t() or anywhere a namespaced template
+ *   starts: the values such a key takes cannot be checked, so the code names each key literally
+ *   (a table per value) and the first rule covers it.
  * - ja.json and en.json have the same keys, and each key has the same {{…}} variables in both.
  *
  * A missing key renders as the key itself (i18next's fallback), so this measures what a screen
@@ -63,23 +66,20 @@ test('every key the code names is in ja.json and en.json, and the two files agre
       named++;
       for (const lang of ['ja', 'en'] as const) {
         if (!flat[lang].has(key)) problems.push(`${where(n)} ${key} is not in ${lang}.json`);
+        else if (flat[lang].get(key) === null) problems.push(`${where(n)} ${key} is an object in ${lang}.json, not a text`);
       }
     };
+    const startsWithNamespace = (text: string) => /^[a-zA-Z][a-zA-Z0-9]*\./.test(text) && namespaces.has(text.split('.')[0]);
     const visit = (n: ts.Node): void => {
       if (ts.isCallExpression(n) && isTCall(n.expression.getText(sf)) && n.arguments[0]) {
         const a0 = n.arguments[0];
         if (ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0)) {
           requireKey(a0.text, a0);
         } else if (ts.isTemplateExpression(a0)) {
-          // `prefix.${x}` needs the object `prefix`; `prefix${X}` needs some key starting so.
-          const head = a0.head.text;
-          for (const lang of ['ja', 'en'] as const) {
-            const ok = head.endsWith('.')
-              ? flat[lang].get(head.slice(0, -1)) === null
-              : [...flat[lang].keys()].some((k) => k.startsWith(head));
-            if (!ok) problems.push(`${where(a0)} no ${lang}.json key under the template prefix ${head}`);
-          }
+          problems.push(`${where(a0)} t() key built from a template — name each key literally`);
         }
+      } else if (ts.isTemplateExpression(n) && startsWithNamespace(n.head.text)) {
+        problems.push(`${where(n)} key built from a template (${n.head.text}…) — name each key literally`);
       } else if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n))
           && /^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z0-9_]+)+$/.test(n.text) && namespaces.has(n.text.split('.')[0])) {
         const parent = n.parent;

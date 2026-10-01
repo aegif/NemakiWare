@@ -13,13 +13,14 @@ interface ExternalContextTabProps {
   updatedAt: string | null;
 }
 
-// Source type display configuration
-const SOURCE_TYPE_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
-  cloud_sync: { color: 'blue', icon: <CloudOutlined /> },
-  crm: { color: 'purple', icon: <ApiOutlined /> },
-  erp: { color: 'orange', icon: <ApiOutlined /> },
-  chat: { color: 'green', icon: <ApiOutlined /> },
-  email: { color: 'cyan', icon: <ApiOutlined /> },
+// Source type display configuration. Each label is a literal key so tests/i18n/locale-keys.spec.ts
+// can check it; a source type the server sends that is not listed here shows as itself.
+const SOURCE_TYPE_CONFIG: Record<string, { color: string; icon: React.ReactNode; labelKey: string }> = {
+  cloud_sync: { color: 'blue', icon: <CloudOutlined />, labelKey: 'documentViewer.externalContext.types.cloud_sync' },
+  crm: { color: 'purple', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.crm' },
+  erp: { color: 'orange', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.erp' },
+  chat: { color: 'green', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.chat' },
+  email: { color: 'cyan', icon: <ApiOutlined />, labelKey: 'documentViewer.externalContext.types.email' },
 };
 
 // Source ID display configuration
@@ -115,7 +116,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
                 color={sourceTypeConfig?.color || 'default'}
                 icon={sourceTypeConfig?.icon}
               >
-                {t(`documentViewer.externalContext.types.${sourceType}`, sourceType)}
+                {sourceTypeConfig ? t(sourceTypeConfig.labelKey) : sourceType}
               </Tag>
             ) : (
               <Text type="secondary">-</Text>

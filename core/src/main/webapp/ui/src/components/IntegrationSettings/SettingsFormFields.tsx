@@ -40,12 +40,21 @@ const SOURCE_COLORS: Record<SettingSource, string> = {
   none: 'default',
 };
 
+const SOURCE_LABEL_KEYS: Record<SettingSource, string> = {
+  system_property: 'integrationSettings.source.system_property',
+  environment: 'integrationSettings.source.environment',
+  couchdb: 'integrationSettings.source.couchdb',
+  properties_file: 'integrationSettings.source.properties_file',
+  default: 'integrationSettings.source.default',
+  none: 'integrationSettings.source.none',
+};
+
 export function SettingsFormFields({ fields, formValues, sources, overridable, onFieldChange }: SettingsFormFieldsProps) {
   const { t } = useTranslation();
 
-  const sourceLabel = (source: SettingSource): string => {
-    return t(`integrationSettings.source.${source}`);
-  };
+  // A source the server sends that the table does not know shows as itself.
+  const sourceLabel = (source: SettingSource): string =>
+    SOURCE_LABEL_KEYS[source] ? t(SOURCE_LABEL_KEYS[source]) : source;
 
   const isDeployBootstrap = (source: SettingSource): boolean => {
     return source === 'system_property' || source === 'environment';

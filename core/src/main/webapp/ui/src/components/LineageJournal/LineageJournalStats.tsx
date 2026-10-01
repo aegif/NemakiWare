@@ -3,6 +3,14 @@ import { Card, Row, Col, Statistic, Spin, message, Tag } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { getMetrics, getStats, type LineageMetricsData, type LineageStatsData } from '../../services/lineageJournal';
 
+// Literal label keys, so tests/i18n/locale-keys.spec.ts can check each one; a mode the server
+// reports that is not listed here shows as itself.
+const MODE_LABEL_KEYS: Record<string, string> = {
+  disabled: 'integrationSettings.lineage.modeDisabled',
+  direct: 'integrationSettings.lineage.modeDirect',
+  journaled: 'integrationSettings.lineage.modeJournaled',
+};
+
 export default function LineageJournalStats() {
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<LineageMetricsData | null>(null);
@@ -28,8 +36,8 @@ export default function LineageJournalStats() {
 
   // Localize mode label; append override indicator when global mode is disabled
   // but repository overrides are enabling journaling
-  const modeKey = stats?.mode ? `integrationSettings.lineage.mode${stats.mode.charAt(0).toUpperCase()}${stats.mode.slice(1)}` : '';
-  let modeLabel = modeKey ? t(modeKey, stats?.mode ?? '') : (stats?.mode ?? '');
+  const modeKey = stats?.mode ? MODE_LABEL_KEYS[stats.mode] : undefined;
+  let modeLabel = modeKey ? t(modeKey) : (stats?.mode ?? '');
   if (stats?.hasRepositoryOverrides) {
     modeLabel += ` (${t('integrationSettings.lineage.repoOverridesActive')})`;
   }
