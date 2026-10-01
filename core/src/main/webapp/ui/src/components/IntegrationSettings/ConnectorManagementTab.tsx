@@ -138,7 +138,7 @@ export function ConnectorManagementTab() {
       render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? t('common.on') : t('common.off')}</Tag>,
     },
     {
-      title: t('connectorManagement.columns.delegation', { defaultValue: '委譲' }),
+      title: t('connectorManagement.columns.delegation'),
       key: 'delegation',
       width: 220,
       render: (_: unknown, record: ConnectorDefinition) => {
@@ -146,12 +146,12 @@ export function ConnectorManagementTab() {
         // We render the scope here too (folder count / principal count) so an
         // admin scanning the list can spot accidentally-broad delegation.
         if (!record.delegated) {
-          return <Tag>{t('connectorManagement.columns.delegationAdminOnly', { defaultValue: 'admin only' })}</Tag>;
+          return <Tag>{t('connectorManagement.columns.delegationAdminOnly')}</Tag>;
         }
         if (record.delegateAllFolders) {
           return (
             <Tag color="orange">
-              {t('connectorManagement.columns.delegationAllFolders', { defaultValue: 'all folders' })}
+              {t('connectorManagement.columns.delegationAllFolders')}
             </Tag>
           );
         }
@@ -160,27 +160,25 @@ export function ConnectorManagementTab() {
         if (folderCount === 0) {
           // delegated=true but no folder scope and no all-folders flag — backend
           // refuses this on save, but show clearly if it ever appears in data.
-          return <Tag color="red">{t('connectorManagement.columns.delegationMisconfigured', { defaultValue: 'misconfigured' })}</Tag>;
+          return <Tag color="red">{t('connectorManagement.columns.delegationMisconfigured')}</Tag>;
         }
         return (
           <Space size={4} wrap>
             <Tag color="blue">
               {t('connectorManagement.columns.delegationFolders', {
-                defaultValue: '{{count}} folder(s)',
                 count: folderCount,
               })}
             </Tag>
             {principalCount > 0 && (
               <Tag color="purple">
                 {t('connectorManagement.columns.delegationPrincipals', {
-                  defaultValue: '{{count}} principal(s)',
                   count: principalCount,
                 })}
               </Tag>
             )}
             {principalCount === 0 && (
               <Tag color="default">
-                {t('connectorManagement.columns.delegationAnyUser', { defaultValue: 'any user with cmis:all' })}
+                {t('connectorManagement.columns.delegationAnyUser')}
               </Tag>
             )}
           </Space>
@@ -288,36 +286,28 @@ export function ConnectorManagementTab() {
               that's by design so an admin can't silently grant repo-wide
               access through an oversight. */}
           <Typography.Title level={5} style={{ marginTop: 16 }}>
-            {t('connectorManagement.form.delegationSection', { defaultValue: '委譲設定' })}
+            {t('connectorManagement.form.delegationSection')}
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginTop: -4, fontSize: 12 }}>
-            {t('connectorManagement.form.delegationHint', {
-              defaultValue: 'cmis:all を持つフォルダオーナーがこのコネクタを使えるようにします。delegated を有効にした上で allowedFolderIds か delegateAllFolders のどちらかを設定してください。',
-            })}
+            {t('connectorManagement.form.delegationHint')}
           </Typography.Paragraph>
-          <Form.Item name="delegated" label={t('connectorManagement.form.delegated', { defaultValue: '委譲を有効化' })} valuePropName="checked">
+          <Form.Item name="delegated" label={t('connectorManagement.form.delegated')} valuePropName="checked">
             <Switch />
           </Form.Item>
           <Form.Item name="delegateAllFolders"
-            label={t('connectorManagement.form.delegateAllFolders', { defaultValue: '全フォルダに委譲（広域）' })}
+            label={t('connectorManagement.form.delegateAllFolders')}
             valuePropName="checked"
-            extra={t('connectorManagement.form.delegateAllFoldersHint', {
-              defaultValue: '有効にすると allowedFolderIds に関係なく任意のフォルダで使えます。クレデンシャルが repo 全体に届くため、本当に必要な場合のみ有効化してください。',
-            })}>
+            extra={t('connectorManagement.form.delegateAllFoldersHint')}>
             <Switch />
           </Form.Item>
           <Form.Item name="allowedFolderIds"
-            label={t('connectorManagement.form.allowedFolderIds', { defaultValue: '委譲先フォルダ ID' })}
-            extra={t('connectorManagement.form.allowedFolderIdsHint', {
-              defaultValue: '指定したフォルダとその配下が対象になります。folder ID をペーストするか Enter で複数登録します。',
-            })}>
+            label={t('connectorManagement.form.allowedFolderIds')}
+            extra={t('connectorManagement.form.allowedFolderIdsHint')}>
             <Select mode="tags" allowClear placeholder="folder-id-1, folder-id-2, ..." />
           </Form.Item>
           <Form.Item name="allowedPrincipalIds"
-            label={t('connectorManagement.form.allowedPrincipalIds', { defaultValue: '委譲先 user / group ID（任意）' })}
-            extra={t('connectorManagement.form.allowedPrincipalIdsHint', {
-              defaultValue: '空のままなら cmis:all を持つ任意のユーザに委譲されます。絞る場合は username や group ID を列挙してください。',
-            })}>
+            label={t('connectorManagement.form.allowedPrincipalIds')}
+            extra={t('connectorManagement.form.allowedPrincipalIdsHint')}>
             <Select mode="tags" allowClear placeholder="alice, group:editors, ..." />
           </Form.Item>
         </Form>

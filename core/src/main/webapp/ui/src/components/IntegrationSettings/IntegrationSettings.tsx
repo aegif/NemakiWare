@@ -53,12 +53,12 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
     { key: 'lineage', label: <Space size={4}>{t('integrationSettings.tabs.lineage')} {beta}</Space>, children: <LineageSettingsTab /> },
     { key: 'property-mapping', label: <Space size={4}>{t('integrationSettings.tabs.propertyMapping')} {beta}</Space>, children: <PropertyMappingSection repositoryId={repositoryId} /> },
     { key: 'connectors', label: <Space size={4}>{t('integrationSettings.tabs.connectors')} {beta}</Space>, children: <ConnectorManagementTab /> },
-    { key: 'connector-governance', label: <Space size={4}>{t('integrationSettings.tabs.connectorGovernance', { defaultValue: 'Connector Access' })} {beta}</Space>, children: <ConnectorGovernanceTab repositoryId={repositoryId} /> },
+    { key: 'connector-governance', label: <Space size={4}>{t('integrationSettings.tabs.connectorGovernance')} {beta}</Space>, children: <ConnectorGovernanceTab repositoryId={repositoryId} /> },
     { key: 'import-profiles', label: <Space size={4}>{t('integrationSettings.tabs.importProfiles')} {beta}</Space>, children: <ImportProfileManagementTab repositoryId={repositoryId} /> },
     { key: 'manual-ingest', label: <Space size={4}>{t('integrationSettings.tabs.manualIngest')} {beta}</Space>, children: <ManualIngestTab repositoryId={repositoryId} /> },
     { key: 'ingest-jobs', label: <Space size={4}>{t('integrationSettings.tabs.ingestJobs')} {beta}</Space>, children: <IngestJobsTab /> },
     { key: 'scheduler-status', label: <Space size={4}>{t('integrationSettings.tabs.schedulerStatus')} {beta}</Space>, children: <SchedulerStatusTab /> },
-    { key: 'mcp', label: t('integrationSettings.tabs.mcp', 'MCP'), children: <McpSettingsTab /> },
+    { key: 'mcp', label: t('integrationSettings.tabs.mcp'), children: <McpSettingsTab /> },
   ];
 
   const visibleItems = isAdmin ? allItems : allItems.filter(item => delegatedTabKeys.has(item.key));
@@ -72,13 +72,13 @@ export function IntegrationSettings({ repositoryId }: IntegrationSettingsProps) 
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={t('integrationSettings.delegatedNotice', { defaultValue: 'Delegated view: showing tabs available to folder owners with cmis:all.' })}
+          message={t('integrationSettings.delegatedNotice')}
         />
       )}
       {visibleItems.length === 0 ? (
         <Alert
           type="warning"
-          message={t('integrationSettings.noAccess', { defaultValue: 'No integration settings tabs are available for your account.' })}
+          message={t('integrationSettings.noAccess')}
         />
       ) : (
         <Tabs defaultActiveKey={defaultActive} items={visibleItems} />

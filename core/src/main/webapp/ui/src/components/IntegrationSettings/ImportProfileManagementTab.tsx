@@ -43,9 +43,9 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
     { value: 'replace_relationships_on_resync', label: t('importProfileManagement.dedupePolicies.replaceRelationships') },
   ];
   const DEDUPE_MATCH_OPTIONS = [
-    { value: 'source_id', label: t('importProfileManagement.dedupeMatchBy.sourceId', 'ソースID（デフォルト）') },
-    { value: 'filename', label: t('importProfileManagement.dedupeMatchBy.filename', 'ファイル名') },
-    { value: 'source_id_or_filename', label: t('importProfileManagement.dedupeMatchBy.sourceIdOrFilename', 'ソースID → ファイル名（フォールバック）') },
+    { value: 'source_id', label: t('importProfileManagement.dedupeMatchBy.sourceId') },
+    { value: 'filename', label: t('importProfileManagement.dedupeMatchBy.filename') },
+    { value: 'source_id_or_filename', label: t('importProfileManagement.dedupeMatchBy.sourceIdOrFilename') },
   ];
   const VERSIONING_OPTIONS = [
     { value: 'major', label: t('importProfileManagement.versioningPolicies.major') },
@@ -447,7 +447,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
                   size="small"
                   onClick={() => { setCustomDaysMode(false); setAutoDisabledDays(0); }}
                 >
-                  {t('importProfileManagement.autoDisabledWindowDone', { defaultValue: 'Done' })}
+                  {t('importProfileManagement.autoDisabledWindowDone')}
                 </Button>
               </Space>
             ) : (
@@ -533,19 +533,19 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Input />
           </Form.Item>
           <Form.Item name="targetFolderId" label={t('importProfileManagement.form.targetFolderId')}
-            rules={!isAdmin ? [{ required: true, message: t('importProfileManagement.form.targetFolderIdRequiredDelegated', { defaultValue: '委譲プロファイルでは folder ID が必須です（path 指定は管理者専用）' }) }] : []}
+            rules={!isAdmin ? [{ required: true, message: t('importProfileManagement.form.targetFolderIdRequiredDelegated') }] : []}
             extra={!isAdmin && formTargetFolderId
               ? folderAccessState === 'ok'
                 ? <span style={{ color: '#52c41a' }}>
-                    {t('importProfileManagement.form.folderAccessOk', { defaultValue: '✓ このフォルダの管理権限があります' })}
+                    {t('importProfileManagement.form.folderAccessOk')}
                   </span>
                 : folderAccessState === 'denied'
                   ? <span style={{ color: '#ff4d4f' }}>
-                      {t('importProfileManagement.form.folderAccessDenied', { defaultValue: '✗ このフォルダに cmis:all 権限がありません' })}
+                      {t('importProfileManagement.form.folderAccessDenied')}
                     </span>
                   : folderAccessState === 'unresolved'
                     ? <span style={{ color: '#faad14' }}>
-                        {t('importProfileManagement.form.folderUnresolved', { defaultValue: '? フォルダ ID を解決できません' })}
+                        {t('importProfileManagement.form.folderUnresolved')}
                       </span>
                     : null
               : undefined}>
@@ -559,7 +559,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
             <Input
               placeholder={t('importProfileManagement.form.targetFolderIdHint')}
               addonAfter={
-                <Tooltip title={t('importProfileManagement.form.browseFolder', { defaultValue: 'フォルダを参照' })}>
+                <Tooltip title={t('importProfileManagement.form.browseFolder')}>
                   <Button
                     type="link"
                     size="small"
@@ -595,7 +595,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           </Form.Item>
           <Form.Item name="allowedConnectorIds" label={t('importProfileManagement.form.allowedConnectorIds')}
             extra={!isAdmin && Object.keys(connectorMap).length === 0
-              ? t('importProfileManagement.form.noDelegatedConnectors', { defaultValue: 'No connectors are delegated to you for this folder. Ask an admin to delegate one.' })
+              ? t('importProfileManagement.form.noDelegatedConnectors')
               : t('importProfileManagement.form.allowedConnectorIdsHint')}>
             {/*
               Options are derived from connectorMap so the user picks
@@ -638,8 +638,8 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="dedupePolicy" label={t('importProfileManagement.form.dedupePolicy')}>
             <Select options={DEDUPE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="dedupeMatchBy" label={t('importProfileManagement.form.dedupeMatchBy', '同一文書の判定方法')}
-            extra={t('importProfileManagement.form.dedupeMatchByHint', 'チャット添付ファイルなど外部IDが不安定なソースでは「ファイル名」を選択してください')}>
+          <Form.Item name="dedupeMatchBy" label={t('importProfileManagement.form.dedupeMatchBy')}
+            extra={t('importProfileManagement.form.dedupeMatchByHint')}>
             <Select options={DEDUPE_MATCH_OPTIONS} />
           </Form.Item>
           <Form.Item name="versioningPolicy" label={t('importProfileManagement.form.versioningPolicy')}>
@@ -661,16 +661,16 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="schedulerEnabled" label={t('importProfileManagement.form.schedulerEnabled')}
             valuePropName="checked"
             extra={!isAdmin
-              ? t('importProfileManagement.form.schedulerAdminOnly', { defaultValue: 'Scheduled ingestion is admin-only in this release.' })
+              ? t('importProfileManagement.form.schedulerAdminOnly')
               : t('importProfileManagement.form.schedulerEnabledHint')}>
             {isAdmin
               ? <Switch />
-              : <Tooltip title={t('importProfileManagement.form.schedulerAdminOnly', { defaultValue: 'Scheduled ingestion is admin-only in this release.' })}>
+              : <Tooltip title={t('importProfileManagement.form.schedulerAdminOnly')}>
                   <Switch disabled />
                 </Tooltip>}
           </Form.Item>
-          <Form.Item label={t('importProfileManagement.form.schedulerParams', 'スケジューラパラメータ')}
-            extra={<><a onClick={() => setJsonMode(!jsonMode)}>{jsonMode ? t('importProfileManagement.form.switchToStructured', '構造化入力に切替') : t('importProfileManagement.form.switchToJson', 'JSON入力に切替')}</a>
+          <Form.Item label={t('importProfileManagement.form.schedulerParams')}
+            extra={<><a onClick={() => setJsonMode(!jsonMode)}>{jsonMode ? t('importProfileManagement.form.switchToStructured') : t('importProfileManagement.form.switchToJson')}</a>
               {selectedAdapter && <span style={{marginLeft:8,color:'#888'}}>{selectedAdapter.displayName}: {selectedAdapter.paramsExample}</span>}
             </>}>
             {jsonMode ? (
@@ -694,7 +694,7 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
               </Space>
             ) : (
               <Form.Item name="schedulerParams" noStyle>
-                <Input.TextArea rows={3} placeholder={t('importProfileManagement.form.schedulerParamsHint', 'コネクタを選択するとフィールドが表示されます')} />
+                <Input.TextArea rows={3} placeholder={t('importProfileManagement.form.schedulerParamsHint')} />
               </Form.Item>
             )}
           </Form.Item>
@@ -709,11 +709,11 @@ export function ImportProfileManagementTab({ repositoryId }: Props) {
           <Form.Item name="defaultProfile" label={t('importProfileManagement.form.defaultProfile')}
             valuePropName="checked"
             extra={!isAdmin
-              ? t('importProfileManagement.form.defaultProfileAdminOnly', { defaultValue: 'Repository default profile is admin-only.' })
+              ? t('importProfileManagement.form.defaultProfileAdminOnly')
               : t('importProfileManagement.form.defaultProfileHint')}>
             {isAdmin
               ? <Switch />
-              : <Tooltip title={t('importProfileManagement.form.defaultProfileAdminOnly', { defaultValue: 'Repository default profile is admin-only.' })}>
+              : <Tooltip title={t('importProfileManagement.form.defaultProfileAdminOnly')}>
                   <Switch disabled />
                 </Tooltip>}
           </Form.Item>

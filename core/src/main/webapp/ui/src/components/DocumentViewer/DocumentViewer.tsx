@@ -739,7 +739,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       const pullObjectId = isPWC ? object.id : (checkedOutId || object.id);
       console.log('[CloudDrive] pullObjectId:', pullObjectId, 'current objectId:', objectId, 'isPWC:', isPWC);
       await pullFromCloud(repositoryId, pullObjectId, provider, accessToken, cloudMetadata.cloudFileId);
-      message.success(t('documentViewer.messages.cloudPullSuccess', 'クラウドからコンテンツを取得しました'));
+      message.success(t('documentViewer.messages.cloudPullSuccess'));
       // Regenerate rendition (PDF preview) from the updated content
       try {
         await cmisService.generateRenditions(repositoryId, pullObjectId, true);
@@ -771,7 +771,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
       setPreviewVersion(v => v + 1);
     } catch (error) {
       console.error('Cloud pull failed:', error);
-      message.error(t('documentViewer.messages.cloudPullError', 'クラウドからの取得に失敗しました'));
+      message.error(t('documentViewer.messages.cloudPullError'));
     } finally {
       setCloudPullLoading(false);
     }
@@ -1281,7 +1281,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
     // External Context Tab (only shown when nemaki:externalIntegration secondary type is present) (2026-02-04)
     ...(externalContext ? [{
       key: 'externalContext',
-      label: t('documentViewer.externalContext.tab', '外部コンテキスト'),
+      label: t('documentViewer.externalContext.tab'),
       children: (
         <ExternalContextTab
           context={externalContext}
@@ -1469,7 +1469,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       onClick={() => handleCloudPush('google')}
                     >
                       {cloudMetadata?.provider === 'google'
-                        ? t('documentViewer.updateInGoogleDrive', 'Google Driveを更新')
+                        ? t('documentViewer.updateInGoogleDrive')
                         : t('documentViewer.editInGoogleDrive')}
                     </Button>
                   )}
@@ -1480,7 +1480,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                       onClick={() => handleCloudPush('microsoft')}
                     >
                       {cloudMetadata?.provider === 'microsoft'
-                        ? t('documentViewer.updateInOneDrive', 'OneDriveを更新')
+                        ? t('documentViewer.updateInOneDrive')
                         : t('documentViewer.editInOneDrive')}
                     </Button>
                   )}
@@ -1491,7 +1491,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                         loading={cloudPullLoading}
                         onClick={handleCloudPull}
                       >
-                        {t('documentViewer.pullFromCloud', 'クラウドから取得')}
+                        {t('documentViewer.pullFromCloud')}
                       </Button>
                       <Button
                         icon={<LinkOutlined />}
@@ -1519,7 +1519,7 @@ export const DocumentViewer: React.FC<DocumentViewerProps> = ({ repositoryId }) 
                           window.open(url, '_blank', 'noopener,noreferrer');
                         }}
                       >
-                        {t('documentViewer.openInCloud', 'クラウドで開く')}
+                        {t('documentViewer.openInCloud')}
                       </Button>
                     </>
                   )}

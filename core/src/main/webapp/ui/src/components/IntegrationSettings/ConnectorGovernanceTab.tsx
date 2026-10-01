@@ -415,8 +415,8 @@ export function ConnectorGovernanceTab({ repositoryId }: ConnectorGovernanceTabP
       render: (_: unknown, m: ConnectorPrincipalMatch) => (
         <Space size={4} wrap>
           {m.enabled
-            ? <Tag color="green">{t('common.enabled', { defaultValue: 'enabled' })}</Tag>
-            : <Tag color="red">{t('common.disabled', { defaultValue: 'disabled' })}</Tag>}
+            ? <Tag color="green">{t('common.enabled')}</Tag>
+            : <Tag color="red">{t('common.disabled')}</Tag>}
           {m.delegated
             ? <Tag color="cyan">{t('connectorGovernance.delegated')}</Tag>
             : <Tag color="default">{t('connectorGovernance.adminOnly')}</Tag>}

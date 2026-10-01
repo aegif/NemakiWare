@@ -82,10 +82,10 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
     try {
       await navigator.clipboard.writeText(context);
       setCopied(true);
-      message.success(t('documentViewer.externalContext.copySuccess', 'コピーしました'));
+      message.success(t('documentViewer.externalContext.copySuccess'));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      message.error(t('common.copyFailed', 'コピーに失敗しました'));
+      message.error(t('common.copyFailed'));
     }
   };
 
@@ -97,7 +97,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
   if (!context) {
     return (
       <div style={{ padding: 24, textAlign: 'center', color: '#888' }}>
-        {t('documentViewer.externalContext.noData', '外部コンテキストデータがありません')}
+        {t('documentViewer.externalContext.noData')}
       </div>
     );
   }
@@ -108,7 +108,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
       <Card size="small">
         <Descriptions column={3} size="small">
           <Descriptions.Item
-            label={t('documentViewer.externalContext.sourceType', 'ソース種別')}
+            label={t('documentViewer.externalContext.sourceType')}
           >
             {sourceType ? (
               <Tag
@@ -122,7 +122,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
             )}
           </Descriptions.Item>
           <Descriptions.Item
-            label={t('documentViewer.externalContext.sourceId', 'ソースID')}
+            label={t('documentViewer.externalContext.sourceId')}
           >
             {sourceId ? (
               <Tag color={sourceIdConfig?.color || 'default'}>
@@ -133,7 +133,7 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
             )}
           </Descriptions.Item>
           <Descriptions.Item
-            label={t('documentViewer.externalContext.updatedAt', '最終更新')}
+            label={t('documentViewer.externalContext.updatedAt')}
           >
             {formattedUpdatedAt ? (
               <Text>{formattedUpdatedAt}</Text>
@@ -151,8 +151,8 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
           icon={<WarningOutlined />}
           message={
             isTruncated
-              ? t('documentViewer.externalContext.truncatedWarning', 'データが切り捨てられています（5000文字上限）')
-              : t('documentViewer.externalContext.parseError', 'JSONの解析に失敗しました')
+              ? t('documentViewer.externalContext.truncatedWarning')
+              : t('documentViewer.externalContext.parseError')
           }
           showIcon
         />
@@ -164,13 +164,13 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
         title={
           <Space>
             <Title level={5} style={{ margin: 0 }}>
-              {t('documentViewer.externalContext.content', 'コンテンツ')}
+              {t('documentViewer.externalContext.content')}
             </Title>
             <Tag>{t('documentViewer.externalContext.charCount', { count: context.length.toLocaleString() })}</Tag>
           </Space>
         }
         extra={
-          <Tooltip title={t('documentViewer.externalContext.copy', 'コピー')}>
+          <Tooltip title={t('documentViewer.externalContext.copy')}>
             <Button
               type="text"
               icon={copied ? <CheckOutlined style={{ color: 'green' }} /> : <CopyOutlined />}

@@ -572,7 +572,40 @@
       "toggleNote": "Some admin features below may be disabled by server configuration (feature toggles). Features not shown in the menu are not available in your environment.",
       "mcpOtherUrlValue": "http://<{{host}}>:8080/core/mcp/message",
       "mcpOtherAuthHeaderValue": "Authorization: Basic <base64(username:password)>",
-      "ingestDelegationOpsAuditQuery": "# Profiles created under delegation\ngrep '\"operation\":\"externalProfileCreated\"' audit.log \\\n  | jq 'select(.details.delegated == true)'\n\n# Denial reasons, counted (last 24h)\njq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\\n  | sort | uniq -c | sort -nr\n\n# Attempts at folder-swap escalation\njq 'select(.details.denialReason == \"CMIS_ALL_REQUIRED_NEW\")' audit.log"
+      "ingestDelegationOpsAuditQuery": "# Profiles created under delegation\ngrep '\"operation\":\"externalProfileCreated\"' audit.log \\\n  | jq 'select(.details.delegated == true)'\n\n# Denial reasons, counted (last 24h)\njq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\\n  | sort | uniq -c | sort -nr\n\n# Attempts at folder-swap escalation\njq 'select(.details.denialReason == \"CMIS_ALL_REQUIRED_NEW\")' audit.log",
+      "ingestDelegation": "Delegation to folder owners",
+      "ingestDelegationField1": "delegated (default false)",
+      "ingestDelegationField1Desc": "Opts a connector into delegation. While false it is admin-only. Toggle it per connector on the connector screen.",
+      "ingestDelegationField2": "allowedFolderIds",
+      "ingestDelegationField2Desc": "The folder IDs delegated to. Delegation reaches the folders under them too (decided by folder ID and the parent chain, not a path prefix, so it survives rename / move). Left empty with delegateAllFolders=false it means \"no delegation\" — on purpose, so a missed setting never delegates widely.",
+      "ingestDelegationField3": "delegateAllFolders (default false)",
+      "ingestDelegationField3Desc": "An explicit flag that allows delegation across the whole repository. The credential then reaches every folder, so turn it on only when it is really needed.",
+      "ingestDelegationField4": "allowedPrincipalIds",
+      "ingestDelegationField4Desc": "Narrows the users by user ID and group ID (groups expanded by PrincipalService, fail-closed). Left empty there is no principal restriction (the folder restriction only).",
+      "ingestDelegationIntro": "Within the scope an administrator explicitly allows, managing manual import profiles can be delegated to folder owners (holders of cmis:all). Scheduled imports, creating connectors and editing admin-owned profiles stay admin-only.",
+      "ingestDelegationLimits": "Limits in this release",
+      "ingestDelegationLimitsDesc": "Profiles created by non-admins cannot use scheduler / defaultProfile / targetFolderOverride; if those are needed, an administrator creates the profile on their behalf. If a delegated connector is later disabled (delegated=false), existing profiles are refused at run time and rejected by the TOCTOU check on the next PUT. See docs/design/connector-delegation.md.",
+      "ingestDelegationOps": "Operating delegation",
+      "ingestDelegationOpsAudit": "Example audit queries",
+      "ingestDelegationOpsIntro": "The typical flow from an administrator delegating one connector to auditing and revoking it.",
+      "ingestDelegationOpsStep1": "Create and commit the connector",
+      "ingestDelegationOpsStep1Desc": "Create the connector as usual, set credentialRef / endpoint / authType and save. delegated can stay at its initial false — it can be enabled later.",
+      "ingestDelegationOpsStep2": "Choose the scope and enable delegation",
+      "ingestDelegationOpsStep2Desc": "On the connector's edit screen turn on \"Enable delegation\" and give at least one folder ID in allowedFolderIds. Several folders are allowed, and folders under them are included. Turn on delegateAllFolders=true only to open it to the whole repository (the credential then reaches every folder — wide delegation).",
+      "ingestDelegationOpsStep3": "Narrow the principals (optional)",
+      "ingestDelegationOpsStep3Desc": "Left empty, allowedPrincipalIds delegates to any user with cmis:all. List usernames / group IDs only to narrow it to particular users or groups.",
+      "ingestDelegationOpsStep4": "Tell the delegated users",
+      "ingestDelegationOpsStep4Desc": "Tell the folder owners they can create profiles from the \"Integration Settings → Import Profiles\" tab. The connector ID is shown in the UI's selector through the /summary endpoint. A delegated profile requires targetFolderId and hides the path field (so the picker, the audit and the cache key all use the one ID).",
+      "ingestDelegationOpsStep5": "Check usage in the audit log",
+      "ingestDelegationOpsStep5Desc": "Filter audit.log by operation=externalProfileCreated / externalIngest; the delegated users' activity is in the records with details.delegated=true. Failed events carry details.denialReason, so the common causes can be told apart mechanically.",
+      "ingestDelegationOpsStep6": "Revoke the delegation",
+      "ingestDelegationOpsStep6Desc": "Set delegated=false on the connector, remove the folder from allowedFolderIds, or remove the user/group from allowedPrincipalIds — revoked at once. Existing delegated profiles remain but are refused at run time (re-evaluated on every run) and rejected by the TOCTOU check on the next PUT. To delete the profile records themselves, an administrator DELETEs them.",
+      "ingestDelegationRunbook": "Operating flow",
+      "ingestDelegationRunbook1": "An administrator creates the connector and, as needed, sets delegated=true + allowedFolderIds (or delegateAllFolders=true) + allowedPrincipalIds",
+      "ingestDelegationRunbook2": "A folder owner (holder of cmis:all) who opens \"Integration Settings\" sees only the import-profiles and manual-ingest tabs",
+      "ingestDelegationRunbook3": "When creating a profile, only connectors delegated for its targetFolderId are offered (through /connectors/summary)",
+      "ingestDelegationRunbook4": "A saved profile is fixed at delegated=true / schedulerEnabled=false / defaultProfile=false",
+      "ingestDelegationRunbook5": "cmis:all and the connector's delegation are re-evaluated at run time too. targetFolderOverride is 403 for non-admins"
     },
     "imageZoom": "Click to enlarge"
   },
@@ -911,7 +944,10 @@
       "integer": "Integer (integer)",
       "decimal": "Decimal (decimal)",
       "boolean": "Boolean (boolean)",
-      "datetime": "DateTime (datetime)"
+      "datetime": "DateTime (datetime)",
+      "id": "ID (id)",
+      "html": "HTML (html)",
+      "uri": "URI (uri)"
     },
     "cardinalityOptions": {
       "single": "Single (single)",
@@ -3147,7 +3183,8 @@
       "importProfiles": "Import Profiles",
       "manualIngest": "Manual Import",
       "ingestJobs": "Job History",
-      "schedulerStatus": "Scheduler"
+      "schedulerStatus": "Scheduler",
+      "mcp": "MCP"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -3338,7 +3375,16 @@
       "credentialsFileHelp": "Absolute path to the JSON key file on the server",
       "notice": "Google Cloud Dataplex Lineage API integration. Required IAM role: roles/datalineage.admin"
     },
-    "configuredPlaceholder": "[configured]"
+    "configuredPlaceholder": "[configured]",
+    "mcp": {
+      "description": "Manages the MCP (Model Context Protocol) server settings: how AI tools such as Claude Code behave when they access the repository.",
+      "endpointHealth": "Health check (always public)",
+      "endpointInfo": "Server information (always public)",
+      "endpointMessage": "Main endpoint (JSON-RPC)",
+      "note": "MCP endpoints",
+      "toolsListPublic": "Public tools list",
+      "toolsListPublicHelp": "When on, the MCP tools list (tools/list) can be read without authentication. It is on by default for compatibility with MCP clients; turning it off is recommended on internet-facing deployments."
+    }
   },
   "connectorManagement": {
     "loadError": "Failed to load connectors",
@@ -3364,7 +3410,14 @@
       "sourceSystem": "Source System",
       "webhookUrl": "Webhook URL",
       "enabled": "Enabled",
-      "actions": "Actions"
+      "actions": "Actions",
+      "delegation": "Delegation",
+      "delegationAdminOnly": "admin only",
+      "delegationAllFolders": "all folders",
+      "delegationAnyUser": "any user with cmis:all",
+      "delegationFolders": "{{count}} folder(s)",
+      "delegationMisconfigured": "misconfigured",
+      "delegationPrincipals": "{{count}} principal(s)"
     },
     "form": {
       "connectorId": "Connector ID",
@@ -3378,7 +3431,16 @@
       "webhookSecretHint": "Secret for verifying inbound webhook signatures (Slack signing secret, Graph clientState, etc.)",
       "webhookSecretPlaceholder": "Signing secret or client state",
       "enabled": "Enabled",
-      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
+      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ...",
+      "allowedFolderIds": "Delegated folder IDs",
+      "allowedFolderIdsHint": "The folders given and everything under them. Paste a folder ID, or press Enter to add several.",
+      "allowedPrincipalIds": "Delegated user / group IDs (optional)",
+      "allowedPrincipalIdsHint": "Left empty, any user with cmis:all can use it. To narrow it, list usernames or group IDs.",
+      "delegateAllFolders": "Delegate in every folder (wide)",
+      "delegateAllFoldersHint": "When on, it can be used in any folder regardless of allowedFolderIds. The credential then reaches the whole repository, so turn this on only when it is really needed.",
+      "delegated": "Enable delegation",
+      "delegationHint": "Lets folder owners with cmis:all use this connector. With delegated on, set either allowedFolderIds or delegateAllFolders.",
+      "delegationSection": "Delegation"
     }
   },
   "connectorGovernance": {
@@ -3541,7 +3603,12 @@
       "preserveOriginalEmlHint": "Store the raw .eml MIME message alongside extracted body for audit/compliance",
       "schedulerParamsHint": "Source-scope parameters for scheduled fetches (JSON key-value pairs, e.g. channelId, query, folderId)",
       "enabled": "Enabled",
-      "schedulerParamRequired": "{{key}} is required when scheduler is enabled"
+      "schedulerParamRequired": "{{key}} is required when scheduler is enabled",
+      "folderAccessDenied": "✗ No cmis:all permission on this folder",
+      "folderAccessOk": "✓ You can manage this folder",
+      "folderUnresolved": "? The folder ID cannot be resolved",
+      "switchToJson": "Switch to JSON input",
+      "switchToStructured": "Switch to structured input"
     },
     "schedulerParamsInvalid": "Scheduler parameters must be valid JSON (e.g. {\"channelId\": \"C12345\"})",
     "updatePolicies": {

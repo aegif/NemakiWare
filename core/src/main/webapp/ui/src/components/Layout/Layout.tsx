@@ -469,7 +469,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, repositoryId }) => {
     {
       key: '/help',
       icon: <QuestionCircleOutlined />,
-      label: t('navigation.help', 'ヘルプ'),
+      label: t('navigation.help'),
     },
   ];
 

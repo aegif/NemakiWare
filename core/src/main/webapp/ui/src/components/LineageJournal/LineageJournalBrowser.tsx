@@ -133,7 +133,7 @@ export default function LineageJournalBrowser() {
           ].map((pt) => ({ label: pt, value: pt }))}
         />
         <Button icon={<ReloadOutlined />} onClick={fetchEvents} loading={loading}>
-          {t('common.refresh', 'Refresh')}
+          {t('common.refresh')}
         </Button>
       </Space>
 

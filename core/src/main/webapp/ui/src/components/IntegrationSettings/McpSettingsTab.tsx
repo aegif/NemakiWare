@@ -26,15 +26,13 @@ export function McpSettingsTab() {
   return (
     <div>
       <Paragraph type="secondary">
-        {t('integrationSettings.mcp.description',
-          'MCP（Model Context Protocol）サーバーの設定を管理します。Claude Code 等の AI ツールからリポジトリにアクセスする際の動作を制御します。')}
+        {t('integrationSettings.mcp.description')}
       </Paragraph>
 
       <Form layout="vertical" style={{ maxWidth: 600 }}>
         <Form.Item
-          label={t('integrationSettings.mcp.toolsListPublic', 'ツールリスト公開')}
-          extra={t('integrationSettings.mcp.toolsListPublicHelp',
-            'オンにすると、認証なしで MCP ツール一覧（tools/list）にアクセスできます。MCP クライアントの互換性のためにデフォルトでオンです。インターネット公開環境ではオフにすることを推奨します。')}
+          label={t('integrationSettings.mcp.toolsListPublic')}
+          extra={t('integrationSettings.mcp.toolsListPublicHelp')}
         >
           <Switch
             checked={isPublic}
@@ -44,7 +42,7 @@ export function McpSettingsTab() {
 
         <Form.Item>
           <Button type="primary" onClick={handleSave} loading={saving} disabled={!hasChanges}>
-            {t('common.save', '保存')}
+            {t('common.save')}
           </Button>
         </Form.Item>
       </Form>
@@ -52,17 +50,17 @@ export function McpSettingsTab() {
       <Alert
         type="info"
         showIcon
-        message={t('integrationSettings.mcp.note', 'MCP エンドポイント')}
+        message={t('integrationSettings.mcp.note')}
         description={
           <Descriptions size="small" column={1} bordered>
             <Descriptions.Item label="/core/mcp/message">
-              {t('integrationSettings.mcp.endpointMessage', 'メインエンドポイント（JSON-RPC）')}
+              {t('integrationSettings.mcp.endpointMessage')}
             </Descriptions.Item>
             <Descriptions.Item label="/core/mcp/info">
-              {t('integrationSettings.mcp.endpointInfo', 'サーバー情報（常時公開）')}
+              {t('integrationSettings.mcp.endpointInfo')}
             </Descriptions.Item>
             <Descriptions.Item label="/core/mcp/health">
-              {t('integrationSettings.mcp.endpointHealth', 'ヘルスチェック（常時公開）')}
+              {t('integrationSettings.mcp.endpointHealth')}
             </Descriptions.Item>
           </Descriptions>
         }
