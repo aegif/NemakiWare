@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import i18n from './index';
 
 // dayjs's global locale follows the UI language (src/i18n/index.ts) on two paths: once at
-// start-up (dayjsStartupLocale.test.ts, which needs a module context of its own) and on every
+// start-up (dayjsStartupLocale*.test.ts, each needing a module context of its own) and on every
 // change (here). Registering the 'ja' locale is part of both: without the import,
 // dayjs.locale('ja') silently stays English, so each language is asserted, not only that
 // something changed.

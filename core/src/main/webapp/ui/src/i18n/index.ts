@@ -21,10 +21,10 @@ export type LanguageCode = keyof typeof languages;
  * English browser), 'ja' otherwise — the same answer the translations use, since 'ja' is the
  * fallback. Ant Design's built-in texts and dayjs follow this, so a component's own labels and
  * the library's visible texts (empty tables, date pickers, default confirm buttons) agree.
- * Accessible names do not all follow: the close buttons of dialogs and notifications are named
- * "Close" in every language (antd 6.5.1 gives the locale's word, if at all, to the icon inside a
- * dialog's close button, not to the button), and icons are named by their icon name ("close",
- * "search").
+ * Accessible names follow only in part (antd 6.5.1): Modal and notification close buttons are
+ * named "Close" in every language (for a Modal the locale's word lands on a wrapper inside the
+ * button), Tag and Drawer close buttons take the locale's word, and an icon with no name of its
+ * own is named by its icon ("search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';
