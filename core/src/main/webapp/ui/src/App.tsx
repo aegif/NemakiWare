@@ -249,9 +249,11 @@ const customTheme = {
 
 // Ant Design's own texts (empty tables, date pickers, default confirm buttons, empty selects,
 // pagination, default form messages) in the UI language. Without a locale antd shows English,
-// which on the Japanese UI — the default — mixed English into Japanese screens. Static
-// Modal.confirm calls follow it too: the ConfigProvider's locale sets antd's confirm locale
-// (measured: removing a secondary type shows キャンセル / Cancel).
+// which on the Japanese UI — the default — mixed English into Japanese screens. The app's static
+// Modal.confirm / Modal.error calls pass their own button texts or show only OK (the same in both
+// languages), so they do not depend on antd's own confirm locale; the ConfigProvider sets that too
+// (antd 6.5.1: LocaleProvider → changeConfirmLocale, read), but nothing here relies on it and it is
+// not measured.
 const antdLocales = { ja: jaJP, en: enUS } as const;
 
 // LocalStorage key for MCP pending login code (must match McpCloudLogin.tsx)

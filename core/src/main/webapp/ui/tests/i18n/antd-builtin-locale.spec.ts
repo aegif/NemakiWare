@@ -1,6 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
 import { AuthHelper } from '../utils/auth-helper';
-import { ApiHelper } from '../utils/api-helper';
 import { waitForAppReady, waitForUiStable } from '../utils/wait-helpers';
 
 /**
@@ -30,7 +29,6 @@ const EXPECTED: Record<Lang, {
   firstWeekday: string;
   empty: RegExp;
   cancel: string;
-  close: string;
   otherLanguage: RegExp;
 }> = {
   ja: {
@@ -39,7 +37,6 @@ const EXPECTED: Record<Lang, {
     firstWeekday: '日',
     empty: /データがありません|データなし/,
     cancel: 'キャンセル',
-    close: '閉じる',
     otherLanguage: /Select date|Today|No data|Cancel/,
   },
   en: {
@@ -48,7 +45,6 @@ const EXPECTED: Record<Lang, {
     firstWeekday: 'Su',
     empty: /No data/,
     cancel: 'Cancel',
-    close: 'Close',
     otherLanguage: /日付を選択|今日|データ|キャンセル/,
   },
 };
@@ -74,7 +70,8 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
       const dropdown = page.locator('.ant-picker-dropdown:visible');
       await expect(dropdown).toBeVisible();
       await expect(dropdown.getByText(EXPECTED[lang].today, { exact: true })).toBeVisible();
-      // The weekday header comes from antd's locale (its shortWeekDays), like the rest of the panel.
+      // The weekday header: Japanese from antd's ja_JP locale (its shortWeekDays), English from dayjs
+      // 'en', which antd's picker asks for explicitly. Either way it is the picker's language.
       await expect(dropdown.locator('.ant-picker-content thead th').first()).toHaveText(EXPECTED[lang].firstWeekday);
       await expect(dropdown).not.toContainText(EXPECTED[lang].otherLanguage);
       await page.keyboard.press('Escape');
@@ -106,51 +103,6 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
       await expect(popconfirm).not.toContainText(EXPECTED[lang].otherLanguage);
       await cancel.click();
       await expect(popconfirm).toBeHidden();
-    });
-
-    // Modal.confirm called as a static method renders outside the React tree; antd gives it the
-    // ConfigProvider's locale through its own confirm locale. Removing a secondary type is the one
-    // static confirmation that passes no cancel text, so its cancel button is antd's.
-    test(`static confirmation (Modal.confirm): default buttons in ${lang}`, async ({ page }) => {
-      const api = new ApiHelper(page);
-      await openInLanguage(page, lang, '/documents');
-      const docId = await api.createDocument({ name: `i18n-static-confirm-${Date.now()}.txt` });
-      try {
-        const doc = await api.getObject(docId);
-        const changeToken = doc?.properties?.['cmis:changeToken']?.value ?? doc?.succinctProperties?.['cmis:changeToken'];
-        const added = await page.request.post('/core/browser/bedroom', {
-          form: {
-            cmisaction: 'update',
-            objectId: docId,
-            ...(changeToken ? { changeToken } : {}),
-            addSecondaryTypeIds: 'nemaki:commentable',
-          },
-        });
-        expect(added.ok()).toBe(true);
-
-        await page.goto(`/core/ui/#/documents/${docId}`);
-        await waitForUiStable(page);
-        await page.locator('.ant-tabs-tab').filter({ hasText: /セカンダリタイプ|Secondary Types/ }).click();
-        // The tag's close button is labelled by antd's locale too ("閉じる" / "Close"). Found by
-        // position, not by that label, so a missing locale fails on the assertion below.
-        const close = page.getByRole('tabpanel', { name: /セカンダリタイプ|Secondary Types/ })
-          .locator('.ant-tag').filter({ hasText: 'Commentable' }).getByRole('button');
-        await expect(close).toHaveAccessibleName(EXPECTED[lang].close);
-        await close.click();
-
-        const confirm = page.locator('.ant-modal-confirm:visible');
-        await expect(confirm).toBeVisible();
-        // The OK button carries the app's own text (削除 / Remove); the cancel button is the one
-        // antd supplies, so it is the one that shows whether the holder applied the locale.
-        const buttons = confirm.locator('.ant-modal-confirm-btns button');
-        const cancel = buttons.filter({ hasText: EXPECTED[lang].cancel });
-        await expect(cancel).toHaveCount(1);
-        await expect(confirm.locator('.ant-modal-confirm-btns')).not.toContainText(EXPECTED[lang].otherLanguage);
-        await cancel.click();
-        await expect(confirm).toBeHidden();
-      } finally {
-        await api.deleteObject(docId);
-      }
     });
   }
 

@@ -57,11 +57,13 @@ i18n
     debug: false
   });
 
-// dayjs's global locale follows the UI language too, at the moment the language changes (a
-// component effect would run only after the next render). antd's ja / en locales carry their own
-// weekday and month names and both start the week on Sunday, and the app's own dayjs formats are
-// numeric, so today this changes nothing on screen; it keeps any locale-dependent dayjs output
-// (month names, relative times) in the UI language. src/i18n/dayjsLocale.test.ts measures it.
+// dayjs's global locale follows the UI language too: set once here at start-up (i18next has
+// already resolved the language and emitted languageChanged before this listener exists, since
+// the resources are bundled) and again on every change. Today this changes nothing on screen:
+// antd's date picker does not read the global locale — Japanese names come from antd's ja_JP
+// locale, English names from dayjs 'en' which the picker asks for explicitly — and the app's own
+// dayjs formats are numeric. It keeps any locale-dependent dayjs output (month names, relative
+// times) in the UI language. src/i18n/dayjsLocale.test.ts measures both paths.
 const syncDayjsLocale = (lng?: string) => {
   dayjs.locale(uiLanguage(lng));
 };
