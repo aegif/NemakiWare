@@ -20,15 +20,16 @@ export type LanguageCode = keyof typeof languages;
  * The language the UI shows: 'en' when i18next resolved to English, 'ja' otherwise — the same
  * answer the translations use, since 'ja' is the fallback. i18next takes the first exact match
  * among the stored language, the browser's languages and the page's <html lang="ja">, and stores
- * what it resolved, so the browser's list counts only while nothing is stored (an origin's first
- * start, or every start where storage is blocked): English if it has a plain "en" before any plain
- * "ja", Japanese if it lists only en-US or en-GB. After that the stored language decides — the
- * header switch's, or what the first start resolved. Ant Design's built-in texts and dayjs follow
- * this, so a component's own labels and the library's visible texts (empty tables, date pickers,
- * default confirm buttons) agree. Accessible names follow only in part (antd 6.5.1): Modal and
- * notification close buttons are named "Close" in every language (for a Modal the locale's word
- * lands on a wrapper inside the button), Tag and Drawer close buttons take the locale's word, and
- * an icon with no name of its own is named by its icon ("search").
+ * what it resolved. While 'ja' or 'en' is stored (by the header switch, or by an earlier start)
+ * that decides; otherwise — nothing stored, as on an origin's first start or after its site data
+ * is cleared, storage blocked, or another value stored — the browser's list does: English if it
+ * has a plain "en" before any plain "ja", Japanese otherwise, even when it lists only en-US or
+ * en-GB. Ant Design's built-in texts and dayjs follow this, so a component's own labels and the
+ * library's visible texts (empty tables, date pickers, default confirm buttons) agree. Accessible
+ * names follow only in part (antd 6.5.1): Modal and notification close buttons are named "Close"
+ * in every language (for a Modal the locale's word lands on a wrapper inside the button), Tag and
+ * Drawer close buttons take the locale's word, and an icon with no name of its own is named by its
+ * icon ("search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';
@@ -51,9 +52,9 @@ i18n
     detection: {
       // Order of language detection methods
       order: ['localStorage', 'navigator', 'htmlTag'],
-      // Cache user language preference in localStorage
+      // Store the resolved language in localStorage — on every start, not only on a switch
       caches: ['localStorage'],
-      // Key to store language preference
+      // Key of the stored language
       lookupLocalStorage: 'nemakiware-language'
     },
     

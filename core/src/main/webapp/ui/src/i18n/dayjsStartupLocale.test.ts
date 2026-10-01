@@ -12,7 +12,7 @@ describe('dayjs starts in the UI language — a Japanese start', () => {
   it('is Japanese when the app starts in Japanese, before any switch', async () => {
     // A browser that lists only en-US (as Playwright's Chromium does) on the app's page, whose
     // <html lang="ja"> (index.html) is the first exact match, so i18next resolves Japanese while
-    // the browser says English (this environment has no usable localStorage, so no stored choice
+    // the browser says English (this environment has no usable localStorage, so nothing stored
     // takes part). dayjs's own default is English, so 'ja' can only come from index.ts.
     document.documentElement.lang = 'ja';
     Object.defineProperty(window.navigator, 'languages', { value: ['en-US'], configurable: true });

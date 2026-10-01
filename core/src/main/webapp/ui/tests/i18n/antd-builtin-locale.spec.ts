@@ -16,9 +16,9 @@ import { waitForAppReady, waitForUiStable } from '../utils/wait-helpers';
  * The confirmation is only ever dismissed with its cancel button; nothing is synchronised.
  *
  * The language is stored BEFORE the app loads (an init script), because the app reads it once at
- * start-up: a hash navigation after login does not reload the page, and without a stored choice
- * the app starts in Japanese even in this English browser (the page's lang="ja" is an exact match
- * and wins over the browser's en-US).
+ * start-up: a hash navigation after login does not reload the page, and with nothing stored the
+ * app starts in Japanese even in this English browser (it lists only en-US, and the page's
+ * lang="ja" is the first exact match; that first load then stores 'ja').
  */
 
 type Lang = 'ja' | 'en';
@@ -107,7 +107,8 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
   }
 
   test('switching the language in the header re-labels antd without a reload', async ({ page }) => {
-    // Japanese from the app's own default (nothing stored), then English from the header only.
+    // Japanese from the app's own default (nothing stored before the first load, which stores
+    // 'ja'), then English from the header only.
     await new AuthHelper(page).login();
     await waitForAppReady(page, { timeout: 30000 });
     await page.goto('/core/ui/#/search');
