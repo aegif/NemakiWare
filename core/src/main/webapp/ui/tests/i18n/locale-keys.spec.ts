@@ -76,6 +76,9 @@ function typedProgram(): ts.Program {
 }
 // A number to the checker: assignable to number — so 0 | 1, a numeric enum, number & Brand and a
 // T extends number pass — and not any or never, which are assignable to it without being one.
+// Only the declared type is read: an `as number` passes, and so does an any that a generic type
+// reaches where the checker leaves it unresolved at the call (a deferred conditional type, a
+// T extends Record<string, any> indexed by keyof T). Recorded as R142, not chased.
 const isNumber = (checker: ts.TypeChecker, type: ts.Type): boolean =>
   (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) === 0
   && checker.isTypeAssignableTo(type, checker.getNumberType());
@@ -98,7 +101,8 @@ test('every key the code names is in ja.json and en.json, and the two files agre
     }
     const where = (n: ts.Node) => `${rel}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
     // What is wrong with the count a t() call passes for a plural family, if anything. Only a
-    // number selects the form it means (see the top of this file for what anything else does).
+    // number selects the form it means (the top of this file says what a missing count, a string,
+    // null and a boolean do instead).
     const countProblem = (call: ts.CallExpression): string | undefined => {
       const options = call.arguments[1];
       const count = options && ts.isObjectLiteralExpression(options)
