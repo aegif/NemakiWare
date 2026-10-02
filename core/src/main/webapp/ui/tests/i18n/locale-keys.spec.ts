@@ -22,9 +22,10 @@ import * as ts from 'typescript';
  *   of the plain key. Each locale has exactly the forms its language's plural rules use
  *   (Intl.PluralRules: Japanese `other`, English `one` and `other`), every form has the same
  *   {{…}} variables, and the code names the family by its plain key in a t() call that passes
- *   `count` as a number — not in a label table, where no count is given. Without a count, or with
- *   one that is not a number (`n.toLocaleString()` is a string), i18next selects no form and shows
- *   the key; the count's type is read with the TypeScript checker over tsconfig.json's program.
+ *   `count` as a number — not in a label table, where no count is given. i18next selects no form
+ *   for a missing count or a string one (`n.toLocaleString()`) and shows the key, and gives null or
+ *   false the form of 0 and true the form of 1, a wrong sentence without notice. So the count must
+ *   be a number to the TypeScript checker, read over tsconfig.json's program.
  *
  * A missing key renders as the key itself (i18next's fallback), so this measures what a screen
  * would show without opening it.
@@ -73,8 +74,11 @@ function typedProgram(): ts.Program {
   if (!config) throw new Error('tsconfig.json could not be read');
   return ts.createProgram(config.fileNames, config.options);
 }
-const isNumber = (type: ts.Type): boolean =>
-  type.isUnion() ? type.types.every(isNumber) : (type.flags & ts.TypeFlags.NumberLike) !== 0;
+// A number to the checker: assignable to number — so 0 | 1, a numeric enum, number & Brand and a
+// T extends number pass — and not any or never, which are assignable to it without being one.
+const isNumber = (checker: ts.TypeChecker, type: ts.Type): boolean =>
+  (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) === 0
+  && checker.isTypeAssignableTo(type, checker.getNumberType());
 
 test('every key the code names is in ja.json and en.json, and the two files agree', () => {
   test.setTimeout(120 * 1000); // the checker reads the whole program
@@ -93,8 +97,8 @@ test('every key the code names is in ja.json and en.json, and the two files agre
       continue;
     }
     const where = (n: ts.Node) => `${rel}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
-    // What is wrong with the count a t() call passes for a plural family, if anything. The count
-    // selects the form, and only a number does: i18next ignores any other count and shows the key.
+    // What is wrong with the count a t() call passes for a plural family, if anything. Only a
+    // number selects the form it means (see the top of this file for what anything else does).
     const countProblem = (call: ts.CallExpression): string | undefined => {
       const options = call.arguments[1];
       const count = options && ts.isObjectLiteralExpression(options)
@@ -103,7 +107,7 @@ test('every key the code names is in ja.json and en.json, and the two files agre
         : undefined;
       if (!count) return 'the t() call must pass count';
       const type = checker.getTypeAtLocation(ts.isPropertyAssignment(count) ? count.initializer : count.name);
-      return isNumber(type) ? undefined : `count must be a number, not ${checker.typeToString(type)}`;
+      return isNumber(checker, type) ? undefined : `count must be a number, not ${checker.typeToString(type)}`;
     };
     const requireKey = (key: string, n: ts.Node, call?: ts.CallExpression) => {
       named++;
