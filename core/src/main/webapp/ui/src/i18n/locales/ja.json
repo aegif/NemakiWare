@@ -1267,7 +1267,7 @@
         "chat": "チャット",
         "email": "メール"
       },
-      "charCount_other": "{{count}} 文字"
+      "charCount_other": "{{chars}} 文字"
     },
     "purviewGovernance": {
       "tab": "Purview",

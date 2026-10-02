@@ -19,6 +19,11 @@ describe('count-dependent texts', () => {
       .toBe('1 profile was auto-disabled by the scheduler. Review the reason before re-enabling.');
     expect(i18n.t('importProfileManagement.autoDisabledBanner', { count: 2 }))
       .toBe('2 profiles were auto-disabled by the scheduler. Review the reason before re-enabling.');
+    // Two numbers, one count: the form follows count, so total stands where no noun follows it.
+    expect(i18n.t('importProfileManagement.autoDisabledBannerRecent', { count: 1, total: 1, days: 7 }))
+      .toBe('Auto-disabled profiles: 1, of which 1 was disabled in the last 7 day(s).');
+    expect(i18n.t('importProfileManagement.autoDisabledBannerRecent', { count: 2, total: 3, days: 7 }))
+      .toBe('Auto-disabled profiles: 3, of which 2 were disabled in the last 7 day(s).');
   });
 
   it('read the same for every count in Japanese', async () => {

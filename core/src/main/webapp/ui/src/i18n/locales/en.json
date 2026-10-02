@@ -1275,8 +1275,8 @@
         "chat": "Chat",
         "email": "Email"
       },
-      "charCount_one": "{{count}} char",
-      "charCount_other": "{{count}} chars"
+      "charCount_one": "{{chars}} char",
+      "charCount_other": "{{chars}} chars"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -3586,8 +3586,8 @@
     "autoDisabledFilter": "Show only auto-disabled",
     "autoDisabledBanner_one": "{{count}} profile was auto-disabled by the scheduler. Review the reason before re-enabling.",
     "autoDisabledBanner_other": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
-    "autoDisabledBannerRecent_one": "{{count}} of {{total}} auto-disabled profiles was disabled in the last {{days}} day(s).",
-    "autoDisabledBannerRecent_other": "{{count}} of {{total}} auto-disabled profiles were disabled in the last {{days}} day(s).",
+    "autoDisabledBannerRecent_one": "Auto-disabled profiles: {{total}}, of which {{count}} was disabled in the last {{days}} day(s).",
+    "autoDisabledBannerRecent_other": "Auto-disabled profiles: {{total}}, of which {{count}} were disabled in the last {{days}} day(s).",
     "autoDisabledWindowAll": "All time",
     "autoDisabledWindow1d": "Last 24 hours",
     "autoDisabledWindow7d": "Last 7 days",

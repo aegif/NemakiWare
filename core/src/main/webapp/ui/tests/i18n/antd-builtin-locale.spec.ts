@@ -36,6 +36,7 @@ const EXPECTED: Record<Lang, {
   empty: RegExp;
   cancel: string;
   close: string;
+  connectionResult: RegExp;
   otherLanguage: RegExp;
 }> = {
   ja: {
@@ -45,6 +46,7 @@ const EXPECTED: Record<Lang, {
     empty: /データがありません|データなし/,
     cancel: 'キャンセル',
     close: '閉じる',
+    connectionResult: /接続に成功しました|連携が無効です|接続に失敗しました/,
     otherLanguage: /Select date|Today|No data|Cancel/,
   },
   en: {
@@ -54,6 +56,7 @@ const EXPECTED: Record<Lang, {
     empty: /No data/,
     cancel: 'Cancel',
     close: 'Close',
+    connectionResult: /Connection successful|Integration is disabled|Connection failed/,
     otherLanguage: /日付を選択|今日|データ|キャンセル/,
   },
 };
@@ -130,8 +133,10 @@ test.describe('Ant Design built-in texts follow the UI language', () => {
       await page.locator('.ant-tabs-tab').filter({ hasText: /Purview/i }).click();
       await waitForUiStable(page);
       await page.getByRole('button', { name: /接続テスト|Test\s*Connection/i }).click();
-      const close = page.locator('.ant-alert-close-icon:visible').first();
-      await expect(close).toHaveAccessibleName(EXPECTED[lang].close, { timeout: 30000 });
+      // The result's own Alert — its title is one of the three outcomes — not another closable
+      // Alert the tab may show.
+      const result = page.locator('.ant-alert').filter({ hasText: EXPECTED[lang].connectionResult });
+      await expect(result.locator('.ant-alert-close-icon')).toHaveAccessibleName(EXPECTED[lang].close, { timeout: 30000 });
     });
 
     test(`close button: the image preview's in ${lang}`, async ({ page }) => {

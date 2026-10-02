@@ -25,11 +25,11 @@ export type LanguageCode = keyof typeof languages;
  * Modal, an Alert and the image preview are named in the UI language because App.tsx gives them
  * t('common.close') through ConfigProvider; Tag and Drawer close buttons take the locale's word.
  * Left as they are: a notification's close button is "Close" in every language — rc-notification
- * writes it on the button, the app's one notification (DocumentList) is antd's static method,
- * which is drawn outside App.tsx's ConfigProvider and does not read it, and ConfigProvider's
- * notification setting has no closable, only a closeIcon, which cannot rename a button that
- * carries its own aria-label (read, not measured) — and an icon with no name of its own is named
- * by its icon ("search").
+ * writes it on the button, and only a closable object's aria-label replaces it (a closeIcon does
+ * not). The app's one notification (DocumentList) is antd's static method, which is drawn outside
+ * App.tsx's ConfigProvider and does not read it. (ConfigProvider's notification setting is typed
+ * without closable; a notification from antd's hook would read one at run time, but the app has
+ * none.) Read, not measured. And an icon with no name of its own is named by its icon ("search").
  */
 export const uiLanguage = (lng?: string): LanguageCode =>
   (lng ?? i18n.resolvedLanguage ?? i18n.language ?? 'ja').split('-')[0] === 'en' ? 'en' : 'ja';

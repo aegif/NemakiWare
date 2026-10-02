@@ -168,7 +168,9 @@ export const ExternalContextTab: React.FC<ExternalContextTabProps> = ({
             <Title level={5} style={{ margin: 0 }}>
               {t('documentViewer.externalContext.content')}
             </Title>
-            <Tag>{t('documentViewer.externalContext.charCount', { count: context.length.toLocaleString() })}</Tag>
+            {/* count is the number (a string count selects no plural form, so i18next would show
+                the key); chars is the same number as shown */}
+            <Tag>{t('documentViewer.externalContext.charCount', { count: context.length, chars: context.length.toLocaleString() })}</Tag>
           </Space>
         }
         extra={

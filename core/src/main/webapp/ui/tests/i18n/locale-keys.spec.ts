@@ -22,7 +22,9 @@ import * as ts from 'typescript';
  *   of the plain key. Each locale has exactly the forms its language's plural rules use
  *   (Intl.PluralRules: Japanese `other`, English `one` and `other`), every form has the same
  *   {{…}} variables, and the code names the family by its plain key in a t() call that passes
- *   `count` (without it i18next shows the key) — not in a label table, where no count is given.
+ *   `count` as a number — not in a label table, where no count is given. Without a count, or with
+ *   one that is not a number (`n.toLocaleString()` is a string), i18next selects no form and shows
+ *   the key; the count's type is read with the TypeScript checker over tsconfig.json's program.
  *
  * A missing key renders as the key itself (i18next's fallback), so this measures what a screen
  * would show without opening it.
@@ -60,7 +62,24 @@ const isTCall = (callee: string) => /(^|\.)t$/.test(callee);
 const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 const variables = (s: string) => [...s.matchAll(/{{\s*([^}\s,]+)[^}]*}}/g)].map((m) => m[1]).sort().join(',');
 
+// The program tsconfig.json describes (src), for the types the checker gives each count.
+function typedProgram(): ts.Program {
+  const config = ts.getParsedCommandLineOfConfigFile(path.join(UI, 'tsconfig.json'), {}, {
+    ...ts.sys,
+    onUnRecoverableConfigFileDiagnostic: (d) => {
+      throw new Error(ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+    },
+  });
+  if (!config) throw new Error('tsconfig.json could not be read');
+  return ts.createProgram(config.fileNames, config.options);
+}
+const isNumber = (type: ts.Type): boolean =>
+  type.isUnion() ? type.types.every(isNumber) : (type.flags & ts.TypeFlags.NumberLike) !== 0;
+
 test('every key the code names is in ja.json and en.json, and the two files agree', () => {
+  test.setTimeout(120 * 1000); // the checker reads the whole program
+  const program = typedProgram();
+  const checker = program.getTypeChecker();
   const flat = { ja: flatten(locales.ja), en: flatten(locales.en) };
   const namespaces = new Set(Object.keys(locales.ja));
   const problems: string[] = [];
@@ -68,21 +87,30 @@ test('every key the code names is in ja.json and en.json, and the two files agre
 
   for (const file of sourceFiles(path.join(UI, 'src'))) {
     const rel = path.relative(UI, file);
-    const sf = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true,
-      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+    const sf = program.getSourceFile(file);
+    if (!sf) {
+      problems.push(`${rel} is not in tsconfig.json's program`);
+      continue;
+    }
     const where = (n: ts.Node) => `${rel}:${sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1}`;
-    // Whether a t() call passes `count` in an object literal — what selects a plural form.
-    const passesCount = (call: ts.CallExpression | undefined) => {
-      const options = call?.arguments[1];
-      return !!options && ts.isObjectLiteralExpression(options) && options.properties.some((p) =>
-        (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && p.name.getText(sf) === 'count');
+    // What is wrong with the count a t() call passes for a plural family, if anything. The count
+    // selects the form, and only a number does: i18next ignores any other count and shows the key.
+    const countProblem = (call: ts.CallExpression): string | undefined => {
+      const options = call.arguments[1];
+      const count = options && ts.isObjectLiteralExpression(options)
+        ? options.properties.find((p): p is ts.PropertyAssignment | ts.ShorthandPropertyAssignment =>
+          (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && p.name.getText(sf) === 'count')
+        : undefined;
+      if (!count) return 'the t() call must pass count';
+      const type = checker.getTypeAtLocation(ts.isPropertyAssignment(count) ? count.initializer : count.name);
+      return isNumber(type) ? undefined : `count must be a number, not ${checker.typeToString(type)}`;
     };
     const requireKey = (key: string, n: ts.Node, call?: ts.CallExpression) => {
       named++;
       for (const lang of ['ja', 'en'] as const) {
         if (!flat[lang].has(key) && flat[lang].get(`${key}_other`) != null) {
-          if (!call) problems.push(`${where(n)} ${key} has plural forms in ${lang}.json; name it in a t() call that passes count`);
-          else if (!passesCount(call)) problems.push(`${where(n)} ${key} has plural forms in ${lang}.json; the t() call must pass count`);
+          const problem = call ? countProblem(call) : 'name it in a t() call that passes count';
+          if (problem) problems.push(`${where(n)} ${key} has plural forms in ${lang}.json; ${problem}`);
         } else if (!flat[lang].has(key)) problems.push(`${where(n)} ${key} is not in ${lang}.json`);
         else if (flat[lang].get(key) === null) problems.push(`${where(n)} ${key} is an object in ${lang}.json, not a text`);
       }
