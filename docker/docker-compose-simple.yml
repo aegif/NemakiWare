@@ -14,6 +14,9 @@ services:
   # if these are missing, preventing accidental admin/password deployment.
   couchdb:
     image: couchdb:3.3.3
+    # Back after a host or Docker restart, as in docker-compose-prod.yml. Without it only core
+    # (restart: on-failure) came back, and stayed unhealthy with no database to start against.
+    restart: unless-stopped
     ports:
       - "127.0.0.1:5984:5984"
     volumes:
@@ -95,6 +98,7 @@ services:
   # Solr Search Engine
   solr:
     build: ./solr
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8983:8983"
     environment:
