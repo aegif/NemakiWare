@@ -76,9 +76,10 @@ function typedProgram(): ts.Program {
 }
 // A number to the checker: assignable to number — so 0 | 1, a numeric enum, number & Brand and a
 // T extends number pass — and not any or never, which are assignable to it without being one.
-// Only the declared type is read: an `as number` passes, and so does an any that a generic type
-// reaches where the checker leaves it unresolved at the call (a deferred conditional type, a
-// T extends Record<string, any> indexed by keyof T). Recorded as R142, not chased.
+// Only the declared type is read: an `as number` passes, and so does an any or a never that a
+// generic type reaches where the checker leaves it unresolved at the call (a deferred conditional
+// type with such a branch, a T extends Record<string, any> indexed by keyof T, a T extends never).
+// Recorded as R142, not chased.
 const isNumber = (checker: ts.TypeChecker, type: ts.Type): boolean =>
   (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Never)) === 0
   && checker.isTypeAssignableTo(type, checker.getNumberType());
