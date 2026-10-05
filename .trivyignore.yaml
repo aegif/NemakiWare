@@ -22,7 +22,9 @@
 # dominated by third-party bundled libraries (Jetty, ZooKeeper, Netty, Jackson,
 # Tomcat, …) that we cannot patch independently of a new upstream image, so
 # gating on them would be non-actionable churn. Base-image bumps come from
-# Dependabot (docker); our own Java deps are hard-gated by maven-dep-check +
-# OSV. This file is retained for any future case where a specific image finding
+# Dependabot (docker); our own Java deps are gated by maven-dep-check (a
+# hand-written denylist), and the release matches the resolved SBOM against OSV
+# (tools/sbom/osv-check.py — the OSV job cannot parse core/pom.xml). This file
+# is retained for any future case where a specific image finding
 # should be explicitly suppressed with a dated reason.
 vulnerabilities: []

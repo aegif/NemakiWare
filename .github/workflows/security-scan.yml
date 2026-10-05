@@ -466,7 +466,7 @@ jobs:
           got=$(sha256sum "$RUNNER_TEMP/osv-scanner" | awk '{print $1}')
           [ -n "$want" ] && [ "$want" = "$got" ] || { echo "osv-scanner checksum mismatch: got=$got want=$want"; exit 1; }
           chmod +x "$RUNNER_TEMP/osv-scanner"
-      - name: Scan every pom.xml + package-lock.json against OSV.dev
+      - name: Scan the pom.xml + package-lock.json files osv-scanner can parse against OSV.dev
         # --config points OSV at the documented, time-boxed ignore list so
         # accepted no-fix advisories (e.g. the Solr GHSA) do not re-flag until
         # their ignoreUntil date, at which point exception-expiry fails.
@@ -490,8 +490,10 @@ jobs:
     # blocking on them would be non-actionable churn that re-reddens every time
     # the vuln DB updates. The actionable signal — "a newer Solr base image
     # exists" — is delivered by Dependabot (docker ecosystem, watching
-    # docker/solr/Dockerfile's FROM). Our OWN Java dependencies are hard-gated
-    # by maven-dep-check + OSV. This job publishes the full report (table +
+    # docker/solr/Dockerfile's FROM). Our OWN Java dependencies are gated by
+    # maven-dep-check (a hand-written denylist); the OSV job only reports and
+    # cannot parse core/pom.xml, so a release matches the resolved SBOM against
+    # OSV (tools/sbom/osv-check.py). This job publishes the full report (table +
     # SARIF artifact) for visibility. The core image is likewise scanned
     # informationally in release-images.yml.
     continue-on-error: true

@@ -192,8 +192,11 @@ jobs:
         # third-party bundled libs (Tomcat/Jetty, LibreOffice, JDK, …) we cannot
         # patch without a new upstream base — blocking the release on those is
         # non-actionable. Base bumps come from Dependabot (docker); our own Java
-        # deps are hard-gated by maven-dep-check + OSV. Findings stay visible in
-        # the build log. (|| true keeps a finding from failing the publish.)
+        # deps are gated by maven-dep-check (a hand-written denylist), and the
+        # release matches the resolved SBOM against OSV (tools/sbom/osv-check.py)
+        # — the OSV job in security-scan.yml cannot parse core/pom.xml. Findings
+        # stay visible in the build log. (|| true keeps a finding from failing the
+        # publish.)
         run: |
           "$RUNNER_TEMP/trivy" image \
             --severity HIGH,CRITICAL \
