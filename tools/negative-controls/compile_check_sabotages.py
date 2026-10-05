@@ -26,12 +26,18 @@ so the sweep can be resumed by id once the sabotage is fixed:
     name the sabotaged one (its class file refers to that other type);
   - a constant inlined at compile time into a file that names neither its type nor a type nested
     in it;
+  - a call inside a block the compiler drops (`if (false)`, a constant-false guard) in a file that
+    does not name the type: the block is type-checked, but no class file refers to what it uses;
   - a secondary top-level class whose class file is not named after its source file.
-It compiles with the javac on PATH and --release 21; Maven uses its own JDK with source/target 21,
-so an API newer than 21 fails here and not in the sweep (a false alarm, not a miss).
+It compiles with the javac of the JDK Maven runs on (the runtime `mvn -v` reports; JAVA_HOME, then
+PATH, when that cannot be read) and -source/-target 21 as the pom does, so an API that JDK lacks —
+one newer than it, or one removed after 21 — fails here as it does in the sweep.
+
+A test file's sabotage is compiled with the test files that use it only: main code cannot use a test
+type (a main file that names it does so in a comment), and Maven does not rebuild main for it.
 
 Controls whose file lives outside their module (core locks that read a verifier file as text) are
-skipped: the sweep never builds those files either.
+not compiled — the sweep never builds those files either — but their anchors are still checked.
 
 Run it on a worktree at the commit to be swept, not on a tree an IDE builds into:
 
@@ -53,6 +59,7 @@ import sys
 import tempfile
 
 MAVEN_FLAGS = ["-Dskip.npm=true", "-Dskip.installnodenpm=true"]
+POM_SOURCE_TARGET = "21"  # core/pom.xml and the root pom: <source>/<target> 21, no <release>
 DESCRIPTOR_TYPE = re.compile(r"L([\w/$]+)[;<]")
 
 
@@ -68,6 +75,18 @@ def load_runner(root):
     finally:
         sys.argv, sys.dont_write_bytecode = saved_argv, saved_bytecode
     return runner
+
+
+def maven_javac(root):
+    """The javac of the JDK Maven runs on: the runtime `mvn -v` reports, else JAVA_HOME, else PATH."""
+    try:
+        version = subprocess.run(["mvn", "-v"], cwd=root, capture_output=True, text=True).stdout
+        found = re.search(r"runtime: (.+)$", version, re.MULTILINE)
+        home = found.group(1).strip() if found else os.environ.get("JAVA_HOME", "")
+    except OSError:
+        home = os.environ.get("JAVA_HOME", "")
+    candidate = os.path.join(home, "bin", "javac") if home else ""
+    return candidate if candidate and os.path.exists(candidate) else "javac"
 
 
 def prepare(root, modules, cp_dir, build):
@@ -119,10 +138,11 @@ def referenced_types(class_file):
 
 
 class Checker:
-    def __init__(self, root, cp_dir, runner):
+    def __init__(self, root, cp_dir, runner, javac_path="javac"):
         self.root = root
         self.cp_dir = cp_dir
         self.runner = runner
+        self.javac_path = javac_path
         self._sources = {}
         self._referrers = {}
 
@@ -170,7 +190,8 @@ class Checker:
 
     def javac(self, files, classpath, out_dir):
         # English diagnostics: under a Japanese locale javac says エラー, not error.
-        return subprocess.run(["javac", "-J-Duser.language=en", "--release", "21", "-proc:none", "-nowarn",
+        return subprocess.run([self.javac_path, "-J-Duser.language=en", "-source", POM_SOURCE_TARGET,
+                               "-target", POM_SOURCE_TARGET, "-Xlint:-options", "-proc:none", "-nowarn",
                                "-encoding", "UTF-8", "-d", out_dir, "-cp", classpath] + files,
                               capture_output=True, text=True)
 
@@ -178,8 +199,6 @@ class Checker:
         """(id, verdict, detail): 'ok …', 'skipped …', 'ANCHOR' or 'DOES NOT COMPILE …'."""
         module = control.get("module", "core")
         relative = control["file"]
-        if not relative.startswith(module + "/"):
-            return control["id"], "skipped (file outside its module)", None
         path = os.path.join(self.root, relative)
         with open(path, encoding="utf-8") as fh:
             original = fh.read()
@@ -187,6 +206,8 @@ class Checker:
             sabotaged = self.runner.sabotage_text(original, control)
         except SystemExit as refusal:
             return control["id"], "ANCHOR", str(refusal)[:300]
+        if not relative.startswith(module + "/"):
+            return control["id"], "skipped (file outside its module; anchor applies)", None
         main_root = os.path.join(self.root, module, "src", "main", "java") + os.sep
         internal = os.path.relpath(path, os.path.join(self.root, module, "src",
                                                        "main" if path.startswith(main_root) else "test", "java"))
@@ -218,7 +239,8 @@ class Checker:
                     steps.append((copies([(p, text_of[p]) for p in test_users]),
                                   self.classpath(module, "test", main_out), test_out))
             else:
-                steps = [(copies([(path, sabotaged)] + [(p, text_of[p]) for p in test_users + main_users]),
+                # Main code cannot use a test type, and Maven does not rebuild main for a test change.
+                steps = [(copies([(path, sabotaged)] + [(p, text_of[p]) for p in test_users]),
                           self.classpath(module, "test"), test_out)]
             compiled = 0
             for files, classpath, out_dir in steps:
@@ -243,9 +265,10 @@ def main():
     modules = sorted({c.get("module", "core") for c in java})
     with tempfile.TemporaryDirectory() as cp_dir:
         prepare(root, modules, cp_dir, build=not args.no_build)
-        checker = Checker(root, cp_dir, runner)
+        javac_path = maven_javac(root)
+        checker = Checker(root, cp_dir, runner, javac_path)
         print(f"checking {len(java)} .java sabotages of {len(runner.CONTROLS)} controls, "
-              f"{args.workers} at a time", flush=True)
+              f"{args.workers} at a time, with {javac_path} -source/-target {POM_SOURCE_TARGET}", flush=True)
         failed, anchors, skipped = [], [], 0
         with cf.ThreadPoolExecutor(args.workers) as pool:
             for done, (cid, verdict, detail) in enumerate(pool.map(checker.check, java), 1):
