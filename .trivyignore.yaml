@@ -9,9 +9,9 @@
 # its `expiredAt` is still read by the required "Security exception expiry"
 # job (security-scan.yml), which turns red once the date has passed.
 #
-# Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expiredAt`.
-# Trivy treats an expired entry as no longer ignored, so the finding surfaces
-# again in the report; the expiry job is what forces the re-review.
+# Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expiredAt`;
+# the expiry job is what forces the re-review (residual R144 in
+# docs/design/fail-closed-reads.md records what Trivy itself does with the key).
 #
 # Template (leave the list empty until a concrete exception is needed). The
 # date is a placeholder on purpose: the expiry job's pattern reads comments too,
