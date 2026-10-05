@@ -156,8 +156,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Trivy for pre-push image scanning (install.sh verifies the release
-      # checksum). Both images are built with load:true first, scanned, and
-      # only pushed if they pass — so a vulnerable image is never published.
+      # checksum). Both images are built with load:true first and scanned
+      # before the push, but the scan only reports: trivy runs without
+      # --exit-code and with `|| true`, so a HIGH/CRITICAL finding (or a scanner
+      # error) is left in the build log and the image is published anyway.
       - name: Install Trivy (pinned)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/v0.72.0/contrib/install.sh \
@@ -192,9 +194,10 @@ jobs:
         # third-party bundled libs (Tomcat/Jetty, LibreOffice, JDK, …) we cannot
         # patch without a new upstream base — blocking the release on those is
         # non-actionable. Base bumps come from Dependabot (docker); our own Java
-        # deps are gated by maven-dep-check (a hand-written denylist), and the
-        # release matches the resolved SBOM against OSV (tools/sbom/osv-check.py)
-        # — the OSV job in security-scan.yml cannot parse core/pom.xml. Findings
+        # deps are gated by maven-dep-check (a hand-written denylist), and before
+        # a tag the resolved SBOM is matched against OSV by hand
+        # (tools/sbom/osv-check.py — this workflow does not run it; the OSV job in
+        # security-scan.yml cannot parse core/pom.xml). Findings
         # stay visible in the build log. (|| true keeps a finding from failing the
         # publish.)
         run: |

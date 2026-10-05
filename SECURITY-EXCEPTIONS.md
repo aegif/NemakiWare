@@ -45,9 +45,9 @@ gate). The two actionable channels remain gates:
   The OSV job is informational, and osv-scanner does not read `core/pom.xml` or
   `evidence-verifier-cli/pom.xml` ("Attempted to scan lockfile but failed", PR #516
   log, 2026-10-05) — so it never saw the WAR's resolved Java dependencies. Before a
-  release, match the resolved SBOM against OSV instead: `tools/sbom/make-sbom.sh`,
-  then `tools/sbom/osv-check.py target/*-sbom.json` (exit 1 = advisories, 2 = could
-  not ask).
+  release, match the resolved SBOM against OSV by hand (no workflow runs it):
+  `tools/sbom/make-sbom.sh`, then `tools/sbom/osv-check.py target/*-sbom.json`
+  (exit 1 = advisories, 2 = could not ask).
 
 Solr is additionally never exposed to untrusted clients (bound to `127.0.0.1`
 in dev, off-host internal network in prod), so its bundled-server CVEs
