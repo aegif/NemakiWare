@@ -7,7 +7,7 @@ cmislib>=0.7.0
 PyYAML>=6.0
 
 # HTTP requests for REST API
-requests>=2.28.0
+requests>=2.33.0
 
 # Word document generation
 python-docx>=0.8.11
