@@ -198,7 +198,8 @@ jobs:
         # a tag the resolved SBOM is matched against OSV by hand
         # (tools/sbom/osv-check.py — this workflow does not run it; the OSV job in
         # security-scan.yml cannot parse core/pom.xml). Findings
-        # stay visible in the build log. (|| true keeps a finding from failing the
+        # stay visible in the build log. (A finding alone exits 0 — trivy runs
+        # without --exit-code; || true keeps a scanner error from failing the
         # publish.)
         run: |
           "$RUNNER_TEMP/trivy" image \

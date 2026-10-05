@@ -37,7 +37,7 @@ churn.
 
 Therefore the image Trivy scans (security-scan.yml `trivy-image`,
 release-images.yml) are **informational** (report + SARIF artifact, no hard
-gate). The two actionable channels remain gates:
+gate). The actionable signals are elsewhere:
 - **Base-image lag** → Dependabot (docker ecosystem) opens a PR to bump the
   `FROM` tag when a newer image exists (this is how the Solr 9.10.0→9.10.1
   CVE-2025-66516 lag is caught).

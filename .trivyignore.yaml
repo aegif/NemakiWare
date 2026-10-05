@@ -5,16 +5,20 @@
 # gate with explicit, dated exceptions, so unfixed vulnerabilities stay
 # *visible* (the workflow also uploads a full report including unfixed CVEs as
 # an informational artifact) rather than silently dropped. The scans are
-# informational now (below), so an entry here only hides a row of the report.
+# informational now (below), so an entry here hides a row of the report — and
+# its `expiredAt` is still read by the required "Security exception expiry"
+# job (security-scan.yml), which turns red once the date has passed.
 #
 # Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expiredAt`.
-# Trivy treats an expired entry as no longer ignored, so it will surface again
-# in CI and force re-review.
+# Trivy treats an expired entry as no longer ignored, so the finding surfaces
+# again in the report; the expiry job is what forces the re-review.
 #
-# Template (leave the list empty until a concrete exception is needed):
+# Template (leave the list empty until a concrete exception is needed). The
+# date is a placeholder on purpose: the expiry job's pattern reads comments too,
+# and a real date here would turn that required check red on the day after it.
 # vulnerabilities:
 #   - id: CVE-XXXX-XXXXX
-#     expiredAt: 2027-01-31
+#     expiredAt: YYYY-MM-DD
 #     statement: "Why this fixable finding is accepted for now. See SECURITY-EXCEPTIONS.md."
 
 # NOTE: the image Trivy scans in security-scan.yml / release-images.yml are

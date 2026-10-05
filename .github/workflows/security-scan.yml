@@ -456,7 +456,10 @@ jobs:
     # FLIP CONDITION (to remove continue-on-error and make this a hard gate):
     # once a run is clean except for advisories that each have a dated entry in
     # osv-scanner.toml, set continue-on-error: false so new, un-accepted CVEs
-    # fail the build. The exception-expiry job already hard-fails expired ones.
+    # fail the build — and make the scan step keep osv-scanner's exit code
+    # (`set -o pipefail`): the step pipes into `tee` under `bash -e`, so today a
+    # finding's non-zero exit is dropped and the step stays green either way.
+    # The exception-expiry job already hard-fails expired ones.
     continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
