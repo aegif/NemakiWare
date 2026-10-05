@@ -12,10 +12,11 @@ tools/sbom/make-sbom.sh が出した SBOM を渡す:
   - 警告のある component と、その advisory の ID を並べる。
 
 exit code
-  0  全部の purl に答えが返り、警告は 0 件
+  0  全部の purl に答えが返り（OSV がページに分けた答えは最後のページまで辿る）、警告は 0 件
   1  警告がある
-  2  訊けなかった（網・HTTP・応答の形）。0 件とは言わない — 訊けなかったことを「無かった」と
-     同じ値で返さない
+  2  訊けなかった（網・HTTP・応答の形・ページが終わらない）、または渡されたものが CycloneDX の
+     SBOM でない（読めない・component が 1 つも無い）。0 件とは言わない — 訊けなかったことを
+     「無かった」と同じ値で返さない
 
 言わないこと
   - 照合は名前と版だけを見る。その component が実際に呼ばれるか（到達できるか）は見ない。
@@ -34,12 +35,24 @@ import urllib.request
 
 QUERYBATCH = "https://api.osv.dev/v1/querybatch"
 BATCH = 500  # the API takes up to 1000 queries per call
+MAX_PAGES = 50  # per purl; an answer that is still paging after this is not an answer
+
+
+class NotAnswered(Exception):
+    """OSV did not give a whole answer, or the input is not something that can be asked about."""
 
 
 def purls_of(path):
     """(versioned purls without qualifiers, number of components without a purl)."""
-    with open(path, encoding="utf-8") as fh:
-        bom = json.load(fh)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            bom = json.load(fh)
+    except (OSError, ValueError) as failure:
+        raise NotAnswered(f"cannot read it as JSON ({failure})")
+    if not isinstance(bom, dict) or bom.get("bomFormat") != "CycloneDX":
+        raise NotAnswered("not a CycloneDX JSON SBOM (bomFormat is not CycloneDX)")
+    if not isinstance(bom.get("components"), list) or not bom["components"]:
+        raise NotAnswered("the SBOM lists no components, so there is nothing to ask about")
     purls, missing = set(), 0
 
     def walk(components):
@@ -56,26 +69,53 @@ def purls_of(path):
     return sorted(purls), missing
 
 
+def post(queries):
+    """One querybatch call: the list of results, one per query, in order."""
+    body = json.dumps({"queries": queries}).encode()
+    request = urllib.request.Request(QUERYBATCH, data=body,
+                                     headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.load(response).get("results")
+
+
 def ask(purls):
-    """{purl: [advisory ids]} for every purl; raises on anything that is not an answer."""
-    hits = {}
-    for start in range(0, len(purls), BATCH):
-        chunk = purls[start:start + BATCH]
-        body = json.dumps({"queries": [{"package": {"purl": p}} for p in chunk]}).encode()
-        request = urllib.request.Request(QUERYBATCH, data=body,
-                                         headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            results = json.load(response).get("results")
-        if not isinstance(results, list) or len(results) != len(chunk):
-            raise ValueError(f"OSV answered {len(results) if isinstance(results, list) else 'no'} "
-                             f"results for {len(chunk)} queries")
-        for purl, result in zip(chunk, results):
-            ids = [v["id"] for v in result.get("vulns", [])]
-            if result.get("next_page_token"):
-                ids.append("(more — OSV paged this answer)")
-            if ids:
-                hits[purl] = ids
-    return hits
+    """{purl: [advisory ids]} for every purl; raises NotAnswered on anything that is not an answer.
+
+    OSV splits an answer into pages when it has many advisories or runs out of time, and says so
+    with next_page_token — a page can even be empty with a token. Each such purl is asked again
+    with the token until no token comes back, so a later page's advisories are not dropped and a
+    token alone is never read as either "clean" or "flagged".
+    """
+    hits, pending, pages = {}, [(purl, None) for purl in purls], 0
+    while pending:
+        if pages == MAX_PAGES:
+            raise NotAnswered(f"OSV was still paging after {MAX_PAGES} pages for: "
+                              f"{' '.join(purl for purl, _ in pending)}")
+        pages += 1
+        still_paging = []
+        for start in range(0, len(pending), BATCH):
+            chunk = pending[start:start + BATCH]
+            queries = [dict({"package": {"purl": purl}}, **({"page_token": token} if token else {}))
+                       for purl, token in chunk]
+            try:
+                results = post(queries)
+            except (urllib.error.URLError, OSError, ValueError) as failure:
+                raise NotAnswered(failure)
+            if not isinstance(results, list) or len(results) != len(chunk):
+                raise NotAnswered(f"OSV answered {len(results) if isinstance(results, list) else 'no'} "
+                                  f"results for {len(chunk)} queries")
+            for (purl, _), result in zip(chunk, results):
+                if not isinstance(result, dict) or not isinstance(result.get("vulns", []), list):
+                    raise NotAnswered(f"OSV's answer for {purl} is not a result object")
+                ids = [v.get("id") for v in result.get("vulns", []) if isinstance(v, dict)]
+                if len(ids) != len(result.get("vulns", [])) or not all(ids):
+                    raise NotAnswered(f"OSV's answer for {purl} has an advisory without an id")
+                if ids:
+                    hits.setdefault(purl, []).extend(ids)
+                if result.get("next_page_token"):
+                    still_paging.append((purl, result["next_page_token"]))
+        pending = still_paging
+    return {purl: sorted(set(ids)) for purl, ids in hits.items()}
 
 
 def main(paths):
@@ -84,10 +124,10 @@ def main(paths):
         return 2
     found = 0
     for path in paths:
-        purls, missing = purls_of(path)
         try:
+            purls, missing = purls_of(path)
             hits = ask(purls)
-        except (urllib.error.URLError, OSError, ValueError, KeyError) as failure:
+        except NotAnswered as failure:
             print(f"{path}: could not ask OSV ({failure}) — this is not a clean result", file=sys.stderr)
             return 2
         print(f"{path}: {len(purls)} purls asked, {len(hits)} with advisories"
@@ -99,4 +139,9 @@ def main(paths):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as failure:  # an uncaught error would exit 1, which here means "advisories"
+        print(f"osv-check failed ({type(failure).__name__}: {failure}) — this is not a clean result",
+              file=sys.stderr)
+        sys.exit(2)
