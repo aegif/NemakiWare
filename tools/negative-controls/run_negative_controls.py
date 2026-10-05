@@ -9663,8 +9663,8 @@ CONTROLS = [
         # eighth sweep). GN3 takes the one in §5 — two sites, one control each; a lock that reads
         # only the first statement is caught by GN3, which drifts the second (measured 2026-10-01:
         # that lock stays green under GN3).
-        find='（境界 QJ4 — 8 回目時点の最大 ID。',
-        replace='（境界 QI4 — 8 回目時点の最大 ID。',
+        find='（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='（境界 QI4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9694,8 +9694,8 @@ CONTROLS = [
         # assertion to fail is the cross-check (declared − swept ≠ ids above the boundary), but
         # with that check removed the documents' eighth-sweep figures still disagree with the
         # sabotaged record, so this does not single out the cross-check (c53 subagent P3).
-        find='  **8 回目 2026-09-30〜10-01（1723 本、',
-        replace='  **8 回目 2026-09-30〜10-01（1721 本、',
+        find='  **9 回目 2026-10-04〜05（1723 本、',
+        replace='  **9 回目 2026-10-04〜05（1721 本、',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9763,8 +9763,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**8 回目以後に足した control は 0 本**（境界 QJ4）。',
-        replace='**8 回目以後に足した control は 0 本**（境界 QI4）。',
+        find='**9 回目以後に足した control は 0 本**（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 0 本**（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9883,8 +9883,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**8 回目以後に足した control は 0 本**（境界 QJ4、正典 §5）。',
-        replace='**8 回目以後に足した control は 0 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 0 本**（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 0 本**（通し未実施）（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10883,8 +10883,8 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **8 回目以後に足した control は 0 本**（境界 QJ4 — 8 回目時点の最大 ID。',
-        replace='  **8 回目以後に足した control は 5 本**（境界 QJ4 — 8 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 0 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 5 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -10897,8 +10897,8 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**8 回目以後に足した control は 0 本**（境界 QJ4）。',
-        replace='**8 回目以後に足した control は 5 本**（境界 QJ4）。',
+        find='**9 回目以後に足した control は 0 本**（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 5 本**（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -10953,8 +10953,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **8 回目以後に足した control は 0 本**（境界 QJ4 — 8 回目時点の最大 ID。',
-        replace='  **8 回目以後に足した control は 0 本**（通し未実施）（境界 QJ4 — 8 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 0 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 0 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10967,8 +10967,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='8 回目以後に足した control は **0 本**。\n  7 回目以後に足した 137 本も',
-        replace='8 回目以後に足した control は **0 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **0 本**。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **0 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11804,8 +11804,8 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='8 回目以後に足した control は **0 本**。\n1 本ずつの ID 指定実測は',
-        replace='8 回目以後に足した control は **5 本**。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **0 本**。\n1 本ずつの ID 指定実測は',
+        replace='9 回目以後に足した control は **5 本**。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -13782,8 +13782,8 @@ CONTROLS = [
         # A count of 0, not the stale 4: a lock that lost its empty-range branch would compare
         # the statement with the gaps in an empty range (0) and pass it, so only 0 tells the
         # two locks apart (the same value the seventh-sweep form of this control used).
-        find='**8 回目以後に足した control は 0 本**（境界 QJ4）。',
-        replace='**8 回目以後に足した control は 0 本**（境界 QJ4）。この範囲には欠番が 0 ある。',
+        find='**9 回目以後に足した control は 0 本**（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 0 本**（境界 QJ4）。この範囲には欠番が 0 ある。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13937,8 +13937,8 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。8 回目以後に足した control は **0 本**。',
-        replace='すべて発火した（日時は正典 §5）。8 回目以後に足した control は **213 本**。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **0 本**。',
+        replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **213 本**。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -13947,7 +13947,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **1723**（2026-10-01 時点）',
+        find='- コントロール **1723**（2026-10-05 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -18065,7 +18065,7 @@ CONTROLS = [
         # NOT what this control tells apart (c53 Codex P1, the old `what`): a reader that compares
         # every figure with the LATEST sweep. The older rounds' figures turn that reader red on
         # the unsabotaged tree (measured 2026-10-01, canon §5); the tree catches it, not this.
-        find='- **8 回目の通し（1723 本）が完走した**（1 回の起動 — 日時は正典 §5）。',
+        find='- **9 回目の通し（1723 本）が完走した**（1 回の起動 — 日時は正典 §5）。',
         replace='- **7 回目の通し（1723 本）が完走した**（1 回の起動 — 日時は正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -18099,8 +18099,8 @@ CONTROLS = [
         # comparing every figure with the LATEST sweep. The older rounds' figures (the canon's
         # first sweep, the plan's fifth to seventh) turn that lock red on the unsabotaged tree
         # (measured 2026-10-01, canon §5); the tree catches it, not this control.
-        find='8 回目の通し（1723 本）が、7 回目以後に足した分も',
-        replace='7 回目の通し（1723 本）が、7 回目以後に足した分も',
+        find='9 回目の通し（1723 本）も全数を流し',
+        replace='7 回目の通し（1723 本）も全数を流し',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -18229,8 +18229,8 @@ CONTROLS = [
         what='a sweep figure written back into prose in the canon or the plan is read by nothing — the rule that any other four-digit figure is the total held in the readiness document only (both reviews, seventh round)',
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='  「8 回目の通し（1723 本）が流れた」を「次に足した control も通る」と読まないこと。',
-        replace='  「8 回目の通し（1723 本）が流れた」を「次に足した control も通る」と読まないこと。\n  6 回目は 1500 本を流した。',
+        find='  「9 回目の通し（1723 本）が流れた」を「次に足した control も通る」と読まないこと。',
+        replace='  「9 回目の通し（1723 本）が流れた」を「次に足した control も通る」と読まないこと。\n  6 回目は 1500 本を流した。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -18239,8 +18239,8 @@ CONTROLS = [
         what='a sweep figure rewritten into prose whose number happens to be the total passes the total rule, and a floor of five across three documents let it go (subagent P2)',
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- **8 回目の通し（1723 本）が完走した**（2026-09-30〜10-01、1 回の起動、exit 0。',
-        replace='- **通し negative-control は 1723 本で完走した**（8 回目、2026-09-30〜10-01、1 回の起動、exit 0。',
+        find='- **9 回目の通し（1723 本）が完走した**（2026-10-04〜05、1 回の起動。',
+        replace='- **通し negative-control は 1723 本で完走した**（9 回目、2026-10-04〜05、1 回の起動。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
