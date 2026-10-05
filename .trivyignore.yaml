@@ -1,4 +1,4 @@
-# Trivy ignore file (YAML form — supports per-entry expiry).
+# Trivy ignore file (YAML form).
 #
 # Used by the `trivy-image` jobs in .github/workflows/security-scan.yml. It was
 # written to replace a blanket `--ignore-unfixed` on what was then a failing
