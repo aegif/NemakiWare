@@ -108,11 +108,23 @@
 
 			<!-- Override transitive netty from odata-server-core (4.1.97).
 			     4.1.124.Final fixes CVE-2025-55163 (HTTP/2 MadeYouReset DoS)
-			     in addition to CVE-2025-24970 / CVE-2025-58056. -->
+			     in addition to CVE-2025-24970 / CVE-2025-58056. 4.2.17.Final fixes
+			     GHSA-c4c3-7fpv-j4q5 / GHSA-fccg-mwvh-qqg4 (netty-handler, fragmented
+			     TLS ClientHello) and GHSA-8c42-7qj2-3j46 (netty-codec-http, CORS Vary). -->
 			<dependency>
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>
-				<version>4.2.16.Final</version>
+				<version>4.2.18.Final</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<!-- OpenTelemetry comes in through the Kiota Azure authentication of the Graph
+			     SDK. 1.36.0 (and the 1.60.1 Kiota 1.9.2 declares) is flagged by OSV
+			     (GHSA-rcgg-9c38-7xpx, unbounded W3C Baggage allocation); fixed in 1.62.0. -->
+			<dependency>
+				<groupId>io.opentelemetry</groupId>
+				<artifactId>opentelemetry-bom</artifactId>
+				<version>1.66.0</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -125,7 +137,7 @@
 			<dependency>
 				<groupId>tools.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>3.2.1</version>
+				<version>3.2.3</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -138,7 +150,7 @@
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>2.22.1</version>
+				<version>2.22.3</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -195,6 +207,27 @@
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-compress</artifactId>
 				<version>1.28.0</version>
+			</dependency>
+			<!-- Override transitive Tika / POI pins that OSV flags (2026-10-05, RC SBOM):
+			     junrar 7.5.5 (tika-parser-pkg-module) — GHSA-j273-m5qq-6825 /
+			     GHSA-hf5p-q87m-crj7 / GHSA-89m4-43j5-vhhx, fixed in 7.6.1;
+			     jsoup 1.21.2 (tika-parser-code-module) — GHSA-pmhh-3w7g-xqp8,
+			     fixed in 1.23.1; log4j-api 2.24.3 (POI) — GHSA-qv9r-c865-cp47,
+			     fixed in 2.25.5 / 2.26.1. -->
+			<dependency>
+				<groupId>com.github.junrar</groupId>
+				<artifactId>junrar</artifactId>
+				<version>7.6.1</version>
+			</dependency>
+			<dependency>
+				<groupId>org.jsoup</groupId>
+				<artifactId>jsoup</artifactId>
+				<version>1.23.2</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.logging.log4j</groupId>
+				<artifactId>log4j-api</artifactId>
+				<version>2.26.1</version>
 			</dependency>
 			<!-- Align transitive skews with the versions the rest of the tree
 			     already uses. spring-tx leaks in at 7.0.4 while every other
@@ -430,12 +463,12 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<!-- WebAuthn (Passkey) support -->
 		<dependency>
@@ -457,7 +490,7 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jdk8</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<!-- SECURITY UPDATE: Jackson 2.21.5 fixes CVE batch incl. GHSA-72hv-8253-57qq (async parser DoS) and the 2.21.x databind advisories flagged by Dependabot (2026-07) -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
@@ -1263,11 +1296,24 @@
 			</exclusions>
 		</dependency>
 
-		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
+		<!-- Microsoft Graph SDK (for OneDrive + directory sync). 6.70.0 brings
+		     microsoft-graph-core 3.6.6 and Kiota 1.9.2: 6.5.0 resolved
+		     microsoft-kiota-abstractions 1.0.5, which OSV flags (GHSA-7j59-v9qr-6fq9,
+		     cookie / Proxy-Authorization headers kept across a cross-host redirect;
+		     fixed in 1.9.1). -->
 		<dependency>
 			<groupId>com.microsoft.graph</groupId>
 			<artifactId>microsoft-graph</artifactId>
-			<version>6.5.0</version>
+			<version>6.70.0</version>
+			<exclusions>
+				<!-- Kiota 1.9.2's Azure authentication declares the legacy StAX API jar at
+				     compile scope. Java 9+ ships javax.xml.stream in java.xml, as with the
+				     xml-apis jar removed on 2026-05-09 (the note after the Jackson 2 declarations above). -->
+				<exclusion>
+					<groupId>javax.xml.stream</groupId>
+					<artifactId>stax-api</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<!-- SECURITY FIX: 1.18.0 fixes CVE-2024-35255 (EoP, affected <1.12.2) + latest MSAL4J -->
 		<dependency>
