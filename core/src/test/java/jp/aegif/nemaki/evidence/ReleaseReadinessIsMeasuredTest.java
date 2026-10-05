@@ -958,6 +958,9 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>Both directions, and for opposite harms: a phase reported as not started makes the
      * release look further away than it is and invites someone to do the work twice; a phase
      * reported as started when it is not is the direction that ships.
+     *
+     * <p>「未着手 = なし」 is the untouched line once every phase has begun (Phase 9 did on
+     * 2026-10-05). The line itself stays required — the partition below still has to hold.
      */
     @Test
     @DisplayName("the phases said to be started are the ones the plan records work for")
@@ -969,14 +972,16 @@ class ReleaseReadinessIsMeasuredTest {
         assertTrue(started.find(),
                 "the readiness document no longer says which phases have been started. That "
                         + "line is what a reader takes for the project's position");
-        Matcher notStarted = Pattern.compile("\\*\\*未着手 = Phase ([\\d・]+)\\*\\*").matcher(readiness);
+        Matcher notStarted = Pattern.compile("\\*\\*未着手 = (?:Phase ([\\d・]+)|なし)\\*\\*")
+                .matcher(readiness);
         assertTrue(notStarted.find(), "the readiness document no longer says which phases are "
                 + "untouched, so 'started' has nothing to be the complement of");
 
         int from = Integer.parseInt(started.group(1));
         int to = Integer.parseInt(started.group(2));
-        SortedSet<String> claimedNotStarted = new TreeSet<>(
-                List.of(notStarted.group(1).split("・")));
+        SortedSet<String> claimedNotStarted = notStarted.group(1) == null
+                ? new TreeSet<>()
+                : new TreeSet<>(List.of(notStarted.group(1).split("・")));
 
         // The two lines have to be a PARTITION of 0-9. Checking only the phases each line names
         // leaves a phase dropped from both silently unchecked — the reader sees a document that
