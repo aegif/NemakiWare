@@ -9660,7 +9660,7 @@ CONTROLS = [
         # The anchor is the boundary statement itself, not the count beside it, so it survives a
         # batch that adds a control; it changes when the next sweep is recorded.
         # Re-pointed after each recorded sweep — now the boundary in §1 (QJ4, the highest id at the
-        # eighth sweep). GN3 takes the one in §5 — two sites, one control each; a lock that reads
+        # ninth sweep; the same id as at the eighth, as no control was added between them). GN3 takes the one in §5 — two sites, one control each; a lock that reads
         # only the first statement is caught by GN3, which drifts the second (measured 2026-10-01:
         # that lock stays green under GN3).
         find='（境界 QJ4 — 9 回目時点の最大 ID。',
@@ -9692,8 +9692,8 @@ CONTROLS = [
         file='docs/design/fail-closed-reads.md',
         # Measures that a wrong latest RECORD is caught — not one arm of the lock. The first
         # assertion to fail is the cross-check (declared − swept ≠ ids above the boundary), but
-        # with that check removed the documents' eighth-sweep figures still disagree with the
-        # sabotaged record, so this does not single out the cross-check (c53 subagent P3).
+        # with that check removed the documents' ninth-sweep figures (1723) still disagree with
+        # the sabotaged record (1721), so this does not single out the cross-check (c53 subagent P3).
         find='  **9 回目 2026-10-04〜05（1723 本、',
         replace='  **9 回目 2026-10-04〜05（1721 本、',
         test='EverySupportedCouchDbIsMeasuredTest',
@@ -11822,8 +11822,8 @@ CONTROLS = [
         id='LD3',
         what='a phase falls out of BOTH the started and the untouched line, so the document simply stops mentioning it',
         file='docs/design/v3.4-release-readiness.md',
-        find='**着手済み = Phase 0〜8**、**未着手 = Phase 9**',
-        replace='**着手済み = Phase 0〜7**、**未着手 = Phase 9**',
+        find='**着手済み = Phase 0〜9**、**未着手 = なし**',
+        replace='**着手済み = Phase 0〜8**、**未着手 = なし**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePhaseStatusAgreesWithThePlan'],
     ),
@@ -11831,7 +11831,7 @@ CONTROLS = [
         id='KV3',
         what='the readiness document goes back to reporting worked phases as untouched, so five phases of landed work read as not begun and the next person does them twice',
         file='docs/design/v3.4-release-readiness.md',
-        find='**着手済み = Phase 0〜8**、**未着手 = Phase 9**',
+        find='**着手済み = Phase 0〜9**、**未着手 = なし**',
         replace='**着手済み = Phase 0〜2**、**未着手 = Phase 3・4・5・6・7・8・9**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePhaseStatusAgreesWithThePlan'],
@@ -11839,9 +11839,11 @@ CONTROLS = [
     dict(
         id='KW3',
         what='the readiness document claims a phase has been started that the plan records no work for — the direction that ships',
-        file='docs/design/v3.4-release-readiness.md',
-        find='**着手済み = Phase 0〜8**、**未着手 = Phase 9**',
-        replace='**着手済み = Phase 0〜9**、**未着手 = Phase 9**',
+        # Every phase is started now, so the readiness side has no unstarted phase left to claim;
+        # the plan's Phase 9 row loses its date instead, and the readiness line still says 0〜9.
+        file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
+        find='**2026-10-05 に着手**（UI の依存の脆弱性、',
+        replace='**着手**（UI の依存の脆弱性、',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePhaseStatusAgreesWithThePlan'],
     ),

@@ -50,6 +50,40 @@ checkpoint →「チェックポイント」、leader election →「リーダ�
   今のコードで数を渡す 31 か所は、どれも型が素の number です
 - 日本語と英語のほかの言語
 
+## サーバの依存を更新しました（OSV の警告）
+
+リリースの前に、WAR の依存の SBOM を OSV.dev に照合しました（2026-10-05）。11 の component に 17 件の
+advisory（CRITICAL 1・HIGH 6・MODERATE 9・LOW 1。Jackson は 2 系と 3 系の両方に同じ 7 件）があり、どれも
+直った版が出ていたので上げました。
+
+| component | 前 | 後 | advisory |
+|---|---|---|---|
+| Jackson 2（`com.fasterxml.jackson`） | 2.22.1 | 2.22.3 | HIGH 5・MODERATE 2（DoS など） |
+| Jackson 3（`tools.jackson`） | 3.2.1 | 3.2.3 | 上と同じ 7 件 |
+| Netty | 4.2.16.Final | 4.2.18.Final | CRITICAL 1・MODERATE 2 |
+| Microsoft Graph SDK | 6.5.0 | 6.70.0 | 同梱の Kiota（1.0.5 → 1.9.2）の HIGH 1 |
+| OpenTelemetry API | 1.36.0 | 1.66.0 | MODERATE 1 |
+| junrar（RAR の展開。Tika 経由） | 7.5.5 | 7.6.1 | MODERATE 2・LOW 1 |
+| jsoup（Tika 経由） | 1.21.2 | 1.23.2 | MODERATE 1 |
+| log4j-api（POI 経由） | 2.24.3 | 2.26.1 | MODERATE 1 |
+
+- **Graph SDK は、この版のコードからは呼ばれていません**（版上げは警告を解くため）。上げたことで WAR に
+  jjwt 0.13.0・jwks-rsa 0.24.1・opentelemetry-common が入り、opentelemetry-semconv が抜けました。Kiota が
+  持ち込む古い StAX API の jar（`javax.xml.stream:stax-api`）は除いています（Java の `java.xml` が同じ API を
+  持つため。2026-05 に xml-apis を外したのと同じ理由です）
+- 上げた後の SBOM（Maven 405・npm 561 component）を同じ日に照合し直し、警告のある component は 0 でした。
+  照合の道具は `tools/sbom/osv-check.py`（`tools/sbom/make-sbom.sh` が出した SBOM を渡す）
+
+### 主張しないこと
+
+- この版に既知の脆弱性が無いこと — 照合したのは 2026-10-05 時点の OSV の答えで、その後に出た advisory は
+  含みません。照合は依存の名前と版だけを見ます（その依存が実際に呼ばれるかは見ません）
+- コンテナイメージの中身 — OS・Tomcat・JDK・LibreOffice・Solr のイメージは SBOM に入っておらず、照合して
+  いません（イメージの走査は Trivy で、情報扱いです）
+- CI の OSV ジョブ（`security-scan.yml`）が WAR の Java の依存を見ていること — osv-scanner は
+  `core/pom.xml` を読めていません（ログに "Attempted to scan lockfile but failed"）。今回の 17 件も、
+  このジョブは Jackson 2（`cloudant-init/pom.xml` の宣言）の分しか出していませんでした
+
 ## UI の依存を更新しました（npm audit）
 
 `npm audit fix` で、package.json の範囲の中で次を上げました（変えたのは package-lock.json だけ）:

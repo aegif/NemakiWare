@@ -14,9 +14,13 @@ name: Security Scan
 #   3. Plaintext credential drift — fails if hardcoded admin/password
 #      patterns reappear in compose files / properties
 #   4. OSV dependency scan (osv-scanner) — cross-ecosystem CVE lookup over
-#      every pom.xml + package-lock.json against the OSV.dev database, so a
-#      newly disclosed CVE against a pinned version surfaces without waiting
-#      for a hand-written denylist entry (informational — does not block)
+#      the pom.xml + package-lock.json files it can parse, against the OSV.dev
+#      database, so a newly disclosed CVE against a pinned version surfaces
+#      without waiting for a hand-written denylist entry (informational — does
+#      not block). It cannot parse core/pom.xml or evidence-verifier-cli/pom.xml
+#      ("Attempted to scan lockfile but failed"), so the WAR's resolved Java
+#      dependencies are not in it; the release matches the SBOM instead
+#      (tools/sbom/osv-check.py, SECURITY-EXCEPTIONS.md).
 #   5. Trivy container-image scan — builds the Solr image and fails on
 #      fixable HIGH/CRITICAL OS/library CVEs, closing the gap where the
 #      hand-maintained Maven denylist never saw the runtime base image
