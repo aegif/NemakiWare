@@ -22,7 +22,7 @@
 		<maven.compiler.target>21</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<org.springframework.version>7.0.8</org.springframework.version>
+		<org.springframework.version>7.0.9</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>2.0.0-RC2-nemakiware</org.apache.chemistry.opencmis.version>
 		<!-- One version per CXF / HttpComponents 5 family; the enforcer refuses any other. -->
 		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
@@ -231,12 +231,34 @@
 			</dependency>
 			<!-- Align transitive skews with the versions the rest of the tree
 			     already uses. spring-tx leaks in at 7.0.4 while every other
-			     Spring module is ${org.springframework.version} (7.0.8); Spring
+			     Spring module is ${org.springframework.version} (7.0.9); Spring
 			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
 			     while the rest of CXF is ${org.apache.cxf.version}. -->
 			<dependency>
 				<groupId>org.springframework</groupId>
 				<artifactId>spring-tx</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<!-- spring-ldap-core 4.1.0 declares spring-core / spring-beans /
+			     spring-context 7.0.8. The direct declarations below win the
+			     resolution (those nodes are "omitted for conflict"), but the
+			     enforce-spring-single-version rule reads the whole collected graph
+			     and bans an omitted 7.0.8 node all the same — it did, the moment the
+			     framework went to 7.0.9 (GHSA-pc63-qcmh-9cmg, 2026-10-07). Managed
+			     here, they are "version managed" in that graph too. -->
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-core</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-beans</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-context</artifactId>
 				<version>${org.springframework.version}</version>
 			</dependency>
 			<dependency>
