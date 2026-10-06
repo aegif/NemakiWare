@@ -549,6 +549,12 @@ public class PrincipalBatchResource {
                 // Jackson 3 reports a malformed body as an unchecked JacksonException.
                 throw new PrincipalBatchRequestException(400, "the body is not valid JSON");
             }
+            if (root == null) {
+                // The literal `null` parses to null, and reading it below was an NPE into the
+                // catch-all — a 500 with an incident for a request error (confirmation review,
+                // round 5, P3: the one body that reached the unread arm by reading).
+                throw new PrincipalBatchRequestException(400, "the JSON body is not an object");
+            }
             String planId = blankToNull(str(root.get("planId")));
             Object rowsRaw = root.get("rows");
             Kind k = root.get("kind") == null ? null : Kind.parse(str(root.get("kind")));

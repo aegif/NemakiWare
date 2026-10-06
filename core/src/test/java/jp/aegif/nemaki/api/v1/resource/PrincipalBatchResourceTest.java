@@ -478,6 +478,48 @@ class PrincipalBatchResourceTest {
                         + "the log (confirmation review, round 4, P2): " + logged);
     }
 
+    @Test
+    @DisplayName("a short password that occurs only inside the placeholder does not withhold the message")
+    void aShortPasswordInsideThePlaceholderDoesNotWithhold() throws Exception {
+        String shortOne = "sw";
+        String longOne = "Qx9#Lm2v";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        PasswordPolicyService policy = mock(PasswordPolicyService.class);
+        when(policy.validate(eq(shortOne), anyString())).thenReturn(PasswordPolicyService.PasswordPolicyResult.ok());
+        when(policy.validate(eq(longOne), anyString())).thenThrow(new IllegalStateException("bad: " + longOne));
+        set(resource, "passwordPolicyService", policy);
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response preview = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u8\",\"name\":\"Eight\",\"password\":\"" + shortOne + "\"},"
+                        + "{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + longOne + "\"}]"));
+
+        assertEquals(500, preview.getStatus(), String.valueOf(preview.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("bad: [password redacted]"),
+                "the message echoed nothing short, and the placeholder's own letters were read as an "
+                        + "echo of 'sw' (confirmation review, round 5, P3): " + logged);
+        assertFalse(logged.contains("withheld"), logged);
+    }
+
+    @Test
+    @DisplayName("a JSON body that is the literal null is a request error, not an incident")
+    void aNullBodyIsARequestError() throws Exception {
+        PrincipalBatchResource resource = resourceWith(mock(ContentService.class), true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response preview = resource.previewJson(REPO, "null");
+
+        assertEquals(400, preview.getStatus(),
+                "the literal null parsed to a null root and reading it was an NPE into the catch-all: "
+                        + "a 500 with an incident for a request error, and the one body that reached "
+                        + "the unread-rows arm (confirmation review, round 5, P3): "
+                        + String.valueOf(preview.getEntity()));
+        assertFalse(rendered(log).contains("incident"), "a request error is not logged as an incident: " + rendered(log));
+    }
+
     /**
      * Discriminating only once the registry has a second column: with {@code SECRET_COLUMNS ==
      * {"password"}} an implementation that spells "password" passes this too. Recorded, not

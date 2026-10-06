@@ -27,8 +27,9 @@ import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Row;
  *
  * <p>Until the request has been read as rows ({@link #learn}), what it carries is not known, so
  * nothing of a message is logged: a parser's text may quote the body. This arm is defensive and
- * UNMEASURED: every parse failure the resource knows of today is reported as a 400 that is not
- * logged, so only a parser bug would reach it (confirmation review, round 4, P3).
+ * UNMEASURED: every parse failure the resource knows of is reported as a 400 that is not logged
+ * (the one body found to reach this arm by reading — the literal {@code null} — is a 400 since
+ * round 5), so only a parser bug would reach it (confirmation review, rounds 4 and 5, P3).
  *
  * <p>The resource learns every row of a request, so a request of thousands of rows is redacted
  * against all of their passwords at once: a one-letter password anywhere withholds the text of
@@ -117,7 +118,10 @@ public final class Secrets {
         out.append(text, cursor, text.length());
         String result = out.toString();
         for (String value : values) {
-            if (result.contains(value)) {
+            // Short values were decided against the original text above; the only way one can
+            // be in the result now is as a substring of the placeholder itself, which is not an
+            // echo (confirmation review, round 5, P3: "sw" inside "[password redacted]").
+            if (value.length() >= SHORTEST_REPLACEABLE && result.contains(value)) {
                 return WITHHELD_ECHO;
             }
         }
