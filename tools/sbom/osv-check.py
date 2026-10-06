@@ -22,6 +22,9 @@ exit code
   - 照合は名前と版だけを見る。その component が実際に呼ばれるか（到達できるか）は見ない。
   - purl の無い component は照合しない（数を出す）。コンテナイメージの OS・Tomcat・JDK は SBOM に無い。
   - 照合した時点の OSV の答えであって、その後に出た advisory は含まない。
+  - 照合に出るのは、その時点で該当 package と版が付いている advisory だけ。公開済みでも review の前
+    （GitHub Advisory の未 review）のものは出ない — 2026-10-07 の 3 件は、10-05 の照合のとき公開から
+    最長 39 日この状態だった。
 
 なぜ CI の OSV ジョブでは足りないか: security-scan.yml の osv-scanner（v1.9.2）は pom.xml を
 lockfile として読むが、core/pom.xml と evidence-verifier-cli/pom.xml は "Attempted to scan

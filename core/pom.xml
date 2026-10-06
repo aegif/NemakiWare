@@ -230,9 +230,10 @@
 				<version>2.26.1</version>
 			</dependency>
 			<!-- Align transitive skews with the versions the rest of the tree
-			     already uses. spring-tx leaks in at 7.0.4 while every other
-			     Spring module is ${org.springframework.version} (7.0.9); Spring
-			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
+			     already uses. spring-tx leaked in at 7.0.4 (spring-ldap-core 4.0.2;
+			     4.1.0 declares 7.0.8) while every other Spring module is
+			     ${org.springframework.version} (7.0.9); Spring modules must share a
+			     version. cxf-rt-ws-policy leaks in at 4.1.3
 			     while the rest of CXF is ${org.apache.cxf.version}. -->
 			<dependency>
 				<groupId>org.springframework</groupId>
@@ -240,12 +241,17 @@
 				<version>${org.springframework.version}</version>
 			</dependency>
 			<!-- spring-ldap-core 4.1.0 declares spring-core / spring-beans /
-			     spring-context 7.0.8. The direct declarations below win the
+			     spring-context / spring-tx 7.0.8. The direct declarations win the
 			     resolution (those nodes are "omitted for conflict"), but the
 			     enforce-spring-single-version rule reads the whole collected graph
 			     and bans an omitted 7.0.8 node all the same — it did, the moment the
 			     framework went to 7.0.9 (GHSA-pc63-qcmh-9cmg, 2026-10-07). Managed
-			     here, they are "version managed" in that graph too. -->
+			     here, they are "version managed" in that graph too.
+			     THE COST: with all four modules spring-ldap declares managed, the
+			     enforcer no longer sees the Spring version spring-ldap was built
+			     against. When bumping spring-ldap-core, read its pom: if it declares
+			     a newer Spring line (7.1.x), raise ${org.springframework.version} with
+			     it rather than running a spring-ldap built for 7.1 on 7.0. -->
 			<dependency>
 				<groupId>org.springframework</groupId>
 				<artifactId>spring-core</artifactId>
@@ -1440,7 +1446,10 @@
 			     was only caught by eye. NOTE: dependencyConvergence CANNOT catch that
 			     class of skew — each module converges on its own single (wrong) version —
 			     so this bans the whole group and allows back only the pinned version;
-			     any sibling at any other version fails the build, transitives included. -->
+			     any sibling at any other version fails the build, transitives included —
+			     except the modules managed in dependencyManagement, whose versions as
+			     declared in a dependency's pom are no longer seen (spring-tx / core /
+			     beans / context, all declared by spring-ldap-core: see the note there). -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
