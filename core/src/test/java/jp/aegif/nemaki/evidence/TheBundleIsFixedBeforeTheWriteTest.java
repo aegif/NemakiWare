@@ -165,7 +165,7 @@ class TheBundleIsFixedBeforeTheWriteTest {
                 "a part that is not there must not be written as an empty document. A verifier "
                         + "that finds no file answers NOT_PRESENT; one that finds an empty "
                         + "object has to guess whether the package is claiming something");
-        assertEquals("PACKAGE_INTEGRITY_V1", thin.highestProfileSupported());
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1"), thin.supportedProfiles());
     }
 
     @Test
@@ -284,10 +284,13 @@ class TheBundleIsFixedBeforeTheWriteTest {
     }
 
     @Test
-    @DisplayName("the declared profile does not claim more than the bundle holds")
+    @DisplayName("the declared profiles do not claim more than the bundle holds")
     void theDeclaredProfileTracksWhatIsActuallyThere() {
         EvidenceBundle full = fullBundle();
-        assertEquals("TRUSTED_RFC3161_V1", full.highestProfileSupported());
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
+                "TRUSTED_RFC3161_V1"), full.supportedProfiles(),
+                "an RFC 3161 token and no OTS proof: P4 is not among the answers, and neither "
+                        + "is P5 — the bundle holds no evidence record");
 
         Map<AnchorKind, EvidenceBundle.AnchorPart> none = new LinkedHashMap<>();
         none.put(AnchorKind.RFC3161_TSA, new EvidenceBundle.AnchorPart(
@@ -296,9 +299,40 @@ class TheBundleIsFixedBeforeTheWriteTest {
                 full.versionObjectId(), full.statement(), full.entry(), full.inclusionProof(),
                 full.coveringCheckpoint(), full.checkpointChain(), full.anchorTargetCheckpoint(),
                 none, full.createdAt());
-        assertEquals("RECORD_LEDGER_V1", unanchored.highestProfileSupported(),
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1"),
+                unanchored.supportedProfiles(),
                 "a chain with no anchor material on any rung is not an anchored checkpoint, and "
                         + "declaring one would put a claim in the package that its own files "
                         + "cannot support");
+    }
+
+    @Test
+    @DisplayName("an OpenTimestamps proof alone does not make an anchored checkpoint; with an RFC 3161 token beside it, it adds P4")
+    void anOtsProofAloneIsNotP2AndWithAnRfc3161TokenIsP4() {
+        EvidenceBundle full = fullBundle();
+        Map<AnchorKind, EvidenceBundle.AnchorPart> otsOnly = new LinkedHashMap<>();
+        otsOnly.put(AnchorKind.RFC3161_TSA, new EvidenceBundle.AnchorPart(
+                EvidenceBundle.AnchorPart.State.NOT_PRESENT, null, "nothing settled yet"));
+        otsOnly.put(AnchorKind.OPENTIMESTAMPS, new EvidenceBundle.AnchorPart(
+                EvidenceBundle.AnchorPart.State.PRESENT, new byte[] { 0x00, 0x4f }, null));
+        EvidenceBundle ots = new EvidenceBundle(full.repositoryId(), full.objectId(),
+                full.versionObjectId(), full.statement(), full.entry(), full.inclusionProof(),
+                full.coveringCheckpoint(), full.checkpointChain(), full.anchorTargetCheckpoint(),
+                otsOnly, full.createdAt());
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1"), ots.supportedProfiles(),
+                "§11's ANCHOR_COMMITS_ROOT reads RFC 3161 material only, so a verifier cannot "
+                        + "reach ANCHORED_CHECKPOINT_V1 on an OTS rung alone — and P4 requires "
+                        + "P2 in full. This bundle used to answer ANCHORED_OTS_V1, which ranked "
+                        + "above P2 and satisfied a request for an anchored checkpoint");
+
+        Map<AnchorKind, EvidenceBundle.AnchorPart> both = new LinkedHashMap<>(full.anchors());
+        both.put(AnchorKind.OPENTIMESTAMPS, new EvidenceBundle.AnchorPart(
+                EvidenceBundle.AnchorPart.State.PRESENT, new byte[] { 0x00, 0x4f }, null));
+        EvidenceBundle anchoredTwice = new EvidenceBundle(full.repositoryId(), full.objectId(),
+                full.versionObjectId(), full.statement(), full.entry(), full.inclusionProof(),
+                full.coveringCheckpoint(), full.checkpointChain(), full.anchorTargetCheckpoint(),
+                both, full.createdAt());
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
+                "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1"), anchoredTwice.supportedProfiles());
     }
 }

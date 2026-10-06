@@ -120,6 +120,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -3580,6 +3581,28 @@ public class ContentServiceImpl implements ContentService {
 		}
 		visited.add(objectId);
 
+		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
+		// each child goes through permission check, ThreadLockService, and cache invalidation.
+
+		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
+		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
+		List<String> relationshipIds = relationshipIdsOf(sourceRelationships, targetRelationships);
+
+		if (!relationshipIds.isEmpty()) {
+			// No catch: these edges belong to the object about to be deleted. Proceeding
+			// past a failed edge delete removes the object and leaves relationships whose
+			// end no longer exists — the write-side twin of the short-listing orphans the
+			// read paths refuse. An aborted delete is rerunnable; an orphaned edge is not
+			// swept by anything.
+			log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
+			deleteRelationshipsBatch(repositoryId, relationshipIds);
+		}
+
+		// AFTER the edges. The DELETED change event and the archive used to be written first,
+		// so an aborted edge delete — the refusal above — left a change event saying the
+		// object was deleted, and an archive of it, for an object that still exists (9-6
+		// review, P1). The archive still comes before the object's own delete: it copies the
+		// content.
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
@@ -3592,30 +3615,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
-		}
-
-		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
-		// each child goes through permission check, ThreadLockService, and cache invalidation.
-
-		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
-		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-
-		List<String> relationshipIds = new ArrayList<>();
-		for (Relationship rel : sourceRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-		for (Relationship rel : targetRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-
-		if (!relationshipIds.isEmpty()) {
-			// No catch: these edges belong to the object about to be deleted. Proceeding
-			// past a failed edge delete removes the object and leaves relationships whose
-			// end no longer exists — the write-side twin of the short-listing orphans the
-			// read paths refuse. An aborted delete is rerunnable; an orphaned edge is not
-			// swept by anything.
-			log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
-			deleteRelationshipsBatch(repositoryId, relationshipIds);
 		}
 
 		try {
@@ -3673,12 +3672,46 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("deleteRelationshipsBatch: Deleting " + relationshipIds.size() + " relationships in bulk");
 		int deletedCount = contentDaoService.deleteBulk(repositoryId, relationshipIds);
 		if (deletedCount < relationshipIds.size()) {
-			// A WARN here let the object deletion proceed over edges that survived.
-			throw new IllegalStateException("only " + deletedCount + " of "
-					+ relationshipIds.size() + " relationships could be deleted; aborting the"
-					+ " object delete instead of orphaning the survivors");
+			// A WARN here let the object deletion proceed over edges that survived. The
+			// shortfall is then COUNTED, not assumed: an edge another delete removed first is
+			// not found by the bulk delete and not counted, and the goal — no edge left — is
+			// met for it all the same. Read as a survivor, it made a repeated or concurrent
+			// delete abort for ever and the object undeletable (9-6 review, P1). Only an edge
+			// that is still there aborts.
+			List<String> stillThere = new ArrayList<>();
+			for (String relationshipId : relationshipIds) {
+				if (contentDaoService.getRelationshipFresh(repositoryId, relationshipId) != null) {
+					stillThere.add(relationshipId);
+				}
+			}
+			if (!stillThere.isEmpty()) {
+				throw new IllegalStateException("only " + deletedCount + " of "
+						+ relationshipIds.size() + " relationships could be deleted and " + stillThere
+						+ " are still there; aborting the object delete instead of orphaning the survivors");
+			}
+			log.debug("deleteRelationshipsBatch: " + (relationshipIds.size() - deletedCount)
+					+ " relationships were already gone");
 		}
 		log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
+	}
+
+	/**
+	 * The ids of the edges at an object, each once.
+	 *
+	 * <p>A relationship whose source and target are the same object is in BOTH lists; counted
+	 * twice, the batch delete's "fewer deleted than asked" refusal fired on a correct delete
+	 * and the object could never be deleted (9-6 review, P1).
+	 */
+	static List<String> relationshipIdsOf(List<Relationship> sourceRelationships,
+			List<Relationship> targetRelationships) {
+		Set<String> ids = new LinkedHashSet<>();
+		for (Relationship rel : sourceRelationships) {
+			ids.add(rel.getId());
+		}
+		for (Relationship rel : targetRelationships) {
+			ids.add(rel.getId());
+		}
+		return new ArrayList<>(ids);
 	}
 
 	@Override

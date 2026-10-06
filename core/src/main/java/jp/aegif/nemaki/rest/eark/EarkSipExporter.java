@@ -185,11 +185,6 @@ public class EarkSipExporter {
         REQUIRE_ANCHORED_OTS("ANCHORED_OTS_V1"),
         REQUIRE_LONG_TERM_ERS("LONG_TERM_ERS_V1");
 
-        /** Profiles in increasing strength. Declaration order is NOT relied on. */
-        private static final List<String> STRENGTH = List.of(
-                "PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
-                "ANCHORED_OTS_V1", "TRUSTED_RFC3161_V1", "LONG_TERM_ERS_V1");
-
         private final String required;
 
         Assurance(String required) {
@@ -201,18 +196,16 @@ public class EarkSipExporter {
         }
 
         /**
-         * Whether {@code supported} is at least what this level demands.
+         * Whether the profile this level demands is among {@code supported}.
          *
-         * <p>A profile neither side knows is NOT satisfied — an unknown name must not pass by
-         * being absent from the table.
+         * <p>Containment, not rank. The profiles are not linearly ordered — P3 and P4 are
+         * siblings over P2 — so "at least as strong", measured by position in a list, let a
+         * record with an RFC 3161 token satisfy {@code REQUIRE_ANCHORED_OTS} and the caller was
+         * handed a package with no OTS proof in it (9-6 review, P1). A profile neither side
+         * knows is NOT satisfied: containment makes that so without a table.
          */
-        public boolean satisfiedBy(String supported) {
-            if (required == null) {
-                return true;
-            }
-            int need = STRENGTH.indexOf(required);
-            int have = supported == null ? -1 : STRENGTH.indexOf(supported);
-            return have >= 0 && need >= 0 && have >= need;
+        public boolean satisfiedBy(java.util.Collection<String> supported) {
+            return required == null || (supported != null && supported.contains(required));
         }
     }
 
@@ -293,13 +286,13 @@ public class EarkSipExporter {
         private static final long serialVersionUID = 1L;
 
         private final transient Assurance requested;
-        private final String supported;
+        private final List<String> supported;
 
-        public AssuranceNotMetException(Assurance requested, String supported) {
+        public AssuranceNotMetException(Assurance requested, List<String> supported) {
             super("this record supports " + supported + " and " + requested
                     + " was required; no package was built");
             this.requested = requested;
-            this.supported = supported;
+            this.supported = supported == null ? List.of() : List.copyOf(supported);
         }
 
         public Assurance requested() {
@@ -307,7 +300,7 @@ public class EarkSipExporter {
         }
 
         /** The profile the record DOES support, so a caller can ask for that instead. */
-        public String supported() {
+        public List<String> supported() {
             return supported;
         }
 
@@ -357,6 +350,7 @@ public class EarkSipExporter {
         List<String> notes = new ArrayList<>();
         try {
             Path payload = writePayload(repositoryId, document, workDir);
+            String payloadDigest = sha256HexOf(payload);
             AuthenticityReport report = report(repositoryId, objectId, options, notes);
 
             SIP sip = new EARKSIP(sipId(repositoryId, objectId), IPContentType.getMIXED(),
@@ -385,7 +379,8 @@ public class EarkSipExporter {
             // is only marginally better than not writing it.
             String packagedAt = java.time.Instant.now().toString();
             sip.addPreservationMetadata(new IPMetadata(
-                    new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt)),
+                    new IPFile(writePremis(workDir, repositoryId, objectId, report, packagedAt,
+                            payloadDigest, notes)),
                     new MetadataType(MetadataType.MetadataTypeEnum.PREMIS)));
 
             // The evidence package: the inclusion proof that ties THIS record to the chain,
@@ -400,15 +395,20 @@ public class EarkSipExporter {
             // series is a separate field (Document.versionSeriesId). The assembler's javadoc
             // says IT does not default the version key from the object id; the caller has to
             // know the id it holds is a version's own id, and here it is (parallel review, P2).
-            jp.aegif.nemaki.evidence.EvidenceBundle bundle = bundleAssembler == null ? null
-                    : bundleAssembler.assemble(repositoryId, objectId, objectId);
-            // Checked BEFORE anything is written. A package built and then judged would have to
-            // be deleted, and a caller who got one anyway would have no way to tell it apart
-            // from one that met the bar.
-            String supported = bundle == null ? "PACKAGE_INTEGRITY_V1"
-                    : bundle.highestProfileSupported();
-            if (!options.assurance().satisfiedBy(supported)) {
-                throw new AssuranceNotMetException(options.assurance(), supported);
+            jp.aegif.nemaki.evidence.EvidenceBundle bundle;
+            try {
+                bundle = bundleAssembler == null ? null
+                        : bundleAssembler.assemble(repositoryId, objectId, objectId);
+            } catch (jp.aegif.nemaki.evidence.EvidenceBundleAssembler.EvidenceNotReadable e) {
+                // A read that failed is not an absence. Built from the parts that did come
+                // back, the package would state — in profile.json, in the manifest, by what it
+                // does not carry — that this record has less evidence than it has, and nobody
+                // established that. Under BEST_AVAILABLE as much as under REQUIRE_*: the claim
+                // is in the package either way (9-6 review, P1).
+                throw new ExportRefusedException("the evidence for " + objectId + " could not be "
+                        + "read, so no package was built — one built from what did come back "
+                        + "would say the record has less evidence than it has: "
+                        + e.getMessage(), e);
             }
             // The evidence record, if this deployment has one. It goes in OTHER metadata,
             // where ErsFormat.CSIP_LOCATION says an evidence record belongs -- and the call
@@ -445,6 +445,22 @@ public class EarkSipExporter {
                                                     bundle.anchorTargetCheckpoint().domain(),
                                                     bundle.anchorTargetCheckpoint()))
                                     : evidenceRecordService.latest(repositoryId);
+            // Checked BEFORE anything is written. A package built and then judged would have to
+            // be deleted, and a caller who got one anyway would have no way to tell it apart
+            // from one that met the bar. The evidence record is built (not yet written) above
+            // this line because P5 is among the answers only when there is one.
+            List<String> supported = new ArrayList<>(bundle == null
+                    ? List.of("PACKAGE_INTEGRITY_V1") : bundle.supportedProfiles());
+            if (v1Layout && evidenceRecord != null && evidenceRecord.present()
+                    && (supported.contains("TRUSTED_RFC3161_V1")
+                            || supported.contains("ANCHORED_OTS_V1"))) {
+                // §14: P3 or P4 in full, plus a record over the section's anchor target. The
+                // legacy layout's record covers another checkpoint and does not count.
+                supported.add("LONG_TERM_ERS_V1");
+            }
+            if (!options.assurance().satisfiedBy(supported)) {
+                throw new AssuranceNotMetException(options.assurance(), supported);
+            }
             if (evidenceRecord != null && evidenceRecord.present()) {
                 sip.addOtherMetadata(new IPMetadata(
                         new IPFile(writeEvidenceRecord(workDir, evidenceRecord.der())),
@@ -507,7 +523,12 @@ public class EarkSipExporter {
             logger.info("Exported {}/{} as an E-ARK SIP ({} propert(y/ies) withheld)",
                     repositoryId, objectId, withheld);
             return new Exported(built, withheld, List.copyOf(notes), validation);
-        } catch (ExportRefusedException e) {
+        } catch (ExportRefusedException | AssuranceNotMetException e) {
+            // Both are designed outcomes and leave as themselves. AssuranceNotMetException used
+            // to fall into the wrap below, so the controller's branch for it — the 409 body with
+            // ASSURANCE_NOT_MET and the profiles the record does support — was never reached;
+            // a caller got the generic refusal and no way to learn what to ask for instead
+            // (found by the entry-point lock written for the 9-6 review).
             throw e;
         } catch (Exception e) {
             // Wrapped, never swallowed: a half-built package on disk that nobody was told about
@@ -650,6 +671,21 @@ public class EarkSipExporter {
         return payload;
     }
 
+    /** SHA-256 of the file, streamed — the payload may be large. */
+    private static String sha256HexOf(Path file) throws IOException {
+        try (InputStream in = Files.newInputStream(file)) {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) >= 0) {
+                digest.update(buffer, 0, read);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is mandatory in every Java runtime", impossible);
+        }
+    }
+
     /**
      * Windows refuses these names, with or without an extension, on every drive.
      *
@@ -773,26 +809,45 @@ public class EarkSipExporter {
     /**
      * The PREMIS document for this object.
      *
-     * <p>The content digest comes from the report's content section rather than being
-     * recomputed: the point is to state what this repository RECORDED, and a fresh computation
-     * would silently paper over the case where the two disagree — which is exactly the case a
-     * receiving archive most needs to see.
+     * <p>The fixity is the digest of the bytes IN THE PACKAGE, computed from the payload just
+     * written. It used to copy the report's recorded digest, "to state what this repository
+     * recorded": for a version whose content was replaced after the recording — a check-in
+     * with new bytes, the report deep-copied to the new version — the PREMIS then named bytes
+     * the package does not carry, and a receiver's P0 said FAILED about a package nobody
+     * altered (9-6 review, P3). The recorded digest stays where it is, in the authenticity
+     * report inside the package, and when the two disagree the disagreement is said aloud in
+     * the export notes rather than papered over by either value.
      */
     private Path writePremis(Path workDir, String repositoryId, String objectId,
-            AuthenticityReport report, String packagedAt) throws IOException {
-        String digest = null;
-        String algorithm = null;
+            AuthenticityReport report, String packagedAt, String payloadDigest,
+            List<String> notes) throws IOException {
+        String recorded = null;
+        String recordedAlgorithm = null;
         if (report != null) {
             for (AuthenticityReport.Section section : report.sections()) {
                 if ("content".equals(section.name())) {
-                    Object recorded = section.content().get("recordedDigest");
-                    digest = recorded == null ? null : String.valueOf(recorded);
+                    Object value = section.content().get("recordedDigest");
+                    recorded = value == null ? null : String.valueOf(value);
                     Object algo = section.content().get("algorithm");
-                    algorithm = algo == null ? null : String.valueOf(algo);
+                    recordedAlgorithm = algo == null ? null : String.valueOf(algo);
                 }
             }
         }
-        String xml = PremisWriter.toXml(repositoryId + "/" + objectId, digest, algorithm,
+        if (recorded != null) {
+            if (recordedAlgorithm != null && !"SHA-256".equalsIgnoreCase(recordedAlgorithm)) {
+                notes.add("the authenticity report records content digest " + recorded + " ("
+                        + recordedAlgorithm + "), which this export did not compare with the "
+                        + "packaged bytes (SHA-256 " + payloadDigest + "); the PREMIS fixity is "
+                        + "of the packaged bytes");
+            } else if (!recorded.equalsIgnoreCase(payloadDigest)) {
+                notes.add("the authenticity report records content digest " + recorded
+                        + " and the packaged bytes digest to " + payloadDigest + " (SHA-256): the"
+                        + " content was changed after the recording. The PREMIS fixity is of the"
+                        + " packaged bytes; the report inside the package carries the recorded"
+                        + " digest");
+            }
+        }
+        String xml = PremisWriter.toXml(repositoryId + "/" + objectId, payloadDigest, "SHA-256",
                 PremisWriter.eventsFor(report, packagedAt), "NemakiWare");
         Path metadataDir = Files.createDirectories(workDir.resolve("metadata"));
         Path file = metadataDir.resolve("premis.xml");

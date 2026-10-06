@@ -153,9 +153,12 @@ services:
       - "./archivematica/etc/nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
       - "./archivematica/etc/nginx/conf.d/archivematica.conf:/etc/nginx/conf.d/archivematica.conf:ro"
       - "./archivematica/etc/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro"
+    # 127.0.0.1 only: this is a test stack with test/test and a fixed DJANGO_SECRET_KEY, and
+    # restart: unless-stopped keeps it up across reboots. Bound to every interface, a
+    # developer's machine on a shared network served it to the LAN (9-6 review, P3).
     ports:
-      - "62080:80"
-      - "62081:8000"
+      - "127.0.0.1:62080:80"
+      - "127.0.0.1:62081:8000"
 
   archivematica-mcp-server:
     image: "artefactual/archivematica-mcp-server:v1.18.0"

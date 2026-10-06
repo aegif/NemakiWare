@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -145,7 +146,7 @@ class TheAssemblerReadsOncePerPackageTest {
 
         assertNull(bundle.statement());
         assertNull(bundle.entry());
-        assertEquals("PACKAGE_INTEGRITY_V1", bundle.highestProfileSupported());
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1"), bundle.supportedProfiles());
         assertFalse(bundle.inclusionProof().present(),
                 "and the proof records WHY there is none rather than shipping an empty path");
         assertNotNull(bundle.inclusionProof().unavailableBecause());
@@ -178,15 +179,277 @@ class TheAssemblerReadsOncePerPackageTest {
     }
 
     @Test
-    @DisplayName("a journal that could not be asked yields no statement, not a wrong one")
-    void anUnaskableJournalYieldsNoStatement() {
+    @DisplayName("a journal that could not be asked yields no bundle — not a statement, and not 'no statement'")
+    void anUnaskableJournalYieldsNoBundle() {
         RecordContentStatementV1 held = statement("c".repeat(64));
-        EvidenceBundle bundle = assembler(journalHolding(held.toDocument(), false),
-                storeWith(List.of()), null).assemble("bedroom", "doc-1", "v-1");
 
-        assertNull(bundle.statement(),
-                "an inactive store must not be read through: what it would return is not known "
-                        + "to be current");
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalHolding(held.toDocument(), false), storeWith(List.of()),
+                        null).assemble("bedroom", "doc-1", "v-1"),
+                "an inactive journal must not be read through, and what it holds must not be "
+                        + "reported as absent either: the package would say the record has no "
+                        + "statement, which nobody established (9-6 review, P1)");
+        assertTrue(refusal.getMessage().contains("not reachable"), refusal.getMessage());
+    }
+
+    /** A journal whose reads fail. */
+    private static ContentWriteJournal journalFailing(RuntimeException failure) {
+        return new ContentWriteJournal() {
+            @Override
+            public String open(String repositoryId, String objectId, String versionObjectId,
+                    WriteKind kind, String openedAt) {
+                throw new ContentWriteJournalUnavailable("not used here");
+            }
+
+            @Override
+            public CloseOutcome close(String intentId, String versionObjectId,
+                    String statementDigest, Map<String, Object> statementDocument,
+                    long entrySequence) {
+                return CloseOutcome.UNAVAILABLE;
+            }
+
+            @Override
+            public List<Unresolved> unresolved(int limit) {
+                return List.of();
+            }
+
+            @Override
+            public Map<String, Object> statementFor(String repositoryId, String versionObjectId) {
+                throw failure;
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+        };
+    }
+
+    /** A store whose entry lookup fails, or whose checkpoints are the ones given. */
+    private static EvidenceLedgerStore storeFailingOrWith(RuntimeException onFind,
+            List<EvidenceLedgerEntry> entries, EvidenceCheckpoint latest,
+            java.util.function.LongFunction<EvidenceCheckpoint> endingBefore) {
+        return new EvidenceLedgerStore() {
+            @Override
+            public boolean append(EvidenceLedgerEntry entry) {
+                return false;
+            }
+
+            @Override
+            public long highestSequence(String domain) {
+                return -1;
+            }
+
+            @Override
+            public List<EvidenceLedgerEntry> range(String domain, long from, long to, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId,
+                    int limit) {
+                if (onFind != null) {
+                    throw onFind;
+                }
+                return new ArrayList<>(entries);
+            }
+
+            @Override
+            public boolean appendCheckpoint(EvidenceCheckpoint checkpoint) {
+                return false;
+            }
+
+            @Override
+            public EvidenceCheckpoint latestCheckpoint(String domain) {
+                return latest;
+            }
+
+            @Override
+            public EvidenceCheckpoint checkpointEndingBefore(String domain, long fromSequence) {
+                return endingBefore == null ? null : endingBefore.apply(fromSequence);
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+        };
+    }
+
+    private static EvidenceLedgerEntry entryAt(long sequence, String payloadDigest) {
+        return EvidenceLedgerEntry.of(RecordContentStateRecorder.DOMAIN, sequence,
+                EvidenceLedgerEntry.SubjectKind.RECORD_CONTENT_STATE, "v-1", payloadDigest,
+                "t" + sequence, null);
+    }
+
+    @Test
+    @DisplayName("a statement read that fails is a refusal, not a record with no statement")
+    void aFailedStatementReadIsARefusal() {
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalFailing(new IllegalStateException("view is away")),
+                        storeWith(List.of()), null).assemble("bedroom", "doc-1", "v-1"));
+
+        assertTrue(refusal.getMessage().contains("view is away"), refusal.getMessage());
+        assertEquals(1, refusal.reasons().size(), refusal.reasons().toString());
+    }
+
+    @Test
+    @DisplayName("a ledger read that fails is a refusal, not a statement with no entry")
+    void aFailedEntryReadIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalHolding(held.toDocument(), true),
+                        storeFailingOrWith(new IllegalStateException("ledger is away"), List.of(),
+                                null, null), null).assemble("bedroom", "doc-1", "v-1"),
+                "the statement came back and the entry did not: shipped as a statement with no "
+                        + "entry, the package answered P1 NOT_PRESENT for a record that has one");
+        assertTrue(refusal.getMessage().contains("ledger is away"), refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("a full window of entries with no match is a refusal — the match may lie beyond it")
+    void aFullWindowWithoutAMatchIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+        List<EvidenceLedgerEntry> window = new ArrayList<>();
+        for (int i = 0; i < EvidenceBundleAssembler.ENTRIES_PER_VERSION; i++) {
+            window.add(entryAt(i + 1, "d".repeat(64)));
+        }
+
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalHolding(held.toDocument(), true), storeWith(window), null)
+                        .assemble("bedroom", "doc-1", "v-1"),
+                "fifty entries were read and none commits to this statement; the fifty-first "
+                        + "may. 'No entry' was a guess, and the package stated it (9-6 review, P1)");
+        assertTrue(refusal.getMessage().contains("beyond what was read"), refusal.getMessage());
+
+        // One short of the window with no match is an honest absence: everything was read.
+        EvidenceBundle bundle = assembler(journalHolding(held.toDocument(), true),
+                storeWith(window.subList(0, window.size() - 1)), null)
+                .assemble("bedroom", "doc-1", "v-1");
+        assertNull(bundle.entry());
+    }
+
+    @Test
+    @DisplayName("a checkpoint walk that does not end within the limit is a refusal, not 'nothing covers it'")
+    void aCheckpointWalkThatDoesNotEndIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+        EvidenceLedgerEntry entry = entryAt(5L, held.digest());
+        // A ledger with more checkpoints between the newest and the covering one than the walk
+        // follows: every step back is one checkpoint of one sequence, and the covering one is
+        // more than CHECKPOINT_WALK_LIMIT steps away.
+        long newest = 5L + EvidenceBundleAssembler.CHECKPOINT_WALK_LIMIT + 10;
+        EvidenceCheckpoint latest = EvidenceCheckpoint.of(RecordContentStateRecorder.DOMAIN,
+                newest, newest, "bb", "ff".repeat(32), "2026-09-20T00:00:00Z");
+        EvidenceLedgerStore store = storeFailingOrWith(null, List.of(entry), latest,
+                before -> EvidenceCheckpoint.of(RecordContentStateRecorder.DOMAIN, before - 1,
+                        before - 1, "cc", "ff".repeat(32), "2026-09-20T00:00:00Z"));
+
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalHolding(held.toDocument(), true), store, null)
+                        .assemble("bedroom", "doc-1", "v-1"),
+                "the walk fell out of its loop after the limit and the assembler said no "
+                        + "checkpoint covers the entry — which is not what was found out, and "
+                        + "the package then said RECORD_LEDGER_V1 is out of reach for a record "
+                        + "that is in a sealed checkpoint (9-6 review, P1)");
+        assertTrue(refusal.getMessage().contains("not known"), refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("a chain whose walk back does not reach the covering checkpoint is a refusal, not a chain of one")
+    void aChainThatCannotBeWalkedIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+        EvidenceLedgerEntry entry = entryAt(5L, held.digest());
+        EvidenceCheckpoint covering = EvidenceCheckpoint.of(RecordContentStateRecorder.DOMAIN,
+                5L, 5L, "aa", null, "2026-09-20T00:00:00Z");
+        EvidenceCheckpoint sealedMeanwhile = EvidenceCheckpoint.of(
+                RecordContentStateRecorder.DOMAIN, 9L, 12L, "bb", "ff".repeat(32),
+                "2026-09-20T00:00:00Z");
+        // The ledger moves under the read: the covering checkpoint IS the newest when the
+        // covering walk asks, and by the time the chain is walked a later one has been sealed
+        // whose predecessor this store cannot read back (null) — so the walk back from it never
+        // reaches the covering one.
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        EvidenceLedgerStore moving = new EvidenceLedgerStore() {
+            @Override
+            public boolean append(EvidenceLedgerEntry e) {
+                return false;
+            }
+
+            @Override
+            public long highestSequence(String domain) {
+                return 12;
+            }
+
+            @Override
+            public List<EvidenceLedgerEntry> range(String domain, long from, long to, int limit) {
+                return List.of();
+            }
+
+            @Override
+            public List<EvidenceLedgerEntry> findBySubject(String domain, String subjectId,
+                    int limit) {
+                return List.of(entry);
+            }
+
+            @Override
+            public boolean appendCheckpoint(EvidenceCheckpoint checkpoint) {
+                return false;
+            }
+
+            @Override
+            public EvidenceCheckpoint latestCheckpoint(String domain) {
+                return asked.getAndIncrement() == 0 ? covering : sealedMeanwhile;
+            }
+
+            @Override
+            public EvidenceCheckpoint checkpointEndingBefore(String domain, long fromSequence) {
+                return null;
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+        };
+
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler(journalHolding(held.toDocument(), true), moving, null)
+                        .assemble("bedroom", "doc-1", "v-1"),
+                "the walk did not reach the covering checkpoint and the covering one alone was "
+                        + "shipped as the chain — a chain of one says nothing newer exists, which "
+                        + "is not what was found out");
+        assertTrue(refusal.reasons().stream().anyMatch(r -> r.contains("walk back does not reach")),
+                refusal.reasons().toString());
+    }
+
+    @Test
+    @DisplayName("a proof that could not be produced for a covered entry is a refusal, not a package without one")
+    void aProofThatCouldNotBeProducedIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+        EvidenceLedgerEntry entry = entryAt(5L, held.digest());
+        EvidenceCheckpoint covering = EvidenceCheckpoint.of(RecordContentStateRecorder.DOMAIN,
+                1L, 10L, "aa", null, "2026-09-20T00:00:00Z");
+        EvidenceLedgerService ledger = org.mockito.Mockito.mock(EvidenceLedgerService.class);
+        org.mockito.Mockito.when(ledger.inclusionProof(RecordContentStateRecorder.DOMAIN, 5L))
+                .thenReturn(Map.of("message", "the entries under this checkpoint could not be read"));
+        EvidenceBundleAssembler assembler = assembler(journalHolding(held.toDocument(), true),
+                storeFailingOrWith(null, List.of(entry), covering, before -> null), null);
+        assembler.setLedgerService(ledger);
+
+        EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                EvidenceBundleAssembler.EvidenceNotReadable.class,
+                () -> assembler.assemble("bedroom", "doc-1", "v-1"),
+                "the checkpoint covers the entry, so a proof exists; a package shipped without "
+                        + "one said PACKAGE_INTEGRITY_V1 about a record that is in a sealed "
+                        + "checkpoint");
+        assertTrue(refusal.getMessage().contains("could not be read"), refusal.getMessage());
     }
 
     @Test
@@ -217,8 +480,7 @@ class TheAssemblerReadsOncePerPackageTest {
                 .replaceAll("(?m)//.*$", "")
                 .replaceAll("(?s)/\\*.*?\\*/", "");
 
-        assertTrue(text.contains("RevocationMaterial\n                    .materialIn(")
-                        || text.contains("RevocationMaterial.materialIn("),
+        assertTrue(java.util.regex.Pattern.compile("RevocationMaterial\\s*\\.materialIn\\(").matcher(text).find(),
                 "the assembler no longer reads the captured revocation material out of the "
                         + "receipt, so every package ships none however much was collected — "
                         + "and the collection that produced it runs for nothing");

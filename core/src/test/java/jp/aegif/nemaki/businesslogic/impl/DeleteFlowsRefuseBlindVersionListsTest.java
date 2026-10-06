@@ -27,6 +27,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -88,6 +89,8 @@ class DeleteFlowsRefuseBlindVersionListsTest {
     void aPartialEdgeDeleteAborts() throws Exception {
         ContentDaoService dao = mock(ContentDaoService.class);
         when(dao.deleteBulk("bedroom", List.of("rel-1", "rel-2"))).thenReturn(1);
+        // rel-2 is STILL THERE — the survivor. (An edge already gone is the test below.)
+        when(dao.getRelationshipFresh("bedroom", "rel-2")).thenReturn(new jp.aegif.nemaki.model.Relationship());
         ContentServiceImpl service = new ContentServiceImpl();
         service.setContentDaoService(dao);
 
@@ -121,5 +124,65 @@ class DeleteFlowsRefuseBlindVersionListsTest {
             throw new HarnessBroken("deleteRelationshipsBatch was renamed — update this test",
                     e);
         }
+    }
+
+    @Test
+    @DisplayName("an edge that was already gone is not a survivor — the delete proceeds")
+    void anEdgeAlreadyGoneDoesNotAbort() throws Exception {
+        ContentDaoService dao = mock(ContentDaoService.class);
+        when(dao.deleteBulk("bedroom", List.of("rel-1", "rel-2"))).thenReturn(1);
+        // Neither edge is there afterwards: rel-2 was removed by another delete before the bulk
+        // delete looked for it, so the bulk delete did not count it — and nothing is orphaned.
+        when(dao.getRelationshipFresh("bedroom", "rel-1")).thenReturn(null);
+        when(dao.getRelationshipFresh("bedroom", "rel-2")).thenReturn(null);
+        ContentServiceImpl service = new ContentServiceImpl();
+        service.setContentDaoService(dao);
+
+        // assertDoesNotThrow, so the refusal fails THIS assertion rather than escaping the test
+        // as an InvocationTargetException the runner cannot tell from harness breakage.
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> invokeBatch(service, List.of("rel-1", "rel-2")),
+                "the shortfall was read as a survivor, which made every repeated or concurrent "
+                        + "delete of this object abort for ever (9-6 review, P1)");
+    }
+
+    @Test
+    @DisplayName("a self-referential edge is counted once, so a correct bulk delete is not read as a shortfall")
+    void aSelfReferentialEdgeIsCountedOnce() {
+        jp.aegif.nemaki.model.Relationship self = new jp.aegif.nemaki.model.Relationship();
+        self.setId("rel-self");
+        self.setSourceId("doc-1");
+        self.setTargetId("doc-1");
+        jp.aegif.nemaki.model.Relationship other = new jp.aegif.nemaki.model.Relationship();
+        other.setId("rel-2");
+        other.setSourceId("doc-1");
+        other.setTargetId("doc-2");
+
+        List<String> ids = ContentServiceImpl.relationshipIdsOf(List.of(self, other), List.of(self));
+
+        assertEquals(List.of("rel-self", "rel-2"), ids,
+                "the edge whose source and target are the same object is in both lists; counted "
+                        + "twice, the bulk delete of 2 answered 2 against a request of 3, the "
+                        + "refusal fired on a correct delete, and the object could never be "
+                        + "deleted (9-6 review, P1)");
+    }
+
+    @Test
+    @DisplayName("the DELETED change event and the archive are written after the edges, not before")
+    void theChangeEventAndArchiveFollowTheEdges() throws Exception {
+        String body = JavaSource.methodBody(JavaSource.withoutComments(JavaSource.read(SOURCE)),
+                "private void deleteInternal(");
+        int edges = body.indexOf("deleteRelationshipsBatch(repositoryId, relationshipIds);");
+        int event = body.indexOf("writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);");
+        int archive = body.indexOf("createArchive(callContext, repositoryId, objectId, deletedWithParent");
+        int delete = body.indexOf("contentDaoService.delete(repositoryId, objectId);");
+        assertTrue(edges >= 0 && event >= 0 && archive >= 0 && delete >= 0,
+                "deleteInternal no longer holds the four steps this lock orders: " + body);
+        assertTrue(edges < event && edges < archive,
+                "the DELETED change event or the archive is written before the edges are deleted, "
+                        + "so an aborted edge delete leaves a change event saying the object was "
+                        + "deleted — and an archive of it — for an object that still exists (9-6 "
+                        + "review, P1)");
+        assertTrue(archive < delete, "the archive has to copy the content before it is deleted");
     }
 }

@@ -284,8 +284,42 @@ public class IngestDlqController {
             // read at the time) is still used, as before; without one the replay uses the source's
             // bytes. For every other row the stored payload is all there is, and the arms
             // below keep refusing what cannot be attributed.
-            ConnectorDefinition fileShareConnector = request.getConnectorId() == null ? null
-                    : connectorDefinitionService.get(request.getConnectorId());
+            ConnectorDefinition fileShareConnector = null;
+            boolean connectorGone = false;
+            if (request.getConnectorId() != null) {
+                fileShareConnector = connectorDefinitionService.get(request.getConnectorId());
+                if (fileShareConnector == null) {
+                    // get() answers null for "no such connector" and for "could not read it"
+                    // alike — its contract, and the ledger lists the callers that take the null
+                    // as absence without an index-free check of their own. This was one: read as
+                    // "not a file-share row", a Box or Dropbox row whose connector could not be
+                    // read fell through to the plain replay below and imported an empty document,
+                    // deleting the only record of the item (9-6 review, P1). The index-free count
+                    // tells the two apart; a count that could not be made is a refusal too.
+                    boolean exists;
+                    try {
+                        exists = connectorDefinitionService.existsIndexFree(request.getConnectorId());
+                    } catch (ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException couldNotAsk) {
+                        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "DLQ entry " + dlqId + " names connector "
+                                + request.getConnectorId() + ", and whether it exists could not be established ("
+                                + couldNotAsk.getMessage() + "), so whether the row's bytes must come from its source"
+                                + " is not known; the entry is kept and nothing was imported");
+                    }
+                    if (exists) {
+                        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "DLQ entry " + dlqId + " names connector "
+                                + request.getConnectorId() + ", which exists and could not be read, so whether the row's"
+                                + " bytes must come from its source is not known; the entry is kept and nothing was imported");
+                    }
+                    connectorGone = true;
+                }
+            }
+            if (connectorGone && heldNothing) {
+                // The connector is gone and the item was never read: there are no bytes to replay and
+                // no source to fetch them from. The plain replay would make an empty document of it.
+                return errorResponse(HttpStatus.CONFLICT, "DLQ entry " + dlqId + " names connector "
+                        + request.getConnectorId() + ", which no longer exists; its item was never read and cannot be"
+                        + " fetched again, so there is nothing to replay; the entry is kept and nothing was imported");
+            }
             // The same for an ATTACHMENT row of any connector: an attachment is bytes or nothing,
             // and the chat and mail imports create a content-less document from a request
             // without them just as the file-share import does.

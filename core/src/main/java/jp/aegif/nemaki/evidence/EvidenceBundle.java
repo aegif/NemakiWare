@@ -182,38 +182,55 @@ public record EvidenceBundle(
     }
 
     /**
-     * The highest profile this bundle could satisfy, <b>judged on presence alone</b>.
+     * The profiles this bundle holds the material for, <b>judged on presence alone</b>.
      *
      * <p>Not a verdict. It says which checks a verifier will be ABLE to run, not that any of
      * them passed — the package is what gets verified, and by something that does not trust
      * this method. Used to answer a {@code REQUIRE_*} export request before a package is built,
      * so a caller asking for more than exists is refused rather than handed a package that
-     * quietly supports less.
+     * quietly supports less; and written to {@code profile.json} as {@code declaredProfiles}.
+     *
+     * <p>A SET, in the spec's order, not a rung on a ladder. The profiles are not linearly
+     * ordered: P4 ({@code ANCHORED_OTS_V1}) does not contain P3 ({@code TRUSTED_RFC3161_V1})
+     * and P3 does not contain P4, so "the highest profile" had no meaning for a bundle with one
+     * anchor kind and not the other — and the exporter compared ranks, so an RFC 3161 token
+     * satisfied a request for an anchored OTS proof the bundle did not carry (9-6 review, P1).
+     * Each profile is listed exactly when the material its required checks read is present:
+     *
+     * <ul>
+     *   <li>P0 always;</li>
+     *   <li>P1 a statement, the entry that commits to it, an inclusion proof and a covering
+     *       checkpoint — and the statement is not a transition (§10: a transition claims no
+     *       bytes, so P1's content binding is NOT_PRESENT for it by definition; the package
+     *       still carries it, but an export that REQUIRES P1 is refused rather than handed a
+     *       package that cannot meet the bar);</li>
+     *   <li>P2 P1, an anchor target, a chain, and the RFC 3161 rung PRESENT — §11's
+     *       {@code ANCHOR_COMMITS_ROOT} reads RFC 3161 material only, so an OTS rung alone
+     *       leaves it unreadable and P2 cannot be reached;</li>
+     *   <li>P3 the same material as P2 (whether it VERIFIES is the trust profile's business);</li>
+     *   <li>P4 P2 and the OpenTimestamps rung PRESENT;</li>
+     *   <li>P5 needs an evidence record this bundle does not hold; the exporter adds it when
+     *       it writes one.</li>
+     * </ul>
      */
-    public String highestProfileSupported() {
+    public List<String> supportedProfiles() {
+        List<String> out = new java.util.ArrayList<>();
+        out.add("PACKAGE_INTEGRITY_V1");
         if (statement == null || entry == null || !inclusionProofPresent()
-                || coveringCheckpoint == null) {
-            return "PACKAGE_INTEGRITY_V1";
+                || coveringCheckpoint == null || statementIsTransition()) {
+            return List.copyOf(out);
         }
-        // A transition claims no bytes, so P1's content binding is NOT_PRESENT for it by
-        // definition and no profile above P0 can reach VERIFIED (spec §10). The package still
-        // carries the transition — the ledger checks run and a reader learns what happened to
-        // the bytes — but an export that REQUIRES P1 or above is refused rather than handed a
-        // package that cannot meet the bar.
-        if (statementIsTransition()) {
-            return "PACKAGE_INTEGRITY_V1";
-        }
+        out.add("RECORD_LEDGER_V1");
         if (anchorTargetCheckpoint == null || checkpointChain.isEmpty()
-                || !anyAnchorPresent()) {
-            return "RECORD_LEDGER_V1";
+                || !anchorPresent(AnchorKind.RFC3161_TSA)) {
+            return List.copyOf(out);
         }
-        if (anchorPresent(AnchorKind.RFC3161_TSA)) {
-            return "TRUSTED_RFC3161_V1";
-        }
+        out.add("ANCHORED_CHECKPOINT_V1");
+        out.add("TRUSTED_RFC3161_V1");
         if (anchorPresent(AnchorKind.OPENTIMESTAMPS)) {
-            return "ANCHORED_OTS_V1";
+            out.add("ANCHORED_OTS_V1");
         }
-        return "ANCHORED_CHECKPOINT_V1";
+        return List.copyOf(out);
     }
 
     private boolean inclusionProofPresent() {
@@ -223,10 +240,5 @@ public record EvidenceBundle(
     private boolean anchorPresent(AnchorKind kind) {
         AnchorPart part = anchors.get(kind);
         return part != null && part.state() == AnchorPart.State.PRESENT;
-    }
-
-    private boolean anyAnchorPresent() {
-        return anchors.values().stream()
-                .anyMatch(part -> part.state() == AnchorPart.State.PRESENT);
     }
 }

@@ -148,10 +148,15 @@ public class AnchorController {
      * carry a retry, {@code upgrade-pending} only looks at PENDING rows, and every later run
      * has nothing new to seal — the rung would stay FAILED for ever.
      *
-     * <p><b>Deliberately not on a timer.</b> Each call can mint a commitment and, on rung 3,
-     * buy a timestamp token. {@link AnchorService#retryUnsettled} skips whatever already holds
-     * a CONFIRMED or PENDING receipt and whatever is not configured, but it has no backoff:
-     * a rung that keeps failing is contacted once per call, so the caller sets the pace.
+     * <p><b>Also on a timer, since the anchor scheduler (3.4.0).</b> {@code AnchorScheduler}'s
+     * {@code maybeRetry} walks the same path on its period for the repositories it is enabled
+     * for; this endpoint is the manual way — a repository the scheduler does not cover, or an
+     * operator who does not want to wait a tick. (This paragraph said "deliberately not on a
+     * timer" for a round after the scheduler existed; 9-6 review, P3.) Each call can mint a
+     * commitment and, on rung 3, buy a timestamp token. {@link AnchorService#retryUnsettled}
+     * skips whatever already holds a CONFIRMED or PENDING receipt and whatever is not
+     * configured, but it has no backoff of its own: a rung that keeps failing is contacted once
+     * per call, so the caller — or the scheduler's period — sets the pace.
      */
     @PostMapping("/retry-unsettled")
     public ResponseEntity<Map<String, Object>> retryUnsettled(

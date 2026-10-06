@@ -151,4 +151,23 @@ class PrincipalCsvTest {
         assertEquals(400, noId.status());
         assertTrue(noId.getMessage().contains("userId"), noId.getMessage());
     }
+
+    @Test
+    @DisplayName("exactly the row limit followed by blank lines is not 413 — a blank line is not a row")
+    void blankLinesDoNotCountTowardsTheLimit() {
+        StringBuilder csv = new StringBuilder("userId\n");
+        for (int i = 0; i < PrincipalBatch.MAX_ROWS; i++) {
+            csv.append("u").append(i).append('\n');
+        }
+        csv.append("\n\n");
+
+        // assertDoesNotThrow, so the 413 fails THIS assertion rather than escaping the test as an
+        // exception the runner cannot tell from harness breakage.
+        PrincipalCsv.Parsed parsed = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> PrincipalCsv.parse(utf8(csv.toString()), Kind.USERS, Operation.DELETE),
+                "a file of exactly the limit with a trailing blank line was 413: the blank line "
+                        + "was skipped as a row and counted towards the limit (9-6 review, P3)");
+
+        assertEquals(PrincipalBatch.MAX_ROWS, parsed.rows().size());
+    }
 }

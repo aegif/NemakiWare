@@ -121,8 +121,12 @@ public interface ContentWriteJournal {
      * The statement recorded for a version, or null when none was.
      *
      * <p>Null is "this node has no statement for that version", which is NOT "the version has
-     * no statement" — another node may have recorded one, and this store may be unreachable.
-     * Callers check {@link #isActive()} before reading anything into a null.
+     * no statement" — another node may have recorded one. Callers check {@link #isActive()}
+     * before reading anything into a null.
+     *
+     * @throws ContentWriteJournalUnavailable when the journal could not be asked, or a row it
+     *         holds could not be read. Never null for that: a caller assembling a package read
+     *         null as "none recorded" and shipped a package saying so (9-6 review, P1)
      */
     default java.util.Map<String, Object> statementFor(String repositoryId,
             String versionObjectId) {
@@ -139,8 +143,9 @@ public interface ContentWriteJournal {
     }
 
     /**
-     * The newest statement recorded for a version, or null when none was (or none could be
-     * read — see {@link #statementFor}'s caveat on null).
+     * The newest statement recorded for a version, or null when none was. A read that failed,
+     * or a row that could not be read, throws {@link ContentWriteJournalUnavailable} — see
+     * {@link #statementFor}.
      *
      * <p>"Newest" is by ledger sequence, not by row order: the rows are keyed by a random
      * intent id, so the order a view returns them in says nothing about time. The first
@@ -154,7 +159,8 @@ public interface ContentWriteJournal {
 
     /**
      * The statement a version's row was closed with at exactly {@code entrySequence}, or null
-     * when this journal holds none (or could not be asked).
+     * when this journal holds none. Could not be asked is {@link ContentWriteJournalUnavailable},
+     * not null.
      *
      * <p>For the exporter: a transition cites the entry its prior digest was copied from, and
      * the package ships that entry's statement under {@code prior/} so a verifier can check

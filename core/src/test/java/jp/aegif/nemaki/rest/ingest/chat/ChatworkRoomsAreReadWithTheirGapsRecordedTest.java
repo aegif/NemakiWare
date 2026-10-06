@@ -54,6 +54,10 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
     /** The messages answered, as JSON, in the order answered; null answers 204. */
     private static volatile String messagesAnswer = "[]";
 
+    /** The room's files and one file's detail, as JSON. */
+    private static volatile String filesAnswer = "[]";
+    private static volatile String fileDetailAnswer = "{}";
+
     @BeforeAll
     static void startStub() throws Exception {
         previousAllowLocalhost = System.getProperty("nemaki.ingest.allowLocalhost");
@@ -69,7 +73,9 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
                     json(exchange, messagesAnswer);
                 }
             } else if (path.endsWith("/files")) {
-                json(exchange, "[]");
+                json(exchange, filesAnswer);
+            } else if (path.contains("/files/")) {
+                json(exchange, fileDetailAnswer);
             } else {
                 exchange.sendResponseHeaders(404, -1);
                 exchange.close();
@@ -89,6 +95,8 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
     @BeforeEach
     void reset() {
         messagesAnswer = "[]";
+        filesAnswer = "[]";
+        fileDetailAnswer = "{}";
         dlqWritable = true;
         failingImports = List.of();
         throwingImports = List.of();
@@ -383,5 +391,31 @@ class ChatworkRoomsAreReadWithTheirGapsRecordedTest {
         assertEquals(4, dlqRead.size(), "the attempts were not bounded at 4 × the limit: " + dlqRead);
         assertTrue(result.incompleteReads().stream().anyMatch(r -> r.contains("4 × the limit of 1")), result.incompleteReads().toString());
         assertEquals("1004", savedCheckpoint());
+    }
+
+    // Files are read on scheduled runs only — a limit above 10.
+
+    @Test
+    @DisplayName("Chatwork: a files answer that is not a list is an error, not a room without files")
+    void chatworkAFilesAnswerThatIsNotAListIsAnError() {
+        filesAnswer = "{\"errors\":[\"x\"]}";
+        FetchResult result = chatwork().execute(null, profile(), connector(), ROOM, 50);
+
+        // It read as an empty list: every file of the room passed over, no error, no incomplete
+        // read, and the run recorded as complete (9-6 review, P1).
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("file list failed")
+                && e.contains("something other than a list")), result.errors().toString());
+    }
+
+    @Test
+    @DisplayName("Chatwork: a listed file the API gives no download URL for is that file's error, not skipped")
+    void chatworkAFileWithoutADownloadUrlIsAnError() {
+        filesAnswer = "[{\"file_id\":\"f1\",\"account\":{\"account_id\":\"a1\"},\"filename\":\"report.pdf\",\"filesize\":10}]";
+        fileDetailAnswer = "{\"file_id\":\"f1\"}";
+        FetchResult result = chatwork().execute(null, profile(), connector(), ROOM, 50);
+
+        assertTrue(result.errors().stream().anyMatch(e -> e.contains("Chatwork file f1")
+                && e.contains("no download URL")), result.errors().toString());
+        assertTrue(importedIds.isEmpty(), "a file without its bytes was imported: " + importedIds);
     }
 }

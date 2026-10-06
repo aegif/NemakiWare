@@ -252,7 +252,9 @@ public class EarkSipExportController {
             body.put("status", "refused");
             body.put("reasonCode", e.reasonCode());
             body.put("requestedAssurance", e.requested().name());
-            body.put("evidenceProfile", e.supported());
+            // Every profile the record supports, not one "highest": the profiles are a lattice,
+            // and a caller changes its request to one of these.
+            body.put("evidenceProfiles", e.supported());
             body.put("message", e.getMessage());
             body.put("limits", NO_PACKAGE_WAS_PRODUCED + EXPORT_LIMITS);
             logger.info("E-ARK export of {}/{} refused: {}", repositoryId, objectId,

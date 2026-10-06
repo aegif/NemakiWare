@@ -205,7 +205,7 @@ final class PrincipalBatchPlanner {
         if (groups == null) {
             return expected(row);
         }
-        for (String groupId : split(groups)) {
+        for (String groupId : statedIds(row, "groups", groups)) {
             if (!world.groupExists(groupId)) {
                 return unexpected(row, Reason.GROUP_NOT_FOUND, "no group '" + groupId + "'");
             }
@@ -262,7 +262,7 @@ final class PrincipalBatchPlanner {
     private RowVerdict membersColumnsVerdict(Row row, String groupId) {
         String users = row.cell("users");
         if (users != null) {
-            for (String userId : split(users)) {
+            for (String userId : statedIds(row, "users", users)) {
                 if (!world.userExists(userId)) {
                     return unexpected(row, Reason.MEMBER_NOT_FOUND, "no user '" + userId + "'");
                 }
@@ -270,7 +270,7 @@ final class PrincipalBatchPlanner {
         }
         String groups = row.cell("groups");
         if (groups != null) {
-            List<String> nested = split(groups);
+            List<String> nested = statedIds(row, "groups", groups);
             for (String nestedId : nested) {
                 if (nestedId.equals(groupId)) {
                     return unexpected(row, Reason.NESTED_CYCLE, "a group cannot contain itself");
@@ -368,7 +368,7 @@ final class PrincipalBatchPlanner {
             if (raw == null) {
                 return new Members(users, groups); // EMPTY means "make it empty" — only here
             }
-            for (String part : split(raw)) {
+            for (String part : statedIds(row, "members", raw)) {
                 int colon = part.indexOf(':');
                 if (colon <= 0) {
                     throw new PrincipalBatchRequestException(400, "line " + row.line()
@@ -389,6 +389,23 @@ final class PrincipalBatchPlanner {
             }
             return new Members(users, groups);
         }
+    }
+
+    /**
+     * The ids a stated cell names. A cell that is not blank but names none — {@code ";"}, or
+     * JSON's {@code ["", ""]} folded to it — is the file's defect, a 400: it read as an empty
+     * list, and an update applied that as "in no group", emptying every membership of the row
+     * (9-6 review, P1). Blank is "not stated" and never reaches here; the one way to say
+     * "make it empty" stays replace's blank members.
+     */
+    static List<String> statedIds(Row row, String column, String raw) {
+        List<String> ids = split(raw);
+        if (ids.isEmpty()) {
+            throw new PrincipalBatchRequestException(400, "line " + row.line() + ": the " + column
+                    + " cell names no id — leave it blank"
+                    + ("members".equals(column) ? " to make the group empty" : " to leave it untouched"));
+        }
+        return ids;
     }
 
     static List<String> split(String semicolonSeparated) {

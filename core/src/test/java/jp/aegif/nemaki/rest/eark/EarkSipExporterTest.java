@@ -144,10 +144,12 @@ class EarkSipExporterTest {
     /**
      * One package whose PREMIS carries the payload's own fixity, named {@code name}.
      *
-     * <p>{@link #buildOneNamed} hands the exporter a report with no {@code content} section, so
-     * its PREMIS records no digest and the package cannot reach P0 {@code VERIFIED} — measured
-     * on the golden SIPs, which answered {@code INDETERMINATE} for exactly that reason. A
-     * golden that cannot pass measures the structural checks only.
+     * <p>{@link #buildOneNamed} hands the exporter a report with no {@code content} section.
+     * Until 2026-10-06 the PREMIS digest was copied from that section, so such a package recorded
+     * none and could not reach P0 {@code VERIFIED} — the first goldens answered
+     * {@code INDETERMINATE} for exactly that reason. The fixity is now computed from the payload
+     * (9-6 review, P3), so the two builders differ only in the report's content section — which
+     * this one makes AGREE with the payload, the ordinary case.
      */
     static Path buildOneWithFixity(Path tmp, String name) throws Exception {
         byte[] payload = "the minutes".getBytes(StandardCharsets.UTF_8);
@@ -1212,14 +1214,14 @@ class EarkSipExporterTest {
      * <p>{@code PACKAGE_INTEGRITY_V1}'s {@code payload fixity} compares the bytes against the
      * digest PREMIS records, and the receiving organisation's verifier is where that happens.
      * Every fixture in this class builds a report with an {@code identity} section and no
-     * {@code content} one, so the PREMIS they produce records NO digest at all — and a package
-     * built that way answers {@code NOT_PRESENT} and composes to {@code INDETERMINATE} at P0.
-     * Measured end to end on 2026-09-22 by running the CLI over a package this class built.
+     * {@code content} one, so the PREMIS they produced recorded NO digest at all (until
+     * 2026-10-06, when the fixity became the packaged bytes' own) — and a package built that
+     * way answered {@code NOT_PRESENT} and composed to {@code INDETERMINATE} at P0. Measured end
+     * to end on 2026-09-22 by running the CLI over a package this class built.
      *
-     * <p>Nothing was wrong with the product: the digest comes from the authenticity report's
-     * content section, which a real export has. What was missing is any measurement that the
-     * wiring from that section to the PREMIS still works — so "a package this product writes
-     * can reach P0" rested on a hand-built fixture on the verifier's side alone.
+     * <p>What this measures now: the PREMIS carries the digest a verifier will recompute from
+     * the payload — so "a package this product writes can reach P0" does not rest on a
+     * hand-built fixture on the verifier's side alone.
      */
     @Test
     @DisplayName("the PREMIS carries the payload's own fixity, as the verifier will recompute it")
@@ -1263,5 +1265,35 @@ class EarkSipExporterTest {
             out.append(Character.forDigit(b & 0xF, 16));
         }
         return out.toString();
+    }
+
+    @Test
+    @DisplayName("the PREMIS fixity is of the packaged bytes; a recorded digest that differs is said in the notes, not written as the fixity")
+    void thePremisFixityIsOfThePackagedBytes(@TempDir Path tmp) throws Exception {
+        byte[] payload = "the minutes, revised".getBytes(StandardCharsets.UTF_8);
+        String recorded = sha256Hex("the minutes".getBytes(StandardCharsets.UTF_8));
+        Map<String, Object> content = new LinkedHashMap<>();
+        content.put("recordedDigest", recorded);
+        content.put("algorithm", "SHA-256");
+        AuthenticityReport report = new AuthenticityReport(REPO, OBJECT, "2026-08-25T00:00:00Z",
+                List.of(new Section("content", Verdict.REPORTED, content, "measured")));
+
+        EarkSipExporter.Exported exported = exporterOver(report, payload)
+                .export(REPO, OBJECT, EarkSipExporter.Options.withoutInternalOnlyProperties(), tmp);
+        String premis = entriesOf(exported.sip()).entrySet().stream()
+                .filter(e -> e.getKey().endsWith("premis.xml")).map(Map.Entry::getValue)
+                .findFirst().orElseThrow();
+
+        String current = sha256Hex(payload);
+        assertTrue(premis.contains("<premis:messageDigest>" + current + "</premis:messageDigest>"),
+                "the PREMIS names the recorded digest instead of the packaged bytes' own, so a "
+                        + "receiver's P0 says FAILED about a package nobody altered — a version "
+                        + "checked in with new content after the recording (9-6 review, P3): "
+                        + premis);
+        assertFalse(premis.contains(recorded), "the recorded digest is in the PREMIS as a fixity");
+        assertTrue(exported.notes().stream().anyMatch(n -> n.contains("changed after the recording")
+                        && n.contains(recorded) && n.contains(current)),
+                "the disagreement between the recorded digest and the packaged bytes is not said "
+                        + "anywhere: " + exported.notes());
     }
 }

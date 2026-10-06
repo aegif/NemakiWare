@@ -72,6 +72,7 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         IngestDlqController controller = new IngestDlqController();
 
         IngestJobService jobService = mock(IngestJobService.class);
+        lastJobService = jobService;
         IngestDeadLetterRecord row = new IngestDeadLetterRecord();
         row.setDlqId("dlq-1");
         row.setHasContent(rowHasContent);
@@ -109,8 +110,12 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         connector.setSourceSystem(system);
         connector.setCredentialRef("key");
         connector.setEndpoint("https://mm.example.com");
-        when(connectorService.get("c1")).thenReturn(connector);
-        when(connectorService.countIndexFree("c1")).thenReturn(1);
+        if (connectorStubbing != null) {
+            connectorStubbing.accept(connectorService);
+        } else {
+            when(connectorService.get("c1")).thenReturn(connector);
+            when(connectorService.countIndexFree("c1")).thenReturn(1);
+        }
 
         FetchSupport fetchSupport = mock(FetchSupport.class);
         when(fetchSupport.resolvePasswordOrRefuse(any())).thenReturn("tok");
@@ -204,6 +209,9 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     private FetchSupport lastFetchSupport;
     /** Whether the link to the parent fails on the next replay. */
     private boolean relinkFails;
+    /** How the connector service answers for c1; null for the ordinary readable connector. */
+    private java.util.function.Consumer<ConnectorDefinitionService> connectorStubbing;
+    private IngestJobService lastJobService;
     /** Whether the next chat replay answers "skipped" (the item is already in the repository). */
     private boolean replaySkips;
 
@@ -363,6 +371,7 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
     private ResponseEntity<?> retryWithoutCredential() throws Exception {
         IngestDlqController controller = new IngestDlqController();
         IngestJobService jobService = mock(IngestJobService.class);
+        lastJobService = jobService;
         IngestDeadLetterRecord row = new IngestDeadLetterRecord();
         row.setDlqId("dlq-1");
         row.setHasContent(false);
@@ -380,8 +389,12 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         connector.setConnectorId("c1");
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("box");
-        when(connectorService.get("c1")).thenReturn(connector);
-        when(connectorService.countIndexFree("c1")).thenReturn(1);
+        if (connectorStubbing != null) {
+            connectorStubbing.accept(connectorService);
+        } else {
+            when(connectorService.get("c1")).thenReturn(connector);
+            when(connectorService.countIndexFree("c1")).thenReturn(1);
+        }
         FetchSupport none = mock(FetchSupport.class);
         when(none.resolvePasswordOrRefuse(any())).thenReturn(null);
         CallContext ctx = mock(CallContext.class);
@@ -739,5 +752,61 @@ class DeadLetteredFileShareItemsAreFetchedAgainTest {
         assertTrue(downloaded.isEmpty(), "the stored bytes were there; the source was asked anyway: " + downloaded);
         assertEquals(0, adaptersBuilt.get());
         assertEquals(HttpStatus.OK, res.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("a row whose connector exists and could not be read is not replayed — 503, row kept")
+    void aConnectorThatCouldNotBeReadRefusesTheReplay() throws Exception {
+        connectorStubbing = service -> {
+            when(service.get("c1")).thenReturn(null);
+            when(service.existsIndexFree("c1")).thenReturn(true);
+        };
+
+        ResponseEntity<?> res = retry("box", false, BOX_ROW,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "get() answered null for a connector the index-free count says exists, and the "
+                        + "row was treated as 'not a file-share row': replayed through the plain "
+                        + "import without its bytes, an empty document in place of the item, and "
+                        + "the only record of it deleted (9-6 review, P1): " + res.getBody());
+        assertTrue(executed.isEmpty(), "the import was reached: " + executed);
+        assertTrue(String.valueOf(res.getBody()).contains("could not be read"), String.valueOf(res.getBody()));
+        org.mockito.Mockito.verify(lastJobService, org.mockito.Mockito.never()).deleteDlqEntry(any());
+    }
+
+    @Test
+    @DisplayName("a row whose connector cannot even be counted is not replayed either")
+    void aConnectorThatCannotBeCountedRefusesTheReplay() throws Exception {
+        connectorStubbing = service -> {
+            when(service.get("c1")).thenReturn(null);
+            when(service.existsIndexFree("c1")).thenThrow(
+                    new ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException("the configuration store is away"));
+        };
+
+        ResponseEntity<?> res = retry("box", false, BOX_ROW,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(), String.valueOf(res.getBody()));
+        assertTrue(executed.isEmpty(), "the import was reached: " + executed);
+        assertTrue(String.valueOf(res.getBody()).contains("could not be established"), String.valueOf(res.getBody()));
+    }
+
+    @Test
+    @DisplayName("a row whose connector is gone and whose item was never read has nothing to replay — 409, row kept")
+    void aGoneConnectorWithAnUnreadItemRefusesTheReplay() throws Exception {
+        connectorStubbing = service -> {
+            when(service.get("c1")).thenReturn(null);
+            when(service.existsIndexFree("c1")).thenReturn(false);
+        };
+
+        ResponseEntity<?> res = retry("box", false, BOX_ROW,
+                id -> new ByteArrayInputStream("fresh bytes".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals(HttpStatus.CONFLICT, res.getStatusCode(),
+                "the connector no longer exists, so the bytes cannot be fetched again, and the row "
+                        + "holds none: a plain replay imports an empty document: " + res.getBody());
+        assertTrue(executed.isEmpty(), "the import was reached: " + executed);
+        org.mockito.Mockito.verify(lastJobService, org.mockito.Mockito.never()).deleteDlqEntry(any());
     }
 }

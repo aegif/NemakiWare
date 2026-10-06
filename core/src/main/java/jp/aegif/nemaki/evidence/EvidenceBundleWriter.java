@@ -146,7 +146,7 @@ public final class EvidenceBundleWriter {
         // What this package CLAIMS. A verifier evaluates the profiles itself and ignores this
         // when the two disagree — the spec says so in §5.1, and it is written here so nobody
         // reads the field as a finding.
-        doc.put("declaredProfiles", List.of(bundle.highestProfileSupported()));
+        doc.put("declaredProfiles", bundle.supportedProfiles());
         doc.put("createdAt", bundle.createdAt());
         doc.put("repositoryId", bundle.repositoryId());
         doc.put("objectId", bundle.objectId());

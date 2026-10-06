@@ -379,7 +379,17 @@ public class ImapIdleMonitor {
                             logger.info("IDLE: message {} from {} was skipped: {}",
                                     msg.stableKey(), mailbox, outcome.skipReason());
                         } else if (outcome.isSuccess()) {
-                            logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
+                            java.util.List<String> missing =
+                                    MailImportWarnings.missingParts(outcome.warnings());
+                            if (missing.isEmpty()) {
+                                logger.info("IDLE: imported message {} from {}", msg.stableKey(), mailbox);
+                            } else {
+                                // Imported, with parts missing — an attachment, its link. The
+                                // polling orchestrators record this through MailImportWarnings
+                                // (R107); IDLE logged "imported" and, since IMAP does not
+                                // re-deliver, nothing recorded the gap (9-6 review, P3).
+                                recordPartialIdleImport(profileId, mailbox, msg, req, missing);
+                            }
                         } else {
                             recordRefusedIdleImport(profileId, mailbox, msg, req, outcome);
                         }
@@ -447,6 +457,22 @@ public class ImapIdleMonitor {
         logger.error("IDLE: message {} from {} was NOT imported ({}); the miss {} recorded."
                 + " The UID checkpoint has not moved, so re-fetch the mailbox to recover",
                 msg.stableKey(), mailbox, why, missRecorded ? "was" : "could NOT be");
+    }
+
+    /** A message that was imported with parts missing: recorded like a refusal, counted like one. */
+    private void recordPartialIdleImport(String profileId, String mailbox,
+            ImapConnectorAdapter.MessageSummary msg, ExternalIngestRequest req,
+            java.util.List<String> missing) {
+        String why = "IDLE: the message was imported, but some of its parts are missing: "
+                + String.join("; ", missing);
+        boolean recorded = fetchSupport != null && fetchSupport.saveSourceReadToDlq(req, why);
+        if (!recorded) {
+            undurableMisses.computeIfAbsent(profileId,
+                    k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        }
+        logger.warn("IDLE: message {} from {} was imported with parts missing ({}); the gap {}"
+                + " recorded", msg.stableKey(), mailbox, String.join("; ", missing),
+                recorded ? "was" : "could NOT be");
     }
 
     /**

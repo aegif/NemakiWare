@@ -198,8 +198,9 @@ public class ChatworkFetchOrchestrator implements FetchOrchestrator {
                     fetchSupport.throttle(throttleMs);
                     InputStream content = null;
                     try {
+                        // A missing URL now throws, and the catch below records it as this
+                        // file's error — it used to be skipped here without one.
                         String dlUrl = chatwork.getFileDownloadUrl(roomId, file.fileId());
-                        if (dlUrl == null) continue;
                         content = chatwork.downloadFile(dlUrl);
                         ExternalIngestRequest fileReq = new ExternalIngestRequest();
                         fileReq.setProfileId(profile.getProfileId());

@@ -539,7 +539,14 @@ public class IngestWebhookController {
 
         int triggered = 0;
         for (ImportProfileDefinition profile : matchingProfiles) {
-            Map<String, String> params = new LinkedHashMap<>();
+            // The profile's own scheduler params first — boxCheckpointLagMinutes among them —
+            // with the event's folder and the webhook's budget over them. Built from folderId
+            // and limit alone, a webhook-triggered fetch ran without the checkpoint lag the
+            // scheduled fetch of the same profile has, and the items Box lists late were passed
+            // over by the checkpoint it saved (9-6 review, P1). The Dropbox arm below has always
+            // started from the profile's params.
+            Map<String, String> params = profile.getSchedulerParams() != null
+                    ? new LinkedHashMap<>(profile.getSchedulerParams()) : new LinkedHashMap<>();
             params.put("folderId", folderId);
             params.put("limit", "25");
             triggerFetchAsync(profile, connector, params);

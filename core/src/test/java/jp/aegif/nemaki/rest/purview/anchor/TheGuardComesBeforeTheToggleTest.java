@@ -223,9 +223,10 @@ class TheGuardComesBeforeTheToggleTest {
     @Test
     @DisplayName("the fetch is bounded in bytes and time, and the bounds are the ones the runbook states")
     void theFetchIsBounded() throws IOException {
-        assertEquals(8L * 1024 * 1024, Rfc3161AnchorTarget.MAX_CRL_BYTES,
+        assertEquals(5L * 1024 * 1024, Rfc3161AnchorTarget.MAX_CRL_BYTES,
                 "the CRL cap moved. A cap the runbook does not state is a limit an operator "
-                        + "meets in production");
+                        + "meets in production — and one above 5 MiB does not fit the receipt "
+                        + "document CouchDB will store (base64, 8 MiB max_document_size)");
         assertEquals(20, Rfc3161AnchorTarget.CRL_BODY_BUDGET.getSeconds(),
                 "the body budget moved. Same reason");
 

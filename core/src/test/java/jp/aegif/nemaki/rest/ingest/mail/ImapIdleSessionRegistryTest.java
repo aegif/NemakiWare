@@ -976,4 +976,18 @@ class ImapIdleSessionRegistryTest {
         assertEquals(1, ((ImapIdleMonitor) r[0]).undurableMissCount(PROF),
                 "a miss the DLQ could not take was neither recorded nor counted");
     }
+
+    @Test
+    @DisplayName("an import that succeeded with parts missing is recorded, not logged as imported")
+    void anIdleImportWithMissingPartsIsRecorded() throws Exception {
+        // The polling orchestrators classify the import's warnings through MailImportWarnings;
+        // IDLE read isSuccess() alone and logged "imported" for a message whose attachment did
+        // not arrive — and IMAP re-delivers nothing, so no record was left (9-6 review, P3).
+        Object[] r = driveOneIdleMessage(jp.aegif.nemaki.rest.ingest.ExternalIngestResult
+                .success("req-7", "obj-1", "1.0", false, "ev-1")
+                .withWarnings(List.of("Attachment 'minutes.pdf' failed: the store refused it")), true);
+
+        verify((FetchSupport) r[1]).saveSourceReadToDlq(any(),
+                org.mockito.ArgumentMatchers.contains("parts are missing"));
+    }
 }

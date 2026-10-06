@@ -322,6 +322,38 @@ class PrincipalBatchResourceTest {
     }
 
     @Test
+    @DisplayName("a groups or users cell that is only separators is 400, not 'in no group' — CSV ';', JSON [\"\", \"\"]")
+    void aCellOfSeparatorsIsRefusedNotEmptied() throws Exception {
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), eq("u1"))).thenReturn(user("u1", "1-a"));
+        when(cs.getGroupItemByIdFresh(eq(REPO), eq("g1"))).thenReturn(group("g1", List.of("u1", "u2"), List.of("g2")));
+        PrincipalBatchResource resource = resourceWith(cs);
+
+        // A spreadsheet's join of nothing. It read as an empty list, and the update applied it
+        // as "in no group": every membership of the row gone, LOOKS_DIRECTORY_SYNCED never
+        // asked, and the audit line keeping only a count (9-6 review, P1).
+        Response csv = resource.executeMultipart(REPO,
+                new ByteArrayInputStream("userId,groups\nu1,;\n".getBytes(StandardCharsets.UTF_8)),
+                "users", "update", null, null);
+        Response jsonUsers = resource.executeJson(REPO, json("users", "update", "",
+                "[{\"userId\":\"u1\",\"groups\":[\"\",\"\"]}]"));
+        Response groupMembers = resource.executeMultipart(REPO,
+                new ByteArrayInputStream("groupId,users\ng1, ; \n".getBytes(StandardCharsets.UTF_8)),
+                "groups", "update", null, null);
+        Response replace = resource.executeMultipart(REPO,
+                new ByteArrayInputStream("groupId,members\ng1,;\n".getBytes(StandardCharsets.UTF_8)),
+                "memberships", "replace", null, null);
+
+        for (Response refused : List.of(csv, jsonUsers, groupMembers, replace)) {
+            assertEquals(400, refused.getStatus(), String.valueOf(refused.getEntity()));
+            assertTrue(String.valueOf(refused.getEntity()).contains("names no id"),
+                    String.valueOf(refused.getEntity()));
+        }
+        verify(cs, never()).applyUserUpdate(anyString(), any(), anyString());
+        verify(cs, never()).applyGroupUpdate(anyString(), any(), anyString());
+    }
+
+    @Test
     @DisplayName("memberships/replace with empty members empties the group")
     void replaceWithEmptyMembersEmptiesTheGroup() throws Exception {
         ContentService cs = mock(ContentService.class);

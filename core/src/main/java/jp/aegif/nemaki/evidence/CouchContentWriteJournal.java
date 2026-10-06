@@ -270,9 +270,14 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             result = client().queryView(CouchEvidenceLedgerStore.DESIGN_DOC, VIEW_STATEMENTS,
                     params);
         } catch (RuntimeException e) {
-            logger.warn("The statement for {} could not be read.", versionObjectId, e);
-            return null;
+            // Thrown, not null. Null is "none recorded", and a caller building a package read
+            // it as that: a journal that could not be asked produced a package saying the
+            // record has no statement (9-6 review, P1).
+            throw new ContentWriteJournalUnavailable("the statement for " + versionObjectId
+                    + " could not be read", e);
         }
+        // A null result is the wrapper's "no matching rows" (CloudantClientWrapper.queryView),
+        // not a failed read — the failures throw, and are caught above.
         if (result == null || result.getRows() == null || result.getRows().isEmpty()) {
             return null;
         }
@@ -294,10 +299,9 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
                 // whose statement is truthy, so a row whose statement cannot be read as a
                 // document is not an absent one: it is a statement this version cannot read.
                 // Skipping it would report an OLDER row as the newest (Codex, second review).
-                logger.warn("A statement row for {} could not be read as a document; which "
-                        + "statement is newest cannot be determined, so none is reported.",
-                        versionObjectId);
-                return null;
+                throw new ContentWriteJournalUnavailable("a statement row for " + versionObjectId
+                        + " could not be read as a document; which statement is newest cannot "
+                        + "be determined");
             }
             if (!(sequence instanceof Number)) {
                 // This view emits closed rows only, so a statement with no readable sequence is
@@ -305,10 +309,9 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
                 // would call whichever OTHER row is highest "the newest", and a transition
                 // would copy that row's digest as the prior — an older statement passed off as
                 // the latest (Codex review, P1). Not knowing which is newest is the answer.
-                logger.warn("A statement row for {} has no readable ledger sequence; which "
-                        + "statement is newest cannot be determined, so none is reported.",
-                        versionObjectId);
-                return null;
+                throw new ContentWriteJournalUnavailable("a statement row for " + versionObjectId
+                        + " has no readable ledger sequence; which statement is newest cannot "
+                        + "be determined");
             }
             long at = ((Number) sequence).longValue();
             if (newest == null || at > newest.entrySequence()) {
@@ -332,9 +335,8 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             result = client().queryView(CouchEvidenceLedgerStore.DESIGN_DOC, VIEW_STATEMENTS,
                     params);
         } catch (RuntimeException e) {
-            logger.warn("The statement for {} at sequence {} could not be read.", versionObjectId,
-                    entrySequence, e);
-            return null;
+            throw new ContentWriteJournalUnavailable("the statement for " + versionObjectId
+                    + " at sequence " + entrySequence + " could not be read", e);
         }
         if (result == null || result.getRows() == null) {
             return null;

@@ -82,8 +82,18 @@ final class PrincipalCsv {
                         + "' is required");
             }
         }
-        if (records.size() - 1 > PrincipalBatch.MAX_ROWS) {
-            throw new PrincipalBatchRequestException(413, "the CSV has " + (records.size() - 1)
+        // Rows, not records: a trailing or stray empty line is skipped below and is not a row,
+        // so it must not count towards the limit either — 5,000 rows and a final blank line
+        // were 413 (9-6 review, P3).
+        long rowCount = 0;
+        for (int i = 1; i < records.size(); i++) {
+            List<String> cells = records.get(i).cells();
+            if (!(cells.size() == 1 && cells.get(0).isEmpty())) {
+                rowCount++;
+            }
+        }
+        if (rowCount > PrincipalBatch.MAX_ROWS) {
+            throw new PrincipalBatchRequestException(413, "the CSV has " + rowCount
                     + " rows; the limit is " + PrincipalBatch.MAX_ROWS);
         }
         List<PrincipalBatch.Row> rows = new ArrayList<>();

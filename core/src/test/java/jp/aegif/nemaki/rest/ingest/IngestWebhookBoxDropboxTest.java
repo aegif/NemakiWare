@@ -2,6 +2,7 @@ package jp.aegif.nemaki.rest.ingest;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -167,6 +168,49 @@ class IngestWebhookBoxDropboxTest {
         connector("c-dbx", "dropbox", "s");
         mockMvc.perform(get("/v1/ingest-webhook/c-dbx"))
                 .andExpect(status().isNotFound());
+    }
+
+    // ── Box notification ──
+
+    private static final String BOX_BODY =
+            "{\"trigger\":\"FILE.UPLOADED\",\"source\":{\"type\":\"file\",\"id\":\"f-1\",\"parent\":{\"id\":\"F1\"}}}";
+
+    /** A signed Box delivery for {@code connectorId}: Box signs the raw body followed by the timestamp. */
+    private org.springframework.test.web.servlet.RequestBuilder signedBoxPost(String connectorId,
+            String secret) throws Exception {
+        String timestamp = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).toString();
+        when(httpRequest.getHeader("BOX-SIGNATURE-VERSION")).thenReturn("1");
+        when(httpRequest.getHeader("BOX-SIGNATURE-ALGORITHM")).thenReturn("HmacSHA256");
+        when(httpRequest.getHeader("BOX-DELIVERY-TIMESTAMP")).thenReturn(timestamp);
+        when(httpRequest.getHeader("BOX-SIGNATURE-PRIMARY")).thenReturn(hmacBase64(secret, BOX_BODY + timestamp));
+        return post("/v1/ingest-webhook/" + connectorId)
+                .contentType(MediaType.APPLICATION_JSON).content(BOX_BODY);
+    }
+
+    @Test
+    @DisplayName("a Box delivery fetches with the profile's own scheduler params — the checkpoint lag among them — plus the event's folder")
+    void aBoxDeliveryKeepsTheProfilesSchedulerParams() throws Exception {
+        String secret = "boxsecret";
+        connector("c-box", "box", secret);
+        profileFor("c-box", Map.of("folderId", "F1", "boxCheckpointLagMinutes", "30"));
+
+        mockMvc.perform(signedBoxPost("c-box", secret))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("\"status\":\"accepted\"")));
+
+        // The fetch runs on its own thread; the params it was handed are what is measured.
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<Map<String, String>> params =
+                org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(schedulerService, org.mockito.Mockito.timeout(5000)).executeFetch(any(), any(), any(),
+                params.capture());
+        assertEquals("30", params.getValue().get("boxCheckpointLagMinutes"),
+                "the webhook-triggered fetch dropped the profile's scheduler params, so it ran "
+                        + "without the checkpoint lag the scheduled fetch of the same profile has, "
+                        + "and the items Box lists late were passed over by the checkpoint it saved "
+                        + "(9-6 review, P1): " + params.getValue());
+        assertEquals("F1", params.getValue().get("folderId"));
+        assertEquals("25", params.getValue().get("limit"));
     }
 
     // ── Dropbox notification ──

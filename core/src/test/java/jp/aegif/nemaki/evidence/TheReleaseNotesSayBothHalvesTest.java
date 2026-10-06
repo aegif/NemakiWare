@@ -77,13 +77,13 @@ class TheReleaseNotesSayBothHalvesTest {
         String notes = read(NOTES);
         String plan = read(PLAN);
 
-        String claimable = quoteAfter(plan, "名乗れる文（全必須 profile が成立した package についてのみ）:");
+        String claimable = quoteAfter(plan, "名乗れる文（要求した profile の必須検査が全部通った package についてのみ）:");
         String caveat = quoteAfter(plan, "必ず併記:");
         assertTrue(claimable.length() > 80 && caveat.length() > 80,
                 "the plan's paragraphs parsed as " + claimable.length() + " and "
                         + caveat.length() + " characters, so this lock is comparing fragments");
 
-        assertEquals(claimable, quoteAfter(notes, "### 全部の必須検査が通った package について、名乗れる文"),
+        assertEquals(claimable, quoteAfter(notes, "### 要求した profile の必須検査が全部通った package について、名乗れる文"),
                 "the sentence the release notes offer a deployment is not the one the plan "
                         + "authorises. Whichever a reader copies into their own documentation "
                         + "is the one that travels");
@@ -102,7 +102,7 @@ class TheReleaseNotesSayBothHalvesTest {
     @DisplayName("the caveat follows the claim in the same section")
     void theCaveatFollowsTheClaim() throws IOException {
         String notes = read(NOTES);
-        int claim = notes.indexOf("### 全部の必須検査が通った package について、名乗れる文");
+        int claim = notes.indexOf("### 要求した profile の必須検査が全部通った package について、名乗れる文");
         int caveat = notes.indexOf("### 必ず併記すること");
         assertTrue(claim >= 0 && caveat > claim,
                 "the release notes carry the claimable sentence without the caveat after it");

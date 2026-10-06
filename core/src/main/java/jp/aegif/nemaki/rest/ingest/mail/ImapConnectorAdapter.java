@@ -137,6 +137,56 @@ public class ImapConnectorAdapter {
         }
     }
 
+    /** What a UID-ordered listing answered: the messages, whether more remain, the folder's UIDVALIDITY. */
+    public record Listing(List<MessageSummary> messages, boolean more, long uidValidity) {
+    }
+
+    /**
+     * The messages with UID greater than {@code afterUid}, oldest first, at most {@code limit}
+     * of them — and whether more remain beyond them.
+     *
+     * <p>{@link #listMessages} answers the NEWEST {@code limit} messages of the folder, and the
+     * orchestrator then kept those above its checkpoint: with more than {@code limit} new
+     * messages since the last run, the oldest of them were never answered, and once the
+     * checkpoint advanced to the newest they never would be — the shape of R107 (9-6 review,
+     * P1). This asks the server for the range above the checkpoint instead.
+     */
+    public Listing listMessagesAfterUid(String folderName, long afterUid, int limit) throws MessagingException {
+        Folder folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            if (!(folder instanceof UIDFolder uf)) {
+                throw new MessagingException("folder " + folderName + " does not support UIDs, so the "
+                        + "messages above a checkpoint cannot be asked for");
+            }
+            long uidValidity = uf.getUIDValidity();
+            Message[] messages = uf.getMessagesByUID(afterUid + 1, UIDFolder.LASTUID);
+            List<MessageSummary> summaries = new ArrayList<>();
+            for (Message msg : messages) {
+                long uid = uf.getUID(msg);
+                // A server answers "N:*" with the message of the highest UID even when that UID is
+                // below N (RFC 3501, UID FETCH), so the bound is applied here too.
+                if (uid <= afterUid) {
+                    continue;
+                }
+                summaries.add(summaryOf(msg, uid, uidValidity));
+            }
+            // Sorted here so the order is this method's, not the server's.
+            summaries.sort((a, b) -> Long.compare(a.uid(), b.uid()));
+            boolean more = summaries.size() > limit;
+            return new Listing(more ? new ArrayList<>(summaries.subList(0, limit)) : summaries, more,
+                    uidValidity);
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    private static MessageSummary summaryOf(Message msg, long uid, long uidValidity) throws MessagingException {
+        String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
+        String from = msg.getFrom() != null && msg.getFrom().length > 0 ? msg.getFrom()[0].toString() : null;
+        return new MessageSummary(uid, uidValidity, messageId, msg.getSubject(), from, msg.getSentDate(), msg.getSize());
+    }
+
     /**
      * Fetch a single message as an .eml byte stream.
      */

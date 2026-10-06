@@ -119,13 +119,16 @@ class NotAskedIsNotAskedAndAnsweredNothingTest {
     }
 
     @Test
-    @DisplayName("material that cannot be decoded is material this node does not have")
-    void undecodableMaterialIsAbsent() {
-        assertNull(RevocationMaterial.materialIn(Map.of(
-                RevocationMaterial.MATERIAL_KEY, "not base64 !!!")),
-                "shipping a half-decoded CRL would put a parse failure in the package where an "
-                        + "absence belongs");
-        assertNull(RevocationMaterial.materialIn(Map.of(RevocationMaterial.MATERIAL_KEY, "")));
+    @DisplayName("material that cannot be decoded is a refusal, not material this node does not have")
+    void undecodableMaterialIsARefusalNotAnAbsence() {
+        // It answered null, and null is "no material was captured" — so a receipt holding
+        // material this version cannot read shipped as a package saying the material was never
+        // there (9-6 review, P3). The assembler turns the refusal into "the evidence could not
+        // be read"; nothing half-decoded reaches the package either way.
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> RevocationMaterial.materialIn(Map.of(RevocationMaterial.MATERIAL_KEY, "not base64 !!!")));
+        assertNull(RevocationMaterial.materialIn(Map.of(RevocationMaterial.MATERIAL_KEY, "")),
+                "an empty value is no material");
         assertNull(RevocationMaterial.materialIn(null));
     }
 

@@ -60,10 +60,11 @@ import java.nio.file.StandardCopyOption;
  *      evidence-verifier-core/src/test/resources/golden
  * </pre>
  *
- * <p><b>With the payload's fixity.</b> A package built without the report's {@code content}
- * section records no digest in its PREMIS, so it cannot reach P0 {@code VERIFIED} — the first
- * pair of goldens answered {@code INDETERMINATE} for that reason, and a golden that cannot pass
- * measures the structural checks only.
+ * <p><b>With the payload's fixity.</b> Until 2026-10-06 the PREMIS digest was copied from the
+ * report's {@code content} section, so a package built without one recorded no digest and
+ * could not reach P0 {@code VERIFIED} — the first pair of goldens answered
+ * {@code INDETERMINATE} for that reason. The fixity is now computed from the payload itself;
+ * the goldens are still built with an agreeing content section, the ordinary case.
  *
  * <p>The zips are NOT reproducible byte for byte (timestamps in the report), so regenerating
  * replaces them rather than confirming them. What keeps them honest is

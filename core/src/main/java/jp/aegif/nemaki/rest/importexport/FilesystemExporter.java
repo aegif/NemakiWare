@@ -143,9 +143,15 @@ public class FilesystemExporter {
                     try {
                         var attachment = cs.getAttachment(repositoryId, doc.getAttachmentNodeId());
                         if (attachment == null) {
-                            throw new IOException("the attachment " + doc.getAttachmentNodeId()
-                                    + " could not be read. This is NOT a statement that the"
-                                    + " document has no content.");
+                            // What null means here: the delegate refuses a failed read, so null
+                            // is the attachment node the document names NOT being in the store.
+                            // The message asserted the opposite; ZipExporter's twin was corrected
+                            // a round earlier (9-6 review, P3).
+                            throw new IOException("the document names attachment "
+                                    + doc.getAttachmentNodeId() + ", which is not in the store;"
+                                    + " its content cannot be written, and an export whose"
+                                    + " metadata describes bytes it does not carry would be read"
+                                    + " as complete");
                         }
                         // The stream is checked BEFORE the file is opened. try-with-resources
                         // initialises left to right, so with the check inside the body
@@ -274,8 +280,9 @@ public class FilesystemExporter {
                     try {
                         var attachment = cs.getAttachment(repositoryId, version.getAttachmentNodeId());
                         if (attachment == null) {
-                            throw new IOException("the attachment "
-                                    + version.getAttachmentNodeId() + " could not be read");
+                            throw new IOException("the version names attachment "
+                                    + version.getAttachmentNodeId() + ", which is not in the"
+                                    + " store; its content cannot be written");
                         }
                         // Same order as the document body above: check, then open.
                         InputStream is = attachment.getInputStream();

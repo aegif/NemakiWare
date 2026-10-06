@@ -33,6 +33,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -111,19 +112,42 @@ class TheNewestStatementIsByLedgerSequenceTest {
      * calling any other row "newest" is an older statement passed off as the latest.
      */
     @Test
-    @DisplayName("a statement row with no readable sequence makes 'newest' undeterminable — null, not the other row")
+    @DisplayName("a statement row with no readable sequence makes 'newest' undeterminable — a refusal, not the other row and not null")
     void aRowWithoutASequenceMakesTheNewestUndeterminable() {
-        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), null)))
+        // Thrown, not null: null is "none recorded", and the exporter's assembler read it as
+        // that — a journal with a row it could not read produced a package saying the record
+        // has no statement (9-6 review, P1).
+        assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), null)))
                         .latestRecorded("bedroom", "v-1"),
                 "a statement whose sequence could not be read was skipped and another row was "
                         + "reported as the newest; a transition would copy that row's digest as "
                         + "the prior of bytes it may not describe");
-        assertNull(journalOver(clientReturning(row("z".repeat(64), null)))
+        assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(clientReturning(row("z".repeat(64), null)))
                         .latestRecorded("bedroom", "v-1"),
                 "a version whose only row has no readable sequence answered a statement");
-        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), "10")))
+        assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(clientReturning(row("a".repeat(64), 10L), row("z".repeat(64), "10")))
                         .latestRecorded("bedroom", "v-1"),
                 "a sequence stored as text is not a readable sequence");
+    }
+
+    @Test
+    @DisplayName("a journal that cannot be asked throws; it does not answer 'none recorded'")
+    void aJournalThatCannotBeAskedThrows() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(anyString(), anyString(), anyMap()))
+                .thenThrow(new IllegalStateException("couchdb is away"));
+
+        ContentWriteJournal.ContentWriteJournalUnavailable refusal = assertThrows(
+                ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(client).latestRecorded("bedroom", "v-1"),
+                "the query failed and the journal answered null — which every caller reads as "
+                        + "'no statement was recorded', the one thing this failure does not say");
+        assertTrue(refusal.getMessage().contains("v-1"), refusal.getMessage());
+        assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(client).recordedAt("bedroom", "v-1", 7L));
     }
 
     @Test
@@ -137,7 +161,8 @@ class TheNewestStatementIsByLedgerSequenceTest {
         unreadable.put("statement", "not a document");
         unreadable.put("entrySequence", 90L);
 
-        assertNull(journalOver(clientReturning(row("a".repeat(64), 10L), unreadable))
+        assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                () -> journalOver(clientReturning(row("a".repeat(64), 10L), unreadable))
                         .latestRecorded("bedroom", "v-1"),
                 "the row at sequence 90 could not be read and the row at 10 was reported as the "
                         + "newest; a transition would copy a digest that is two writes old");

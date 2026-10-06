@@ -344,8 +344,16 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
     }
 
-    /** The most a CRL may be before it is refused as UNAVAILABLE rather than captured. */
-    static final long MAX_CRL_BYTES = 8L * 1024 * 1024;
+    /**
+     * The most a CRL may be before it is refused as UNAVAILABLE rather than captured.
+     *
+     * <p>5 MiB, not 8: the material is stored base64-encoded inside the receipt document (the
+     * only free-form place the receipt store persists), and CouchDB 3.x refuses documents over
+     * its default {@code max_document_size} of 8 MiB. An 8 MiB cap let a 6 MiB CRL through the
+     * fetch and then lost the whole receipt at the save (9-6 review, P3); 5 MiB encodes to
+     * 6.7 MiB and leaves the rest of the document room.
+     */
+    static final long MAX_CRL_BYTES = 5L * 1024 * 1024;
 
     /**
      * The longest the body of a CRL may take to arrive once its headers have.
@@ -402,10 +410,10 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                         "the token carries no signer certificate, so there is no distribution "
                                 + "point to ask");
             }
-            url = crlDistributionPointOf(signer);
+            CrlPoint point = crlDistributionPointOf(signer);
+            url = point.url();
             if (url == null) {
-                return RevocationMaterial.unavailable(null,
-                        "the signer certificate names no CRL distribution point");
+                return RevocationMaterial.unavailable(null, point.whyNone());
             }
             // The URL came out of the TSA's certificate, not out of this node's configuration,
             // so it is treated as the input of a party this node did not choose. It goes through
@@ -478,12 +486,24 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
         }
     }
 
-    /** The first HTTP CRL distribution point, or null. */
-    static String crlDistributionPointOf(java.security.cert.X509Certificate certificate) {
+    /** Where the signer's CRL is, or why no HTTP distribution point could be taken from the certificate. */
+    record CrlPoint(String url, String whyNone) {
+    }
+
+    /**
+     * The first HTTP CRL distribution point, or the reason there is none.
+     *
+     * <p>Three reasons, told apart: the certificate names no distribution point; it names some,
+     * none over HTTP (an {@code ldap://} point is not something this node fetches); the
+     * extension could not be read. All three used to be "names no CRL distribution point",
+     * which for the last two is not what was found out (9-6 review, P3).
+     */
+    static CrlPoint crlDistributionPointOf(java.security.cert.X509Certificate certificate) {
+        boolean otherSchemes = false;
         try {
             byte[] extension = certificate.getExtensionValue("2.5.29.31");
             if (extension == null) {
-                return null;
+                return new CrlPoint(null, "the signer certificate names no CRL distribution point");
             }
             org.bouncycastle.asn1.ASN1Primitive octets =
                     org.bouncycastle.asn1.ASN1Primitive.fromByteArray(
@@ -507,14 +527,19 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
                         // should be reaching for, and silently skipping it is better than
                         // failing the anchor over a scheme nobody configured.
                         if (value.startsWith("http://") || value.startsWith("https://")) {
-                            return value;
+                            return new CrlPoint(value, null);
                         }
+                        otherSchemes = true;
                     }
                 }
             }
-            return null;
+            return new CrlPoint(null, otherSchemes
+                    ? "the signer certificate names CRL distribution points, but none over HTTP; "
+                            + "this node does not fetch ldap:// or file:// points"
+                    : "the signer certificate names no CRL distribution point URI");
         } catch (Exception unreadable) {
-            return null;
+            return new CrlPoint(null, "the signer certificate's CRL distribution point extension "
+                    + "could not be read: " + unreadable);
         }
     }
 

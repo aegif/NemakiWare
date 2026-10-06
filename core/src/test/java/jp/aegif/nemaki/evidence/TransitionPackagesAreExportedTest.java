@@ -206,7 +206,7 @@ class TransitionPackagesAreExportedTest {
                         List.of(), null),
                 covering, List.of(covering), covering, Map.of(), AT);
 
-        assertEquals("PACKAGE_INTEGRITY_V1", bundle.highestProfileSupported(),
+        assertEquals(List.of("PACKAGE_INTEGRITY_V1"), bundle.supportedProfiles(),
                 "a transition claims no bytes, so P1's content binding is NOT_PRESENT for it by "
                         + "definition. An export that REQUIRES P1 has to be refused, not handed a "
                         + "package that answers INDETERMINATE");

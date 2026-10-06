@@ -990,6 +990,25 @@ class Rfc3161AnchorTargetTest {
             return tokenGen.generate(request, BigInteger.ONE, new java.util.Date());
         }
 
+        @Test
+        @DisplayName("a certificate whose only distribution point is ldap:// is said to name none over HTTP — not 'no distribution point'")
+        void anLdapOnlyDistributionPointIsSaidToBeSuch() throws Exception {
+            tokenWithDistributionPoint("ldap://directory.example/cn=TSA,o=Example?certificateRevocationList");
+
+            Rfc3161AnchorTarget.CrlPoint point = Rfc3161AnchorTarget.crlDistributionPointOf(certificate);
+
+            assertNull(point.url(), "an ldap:// point is not fetched by this node");
+            assertTrue(point.whyNone().contains("none over HTTP"),
+                    "a certificate that names a distribution point this node does not fetch was "
+                            + "reported as naming none at all — the operator reading the receipt "
+                            + "would look for a missing extension rather than an LDAP-only CA (9-6 "
+                            + "review, P3): " + point.whyNone());
+
+            tokenWithDistributionPoint("http://crl.example/tsa.crl");
+            assertEquals("http://crl.example/tsa.crl",
+                    Rfc3161AnchorTarget.crlDistributionPointOf(certificate).url());
+        }
+
         private Rfc3161AnchorTarget collecting() {
             Rfc3161AnchorTarget target = new Rfc3161AnchorTarget(null, null, null);
             target.setCollectRevocationAtIssuance(true);

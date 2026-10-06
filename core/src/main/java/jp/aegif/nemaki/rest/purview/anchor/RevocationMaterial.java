@@ -69,7 +69,12 @@ public record RevocationMaterial(Status status, byte[] der, String digest, Insta
             byte[] decoded = java.util.Base64.getDecoder().decode(encoded);
             return decoded.length == 0 ? null : decoded;
         } catch (IllegalArgumentException notBase64) {
-            return null;
+            // Not null: null is "the receipt holds no material", and a reader shipping the
+            // package would then say the material was never captured. What is here is material
+            // this version cannot read, which is a different fact (9-6 review, P3).
+            throw new IllegalStateException("the revocation material on this receipt is not "
+                    + "base64, so it cannot be read; the receipt was written by something this "
+                    + "version does not understand", notBase64);
         }
     }
 
