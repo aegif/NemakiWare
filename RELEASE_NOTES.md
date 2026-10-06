@@ -1467,16 +1467,18 @@ jar の manifest が `lib/` を指すので、2 つを同じディレクトリ�
 
 - **zip は 2 つの目次 (central directory と local header) を両方読み**、食い違えば
   `INCONSISTENT_ARCHIVE` で読みません (exit 3)。central directory から読む保存システムと、
-  local header を順に読む検証器が**別の package を見る**形を封じます。2 つ目の目次の bytes は local 側の長さまで
+  local header を順に読む検証器が**別の package を見る**形を封じます。2 つ目の目次の bytes は local 側の長さ + 1 byte まで
   しか読みません（上限は 1 つ目と同じ）
 - 在るのに JSON object として読めない文書は、それを読む検査が `FAILED` です (仕様 §3.2)。
   「無い」(`NOT_PRESENT`、exit 3) とは区別します
 - `--expected-checkpoint` を渡したとき `rollback` は**必須検査**です — 判定できなければ exit 3 で、
-  exit 0 にはなりません。渡した checkpoint が chain に在れば PASS。無いとき、hash だけでは「anchor target
-  より後（保持より前に作られた package）」と「書き換え」が区別できないので、保持した checkpoint の
-  `toSequence` を `--expected-checkpoint-sequence` で渡してください — 提示された期間の中に無ければ exit 2、
-  target より後なら `EXPECTED_AFTER_TARGET` (exit 3)、chain の始まりより前で前任者を運んでいなければ
-  `CHAIN_STARTS_AFTER_EXPECTED` (exit 3)。渡さなければ `EXPECTED_SEQUENCE_UNKNOWN` (exit 3)。
+  exit 0 にはなりません。`ANCHORED_CHECKPOINT_V1` 未満の profile で渡すと usage error (exit 4) です —
+  rollback はその profile に無く、黙って無視はしません。渡した checkpoint が chain に在れば PASS（`toSequence`
+  も渡していて chain の記録と食い違えば exit 2）。無いとき、hash だけでは「anchor target より後」と「書き換え」が
+  区別できないので、保持した checkpoint の `toSequence` を `--expected-checkpoint-sequence` で渡してください —
+  提示された期間の中に無ければ exit 2、target より後なら `EXPECTED_AFTER_TARGET` (exit 3)、chain の始まりより前なら、
+  chain が前任者を持てば `CHAIN_STARTS_AFTER_EXPECTED` (exit 3)、台帳の最初から始まる chain なら exit 2。
+  渡さなければ `EXPECTED_SEQUENCE_UNKNOWN` (exit 3)。links が空か list でない chain も exit 2。
   chain を持たない package では `NOT_PRESENT` です
 - `TRUSTED_RFC3161_V1` の `token pkix` は、署名者証明書への path を **token の生成時刻**で評価します。
   TSA の証明書は数年で失効するので、「今」で評価すると古い token は全部 exit 2 になります
@@ -1531,10 +1533,13 @@ exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は prof
 > `TRUSTED_RFC3161_V1` の問いで、この版では `VERIFIED` に届きません。anchor が commit するのは
 > anchor target の `merkleRoot` だけで、それ以前の期間との連結は package 自身が運ぶ chain です。
 > 外部で保持した checkpoint（`--expected-checkpoint` と、その `toSequence` を `--expected-checkpoint-sequence`）を
-> 渡したとき、それが chain に無ければ、提示された期間の中にあるはずなら `FAILED`、anchor target より後
-> （package のほうが古い）か chain の始まりより前なら判定できない（`EXPECTED_AFTER_TARGET` /
-> `CHAIN_STARTS_AFTER_EXPECTED`）と報告します。`toSequence` を渡さなければ、chain に無い checkpoint は
-> 判定できない（`EXPECTED_SEQUENCE_UNKNOWN`）です。渡さなければ、package は自分と整合しているだけです。
+> 渡したとき、それが chain に在れば PASS（`toSequence` が chain の記録と食い違えば `FAILED`）。無ければ、提示された
+> 期間の中にあるはず（台帳の最初から始まる chain の最初より前も）なら `FAILED`、anchor target より後なら判定できない
+> （`EXPECTED_AFTER_TARGET` — 保持より前に作られた package はそうなりますが、書き換えた後に短く anchor し直した
+> package と区別はつきません）、前任者を持つ chain（最初の link に `prevCheckpointHash` がある）の始まりより前なら
+> 判定できない（`CHAIN_STARTS_AFTER_EXPECTED`）と報告します。`toSequence` を渡さなければ、chain に無い checkpoint は
+> 判定できない（`EXPECTED_SEQUENCE_UNKNOWN`）です。`ANCHORED_CHECKPOINT_V1` 未満の profile では受け付けません
+> （usage error）。渡さなければ、package は自分と整合しているだけです。
 
 **この 2 つは対です。** 上だけを引くと、この検証器が**設計として答えない**ことまで
 答えたように読めます。
