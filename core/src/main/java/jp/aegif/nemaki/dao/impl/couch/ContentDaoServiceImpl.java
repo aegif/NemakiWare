@@ -1740,6 +1740,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public Relationship getRelationship(String repositoryId, String objectId) {
 		CouchRelationship cr = connectorPool.getClient(repositoryId).get(CouchRelationship.class, objectId);
+		if (cr == null) {
+			// The wrapper's one legitimate null: the relationship is not there. Dereferenced, it
+			// was an NPE, and the service's "an edge already gone is not a survivor" never saw
+			// the null it branches on — the NPE aborted the delete instead (c96 confirmation
+			// review, P1).
+			return null;
+		}
 		return cr.convert();
 	}
 

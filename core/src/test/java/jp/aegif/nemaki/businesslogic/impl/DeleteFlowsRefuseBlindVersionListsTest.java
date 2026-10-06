@@ -133,6 +133,9 @@ class DeleteFlowsRefuseBlindVersionListsTest {
         when(dao.deleteBulk("bedroom", List.of("rel-1", "rel-2"))).thenReturn(1);
         // Neither edge is there afterwards: rel-2 was removed by another delete before the bulk
         // delete looked for it, so the bulk delete did not count it — and nothing is orphaned.
+        // The null stubbed here is the DAO's contract for "not there", measured from the DAO's
+        // side in GoneRelationshipIsAbsentNotAnErrorTest: the production DAO used to throw an
+        // NPE instead, so this arm was never reached (c96 confirmation review, P1).
         when(dao.getRelationshipFresh("bedroom", "rel-1")).thenReturn(null);
         when(dao.getRelationshipFresh("bedroom", "rel-2")).thenReturn(null);
         ContentServiceImpl service = new ContentServiceImpl();

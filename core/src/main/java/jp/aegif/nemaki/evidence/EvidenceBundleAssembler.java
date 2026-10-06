@@ -420,8 +420,19 @@ public class EvidenceBundleAssembler {
                         "the audit path contains a step this node could not read");
             }
             Map<String, Object> one = (Map<String, Object>) step;
-            out.add(new EvidenceBundle.InclusionProof.Step(text(one.get("siblingHash")),
-                    Boolean.TRUE.equals(one.get("siblingIsLeft"))));
+            Object sibling = one.get("siblingHash");
+            Object side = one.get("siblingIsLeft");
+            if (!(sibling instanceof String siblingHash) || siblingHash.isBlank()
+                    || !(side instanceof Boolean siblingIsLeft)) {
+                // A step whose sibling or side is missing or of another type is not a step this
+                // node read. Defaulting the side to "right" forged a step and the proof walked to
+                // some root, with nothing recorded (c96 confirmation review, P1).
+                notRead.add("the audit path for entry " + entry.sequence() + " has a step whose "
+                        + "siblingHash or siblingIsLeft is missing or not of its type");
+                return new EvidenceBundle.InclusionProof(leaf, null,
+                        "a step of the audit path could not be read");
+            }
+            out.add(new EvidenceBundle.InclusionProof.Step(siblingHash, siblingIsLeft));
         }
         return new EvidenceBundle.InclusionProof(leaf, out, null);
     }

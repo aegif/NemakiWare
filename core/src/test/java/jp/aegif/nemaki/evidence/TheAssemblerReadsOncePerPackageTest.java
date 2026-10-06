@@ -502,4 +502,32 @@ class TheAssemblerReadsOncePerPackageTest {
                 "the receipt is PENDING and carries no usable material");
         assertNull(part.der());
     }
+
+    @Test
+    @DisplayName("an audit path step without its side, or with a side that is not a boolean, is a refusal — not a right sibling")
+    void aStepWithoutItsSideIsARefusal() {
+        RecordContentStatementV1 held = statement("c".repeat(64));
+        EvidenceLedgerEntry entry = entryAt(5L, held.digest());
+        EvidenceCheckpoint covering = EvidenceCheckpoint.of(RecordContentStateRecorder.DOMAIN,
+                1L, 10L, "aa", null, "2026-09-20T00:00:00Z");
+        for (Map<String, Object> step : List.<Map<String, Object>>of(
+                Map.of("siblingHash", "bb"),
+                Map.of("siblingHash", "bb", "siblingIsLeft", "false"),
+                Map.of("siblingIsLeft", true))) {
+            EvidenceLedgerService ledger = org.mockito.Mockito.mock(EvidenceLedgerService.class);
+            org.mockito.Mockito.when(ledger.inclusionProof(RecordContentStateRecorder.DOMAIN, 5L))
+                    .thenReturn(Map.of("auditPath", List.of(step)));
+            EvidenceBundleAssembler assembler = assembler(journalHolding(held.toDocument(), true),
+                    storeFailingOrWith(null, List.of(entry), covering, before -> null), null);
+            assembler.setLedgerService(ledger);
+
+            EvidenceBundleAssembler.EvidenceNotReadable refusal = assertThrows(
+                    EvidenceBundleAssembler.EvidenceNotReadable.class,
+                    () -> assembler.assemble("bedroom", "doc-1", "v-1"),
+                    "a step the ledger answered without a readable side was shipped as a RIGHT "
+                            + "sibling, and the package claimed RECORD_LEDGER_V1 over a proof "
+                            + "nobody read (c96 confirmation review, P1): " + step);
+            assertTrue(refusal.getMessage().contains("siblingIsLeft"), refusal.getMessage());
+        }
+    }
 }

@@ -41,6 +41,12 @@ public class ImapConnectorAdapter {
         this.password = password;
     }
 
+    /** For tests: an adapter over a store that is already open. */
+    ImapConnectorAdapter(ConnectorDefinition connector, String password, Store store) {
+        this(connector, password);
+        this.store = store;
+    }
+
     /**
      * Summary of a message in a mailbox (for listing without full download).
      */
@@ -161,7 +167,14 @@ public class ImapConnectorAdapter {
             }
             long uidValidity = uf.getUIDValidity();
             Message[] messages = uf.getMessagesByUID(afterUid + 1, UIDFolder.LASTUID);
-            List<MessageSummary> summaries = new ArrayList<>();
+            // UIDs first — the server answered them with the range, so no round trip — then the
+            // sort and the cut, and only then the headers of the messages that are returned. The
+            // summaries of the whole backlog were fetched before the cut, three round trips a
+            // message, so a 50,000-message mailbox cost 150,000 round trips a run and every run
+            // read the backlog again (c96 confirmation review, P2).
+            record Above(long uid, Message message) {
+            }
+            List<Above> above = new ArrayList<>();
             for (Message msg : messages) {
                 long uid = uf.getUID(msg);
                 // A server answers "N:*" with the message of the highest UID even when that UID is
@@ -169,13 +182,22 @@ public class ImapConnectorAdapter {
                 if (uid <= afterUid) {
                     continue;
                 }
-                summaries.add(summaryOf(msg, uid, uidValidity));
+                above.add(new Above(uid, msg));
             }
             // Sorted here so the order is this method's, not the server's.
-            summaries.sort((a, b) -> Long.compare(a.uid(), b.uid()));
-            boolean more = summaries.size() > limit;
-            return new Listing(more ? new ArrayList<>(summaries.subList(0, limit)) : summaries, more,
-                    uidValidity);
+            above.sort((a, b) -> Long.compare(a.uid(), b.uid()));
+            boolean more = above.size() > limit;
+            List<Above> returned = more ? above.subList(0, limit) : above;
+            FetchProfile headers = new FetchProfile();
+            headers.add(FetchProfile.Item.ENVELOPE);
+            headers.add(FetchProfile.Item.SIZE);
+            headers.add("Message-ID");
+            folder.fetch(returned.stream().map(Above::message).toArray(Message[]::new), headers);
+            List<MessageSummary> summaries = new ArrayList<>();
+            for (Above one : returned) {
+                summaries.add(summaryOf(one.message(), one.uid(), uidValidity));
+            }
+            return new Listing(summaries, more, uidValidity);
         } finally {
             folder.close(false);
         }
