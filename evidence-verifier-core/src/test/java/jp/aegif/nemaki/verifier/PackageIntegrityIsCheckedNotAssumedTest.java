@@ -2459,4 +2459,260 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertEquals(Outcome.Verdict.INDETERMINATE, Outcome.combine(checks, checks),
                 "absence must not be promoted to assurance");
     }
+
+    /**
+     * A zip written by hand, STORED, so its two tables of contents can be made to disagree.
+     *
+     * <p>{@code ZipOutputStream} always writes a central directory that agrees with the local
+     * headers, so the archives in question — the ones a hostile sender assembles — cannot be
+     * built with it. {@code put} writes a local header and its bytes and returns the header's
+     * offset; {@code list} records a name in the central directory at a chosen offset with
+     * chosen bytes. Nothing is checked here: the point is to write what the reader must refuse.
+     */
+    private static final class RawZip {
+        private final java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        private final java.io.ByteArrayOutputStream central = new java.io.ByteArrayOutputStream();
+        private int listed;
+
+        int put(String name, byte[] data) {
+            int offset = body.size();
+            body.writeBytes(localHeader(name, data));
+            body.writeBytes(data);
+            return offset;
+        }
+
+        void list(String name, byte[] data, int localHeaderOffset) {
+            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            java.nio.ByteBuffer h = java.nio.ByteBuffer.allocate(46 + nameBytes.length)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            h.putInt(0x02014b50).putShort((short) 20).putShort((short) 20).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putShort((short) 0)
+                    .putInt((int) crc(data)).putInt(data.length).putInt(data.length)
+                    .putShort((short) nameBytes.length).putShort((short) 0).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putInt(0).putInt(localHeaderOffset)
+                    .put(nameBytes);
+            central.writeBytes(h.array());
+            listed++;
+        }
+
+        static byte[] localHeader(String name, byte[] data) {
+            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            java.nio.ByteBuffer h = java.nio.ByteBuffer.allocate(30 + nameBytes.length)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            h.putInt(0x04034b50).putShort((short) 20).putShort((short) 0).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putInt((int) crc(data))
+                    .putInt(data.length).putInt(data.length).putShort((short) nameBytes.length)
+                    .putShort((short) 0).put(nameBytes);
+            return h.array();
+        }
+
+        static long crc(byte[] data) {
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data);
+            return crc.getValue();
+        }
+
+        Path writeTo(Path file) throws java.io.IOException {
+            java.nio.ByteBuffer end = java.nio.ByteBuffer.allocate(22)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            end.putInt(0x06054b50).putShort((short) 0).putShort((short) 0)
+                    .putShort((short) listed).putShort((short) listed).putInt(central.size())
+                    .putInt(body.size()).putShort((short) 0);
+            java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream();
+            all.writeBytes(body.toByteArray());
+            all.writeBytes(central.toByteArray());
+            all.writeBytes(end.array());
+            Files.write(file, all.toByteArray());
+            return file;
+        }
+    }
+
+    private static byte[] utf8(String text) {
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    @DisplayName("a hand-written zip whose two tables agree is read — so the refusals below measure the disagreement, not the writer")
+    void aHandWrittenZipWithAgreeingTablesIsRead(@TempDir Path tmp) throws Exception {
+        Map<String, String> entries = goodPackage("the minutes");
+        RawZip raw = new RawZip();
+        for (Map.Entry<String, String> e : entries.entrySet()) {
+            raw.list(e.getKey(), utf8(e.getValue()), raw.put(e.getKey(), utf8(e.getValue())));
+        }
+
+        Map<String, byte[]> read = PackageReader.open(raw.writeTo(tmp.resolve("raw.zip"))).entries();
+
+        assertEquals(entries.keySet(), read.keySet());
+        for (Map.Entry<String, String> e : entries.entrySet()) {
+            assertEquals(e.getValue(), new String(read.get(e.getKey()), StandardCharsets.UTF_8));
+        }
+        assertEquals(Outcome.PASSED, checkNamed(PackageIntegrity.check(read), "payload fixity").outcome());
+    }
+
+    @Test
+    @DisplayName("a file the central directory does not list is refused, not read from its local header")
+    void aFileOnlyInTheLocalHeadersIsRefused(@TempDir Path tmp) throws Exception {
+        String premis = ROOT + "metadata/preservation/premis.xml";
+        RawZip raw = new RawZip();
+        for (Map.Entry<String, String> e : goodPackage("the minutes").entrySet()) {
+            int offset = raw.put(e.getKey(), utf8(e.getValue()));
+            if (!e.getKey().equals(premis)) {
+                raw.list(e.getKey(), utf8(e.getValue()), offset);
+            }
+        }
+        Path zip = raw.writeTo(tmp.resolve("unlisted.zip"));
+        // The premise, measured: a reader built on the central directory — ZipFile here, and
+        // Python's zipfile, RODA, Archivematica, unzip — never sees the file.
+        try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
+            assertTrue(file.getEntry(premis) == null,
+                    "ZipFile found the unlisted entry, so the two tables did not disagree and "
+                            + "this test measures nothing");
+        }
+
+        PackageReader.Unreadable refusal =
+                assertThrows(PackageReader.Unreadable.class, () -> PackageReader.open(zip));
+
+        assertEquals(PackageReader.Refusal.INCONSISTENT_ARCHIVE, refusal.refusal(),
+                "the stream reader judged a PREMIS the receiving system will never see: two "
+                        + "readers of this zip see two packages, and a verdict on either is a "
+                        + "verdict on a package the other party does not have (9-6 review, P1)");
+        assertTrue(refusal.getMessage().contains("premis.xml"), refusal.getMessage());
+        assertTrue(refusal.getMessage().contains("only in the local headers"), refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("a file only the central directory lists is refused too")
+    void aFileOnlyInTheCentralDirectoryIsRefused(@TempDir Path tmp) throws Exception {
+        String premis = ROOT + "metadata/preservation/premis.xml";
+        RawZip raw = new RawZip();
+        int premisOffset = -1;
+        byte[] premisBytes = null;
+        for (Map.Entry<String, String> e : goodPackage("the minutes").entrySet()) {
+            int offset = raw.put(e.getKey(), utf8(e.getValue()));
+            raw.list(e.getKey(), utf8(e.getValue()), offset);
+            if (e.getKey().equals(premis)) {
+                premisOffset = offset;
+                premisBytes = utf8(e.getValue());
+            }
+        }
+        // A record with no local header of its own: it points at the PREMIS's header, and a
+        // central-directory reader hands out the PREMIS bytes under this name.
+        raw.list(ROOT + "metadata/other/ghost.xml", premisBytes, premisOffset);
+        Path zip = raw.writeTo(tmp.resolve("ghost.zip"));
+        try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
+            java.util.zip.ZipEntry ghost = file.getEntry(ROOT + "metadata/other/ghost.xml");
+            assertTrue(ghost != null && java.util.Arrays.equals(premisBytes,
+                            file.getInputStream(ghost).readAllBytes()),
+                    "ZipFile did not hand out the ghost, so the premise of this test is gone");
+        }
+
+        PackageReader.Unreadable refusal =
+                assertThrows(PackageReader.Unreadable.class, () -> PackageReader.open(zip));
+
+        assertEquals(PackageReader.Refusal.INCONSISTENT_ARCHIVE, refusal.refusal());
+        assertTrue(refusal.getMessage().contains("ghost.xml"), refusal.getMessage());
+        assertTrue(refusal.getMessage().contains("only in the central directory"),
+                refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("one name whose two records hold different bytes is refused, whichever bytes are honest")
+    void anEntryWhoseTwoRecordsHoldDifferentBytesIsRefused(@TempDir Path tmp) throws Exception {
+        String premis = ROOT + "metadata/preservation/premis.xml";
+        String pad = ROOT + "metadata/other/pad.bin";
+        Map<String, String> entries = goodPackage("the minutes");
+        byte[] honest = utf8(entries.get(premis));
+        byte[] forged = utf8(premis("ff".repeat(32), "SHA-256"));
+        // The forged PREMIS, behind a local header of its own, hidden INSIDE another entry's
+        // data. The stream reader walks the local headers and sees pad.bin holding opaque
+        // bytes; the central directory points the PREMIS record at the hidden header, so a
+        // directory reader gets the forged bytes under the honest name. Same names in both
+        // tables — only the bytes differ.
+        byte[] hidden = java.nio.ByteBuffer
+                .allocate(RawZip.localHeader(premis, forged).length + forged.length)
+                .put(RawZip.localHeader(premis, forged)).put(forged).array();
+        RawZip raw = new RawZip();
+        for (Map.Entry<String, String> e : entries.entrySet()) {
+            if (e.getKey().equals(premis)) {
+                raw.put(premis, honest);
+                continue;
+            }
+            raw.list(e.getKey(), utf8(e.getValue()), raw.put(e.getKey(), utf8(e.getValue())));
+        }
+        int padOffset = raw.put(pad, hidden);
+        raw.list(pad, hidden, padOffset);
+        raw.list(premis, forged, padOffset + RawZip.localHeader(pad, hidden).length);
+        Path zip = raw.writeTo(tmp.resolve("two-bytes.zip"));
+        try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
+            assertTrue(java.util.Arrays.equals(forged,
+                            file.getInputStream(file.getEntry(premis)).readAllBytes()),
+                    "ZipFile did not read the forged bytes, so the two readers agree here and "
+                            + "this test measures nothing");
+        }
+
+        PackageReader.Unreadable refusal =
+                assertThrows(PackageReader.Unreadable.class, () -> PackageReader.open(zip));
+
+        assertEquals(PackageReader.Refusal.INCONSISTENT_ARCHIVE, refusal.refusal(),
+                "the stream reader would have checked the honest digest and said PASSED about "
+                        + "a package whose receiving system reads a forged PREMIS");
+        assertTrue(refusal.getMessage().contains("premis.xml"), refusal.getMessage());
+        assertTrue(refusal.getMessage().contains("different bytes"), refusal.getMessage());
+    }
+
+    private static Map<String, String> nestedPackage(int depth) throws Exception {
+        Map<String, String> entries = goodPackage("the minutes");
+        entries.put(ROOT + "metadata/preservation/premis.xml",
+                "<premis:premis xmlns:premis=\"http://www.loc.gov/premis/v3\">"
+                        + "<premis:x>".repeat(depth) + "</premis:x>".repeat(depth)
+                        + "<premis:object><premis:objectCharacteristics><premis:fixity>"
+                        + "<premis:messageDigestAlgorithm>SHA-256</premis:messageDigestAlgorithm>"
+                        + "<premis:messageDigest>" + sha256("the minutes") + "</premis:messageDigest>"
+                        + "</premis:fixity></premis:objectCharacteristics></premis:object>"
+                        + "</premis:premis>");
+        String mets = entries.get(ROOT + "METS.xml");
+        entries.put(ROOT + "METS.xml", mets.replace("</mets:mets>",
+                "<mets:structMap>" + "<mets:div>".repeat(depth) + "</mets:div>".repeat(depth)
+                        + "</mets:structMap></mets:mets>"));
+        return entries;
+    }
+
+    @Test
+    @DisplayName("a PREMIS or METS nested deeper than the thread's stack is read, not a StackOverflowError")
+    void aDeeplyNestedDocumentDoesNotOverflowTheReader(@TempDir Path tmp) throws Exception {
+        // A package is untrusted input. The recursive walks died at a few thousand levels with
+        // a StackOverflowError, which the CLI turned into exit 1 — a number it does not
+        // document (9-6 review, P3). Deep enough to overflow a 1 MiB stack several times over,
+        // and within the bound this verifier states.
+        Path sip = zip(tmp, "deep.zip", nestedPackage(30_000));
+
+        List<Outcome.Check> checks = org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> PackageIntegrity.check(PackageReader.open(sip).entries()));
+
+        assertEquals(Outcome.PASSED, checkNamed(checks, "payload fixity").outcome(),
+                "the fixity is right and sits below the deep part; the walk has to reach it: "
+                        + checkNamed(checks, "payload fixity").detail());
+        assertEquals(Outcome.PASSED, checkNamed(checks, "mets closure").outcome(),
+                checkNamed(checks, "mets closure").detail());
+    }
+
+    @Test
+    @DisplayName("a document nested past the stated bound is RESOURCE_LIMIT — the same answer on every JDK, never 'not XML'")
+    void aDocumentPastTheDepthBoundIsAStatedLimit(@TempDir Path tmp) throws Exception {
+        // JDK 24+ parsers refuse 101 levels by default and JDK 21 refuses nothing, so without
+        // a stated bound the same package answered PREMIS_NOT_PARSED on one JDK and PASSED on
+        // another. The bound is the verifier's, and a document past it is a limit, not a finding.
+        Path sip = zip(tmp, "deeper.zip", nestedPackage(Premis.MAX_ELEMENT_DEPTH + 10));
+
+        List<Outcome.Check> checks = PackageIntegrity.check(PackageReader.open(sip).entries());
+
+        for (String name : List.of("payload fixity", "mets closure")) {
+            Outcome.Check check = checkNamed(checks, name);
+            assertEquals(Outcome.UNAVAILABLE, check.outcome(), name + ": " + check.detail());
+            assertEquals("RESOURCE_LIMIT", check.reasonCode(),
+                    name + " refused the document as 'not XML' rather than as this verifier's "
+                            + "depth bound: " + check.detail());
+            assertTrue(check.detail().contains(String.valueOf(Premis.MAX_ELEMENT_DEPTH)), check.detail());
+        }
+    }
 }

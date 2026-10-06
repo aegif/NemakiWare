@@ -38,7 +38,12 @@ import java.util.Map;
  * <li><b>integers wider than int64</b> — same, by saturation;</li>
  * <li><b>trailing content</b> — two documents in one file is not one document;</li>
  * <li><b>depth beyond a bound</b> — a package is untrusted input, and a StackOverflowError is
- *     not something a verifier can report as a resource limit.</li>
+ *     not something a verifier can report as a resource limit;</li>
+ * <li><b>what JSON's grammar does not have</b> — a leading zero, a raw control character in a
+ *     string, a {@code \\u} escape that is not four hex digits, an unpaired surrogate, and
+ *     whitespace other than JSON's four. This reader accepted them and the Python reference
+ *     did not, so the two could compute different canonical forms of one byte sequence (9-6
+ *     review, P3). A document outside the grammar has no canonical form.</li>
  * </ul>
  */
 public final class Json {
@@ -157,7 +162,11 @@ public final class Json {
             }
             char c = text.charAt(at++);
             if (c == '"') {
-                return out.toString();
+                return withoutUnpairedSurrogates(out.toString());
+            }
+            if (c < 0x20) {
+                throw new NotCanonicalisable("a control character (U+" + String.format("%04X", (int) c)
+                        + ") appears unescaped in a string at offset " + (at - 1));
             }
             if (c != '\\') {
                 out.append(c);
@@ -180,7 +189,15 @@ public final class Json {
                     if (at + 4 > text.length()) {
                         throw new NotCanonicalisable("a \\u escape is cut short");
                     }
-                    out.append((char) Integer.parseInt(text.substring(at, at + 4), 16));
+                    String hex = text.substring(at, at + 4);
+                    for (int i = 0; i < 4; i++) {
+                        // Integer.parseInt would also take a sign, which JSON does not.
+                        if (Character.digit(hex.charAt(i), 16) < 0) {
+                            throw new NotCanonicalisable("the escape \\u" + hex + " at offset "
+                                    + (at - 2) + " is not four hex digits");
+                        }
+                    }
+                    out.append((char) Integer.parseInt(hex, 16));
                     at += 4;
                 }
                 default -> throw new NotCanonicalisable("unknown escape \\" + escape);
@@ -207,6 +224,11 @@ public final class Json {
         if (at == start || (at == start + 1 && text.charAt(start) == '-')) {
             throw new NotCanonicalisable("expected a value at offset " + start);
         }
+        int firstDigit = text.charAt(start) == '-' ? start + 1 : start;
+        if (text.charAt(firstDigit) == '0' && at - firstDigit > 1) {
+            throw new NotCanonicalisable("the number at offset " + start + " has a leading zero, "
+                    + "which JSON's grammar does not allow");
+        }
         // A fraction or an exponent makes this a non-integral literal. Refused HERE rather than
         // parsed and rounded: the digest must be of the document, not of a nearby number.
         if (at < text.length() && (text.charAt(at) == '.' || text.charAt(at) == 'e'
@@ -224,9 +246,38 @@ public final class Json {
     }
 
     private void skipWhitespace() {
-        while (at < text.length() && Character.isWhitespace(text.charAt(at))) {
+        while (at < text.length() && isJsonWhitespace(text.charAt(at))) {
             at++;
         }
+    }
+
+    /** JSON's four — not Character.isWhitespace, which also takes U+00A0, U+2028 and friends. */
+    private static boolean isJsonWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    }
+
+    /**
+     * {@code s}, unless it holds a surrogate without its pair.
+     *
+     * <p>Such a string is not Unicode text: encoding it to UTF-8 replaces the lone surrogate
+     * with U+FFFD or {@code ?}, so {@code "\\ud800"} and {@code "?"} would digest alike and the
+     * Python reference, which refuses to encode it, would answer nothing at all.
+     */
+    private static String withoutUnpairedSurrogates(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 >= s.length() || !Character.isLowSurrogate(s.charAt(i + 1))) {
+                    throw new NotCanonicalisable("a string holds an unpaired surrogate (U+"
+                            + String.format("%04X", (int) c) + "), which is not Unicode text");
+                }
+                i++;
+            } else if (Character.isLowSurrogate(c)) {
+                throw new NotCanonicalisable("a string holds an unpaired surrogate (U+"
+                        + String.format("%04X", (int) c) + "), which is not Unicode text");
+            }
+        }
+        return s;
     }
 
     private char peek() {

@@ -20,11 +20,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 /**
@@ -61,7 +64,9 @@ public final class PackageReader {
         NOT_A_ZIP,
         UNSAFE_PATH,
         DUPLICATE_ENTRY,
-        RESOURCE_LIMIT
+        RESOURCE_LIMIT,
+        /** The central directory and the local headers describe different files. */
+        INCONSISTENT_ARCHIVE
     }
 
     /** A package that could not be read, and the reason — never a partial read. */
@@ -139,7 +144,70 @@ public final class PackageReader {
         if (read.isEmpty()) {
             throw new Unreadable(Refusal.NOT_A_ZIP, "the archive holds no files");
         }
+        refuseUnlessTheCentralDirectoryAgrees(zip, read);
         return new PackageReader(read);
+    }
+
+    /**
+     * A zip has two tables of contents, and they can disagree.
+     *
+     * <p>The stream above reads the local headers in order; a reader built on the central
+     * directory — {@code java.util.zip.ZipFile}, Python's zipfile, RODA, Archivematica, unzip —
+     * follows the offsets the directory records. A directory entry can point into the middle of
+     * another entry's data, where a second local header with the same name sits with different
+     * bytes, and a local entry can be left out of the directory altogether. Reading one table
+     * only, this verifier judged bytes the receiving system would never see (9-6 review, P1).
+     * Both are read, and a package whose tables disagree — in names or in bytes — is refused as
+     * unreadable rather than judged from either.
+     */
+    private static void refuseUnlessTheCentralDirectoryAgrees(Path zip, Map<String, byte[]> local) {
+        Map<String, byte[]> central = new LinkedHashMap<>();
+        try (ZipFile file = new ZipFile(zip.toFile())) {
+            Enumeration<? extends ZipEntry> entries = file.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                if (central.size() >= MAX_ENTRIES) {
+                    throw new Unreadable(Refusal.RESOURCE_LIMIT,
+                            "the central directory lists more than " + MAX_ENTRIES + " entries");
+                }
+                String name = entry.getName();
+                if (central.containsKey(name)) {
+                    throw new Unreadable(Refusal.DUPLICATE_ENTRY, "the central directory lists \""
+                            + name + "\" twice");
+                }
+                try (InputStream in = file.getInputStream(entry)) {
+                    central.put(name, readBounded(in, name));
+                }
+            }
+        } catch (Unreadable refusal) {
+            throw refusal;
+        } catch (IOException | RuntimeException broken) {
+            throw new Unreadable(Refusal.NOT_A_ZIP,
+                    "the package's central directory could not be read: " + broken.getMessage());
+        }
+        Set<String> onlyLocal = new LinkedHashSet<>(local.keySet());
+        onlyLocal.removeAll(central.keySet());
+        Set<String> onlyCentral = new LinkedHashSet<>(central.keySet());
+        onlyCentral.removeAll(local.keySet());
+        if (!onlyLocal.isEmpty() || !onlyCentral.isEmpty()) {
+            throw new Unreadable(Refusal.INCONSISTENT_ARCHIVE,
+                    "the central directory and the local headers list different files"
+                            + (onlyLocal.isEmpty() ? "" : "; only in the local headers: " + onlyLocal)
+                            + (onlyCentral.isEmpty() ? "" : "; only in the central directory: "
+                                    + onlyCentral)
+                            + ". Two readers of this zip would see two packages; neither is judged");
+        }
+        for (Map.Entry<String, byte[]> entry : local.entrySet()) {
+            if (!Arrays.equals(entry.getValue(), central.get(entry.getKey()))) {
+                throw new Unreadable(Refusal.INCONSISTENT_ARCHIVE,
+                        "the entry \"" + entry.getKey() + "\" has different bytes behind its "
+                                + "local header and behind its central directory record. Two "
+                                + "readers of this zip would see two packages; neither is judged");
+            }
+        }
     }
 
     /**

@@ -513,6 +513,12 @@ public final class PackageIntegrity {
         // the PREMIS namespace to another prefix carried two digests and was counted as one
         // (Codex, fifth review, P1).
         Premis.Fixity fixity = Premis.read(entries.get(premisPaths.get(0)));
+        if (fixity.tooDeep()) {
+            return Outcome.Check.unavailable("payload fixity", "RESOURCE_LIMIT",
+                    "the package presents " + premisPaths.get(0) + " as PREMIS nested deeper than "
+                            + "the " + Premis.MAX_ELEMENT_DEPTH + " levels this verifier reads; "
+                            + "this is a refusal to read it, NOT a finding about its contents");
+        }
         if (!fixity.parsed()) {
             // UNAVAILABLE, not FAILED. Some of what this refuses is the package's fault (not
             // XML) and some is this verifier's policy (no DTDs, because a verifier must not
@@ -639,6 +645,15 @@ public final class PackageIntegrity {
             String mets = new String(entries.get(metsPath), StandardCharsets.UTF_8);
             List<String> hrefs = hrefsIn(mets);
             if (hrefs == null) {
+                if (Premis.isDepthRefusal(LAST_PARSE_FAILURE.get())) {
+                    // This verifier's bound, not the package's defect (§9: a limit is
+                    // UNAVAILABLE + RESOURCE_LIMIT, never a finding).
+                    return Outcome.Check.unavailable("mets closure", "RESOURCE_LIMIT",
+                            "the package presents " + metsPath + " as a METS nested deeper than "
+                                    + "the " + Premis.MAX_ELEMENT_DEPTH + " levels this verifier "
+                                    + "reads; this is a refusal to read it, NOT a finding about "
+                                    + "its contents" + notEvaluated(external, declinedLocal));
+                }
                 // The package HAS a METS and this verifier could not read it. Saying the METS
                 // names nothing would turn that into a fact about the package.
                 return Outcome.Check.unavailable("mets closure", "METS_NOT_PARSED",
@@ -1425,6 +1440,7 @@ public final class PackageIntegrity {
         // reads the count the previous METS left behind (subagent, fifteenth review, P3).
         LAST_EXTERNAL.set(0);
         COULD_STILL_NAME_IT.set(List.of());
+        LAST_PARSE_FAILURE.set(null);
         org.w3c.dom.Document document;
         try {
             javax.xml.parsers.DocumentBuilderFactory factory =
@@ -1448,9 +1464,11 @@ public final class PackageIntegrity {
             // digest" — "read and absent" for something that was not read (subagent, seventh
             // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
+            Premis.limitDepth(factory);
             document = factory.newDocumentBuilder().parse(new org.xml.sax.InputSource(
                     new java.io.StringReader(xml)));
         } catch (Exception notXml) {
+            LAST_PARSE_FAILURE.set(String.valueOf(notXml.getMessage()));
             return null;
         }
         List<String> hrefs = new ArrayList<>();
@@ -1474,6 +1492,8 @@ public final class PackageIntegrity {
      * count gets it without changing what every other caller of {@code hrefsIn} receives.
      */
     private static final ThreadLocal<Integer> LAST_EXTERNAL = ThreadLocal.withInitial(() -> 0);
+    /** Why the last {@link #hrefsIn} could not parse, so the caller can tell a limit from "not XML". */
+    private static final ThreadLocal<String> LAST_PARSE_FAILURE = new ThreadLocal<>();
 
     /**
      * Of those, the ones dropped by {@code LOCTYPE} ALONE — collected exactly as a followed
@@ -1520,19 +1540,26 @@ public final class PackageIntegrity {
     }
 
     private static void collectEveryHref(org.w3c.dom.Element element, List<String> hrefs) {
-        if (element == null) {
-            return;
+        // A stack, not recursion: a METS nested deeper than the thread's stack killed the walk
+        // with a StackOverflowError — exit 1 (9-6 review, P3). Children last-to-first, so the
+        // order is document order.
+        java.util.ArrayDeque<org.w3c.dom.Element> pending = new java.util.ArrayDeque<>();
+        if (element != null) {
+            pending.push(element);
         }
-        // The same hasAttributeNS the collecting walk uses: counting by "non-empty string"
-        // while it collects by "the attribute is there" would make the difference between them
-        // — which is what this returns — negative for a METS carrying href="".
-        if (element.hasAttributeNS(XLINK, "href")) {
-            hrefs.add(element.getAttributeNS(XLINK, "href"));
-        }
-        org.w3c.dom.NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof org.w3c.dom.Element child) {
-                collectEveryHref(child, hrefs);
+        while (!pending.isEmpty()) {
+            org.w3c.dom.Element current = pending.pop();
+            // The same hasAttributeNS the collecting walk uses: counting by "non-empty string"
+            // while it collects by "the attribute is there" would make the difference between
+            // them — which is what this returns — negative for a METS carrying href="".
+            if (current.hasAttributeNS(XLINK, "href")) {
+                hrefs.add(current.getAttributeNS(XLINK, "href"));
+            }
+            org.w3c.dom.NodeList children = current.getChildNodes();
+            for (int i = children.getLength() - 1; i >= 0; i--) {
+                if (children.item(i) instanceof org.w3c.dom.Element child) {
+                    pending.push(child);
+                }
             }
         }
     }
@@ -1550,9 +1577,29 @@ public final class PackageIntegrity {
      */
     private static void collectHrefs(org.w3c.dom.Element element, String base,
             List<String> hrefs, List<String> declined, List<String> namesNoFile) {
-        if (element == null) {
-            return;
+        // A stack of (element, the base in effect above it), not recursion — see
+        // collectEveryHref. Each element's own xml:base is merged when it is visited, and the
+        // merged base is what its children are pushed with.
+        java.util.ArrayDeque<Object[]> pending = new java.util.ArrayDeque<>();
+        if (element != null) {
+            pending.push(new Object[] { element, base });
         }
+        while (!pending.isEmpty()) {
+            Object[] frame = pending.pop();
+            org.w3c.dom.Element current = (org.w3c.dom.Element) frame[0];
+            String baseHere = visitForHrefs(current, (String) frame[1], hrefs, declined, namesNoFile);
+            org.w3c.dom.NodeList children = current.getChildNodes();
+            for (int i = children.getLength() - 1; i >= 0; i--) {
+                if (children.item(i) instanceof org.w3c.dom.Element child) {
+                    pending.push(new Object[] { child, baseHere });
+                }
+            }
+        }
+    }
+
+    /** One element's references, under {@code base}; answers the base in effect for its children. */
+    private static String visitForHrefs(org.w3c.dom.Element element, String base,
+            List<String> hrefs, List<String> declined, List<String> namesNoFile) {
         // BACKSLASHES ARE NORMALISED HERE, once, before any rule looks at a reference. The UNC
         // rule was added to isPackageLocal only, and the three siblings that decide the base
         // (hasAuthority, merge's authority arm, the absolute-href guard) still knew the forward
@@ -1608,12 +1655,7 @@ public final class PackageIntegrity {
                 (isLocalLocType(element) ? hrefs : declined).add(merged);
             }
         }
-        org.w3c.dom.NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof org.w3c.dom.Element child) {
-                collectHrefs(child, base, hrefs, declined, namesNoFile);
-            }
-        }
+        return base;
     }
 
     /**

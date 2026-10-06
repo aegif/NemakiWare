@@ -199,7 +199,10 @@ public final class Verify {
                     || "LONG_TERM_ERS_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.check(
                         entries, expectedCheckpoint));
-                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.REQUIRED);
+                // With an expected checkpoint the rollback check is required (§11): a holder who
+                // supplied one gets an answer or INDETERMINATE, never VERIFIED over "not decided".
+                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.requiredFor(
+                        expectedCheckpoint != null));
             }
             if ("TRUSTED_RFC3161_V1".equals(profile) || "LONG_TERM_ERS_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.TrustedRfc3161.check(entries, trust));
@@ -259,9 +262,13 @@ public final class Verify {
             + "the ledger material it carries. It does NOT establish that the content was true "
             + "when captured, that everything was captured, that the checkpoint shown is the "
             + "latest, or that an administrator could not have produced all of it. "
-            + "Independence comes from an external anchor: it is checked only when a profile "
-            + "of ANCHORED_CHECKPOINT_V1 or above is requested, and only against a trust "
-            + "profile you supplied. Without one, the anchor checks report NOT_PRESENT.";
+            + "Independence comes from an external anchor, which is checked only when a "
+            + "profile of ANCHORED_CHECKPOINT_V1 or above is requested. ANCHORED_CHECKPOINT_V1 "
+            + "checks that an RFC 3161 token commits the checkpoint's root and is signed by the "
+            + "certificate it carries - not who that signer is, or whether to trust them. "
+            + "Whether the signer leads to a trust anchor is checked from TRUSTED_RFC3161_V1 up, "
+            + "and only against a trust profile you supplied; without one, that check reports "
+            + "NOT_PRESENT.";
 
     static String asJson(Outcome.Verdict verdict, String profile, List<Outcome.Check> checks) {
         StringBuilder json = new StringBuilder("{\"profile\":\"").append(profile)

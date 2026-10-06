@@ -278,4 +278,191 @@ class TheLedgerIsRecomputedNotReadBackTest {
                         + "would name a defect nobody found");
         assertTrue(check.detail().contains("subjectId"), check.detail());
     }
+
+    /**
+     * A package whose entry is the LEFT leaf of a two-leaf tree, so its proof has one step whose
+     * sibling is on the right — {@code siblingIsLeft: false}, the value a reader that defaults a
+     * missing field to false would invent.
+     */
+    private static Map<String, byte[]> twoLeafEntries(String payload) {
+        Map<String, byte[]> entries = goodEntries(payload);
+        Map<String, Object> entry = entryFor(Canonical.documentDigest(statement(payload)));
+        String entryHash = String.valueOf(entry.get("entryHash"));
+        String other = Canonical.hash("LEDGER_ENTRY_V1", "record-content", 2L,
+                "RECORD_CONTENT_STATE", "doc-2", "0".repeat(64), "2026-09-20T00:00:01Z", entryHash);
+        String root = Merkle.root(List.of(entryHash, other));
+        Map<String, Object> covering = new LinkedHashMap<>();
+        covering.put("domain", "record-content");
+        covering.put("fromSequence", 1L);
+        covering.put("toSequence", 2L);
+        covering.put("merkleRoot", root);
+        covering.put("prevCheckpointHash", null);
+        covering.put("createdAt", "2026-09-20T00:00:00Z");
+        covering.put("checkpointHash", Canonical.hash("LEDGER_CHECKPOINT_V1", "record-content",
+                1L, 2L, root, null, "2026-09-20T00:00:00Z"));
+        entries.put(DIR + "covering-checkpoint.json",
+                json(covering).getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "inclusion-proof.json",
+                json(proof(Merkle.hashLeaf(entryHash), Merkle.hashLeaf(other), false))
+                        .getBytes(StandardCharsets.UTF_8));
+        return entries;
+    }
+
+    private static Map<String, Object> proof(Object leafHash, Object siblingHash, Object siblingIsLeft) {
+        Map<String, Object> step = new LinkedHashMap<>();
+        step.put("siblingHash", siblingHash);
+        step.put("siblingIsLeft", siblingIsLeft);
+        Map<String, Object> proof = new LinkedHashMap<>();
+        proof.put("leafHash", leafHash);
+        proof.put("steps", List.of(step));
+        return proof;
+    }
+
+    private static Outcome.Check proofCheckWith(Map<String, Object> proof) {
+        Map<String, byte[]> entries = twoLeafEntries("the minutes");
+        entries.put(DIR + "inclusion-proof.json", json(proof).getBytes(StandardCharsets.UTF_8));
+        return named(RecordLedger.check(entries), "inclusion proof");
+    }
+
+    private static String entryLeaf() {
+        return Merkle.hashLeaf(String.valueOf(
+                entryFor(Canonical.documentDigest(statement("the minutes"))).get("entryHash")));
+    }
+
+    private static String siblingLeaf() {
+        String entryHash = String.valueOf(
+                entryFor(Canonical.documentDigest(statement("the minutes"))).get("entryHash"));
+        return Merkle.hashLeaf(Canonical.hash("LEDGER_ENTRY_V1", "record-content", 2L,
+                "RECORD_CONTENT_STATE", "doc-2", "0".repeat(64), "2026-09-20T00:00:01Z", entryHash));
+    }
+
+    @Test
+    @DisplayName("a proof with a right-hand sibling passes when it says so")
+    void aRightSiblingStatedPasses() {
+        List<Outcome.Check> checks = RecordLedger.check(twoLeafEntries("the minutes"));
+        assertEquals(Outcome.PASSED, named(checks, "inclusion proof").outcome(), checks + "");
+        assertEquals(Outcome.Verdict.VERIFIED, Outcome.combine(checks, required(checks)));
+    }
+
+    @Test
+    @DisplayName("a step that does not say which side its sibling is on is NOT_PRESENT, not a right sibling")
+    void aStepWithoutItsSideIsNotPresent() {
+        Map<String, Object> proof = proof(entryLeaf(), siblingLeaf(), false);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> step = (Map<String, Object>) ((List<Object>) proof.get("steps")).get(0);
+        step.remove("siblingIsLeft");
+
+        Outcome.Check check = proofCheckWith(proof);
+
+        // It used to be read as false — the right answer for THIS step, so the proof walked to
+        // the root and passed with a required field missing (9-6 review, P1).
+        assertEquals(Outcome.NOT_PRESENT, check.outcome(), check.detail());
+    }
+
+    @Test
+    @DisplayName("a siblingIsLeft that is not a boolean is a FAILURE")
+    void aSideThatIsNotABooleanFails() {
+        Outcome.Check check = proofCheckWith(proof(entryLeaf(), siblingLeaf(), "false"));
+        assertEquals(Outcome.FAILED, check.outcome(), check.detail());
+    }
+
+    @Test
+    @DisplayName("a step without its sibling hash is NOT_PRESENT")
+    void aStepWithoutItsSiblingIsNotPresent() {
+        Map<String, Object> proof = proof(entryLeaf(), siblingLeaf(), false);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> step = (Map<String, Object>) ((List<Object>) proof.get("steps")).get(0);
+        step.remove("siblingHash");
+        Outcome.Check check = proofCheckWith(proof);
+        assertEquals(Outcome.NOT_PRESENT, check.outcome(), check.detail());
+    }
+
+    @Test
+    @DisplayName("a proof without its leafHash is NOT_PRESENT, though the walk would still reach the root")
+    void aProofWithoutItsLeafIsNotPresent() {
+        Map<String, Object> proof = proof(entryLeaf(), siblingLeaf(), false);
+        proof.remove("leafHash");
+        Outcome.Check check = proofCheckWith(proof);
+        assertEquals(Outcome.NOT_PRESENT, check.outcome(), check.detail());
+    }
+
+    @Test
+    @DisplayName("a leafHash that is not the entry's leaf, or not a string, is a FAILURE")
+    void aLeafThatIsNotTheEntrysFails() {
+        Outcome.Check other = proofCheckWith(proof(Merkle.hashLeaf("some other entry"), siblingLeaf(), false));
+        assertEquals(Outcome.FAILED, other.outcome(), other.detail());
+        Outcome.Check number = proofCheckWith(proof(7L, siblingLeaf(), false));
+        assertEquals(Outcome.FAILED, number.outcome(), number.detail());
+    }
+
+    @Test
+    @DisplayName("a ledger entry that is not a well-formed document is FAILED for every check that reads it, not absent")
+    void aMalformedLedgerEntryIsFailedNotAbsent() {
+        Map<String, byte[]> entries = goodEntries("the minutes");
+        entries.put(DIR + "ledger-entry.json",
+                "{\"sequence\":1,\"sequence\":1}".getBytes(StandardCharsets.UTF_8));
+
+        List<Outcome.Check> checks = RecordLedger.check(entries);
+
+        for (String name : List.of("entry recompute", "entry binds statement", "content binding",
+                "covering range", "inclusion proof", "transition continuity")) {
+            Outcome.Check check = named(checks, name);
+            assertEquals(Outcome.FAILED, check.outcome(), name + ": a duplicate key makes the "
+                    + "entry malformed (§3.2), which is FAILED for every check that reads it. "
+                    + "Folded into null it read as 'the package carries no ledger entry' and "
+                    + "exit 3 (9-6 review, P1)");
+            assertTrue(check.detail().contains("ledger-entry.json"), check.detail());
+        }
+        // The checks that do not read the entry are untouched by it.
+        assertEquals(Outcome.PASSED, named(checks, "statement canonical form").outcome());
+        assertEquals(Outcome.PASSED, named(checks, "checkpoint recompute").outcome());
+        // And an entry that is NOT there is still absent, not failed.
+        entries.remove(DIR + "ledger-entry.json");
+        assertEquals(Outcome.NOT_PRESENT,
+                named(RecordLedger.check(entries), "entry recompute").outcome());
+    }
+
+    @Test
+    @DisplayName("a statement that is not a well-formed document is FAILED for every check that reads it")
+    void aMalformedStatementIsFailedNotAbsent() {
+        Map<String, byte[]> entries = goodEntries("the minutes");
+        entries.put(DIR + "record-content-statement.json", "[]".getBytes(StandardCharsets.UTF_8));
+
+        List<Outcome.Check> checks = RecordLedger.check(entries);
+
+        for (String name : List.of("statement canonical form", "content binding",
+                "entry binds statement")) {
+            assertEquals(Outcome.FAILED, named(checks, name).outcome(), name);
+            assertTrue(named(checks, name).detail().contains("record-content-statement.json"),
+                    named(checks, name).detail());
+        }
+        assertEquals(Outcome.PASSED, named(checks, "entry recompute").outcome(),
+                "the entry recomputes from its own fields whatever the statement beside it is");
+    }
+
+    @Test
+    @DisplayName("a shipped .c14n beside the entry or the covering checkpoint has to be its canonical form")
+    @SuppressWarnings("unchecked")
+    void aShippedC14nBesideTheEntryOrCheckpointIsChecked() {
+        Map<String, byte[]> entries = goodEntries("the minutes");
+        Map<String, Object> entry = (Map<String, Object>) Json.parse(
+                new String(entries.get(DIR + "ledger-entry.json"), StandardCharsets.UTF_8));
+        entries.put(DIR + "ledger-entry.c14n", Canonical.encode(entry));
+        assertEquals(Outcome.PASSED, named(RecordLedger.check(entries), "entry recompute").outcome(),
+                "the honest .c14n beside the entry");
+
+        entries.put(DIR + "ledger-entry.c14n", Canonical.encode(Map.of("not", "the entry")));
+        Outcome.Check recompute = named(RecordLedger.check(entries), "entry recompute");
+        assertEquals(Outcome.FAILED, recompute.outcome(),
+                "§3.2 makes every shipped .c14n a thing to check against the .json beside it, and "
+                        + "only the statement's was (9-6 review, P3)");
+        assertTrue(recompute.detail().contains("ledger-entry.c14n"), recompute.detail());
+
+        Map<String, byte[]> withCheckpoint = goodEntries("the minutes");
+        withCheckpoint.put(DIR + "covering-checkpoint.c14n",
+                Canonical.encode(Map.of("not", "the checkpoint")));
+        Outcome.Check checkpoint = named(RecordLedger.check(withCheckpoint), "checkpoint recompute");
+        assertEquals(Outcome.FAILED, checkpoint.outcome(), checkpoint.detail());
+        assertTrue(checkpoint.detail().contains("covering-checkpoint.c14n"), checkpoint.detail());
+    }
 }

@@ -84,6 +84,66 @@ final class Section {
         return json == null ? null : parse(json);
     }
 
+    /**
+     * A section document as read: absent, or there and well formed, or there and NOT a
+     * well-formed JSON object.
+     *
+     * <p>The third is its own state. {@link #documentIn} folds it into null, and every check
+     * that read the null said NOT_PRESENT — so a ledger entry with a duplicate key, which §3.2
+     * makes a malformed document and FAILED, was reported as "the package carries no ledger
+     * entry" and exit 3 (9-6 review, P1). A check that reads a malformed document says FAILED.
+     */
+    record Doc(Map<String, Object> value, boolean malformed) {
+        static final Doc ABSENT = new Doc(null, false);
+    }
+
+    static Doc read(Map<String, byte[]> entries, String name) {
+        byte[] json = fileIn(entries, name);
+        if (json == null) {
+            return Doc.ABSENT;
+        }
+        Map<String, Object> value = parse(json);
+        return value == null ? new Doc(null, true) : new Doc(value, false);
+    }
+
+    /**
+     * {@code check}, unless it passed and {@code stem}.c14n sits beside {@code stem}.json and is
+     * not its canonical form — then §3.2's FAILED, under the check's own name.
+     *
+     * <p>§3.2 makes every shipped {@code .c14n} a thing to check, and only the statement's was
+     * (9-6 review, P3). A {@code .c14n} that is NOT shipped is nothing to check here: §4.2
+     * names the four files of {@code prior/} as a set, and that rule has its own arm.
+     */
+    static Outcome.Check alsoCanonicalForm(Outcome.Check check, Map<String, byte[]> entries,
+            String stem) {
+        if (check.outcome() != Outcome.PASSED) {
+            return check;
+        }
+        byte[] shipped = fileIn(entries, stem + ".c14n");
+        byte[] json = fileIn(entries, stem + ".json");
+        if (shipped == null || json == null) {
+            return check;
+        }
+        byte[] recomputed;
+        try {
+            recomputed = Canonical.encode(Json.parse(new String(json, StandardCharsets.UTF_8)));
+        } catch (RuntimeException e) {
+            return Outcome.Check.failed(check.name(), stem + ".json has no canonical form: "
+                    + e.getMessage());
+        }
+        if (!java.util.Arrays.equals(recomputed, shipped)) {
+            return Outcome.Check.failed(check.name(), "the shipped " + stem + ".c14n is not the "
+                    + "canonical form of the .json beside it (§3.2)");
+        }
+        return check;
+    }
+
+    /** The §3.2 answer for a check that read a document that is there and is not well formed. */
+    static Outcome.Check malformed(String check, String... names) {
+        return Outcome.Check.failed(check, String.join(", ", names) + " is not a well-formed "
+                + "JSON object; §3.2 makes a malformed document FAILED, not absent");
+    }
+
     /** {@code json} as a JSON object, or null when it is not one or does not parse. */
     @SuppressWarnings("unchecked")
     static Map<String, Object> parse(byte[] json) {

@@ -43,8 +43,9 @@ import java.util.List;
  * packages from another organisation, and a verifier that fetched a URL named inside one would
  * be doing what it exists to avoid.
  *
- * <p><b>There is a twin.</b> {@code core}'s {@code SipVerifier} answers the same question for
- * the product's own {@code /verify}, in a module this one may not depend on. The two are held
+ * <p><b>There is a twin.</b> {@code core}'s {@code SipVerifier} answers the same question
+ * inside the product (this version exposes no endpoint for it — its callers are tests), in a
+ * module this one may not depend on. The two are held
  * to the same sentences of {@code evidence-profile-v1.md} §9 by a lock on each side; an
  * operator reaching the product's endpoint and a receiver running the CLI must not get
  * different answers about one file.
@@ -67,6 +68,38 @@ final class Premis {
         boolean parsed() {
             return unreadable == null;
         }
+
+        /** Not read because it nests past {@link #MAX_ELEMENT_DEPTH} — a limit, not a defect. */
+        boolean tooDeep() {
+            return unreadable != null && isDepthRefusal(unreadable);
+        }
+    }
+
+    /**
+     * How deep a PREMIS or METS may nest before this verifier declines to read it.
+     *
+     * <p>Stated here so the answer is the same on every JDK: a JDK 24+ parser refuses anything
+     * deeper than 100 levels by default, JDK 21 refuses nothing — and the recursive walks of
+     * this class died with a StackOverflowError on the latter (9-6 review, P3). The walks are
+     * iterative now; the bound that remains is this one, and a document past it is
+     * {@code RESOURCE_LIMIT} ("too deep for this verifier"), never "not XML".
+     */
+    static final int MAX_ELEMENT_DEPTH = 50_000;
+
+    /** Applies {@link #MAX_ELEMENT_DEPTH} to a factory; a parser without the property keeps none. */
+    static void limitDepth(DocumentBuilderFactory factory) {
+        try {
+            factory.setAttribute("http://www.oracle.com/xml/jaxp/properties/maxElementDepth",
+                    MAX_ELEMENT_DEPTH);
+        } catch (IllegalArgumentException notThisParser) {
+            // Not the JDK's parser. The walks below do not recurse, so a deeper document costs
+            // memory, not a crash; the bound just is not enforced by the parser here.
+        }
+    }
+
+    /** Whether a parser's refusal was the depth limit (JAXP00010006 names the property). */
+    static boolean isDepthRefusal(String message) {
+        return message != null && message.contains("maxElementDepth");
     }
 
     /**
@@ -110,6 +143,7 @@ final class Premis {
             // digest" — "read and absent" for something that was not read (subagent, seventh
             // and eighth reviews, P3).
             factory.setExpandEntityReferences(true);
+            limitDepth(factory);
             document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
         } catch (Exception notXml) {
             return new Fixity(List.of(), List.of(), String.valueOf(notXml.getMessage()), null);
@@ -171,19 +205,27 @@ final class Premis {
     /** Every descendant element with this local name, in the PREMIS namespace. */
     private static List<Element> elementsNamed(Element element, String localName) {
         List<Element> found = new ArrayList<>();
-        if (element == null) {
-            return found;
+        // Walked with a stack, not by recursion: a package is untrusted input, and a document
+        // nested deeper than the thread's stack made the recursive walk die with a
+        // StackOverflowError — exit 1, a number the CLI does not document (9-6 review, P3).
+        // Children are pushed last-to-first so the order found is document order.
+        java.util.ArrayDeque<Element> pending = new java.util.ArrayDeque<>();
+        if (element != null) {
+            pending.push(element);
         }
-        String name = element.getLocalName() == null ? element.getNodeName()
-                : element.getLocalName();
-        String namespace = element.getNamespaceURI();
-        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {
-            found.add(element);
-        }
-        NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof Element child) {
-                found.addAll(elementsNamed(child, localName));
+        while (!pending.isEmpty()) {
+            Element current = pending.pop();
+            String name = current.getLocalName() == null ? current.getNodeName()
+                    : current.getLocalName();
+            String namespace = current.getNamespaceURI();
+            if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {
+                found.add(current);
+            }
+            NodeList children = current.getChildNodes();
+            for (int i = children.getLength() - 1; i >= 0; i--) {
+                if (children.item(i) instanceof Element child) {
+                    pending.push(child);
+                }
             }
         }
         return found;
@@ -204,20 +246,9 @@ final class Premis {
     }
 
     private static void collect(Element element, String localName, List<String> found) {
-        if (element == null) {
-            return;
-        }
-        String name = element.getLocalName() == null ? element.getNodeName()
-                : element.getLocalName();
-        String namespace = element.getNamespaceURI();
-        if (localName.equals(name) && (namespace == null || NAMESPACES.contains(namespace))) {
-            found.add(element.getTextContent());
-        }
-        NodeList children = element.getChildNodes();
-        for (int i = 0; i < children.getLength(); i++) {
-            if (children.item(i) instanceof Element child) {
-                collect(child, localName, found);
-            }
+        // A stack, not recursion — see elementsNamed.
+        for (Element match : elementsNamed(element, localName)) {
+            found.add(match.getTextContent());
         }
     }
 }

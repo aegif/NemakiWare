@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -178,6 +179,61 @@ class TheChainIsWalkedNotAssumedTest {
                         + "rewrite takes");
     }
 
+    /** A link hashed and chained correctly over whatever values it is given. */
+    private static Map<String, Object> rawLink(Object from, Object to, Object root, String prev) {
+        Map<String, Object> checkpoint = new LinkedHashMap<>();
+        checkpoint.put("domain", "record-content");
+        checkpoint.put("fromSequence", from);
+        checkpoint.put("toSequence", to);
+        checkpoint.put("merkleRoot", root);
+        checkpoint.put("prevCheckpointHash", prev);
+        checkpoint.put("createdAt", "2026-09-20T00:00:00Z");
+        checkpoint.put("checkpointHash", Canonical.hash("LEDGER_CHECKPOINT_V1", "record-content",
+                from, to, root, prev, "2026-09-20T00:00:00Z"));
+        return checkpoint;
+    }
+
+    /** covering 1..10, then {@code middle}, then a target 21..30 — every hash and link right. */
+    private static List<Outcome.Check> chainThrough(Object from, Object to, Object root) {
+        Map<String, Object> first = link(1, 10, "aa", null);
+        Map<String, Object> middle = rawLink(from, to, root, String.valueOf(first.get("checkpointHash")));
+        Map<String, Object> last = link(21, 30, "cc", String.valueOf(middle.get("checkpointHash")));
+        List<Map<String, Object>> links = new ArrayList<>(List.of(first, middle, last));
+        return AnchoredCheckpoint.check(chainOf(links), null);
+    }
+
+    @Test
+    @DisplayName("a link whose range runs backwards fails, however well it hashes and chains")
+    void aBackwardsRangeInTheMiddleFails() {
+        List<Outcome.Check> checks = chainThrough(100L, 20L, "bb");
+
+        // The walk itself is fine — linked, and every end comes after the one before — so
+        // only the link's own validity (§7) can catch it (9-6 review, P1).
+        assertEquals(Outcome.PASSED, named(checks, "chain linked").outcome(), checks + "");
+        assertEquals(Outcome.PASSED, named(checks, "chain forward").outcome(), checks + "");
+        assertEquals(Outcome.FAILED, named(checks, "chain recompute").outcome(), checks + "");
+        assertTrue(named(checks, "chain recompute").detail().contains("backwards"),
+                named(checks, "chain recompute").detail());
+    }
+
+    @Test
+    @DisplayName("a link that commits to no root fails")
+    void aLinkWithAnEmptyRootFails() {
+        List<Outcome.Check> checks = chainThrough(11L, 20L, "");
+        assertEquals(Outcome.FAILED, named(checks, "chain recompute").outcome(), checks + "");
+        assertTrue(named(checks, "chain recompute").detail().contains("Merkle root"),
+                named(checks, "chain recompute").detail());
+    }
+
+    @Test
+    @DisplayName("a link whose sequence is not an integer fails, though it hashes as written")
+    void aLinkWithATextSequenceFails() {
+        List<Outcome.Check> checks = chainThrough("11", 20L, "bb");
+        assertEquals(Outcome.FAILED, named(checks, "chain recompute").outcome(), checks + "");
+        assertTrue(named(checks, "chain recompute").detail().contains("two integers"),
+                named(checks, "chain recompute").detail());
+    }
+
     @Test
     @DisplayName("a chain that stands still is not a walk forward")
     void aChainThatStandsStillFails() {
@@ -240,7 +296,7 @@ class TheChainIsWalkedNotAssumedTest {
     }
 
     @Test
-    @DisplayName("an expected checkpoint that is not on the chain is a FAILURE")
+    @DisplayName("an expected checkpoint missing from a chain that starts at the ledger's first checkpoint is a FAILURE")
     void anExpectedCheckpointNotOnTheChainFails() {
         Outcome.Check rollback = named(
                 AnchoredCheckpoint.check(chainOf(twoLinked()), "9".repeat(64)), "rollback");
@@ -248,6 +304,115 @@ class TheChainIsWalkedNotAssumedTest {
         assertEquals(Outcome.FAILED, rollback.outcome(),
                 "the package presents a history that does not include what the holder already "
                         + "saw — which is exactly what a rollback looks like");
+        // The premise of the verdict: this chain's first link has no predecessor, so the
+        // package presents the WHOLE history and can be said to omit the checkpoint.
+        assertNull(twoLinked().get(0).get("prevCheckpointHash"));
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint missing from a chain that starts after a predecessor is NOT decided — neither a rollback nor a pass")
+    void anExpectedCheckpointBeforeAChainWithAPredecessorIsNotDecided() {
+        Map<String, Object> first = link(11, 20, "bb", "a".repeat(64));
+        Map<String, Object> second =
+                link(21, 30, "cc", String.valueOf(first.get("checkpointHash")));
+        List<Map<String, Object>> links = new ArrayList<>(List.of(first, second));
+
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(chainOf(links), "9".repeat(64));
+        Outcome.Check rollback = named(checks, "rollback");
+
+        assertEquals(Outcome.UNAVAILABLE, rollback.outcome(),
+                "the package carries the chain from the covering checkpoint forward, so a "
+                        + "checkpoint the holder saw BEFORE that period cannot be on it however "
+                        + "honest the ledger is. Calling that a rollback made every holder of an "
+                        + "older checkpoint see exit 2 on a sound package (9-6 review, P1)");
+        assertEquals("CHAIN_STARTS_AFTER_EXPECTED", rollback.reasonCode());
+        assertTrue(rollback.detail().contains("a".repeat(64)), rollback.detail());
+        // The walk itself is untouched: the chain is sound, only the question is undecided.
+        assertEquals(Outcome.PASSED, named(checks, "chain recompute").outcome());
+        assertEquals(Outcome.PASSED, named(checks, "chain linked").outcome());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint with no chain to look in is NOT_PRESENT, not a rollback")
+    void anExpectedCheckpointWithNoChainIsAbsentNotFailed() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        entries.remove(DIR + "checkpoint-chain.json");
+
+        Outcome.Check rollback =
+                named(AnchoredCheckpoint.check(entries, "9".repeat(64)), "rollback");
+
+        assertEquals(Outcome.NOT_PRESENT, rollback.outcome(),
+                "a package with no chain presents no history to compare against. FAILED here "
+                        + "made every package without a chain a rollback the moment a holder "
+                        + "supplied a checkpoint — and the chain checks beside it already say "
+                        + "the package is not anchored");
+    }
+
+    @Test
+    @DisplayName("with an expected checkpoint the rollback check is required; without one it is not")
+    void theRollbackCheckIsRequiredExactlyWhenAnExpectedCheckpointIsSupplied() {
+        assertTrue(AnchoredCheckpoint.requiredFor(true).contains("rollback"),
+                "a holder who supplied a checkpoint and got 'not decided' would otherwise see "
+                        + "VERIFIED — §11 lists the check as required, and the implementation "
+                        + "never required it (9-6 review, P1)");
+        assertFalse(AnchoredCheckpoint.requiredFor(false).contains("rollback"),
+                "without an expected checkpoint the check is NOT_PRESENT by construction, and "
+                        + "requiring it would make every run without one INDETERMINATE");
+        assertFalse(AnchoredCheckpoint.REQUIRED.contains("rollback"));
+        assertTrue(AnchoredCheckpoint.requiredFor(true).containsAll(AnchoredCheckpoint.REQUIRED));
+    }
+
+    @Test
+    @DisplayName("a chain file that is not a well-formed document is FAILED for every chain check, not 'no chain'")
+    void aMalformedChainIsFailedNotAbsent() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        entries.put(DIR + "checkpoint-chain.json",
+                "{\"links\":[],\"links\":[]}".getBytes(StandardCharsets.UTF_8));
+
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(entries, null);
+
+        for (Outcome.Check check : requiredOf(checks)) {
+            assertEquals(Outcome.FAILED, check.outcome(), check.name() + ": a duplicate key "
+                    + "makes the document malformed (§3.2), which is FAILED. Read as absent, a "
+                    + "package that shipped a broken chain looked like one that shipped none "
+                    + "and exited 3 instead of 2 (9-6 review, P1)");
+            assertTrue(check.detail().contains("checkpoint-chain.json"), check.detail());
+        }
+        assertEquals(Outcome.NOT_PRESENT, named(checks, "rollback").outcome());
+        // The absent chain stays absent — the two states are told apart.
+        entries.remove(DIR + "checkpoint-chain.json");
+        for (Outcome.Check check : requiredOf(AnchoredCheckpoint.check(entries, null))) {
+            assertEquals(Outcome.NOT_PRESENT, check.outcome(), check.name());
+        }
+    }
+
+    @Test
+    @DisplayName("a covering checkpoint that is not a well-formed document is FAILED, not absent")
+    void aMalformedCoveringCheckpointIsFailed() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        entries.put(DIR + "covering-checkpoint.json", "null".getBytes(StandardCharsets.UTF_8));
+
+        for (Outcome.Check check : requiredOf(AnchoredCheckpoint.check(entries, null))) {
+            assertEquals(Outcome.FAILED, check.outcome(), check.name());
+            assertTrue(check.detail().contains("covering-checkpoint.json"), check.detail());
+        }
+    }
+
+    @Test
+    @DisplayName("a manifest that is not a well-formed document fails the anchor check, not 'no manifest'")
+    void aMalformedManifestFailsTheAnchorCheck() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        entries.put(DIR + "bundle-manifest.json", "[1,2]".getBytes(StandardCharsets.UTF_8));
+
+        Outcome.Check anchor = named(AnchoredCheckpoint.check(entries, null), "anchor commits root");
+
+        assertEquals(Outcome.FAILED, anchor.outcome(),
+                "a manifest that is there and is not an object is §3.2's FAILED; as absent, a "
+                        + "package whose manifest was broken answered 'no manifest' and exit 3");
+        assertTrue(anchor.detail().contains("bundle-manifest.json"), anchor.detail());
+        entries.remove(DIR + "bundle-manifest.json");
+        assertEquals(Outcome.NOT_PRESENT,
+                named(AnchoredCheckpoint.check(entries, null), "anchor commits root").outcome());
     }
 
     @Test
@@ -361,5 +526,21 @@ class TheChainIsWalkedNotAssumedTest {
                 named(AnchoredCheckpoint.check(entries, null), "anchor commits root").outcome(),
                 "the manifest asserts OpenTimestamps material the package does not carry — a "
                         + "contradiction, not material left for another profile to read");
+    }
+
+    @Test
+    @DisplayName("a shipped .c14n beside the anchor target has to be its canonical form")
+    void aShippedTargetC14nIsChecked() {
+        List<Map<String, Object>> links = twoLinked();
+        Map<String, byte[]> entries = chainOf(links);
+        entries.put(DIR + "anchor-target-checkpoint.c14n", Canonical.encode(links.get(1)));
+        assertEquals(Outcome.PASSED, named(AnchoredCheckpoint.check(entries, null), "chain ends").outcome());
+
+        entries.put(DIR + "anchor-target-checkpoint.c14n", Canonical.encode(Map.of("x", 1L)));
+        Outcome.Check ends = named(AnchoredCheckpoint.check(entries, null), "chain ends");
+        assertEquals(Outcome.FAILED, ends.outcome(),
+                "the target's .c14n was shipped and never compared with the .json beside it "
+                        + "(§3.2; 9-6 review, P3)");
+        assertTrue(ends.detail().contains("anchor-target-checkpoint.c14n"), ends.detail());
     }
 }

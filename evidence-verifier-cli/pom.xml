@@ -42,12 +42,53 @@
         </dependencies>
     </dependencyManagement>
 
+    <!--
+      The distribution is this jar plus target/lib/: the jar's manifest names the main class and
+      the four jars beside it (evidence-verifier-core and BouncyCastle's bcpkix / bcprov /
+      bcutil), so `java -jar evidence-verifier-cli-<version>.jar` runs from a directory holding
+      both. NOT a shaded jar: BouncyCastle's jars are signed and published, and a receiving
+      organisation checks them against Maven Central's checksums — repacked into one file they
+      would have to trust this build's repacking instead (9-6 review, P1: the release notes
+      documented `java -jar` and nothing built a jar that could be run that way).
+    -->
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>jp.aegif.nemaki.verifier.cli.Verify</mainClass>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib/</classpathPrefix>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>lib-beside-the-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

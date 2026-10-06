@@ -120,6 +120,13 @@ public final class TrustProfile {
 
         List<X509Certificate> anchors = new ArrayList<>();
         Object raw = document.get("anchors");
+        // A field of the wrong type is refused, not read as absent: a profile whose "anchors"
+        // is one string instead of a list used to behave like a profile with no anchors, and
+        // "policyOids": "1.2.3" like one with no policy — the holder's instruction silently
+        // replaced by the default (9-6 review, P3).
+        if (raw != null && !(raw instanceof List<?>)) {
+            throw new Unreadable("the trust profile's anchors is not a list");
+        }
         if (raw instanceof List<?> list) {
             for (Object entry : list) {
                 anchors.add(certificateOf(String.valueOf(entry)));
@@ -136,12 +143,18 @@ public final class TrustProfile {
 
         Set<String> policies = new LinkedHashSet<>();
         Object policyOids = document.get("policyOids");
+        if (policyOids != null && !(policyOids instanceof List<?>)) {
+            throw new Unreadable("the trust profile's policyOids is not a list");
+        }
         if (policyOids instanceof List<?> list) {
             for (Object entry : list) {
                 policies.add(String.valueOf(entry));
             }
         }
         Object require = document.get("requireRevocationAtIssuance");
+        if (require != null && !(require instanceof Boolean)) {
+            throw new Unreadable("the trust profile's requireRevocationAtIssuance is not a boolean");
+        }
         // Defaults to TRUE when absent. The safe default for "must the issuance-time revocation
         // material be there" is yes; a profile that omitted it and got no would weaken P3 by
         // silence.

@@ -72,22 +72,61 @@ public final class RecordLedger {
 
         Map<String, Object> statement = parseOrNull(statementJson);
         Map<String, Object> entry = parseOrNull(entryJson);
+        Map<String, Object> covering = parseOrNull(coveringJson);
+        Map<String, Object> proof = parseOrNull(proofJson);
+        // A file that is there and did not parse as an object is malformed (§3.2), and every
+        // check that reads it is FAILED — the null above would have read as absent (9-6 review,
+        // P1). Which documents each check reads is stated beside it.
+        Map<String, Boolean> malformed = new java.util.LinkedHashMap<>();
+        malformed.put("record-content-statement.json", statementJson != null && statement == null);
+        malformed.put("ledger-entry.json", entryJson != null && entry == null);
+        malformed.put("covering-checkpoint.json", coveringJson != null && covering == null);
+        malformed.put("inclusion-proof.json", proofJson != null && proof == null);
         // The KIND comes from the entry, not from the statement's shape: the entry is what the
         // chain commits to, and a statement read as "whatever its keys suggest" would let a
         // document with the wrong keys choose which checks apply to it (§5.3b).
         boolean transition = isTransition(entry);
-        checks.add(statementCanonicalForm(statementJson, statementC14n));
-        checks.add(contentBinding(entries, statement, transition));
-        checks.add(transitionContinuity(entries, statement, transition));
+        checks.add(unlessMalformed("statement canonical form", malformed,
+                List.of("record-content-statement.json"),
+                () -> statementCanonicalForm(statementJson, statementC14n)));
+        checks.add(unlessMalformed("content binding", malformed,
+                List.of("record-content-statement.json", "ledger-entry.json"),
+                () -> contentBinding(entries, statement, transition)));
+        checks.add(unlessMalformed("transition continuity", malformed,
+                List.of("record-content-statement.json", "ledger-entry.json"),
+                () -> transitionContinuity(entries, statement, transition)));
 
-        checks.add(entryRecompute(entry));
-        checks.add(entryBindsStatement(entry, statementJson));
+        checks.add(Section.alsoCanonicalForm(unlessMalformed("entry recompute", malformed,
+                List.of("ledger-entry.json"), () -> entryRecompute(entry)), entries, "ledger-entry"));
+        checks.add(unlessMalformed("entry binds statement", malformed,
+                List.of("ledger-entry.json", "record-content-statement.json"),
+                () -> entryBindsStatement(entry, statementJson)));
 
-        Map<String, Object> covering = parseOrNull(coveringJson);
-        checks.add(checkpointRecompute(covering));
-        checks.add(coveringRange(entry, covering));
-        checks.add(inclusionProof(parseOrNull(proofJson), entry, covering));
+        checks.add(Section.alsoCanonicalForm(unlessMalformed("checkpoint recompute", malformed,
+                List.of("covering-checkpoint.json"), () -> checkpointRecompute(covering)), entries,
+                "covering-checkpoint"));
+        checks.add(unlessMalformed("covering range", malformed,
+                List.of("ledger-entry.json", "covering-checkpoint.json"),
+                () -> coveringRange(entry, covering)));
+        checks.add(unlessMalformed("inclusion proof", malformed,
+                List.of("inclusion-proof.json", "ledger-entry.json", "covering-checkpoint.json"),
+                () -> inclusionProof(proof, entry, covering)));
         return checks;
+    }
+
+    /** The check, unless one of the documents it reads is malformed — then §3.2's FAILED. */
+    private static Outcome.Check unlessMalformed(String name, Map<String, Boolean> malformed,
+            List<String> reads, java.util.function.Supplier<Outcome.Check> check) {
+        List<String> broken = new ArrayList<>();
+        for (String document : reads) {
+            if (Boolean.TRUE.equals(malformed.get(document))) {
+                broken.add(document);
+            }
+        }
+        if (!broken.isEmpty()) {
+            return Section.malformed(name, broken.toArray(String[]::new));
+        }
+        return check.get();
     }
 
     static Outcome.Check statementCanonicalForm(byte[] json, byte[] shipped) {
@@ -232,6 +271,10 @@ public final class RecordLedger {
         byte[] priorStatementJson = fileIn(entries, "prior/record-content-statement.json");
         byte[] priorEntryJson = fileIn(entries, "prior/ledger-entry.json");
         Map<String, Object> priorEntry = parseOrNull(priorEntryJson);
+        if (priorEntryJson != null && priorEntry == null) {
+            // There, and not a document: §3.2's FAILED, not "the package does not carry it".
+            return Section.malformed(name, "prior/ledger-entry.json");
+        }
         if (priorStatementJson == null || priorEntry == null) {
             return Outcome.Check.unavailable(name, "TRANSITION_PRIOR_NOT_IN_PACKAGE",
                     "the transition cites ledger entry " + cited + " and the package does not "
@@ -490,6 +533,16 @@ public final class RecordLedger {
                     because == null ? "the proof carries no steps and no reason"
                             : String.valueOf(because));
         }
+        // Every field of §5.5 is read, in the §5 sense: missing is NOT_PRESENT, the wrong type is
+        // FAILED. siblingIsLeft used to be read as "true or else false", so a step that dropped
+        // it walked as a right sibling and a proof missing a required field could pass (9-6
+        // review, P1); leafHash was never read at all.
+        if (!proof.containsKey("leafHash")) {
+            return Outcome.Check.absent("inclusion proof", "the proof records no leafHash");
+        }
+        if (!(proof.get("leafHash") instanceof String leafHash)) {
+            return Outcome.Check.failed("inclusion proof", "the proof's leafHash is not a string");
+        }
         List<Merkle.Step> path = new ArrayList<>();
         for (Object raw : rawSteps) {
             if (!(raw instanceof Map<?, ?> step)) {
@@ -497,16 +550,35 @@ public final class RecordLedger {
                         "a step in the audit path is not an object");
             }
             Map<String, Object> one = (Map<String, Object>) step;
-            if (!(one.get("siblingHash") instanceof String sibling)) {
-                return Outcome.Check.failed("inclusion proof",
+            if (!one.containsKey("siblingHash")) {
+                return Outcome.Check.absent("inclusion proof",
                         "a step in the audit path records no sibling hash");
             }
-            path.add(new Merkle.Step(sibling, Boolean.TRUE.equals(one.get("siblingIsLeft"))));
+            if (!(one.get("siblingHash") instanceof String sibling)) {
+                return Outcome.Check.failed("inclusion proof",
+                        "a step's sibling hash is not a string");
+            }
+            if (!one.containsKey("siblingIsLeft")) {
+                return Outcome.Check.absent("inclusion proof",
+                        "a step in the audit path does not say which side its sibling is on");
+            }
+            if (!(one.get("siblingIsLeft") instanceof Boolean left)) {
+                return Outcome.Check.failed("inclusion proof",
+                        "a step's siblingIsLeft is not a boolean");
+            }
+            path.add(new Merkle.Step(sibling, left));
         }
         if (!(entry.get("entryHash") instanceof String entryHash)
                 || !(checkpoint.get("merkleRoot") instanceof String root)) {
             return Outcome.Check.absent("inclusion proof",
                     "the entry or the checkpoint records no hash to walk between");
+        }
+        // The walk starts from the entry's own leaf, so a leafHash that is some other value
+        // would not change the answer — but it is a proof that says two things, and §5.5 says
+        // which one it must be.
+        if (!leafHash.equals(Merkle.hashLeaf(entryHash))) {
+            return Outcome.Check.failed("inclusion proof",
+                    "the proof's leafHash is not the leaf of the entry's hash");
         }
         if (!Merkle.verifies(entryHash, path, root)) {
             return Outcome.Check.failed("inclusion proof",

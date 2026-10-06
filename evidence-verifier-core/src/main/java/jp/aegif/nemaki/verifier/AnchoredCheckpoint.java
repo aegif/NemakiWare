@@ -47,6 +47,25 @@ public final class AnchoredCheckpoint {
             "chain recompute", "chain linked", "chain forward", "chain ends",
             "anchor commits root");
 
+    /**
+     * {@link #REQUIRED}, plus {@code rollback} when an expected checkpoint was supplied.
+     *
+     * <p>§11 lists the rollback check as required and, in the same breath, says it is not
+     * checked without {@code --expected-checkpoint}. Both are true at once only if "required"
+     * is read per run: when the holder supplies a checkpoint the answer has to come back, and a
+     * rollback that could not be decided is then INDETERMINATE rather than VERIFIED; without one
+     * the check reports NOT_PRESENT and does not move the verdict (9-6 review, P1 — the
+     * implementation never required it and the spec read as always requiring it).
+     */
+    public static List<String> requiredFor(boolean expectedCheckpointSupplied) {
+        if (!expectedCheckpointSupplied) {
+            return REQUIRED;
+        }
+        List<String> all = new ArrayList<>(REQUIRED);
+        all.add("rollback");
+        return List.copyOf(all);
+    }
+
     private AnchoredCheckpoint() {
     }
 
@@ -60,9 +79,27 @@ public final class AnchoredCheckpoint {
             String expectedCheckpointHash) {
         List<Outcome.Check> checks = new ArrayList<>();
 
-        Map<String, Object> chainDoc = documentIn(entries, "checkpoint-chain.json");
-        Map<String, Object> covering = documentIn(entries, "covering-checkpoint.json");
-        Map<String, Object> target = documentIn(entries, "anchor-target-checkpoint.json");
+        Section.Doc chainRead = Section.read(entries, "checkpoint-chain.json");
+        Section.Doc coveringRead = Section.read(entries, "covering-checkpoint.json");
+        Section.Doc targetRead = Section.read(entries, "anchor-target-checkpoint.json");
+        List<String> malformed = new ArrayList<>();
+        if (chainRead.malformed()) malformed.add("checkpoint-chain.json");
+        if (coveringRead.malformed()) malformed.add("covering-checkpoint.json");
+        if (targetRead.malformed()) malformed.add("anchor-target-checkpoint.json");
+        if (!malformed.isEmpty()) {
+            // §3.2: a file that is there and is not a well-formed JSON object is FAILED for
+            // every check that reads it. Folded into null, it read as "no chain" (9-6 review,
+            // P1). The rollback is not decided over a chain that could not be read.
+            for (String name : REQUIRED) {
+                checks.add(Section.malformed(name, malformed.toArray(String[]::new)));
+            }
+            checks.add(Outcome.Check.absent("rollback", "the chain could not be read as a "
+                    + "document, so there is nothing to look for the expected checkpoint in"));
+            return checks;
+        }
+        Map<String, Object> chainDoc = chainRead.value();
+        Map<String, Object> covering = coveringRead.value();
+        Map<String, Object> target = targetRead.value();
 
         if (chainDoc == null) {
             for (String name : REQUIRED) {
@@ -97,7 +134,9 @@ public final class AnchoredCheckpoint {
         checks.add(chainRecompute(links));
         checks.add(chainLinked(links));
         checks.add(chainForward(links));
-        checks.add(chainEnds(links, covering, target));
+        checks.add(Section.alsoCanonicalForm(Section.alsoCanonicalForm(
+                chainEnds(links, covering, target), entries, "covering-checkpoint"),
+                entries, "anchor-target-checkpoint"));
         checks.add(anchorCommitsRoot(entries, links));
         checks.add(rollback(links, expectedCheckpointHash));
         return checks;
@@ -114,6 +153,15 @@ public final class AnchoredCheckpoint {
                                     + "recomputed");
                 }
             }
+            // §7 says what a checkpoint is, not only how it hashes: the types of §5, a range
+            // that does not run backwards, a root that commits to something. A link that is
+            // none of these hashed and chained like any other, so a backwards range in the
+            // middle of the chain passed every chain check (9-6 review, P1). The product's
+            // EvidenceCheckpoint refuses to build one; a package is not the product.
+            String invalid = invalidCheckpoint(link);
+            if (invalid != null) {
+                return Outcome.Check.failed("chain recompute", "link " + i + " " + invalid);
+            }
             String recomputed = Canonical.hash("LEDGER_CHECKPOINT_V1", link.get("domain"),
                     link.get("fromSequence"), link.get("toSequence"), link.get("merkleRoot"),
                     link.get("prevCheckpointHash"), link.get("createdAt"));
@@ -126,6 +174,33 @@ public final class AnchoredCheckpoint {
             }
         }
         return Outcome.Check.passed("chain recompute");
+    }
+
+    /** Why a checkpoint is not one by §5 and §7, or null when it is. Presence is checked first. */
+    static String invalidCheckpoint(Map<String, Object> link) {
+        if (!(link.get("domain") instanceof String)) {
+            return "records a domain that is not a string";
+        }
+        if (!(link.get("fromSequence") instanceof Long from)
+                || !(link.get("toSequence") instanceof Long to)) {
+            return "records a sequence range that is not two integers";
+        }
+        if (to < from) {
+            return "covers " + from + ".." + to + ", a range that runs backwards (§7: invalid)";
+        }
+        if (!(link.get("merkleRoot") instanceof String root) || root.isEmpty()) {
+            return "records no Merkle root, so it commits to nothing (§7: invalid)";
+        }
+        Object prev = link.get("prevCheckpointHash");
+        Object created = link.get("createdAt");
+        if ((prev != null && !(prev instanceof String))
+                || (created != null && !(created instanceof String))) {
+            return "records a predecessor hash or a creation time that is neither a string nor null";
+        }
+        if (!(link.get("checkpointHash") instanceof String)) {
+            return "records a checkpoint hash that is not a string";
+        }
+        return null;
     }
 
     static Outcome.Check chainLinked(List<Map<String, Object>> links) {
@@ -237,7 +312,11 @@ public final class AnchoredCheckpoint {
      */
     static Outcome.Check anchorCommitsRoot(Map<String, byte[]> entries,
             List<Map<String, Object>> links) {
-        Map<String, Object> manifest = documentIn(entries, "bundle-manifest.json");
+        Section.Doc manifestRead = Section.read(entries, "bundle-manifest.json");
+        if (manifestRead.malformed()) {
+            return Section.malformed("anchor commits root", "bundle-manifest.json");
+        }
+        Map<String, Object> manifest = manifestRead.value();
         if (manifest == null) {
             return Outcome.Check.absent("anchor commits root",
                     "the package carries no bundle manifest, so what each rung holds is unknown");
@@ -383,7 +462,10 @@ public final class AnchoredCheckpoint {
                             + "chain agrees with itself whatever it holds");
         }
         if (links == null || links.isEmpty()) {
-            return Outcome.Check.failed("rollback",
+            // No chain is nothing to look in — NOT_PRESENT, as for any check whose material the
+            // package does not carry. It was FAILED, which made every legacy package a rollback
+            // the moment a holder supplied a checkpoint (9-6 review, P1).
+            return Outcome.Check.absent("rollback",
                     "an expected checkpoint was supplied and the package carries no chain to "
                             + "look for it in");
         }
@@ -392,9 +474,26 @@ public final class AnchoredCheckpoint {
                 return Outcome.Check.passed("rollback");
             }
         }
+        // Not on the chain. Whether that is a rollback depends on where the chain starts: the
+        // package carries the chain from the covering checkpoint forward, so a checkpoint the
+        // holder saw BEFORE that period cannot be on it however honest the ledger is — only a
+        // chain whose first link has no predecessor presents the whole history and can be
+        // said to omit it (9-6 review, P1: a holder's checkpoint older than the covering one
+        // was reported as a rollback). The hash alone does not say which side of the covering
+        // checkpoint it lies on, so the answer for a chain with a predecessor is "not decided".
+        Object firstPredecessor = links.get(0).get("prevCheckpointHash");
+        if (firstPredecessor != null) {
+            return Outcome.Check.unavailable("rollback", "CHAIN_STARTS_AFTER_EXPECTED",
+                    "the checkpoint " + expected + " is not on this package's chain, and the "
+                            + "chain starts at a checkpoint whose predecessor (" + firstPredecessor
+                            + ") the package does not carry — the expected one may lie before it."
+                            + " A rollback can neither be confirmed nor ruled out from this "
+                            + "package; a package whose chain reaches that checkpoint can decide");
+        }
         return Outcome.Check.failed("rollback",
-                "the checkpoint " + expected + " is not on this package's chain, so the package "
-                        + "presents a history that does not include what the holder already saw");
+                "the checkpoint " + expected + " is not on this package's chain, which starts at "
+                        + "the ledger's first checkpoint, so the package presents the whole history "
+                        + "and it does not include what the holder already saw");
     }
 
     @SuppressWarnings("unchecked")
@@ -425,8 +524,4 @@ public final class AnchoredCheckpoint {
         return Section.fileIn(entries, relative) != null;
     }
 
-    /** Delegated to {@link Section}: one lookup, payload excluded, every parse failure caught. */
-    private static Map<String, Object> documentIn(Map<String, byte[]> entries, String name) {
-        return Section.documentIn(entries, name);
-    }
 }

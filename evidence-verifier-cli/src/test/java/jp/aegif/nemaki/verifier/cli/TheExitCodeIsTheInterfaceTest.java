@@ -26,14 +26,15 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -108,6 +109,250 @@ class TheExitCodeIsTheInterfaceTest {
         }
     }
 
+    private static final String AT = "2026-09-20T00:00:00Z";
+    private static final String TSA_POLICY = "1.2.3.4.5";
+
+    static {
+        java.security.Security.addProvider(
+                new org.bouncycastle.jce.provider.BouncyCastleProvider());
+    }
+
+    /** A P2-complete package and the two hashes a holder might bring to it. */
+    private record Anchored(Path zip, String coveringHash, String notOnTheChain) {
+    }
+
+    private static String json(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String s) {
+            return "\"" + s + "\"";
+        }
+        if (value instanceof Map<?, ?> map) {
+            StringBuilder out = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                out.append(first ? "" : ",").append('"').append(e.getKey()).append("\":")
+                        .append(json(e.getValue()));
+                first = false;
+            }
+            return out.append('}').toString();
+        }
+        if (value instanceof List<?> list) {
+            StringBuilder out = new StringBuilder("[");
+            for (int i = 0; i < list.size(); i++) {
+                out.append(i == 0 ? "" : ",").append(json(list.get(i)));
+            }
+            return out.append(']').toString();
+        }
+        return String.valueOf(value);
+    }
+
+    private static Map<String, Object> checkpoint(long from, long to, String root, String prev) {
+        Map<String, Object> cp = new LinkedHashMap<>();
+        cp.put("domain", "record-content");
+        cp.put("fromSequence", from);
+        cp.put("toSequence", to);
+        cp.put("merkleRoot", root);
+        cp.put("prevCheckpointHash", prev);
+        cp.put("createdAt", AT);
+        cp.put("checkpointHash", jp.aegif.nemaki.verifier.Canonical.hash("LEDGER_CHECKPOINT_V1",
+                "record-content", from, to, root, prev, AT));
+        return cp;
+    }
+
+    /** A real RFC 3161 token over the 32 bytes of {@code merkleRoot}, from a throwaway TSA. */
+    private static byte[] tokenOver(String merkleRoot) throws Exception {
+        java.security.KeyPairGenerator keys = java.security.KeyPairGenerator.getInstance("RSA");
+        keys.initialize(2048);
+        java.security.KeyPair tsaKeys = keys.generateKeyPair();
+        java.util.Date from = new java.util.Date(System.currentTimeMillis() - 86_400_000L);
+        java.util.Date to = new java.util.Date(System.currentTimeMillis() + 86_400_000L);
+        org.bouncycastle.asn1.x500.X500Name name = new org.bouncycastle.asn1.x500.X500Name("CN=Test TSA");
+        org.bouncycastle.cert.X509CertificateHolder tsa =
+                new org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder(name,
+                        java.math.BigInteger.ONE, from, to, name, tsaKeys.getPublic())
+                        .addExtension(org.bouncycastle.asn1.x509.Extension.extendedKeyUsage, true,
+                                new org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                                        org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_timeStamping))
+                        .build(new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder(
+                                "SHA256withRSA").build(tsaKeys.getPrivate()));
+        org.bouncycastle.asn1.ASN1ObjectIdentifier sha256 =
+                new org.bouncycastle.asn1.ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1");
+        org.bouncycastle.tsp.TimeStampRequestGenerator requests =
+                new org.bouncycastle.tsp.TimeStampRequestGenerator();
+        requests.setCertReq(true);
+        org.bouncycastle.tsp.TimeStampRequest request =
+                requests.generate(sha256, java.util.HexFormat.of().parseHex(merkleRoot));
+        org.bouncycastle.operator.DigestCalculatorProvider digests =
+                new org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder()
+                        .setProvider("BC").build();
+        org.bouncycastle.cms.SignerInfoGenerator signer =
+                new org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder(digests)
+                        .build(new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder(
+                                "SHA256withRSA").setProvider("BC").build(tsaKeys.getPrivate()), tsa);
+        org.bouncycastle.tsp.TimeStampTokenGenerator generator =
+                new org.bouncycastle.tsp.TimeStampTokenGenerator(signer,
+                        digests.get(new org.bouncycastle.asn1.x509.AlgorithmIdentifier(sha256)),
+                        new org.bouncycastle.asn1.ASN1ObjectIdentifier(TSA_POLICY));
+        generator.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
+                List.of(new org.bouncycastle.cert.jcajce.JcaX509CertificateConverter()
+                        .setProvider("BC").getCertificate(tsa))));
+        return generator.generate(request, java.math.BigInteger.ONE, new java.util.Date())
+                .getEncoded();
+    }
+
+    /**
+     * Everything ANCHORED_CHECKPOINT_V1 reads, consistent: the P0 package, a statement over its
+     * payload, the ledger entry that commits to the statement, a covering checkpoint over that
+     * one entry, a chain of two checkpoints and a real RFC 3161 token over the anchor target's
+     * root. {@code predecessor} is the first link's {@code prevCheckpointHash}: null makes the
+     * chain start at the ledger's first checkpoint; a hash makes it start after one the package
+     * does not carry.
+     */
+    private static Anchored anchoredPackage(Path dir, String predecessor) throws Exception {
+        String payload = "the minutes";
+        Map<String, String> text = goodPackage(payload);
+        String section = ROOT + "metadata/other/nemaki-evidence/";
+        Map<String, byte[]> files = new LinkedHashMap<>();
+
+        Map<String, Object> statement = new LinkedHashMap<>();
+        statement.put("repositoryId", "bedroom");
+        statement.put("objectId", "doc-1");
+        statement.put("versionObjectId", "doc-1");
+        statement.put("contentStreamId", "att-1");
+        statement.put("contentDigest", sha256Hex(payload));
+        statement.put("contentLength", (long) payload.getBytes(StandardCharsets.UTF_8).length);
+        statement.put("commitmentKind", "CAPTURED");
+        statement.put("captureIntentId", null);
+        statement.put("recordedAt", AT);
+        String statementDigest = jp.aegif.nemaki.verifier.Canonical.documentDigest(statement);
+
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("domain", "record-content");
+        entry.put("sequence", 5L);
+        entry.put("subjectKind", "RECORD_CONTENT_STATE");
+        entry.put("subjectId", "doc-1");
+        entry.put("payloadDigest", statementDigest);
+        entry.put("occurredAt", AT);
+        entry.put("prevEntryHash", null);
+        String entryHash = jp.aegif.nemaki.verifier.Canonical.hash("LEDGER_ENTRY_V1",
+                "record-content", 5L, "RECORD_CONTENT_STATE", "doc-1", statementDigest, AT, null);
+        entry.put("entryHash", entryHash);
+
+        String root = jp.aegif.nemaki.verifier.Merkle.root(List.of(entryHash));
+        Map<String, Object> covering = checkpoint(5, 5, root, predecessor);
+        String laterRoot = sha256Hex("the next period");
+        Map<String, Object> target = checkpoint(6, 6, laterRoot,
+                String.valueOf(covering.get("checkpointHash")));
+        Map<String, Object> proof = new LinkedHashMap<>();
+        proof.put("leafHash", jp.aegif.nemaki.verifier.Merkle.hashLeaf(entryHash));
+        proof.put("steps", List.of());
+        Map<String, Object> chain = new LinkedHashMap<>();
+        chain.put("links", List.of(covering, target));
+
+        files.put("record-content-statement.json", json(statement).getBytes(StandardCharsets.UTF_8));
+        files.put("record-content-statement.c14n",
+                jp.aegif.nemaki.verifier.Canonical.encode(statement));
+        files.put("ledger-entry.json", json(entry).getBytes(StandardCharsets.UTF_8));
+        files.put("inclusion-proof.json", json(proof).getBytes(StandardCharsets.UTF_8));
+        files.put("covering-checkpoint.json", json(covering).getBytes(StandardCharsets.UTF_8));
+        files.put("anchor-target-checkpoint.json", json(target).getBytes(StandardCharsets.UTF_8));
+        files.put("checkpoint-chain.json", json(chain).getBytes(StandardCharsets.UTF_8));
+        files.put("anchors/rfc3161.der", tokenOver(laterRoot));
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("profileVersion", "1");
+        profile.put("declaredProfiles", List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1",
+                "ANCHORED_CHECKPOINT_V1"));
+        files.put("profile.json", json(profile).getBytes(StandardCharsets.UTF_8));
+
+        List<Map<String, Object>> listed = new ArrayList<>();
+        for (Map.Entry<String, byte[]> f : files.entrySet()) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("path", f.getKey());
+            one.put("sha256", java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(f.getValue())));
+            listed.add(one);
+        }
+        Map<String, Object> rung = new LinkedHashMap<>();
+        rung.put("kind", "RFC3161_TSA");
+        rung.put("state", "PRESENT");
+        rung.put("path", "anchors/rfc3161.der");
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("bundleId", "b");
+        manifest.put("createdAt", AT);
+        manifest.put("files", listed);
+        manifest.put("anchors", List.of(rung));
+        files.put("bundle-manifest.json", json(manifest).getBytes(StandardCharsets.UTF_8));
+
+        Path file = dir.resolve(predecessor == null ? "anchored.zip" : "anchored-later.zip");
+        try (OutputStream out = Files.newOutputStream(file);
+                ZipOutputStream zip = new ZipOutputStream(out)) {
+            for (Map.Entry<String, String> e : text.entrySet()) {
+                zip.putNextEntry(new ZipEntry(e.getKey()));
+                zip.write(e.getValue().getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            for (Map.Entry<String, byte[]> f : files.entrySet()) {
+                zip.putNextEntry(new ZipEntry(section + f.getKey()));
+                zip.write(f.getValue());
+                zip.closeEntry();
+            }
+        }
+        return new Anchored(file, String.valueOf(covering.get("checkpointHash")), "9".repeat(64));
+    }
+
+    @Test
+    @DisplayName("a package anchored by an RFC 3161 token exits 0 at ANCHORED_CHECKPOINT_V1")
+    void anAnchoredPackageExits0AtP2(@TempDir Path tmp) throws Exception {
+        Anchored anchored = anchoredPackage(tmp, null);
+
+        Run result = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1");
+
+        assertEquals(Verify.EXIT_VERIFIED, result.code(),
+                "the one profile above P0 this CLI is documented to reach exit 0 at never had a "
+                        + "package that reached it in these tests; every lock below depends on "
+                        + "this one: " + result.out() + result.err());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint that is on the chain leaves exit 0; one that is not, on a chain from the first checkpoint, is exit 2")
+    void anExpectedCheckpointIsLookedForOnTheChain(@TempDir Path tmp) throws Exception {
+        Anchored anchored = anchoredPackage(tmp, null);
+
+        assertEquals(Verify.EXIT_VERIFIED, run("verify", anchored.zip().toString(),
+                "--profile", "ANCHORED_CHECKPOINT_V1",
+                "--expected-checkpoint", anchored.coveringHash()).code());
+        Run missing = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
+                "--expected-checkpoint", anchored.notOnTheChain());
+        assertEquals(Verify.EXIT_FAILED, missing.code(),
+                "the chain starts at the ledger's first checkpoint, so it presents the whole "
+                        + "history, and the holder's checkpoint is not in it: " + missing.out());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint the chain cannot decide about is exit 3 — required, so never exit 0")
+    void anUndecidableExpectedCheckpointIsIndeterminateNotVerified(@TempDir Path tmp)
+            throws Exception {
+        Anchored anchored = anchoredPackage(tmp, "a".repeat(64));
+        // Without a checkpoint to compare against, the package is sound and exit 0 — the
+        // rollback check is NOT_PRESENT and not required.
+        assertEquals(Verify.EXIT_VERIFIED, run("verify", anchored.zip().toString(),
+                "--profile", "ANCHORED_CHECKPOINT_V1").code());
+
+        Run result = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
+                "--expected-checkpoint", anchored.notOnTheChain(), "--json");
+
+        assertEquals(Verify.EXIT_INDETERMINATE, result.code(),
+                "the chain starts after a predecessor the package does not carry, so the "
+                        + "holder's checkpoint may lie before it: not a rollback, not a pass. "
+                        + "With the check not required this was exit 0 — a holder who supplied a "
+                        + "checkpoint was told VERIFIED over a question nobody answered (9-6 "
+                        + "review, P1): " + result.out());
+        assertTrue(result.out().contains("\"reasonCode\":\"CHAIN_STARTS_AFTER_EXPECTED\""),
+                result.out());
+    }
+
     @Test
     @DisplayName("a package that passes P0 exits 0")
     void aGoodPackageExitsZero(@TempDir Path tmp) throws Exception {
@@ -119,6 +364,23 @@ class TheExitCodeIsTheInterfaceTest {
         assertTrue(result.out().contains("does NOT establish"),
                 "the limits print on SUCCESS too. A reader who sees VERIFIED and nothing else "
                         + "supplies their own idea of what it means");
+    }
+
+    @Test
+    @DisplayName("the limits say what ANCHORED_CHECKPOINT_V1 checks, and do not put it behind a trust profile")
+    void theLimitsSayWhatTheAnchorCheckIs() {
+        // They said the anchor was checked only against a trust profile and that without one
+        // the anchor checks report NOT_PRESENT — while ANCHORED_CHECKPOINT_V1 reaches exit 0
+        // with no trust profile at all, on the token's own certificate (9-6 review, P1). The
+        // text travels with every answer, VERIFIED included, so it has to describe that run.
+        assertFalse(Verify.LIMITS.contains("the anchor checks report NOT_PRESENT"), Verify.LIMITS);
+        assertTrue(Verify.LIMITS.contains("ANCHORED_CHECKPOINT_V1 checks that an RFC 3161 token "
+                + "commits the checkpoint's root and is signed by the certificate it carries"),
+                Verify.LIMITS);
+        assertTrue(Verify.LIMITS.contains("not who that signer is, or whether to trust them"),
+                Verify.LIMITS);
+        assertTrue(Verify.LIMITS.contains("checked from TRUSTED_RFC3161_V1 up, and only against a "
+                + "trust profile you supplied"), Verify.LIMITS);
     }
 
     @Test
@@ -471,6 +733,58 @@ class TheExitCodeIsTheInterfaceTest {
         return file;
     }
 
+    /**
+     * A zip whose central directory and local headers disagree — the INCONSISTENT_ARCHIVE refusal.
+     * Written by hand (STORED) because ZipOutputStream cannot write one; the central directory
+     * simply omits the PREMIS, so a reader built on it never sees the file the stream reader
+     * judged. The reader's own tests cover the other two shapes (a record only the directory has,
+     * one name with two different bytes).
+     */
+    private static Path disagreeingTables(Path dir) throws Exception {
+        java.io.ByteArrayOutputStream body = new java.io.ByteArrayOutputStream();
+        java.io.ByteArrayOutputStream central = new java.io.ByteArrayOutputStream();
+        int listed = 0;
+        for (Map.Entry<String, String> e : goodPackage("the minutes").entrySet()) {
+            byte[] name = e.getKey().getBytes(StandardCharsets.UTF_8);
+            byte[] data = e.getValue().getBytes(StandardCharsets.UTF_8);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data);
+            int offset = body.size();
+            java.nio.ByteBuffer local = java.nio.ByteBuffer.allocate(30 + name.length)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            local.putInt(0x04034b50).putShort((short) 20).putShort((short) 0).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putInt((int) crc.getValue())
+                    .putInt(data.length).putInt(data.length).putShort((short) name.length)
+                    .putShort((short) 0).put(name);
+            body.writeBytes(local.array());
+            body.writeBytes(data);
+            if (e.getKey().endsWith("premis.xml")) {
+                continue;
+            }
+            java.nio.ByteBuffer record = java.nio.ByteBuffer.allocate(46 + name.length)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            record.putInt(0x02014b50).putShort((short) 20).putShort((short) 20).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putShort((short) 0)
+                    .putInt((int) crc.getValue()).putInt(data.length).putInt(data.length)
+                    .putShort((short) name.length).putShort((short) 0).putShort((short) 0)
+                    .putShort((short) 0).putShort((short) 0).putInt(0).putInt(offset).put(name);
+            central.writeBytes(record.array());
+            listed++;
+        }
+        java.nio.ByteBuffer end = java.nio.ByteBuffer.allocate(22)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        end.putInt(0x06054b50).putShort((short) 0).putShort((short) 0).putShort((short) listed)
+                .putShort((short) listed).putInt(central.size()).putInt(body.size())
+                .putShort((short) 0);
+        java.io.ByteArrayOutputStream all = new java.io.ByteArrayOutputStream();
+        all.writeBytes(body.toByteArray());
+        all.writeBytes(central.toByteArray());
+        all.writeBytes(end.array());
+        Path file = dir.resolve("two-tables.zip");
+        Files.write(file, all.toByteArray());
+        return file;
+    }
+
     @Test
     @DisplayName("--json output conforms to the published schema for every profile and every refusal")
     void theJsonConformsToThePublishedSchema(@TempDir Path tmp) throws Exception {
@@ -495,6 +809,7 @@ class TheExitCodeIsTheInterfaceTest {
         refusals.put(unsafe, "UNSAFE_PATH");
         refusals.put(duplicateEntries(tmp), "DUPLICATE_ENTRY");
         refusals.put(tooManyEntries(tmp), "RESOURCE_LIMIT");
+        refusals.put(disagreeingTables(tmp), "INCONSISTENT_ARCHIVE");
         // One fixture per refusal the reader can raise — tied to the enum, so a fifth refusal
         // added there is a red run here, not a silently unexercised code (review, P3).
         java.util.Set<String> everyRefusal = new java.util.TreeSet<>();

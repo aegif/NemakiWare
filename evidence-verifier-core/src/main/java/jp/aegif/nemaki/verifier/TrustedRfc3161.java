@@ -104,7 +104,11 @@ public final class TrustedRfc3161 {
     }
 
     static Outcome.Check imprint(Map<String, byte[]> entries, TimeStampToken token) {
-        Map<String, Object> target = documentIn(entries, "anchor-target-checkpoint.json");
+        Section.Doc targetRead = Section.read(entries, "anchor-target-checkpoint.json");
+        if (targetRead.malformed()) {
+            return Section.malformed("token imprint", "anchor-target-checkpoint.json");
+        }
+        Map<String, Object> target = targetRead.value();
         if (target == null) {
             return Outcome.Check.absent("token imprint",
                     "the package carries no anchor target checkpoint, so there is nothing the "
@@ -114,6 +118,17 @@ public final class TrustedRfc3161 {
         if (!(root instanceof String merkleRoot)) {
             return Outcome.Check.absent("token imprint",
                     "the anchor target records no Merkle root");
+        }
+        String algorithm = String.valueOf(token.getTimeStampInfo().getMessageImprintAlgOID());
+        if (!AnchoredCheckpoint.SHA256_OID.equals(algorithm)) {
+            // The same arm, and the same answer, as ANCHORED_CHECKPOINT_V1's anchor check: a
+            // token whose imprint is not SHA-256 cannot be compared with a SHA-256 root by this
+            // build, and that is "not checked", not "does not match". P3 said FAILED while P2
+            // said UNAVAILABLE about one token (9-6 review, P3).
+            return Outcome.Check.unavailable("token imprint", "UNKNOWN_ALGORITHM",
+                    "the token's imprint algorithm is " + algorithm + "; this build computes "
+                            + "SHA-256 only, so whether the token commits to the root was not "
+                            + "checked");
         }
         byte[] imprint = token.getTimeStampInfo().getMessageImprintDigest();
         // The imprint IS the root, as §12 says: the Merkle root is already a SHA-256 digest,
@@ -206,6 +221,13 @@ public final class TrustedRfc3161 {
             // issuance (see revocation()), not by reaching out now — a current OCSP answer is
             // not evidence about the moment the token was made.
             parameters.setRevocationEnabled(false);
+            // The path is judged at the token's generation time, not at the moment of
+            // verification: a timestamp is a claim about then, and a signer certificate that
+            // has since expired (the normal fate of every TSA certificate within a few years)
+            // does not make the token false — evaluated at "now" it did, turning a consistent
+            // package into exit 2 as soon as the certificate expired (9-6 review, P1). The
+            // signature check beside this one already judges validity at that time.
+            parameters.setDate(token.getTimeStampInfo().getGenTime());
             CertPathBuilder.getInstance("PKIX").build(parameters);
             return Outcome.Check.passed("token pkix");
         } catch (java.security.cert.CertPathBuilderException noPath) {
@@ -284,17 +306,4 @@ public final class TrustedRfc3161 {
         return Section.fileIn(entries, name);
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> documentIn(Map<String, byte[]> entries, String name) {
-        byte[] bytes = fileIn(entries, name);
-        if (bytes == null) {
-            return null;
-        }
-        try {
-            Object value = Json.parse(new String(bytes, StandardCharsets.UTF_8));
-            return value instanceof Map ? (Map<String, Object>) value : null;
-        } catch (RuntimeException malformed) {
-            return null;
-        }
-    }
 }

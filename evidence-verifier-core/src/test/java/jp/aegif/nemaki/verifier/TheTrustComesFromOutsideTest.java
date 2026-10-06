@@ -80,13 +80,18 @@ class TheTrustComesFromOutsideTest {
     }
 
     private static Authority authority(boolean ekuCritical, boolean withEku) throws Exception {
+        return authority(ekuCritical, withEku,
+                new Date(System.currentTimeMillis() - 86_400_000L),
+                new Date(System.currentTimeMillis() + 86_400_000L));
+    }
+
+    /** An authority whose certificates are valid from {@code from} to {@code to}. */
+    private static Authority authority(boolean ekuCritical, boolean withEku, Date from, Date to)
+            throws Exception {
         KeyPairGenerator keys = KeyPairGenerator.getInstance("RSA");
         keys.initialize(2048);
         KeyPair caKeys = keys.generateKeyPair();
         KeyPair tsaKeys = keys.generateKeyPair();
-
-        Date from = new Date(System.currentTimeMillis() - 86_400_000L);
-        Date to = new Date(System.currentTimeMillis() + 86_400_000L);
 
         X500Name caName = new X500Name("CN=Test CA");
         X509CertificateHolder caHolder = new JcaX509v3CertificateBuilder(caName,
@@ -121,7 +126,19 @@ class TheTrustComesFromOutsideTest {
      * (third review, 2026-09-22).
      */
     private static byte[] tokenOver(Authority authority, String merkleRoot) throws Exception {
-        byte[] imprint = java.util.HexFormat.of().parseHex(merkleRoot);
+        return tokenOver(authority, merkleRoot, new Date());
+    }
+
+    /** The same token, generated at {@code genTime} — the time the token itself claims. */
+    private static byte[] tokenOver(Authority authority, String merkleRoot, Date genTime)
+            throws Exception {
+        return tokenWith(authority, "2.16.840.1.101.3.4.2.1",
+                java.util.HexFormat.of().parseHex(merkleRoot), genTime);
+    }
+
+    /** A token over {@code imprint} under {@code imprintOid} — SHA-256 for every honest one. */
+    private static byte[] tokenWith(Authority authority, String imprintOid, byte[] imprint,
+            Date genTime) throws Exception {
         // certReq MUST be set, or BouncyCastle omits the signer certificate from the token and
         // every check that needs it reports "the token carries no signer certificate" — which
         // is a legitimate answer for such a token, and not the case under test here. The
@@ -129,11 +146,22 @@ class TheTrustComesFromOutsideTest {
         TimeStampRequestGenerator requests = new TimeStampRequestGenerator();
         requests.setCertReq(true);
         TimeStampRequest request =
-                requests.generate(new ASN1ObjectIdentifier("2.16.840.1.101.3.4.2.1"), imprint);
+                requests.generate(new ASN1ObjectIdentifier(imprintOid), imprint);
 
+        // The CMS signingTime attribute is set to genTime as well. BouncyCastle would default
+        // it to the moment of generation, and a real TSA signs when it stamps — so a token
+        // whose two times disagree would be a fixture artefact, and the signature check (which
+        // judges the certificate at signingTime) would fail for a reason no real token has.
+        org.bouncycastle.asn1.cms.AttributeTable signingTime =
+                new org.bouncycastle.asn1.cms.AttributeTable(new org.bouncycastle.asn1.cms.Attribute(
+                        org.bouncycastle.asn1.cms.CMSAttributes.signingTime,
+                        new org.bouncycastle.asn1.DERSet(new org.bouncycastle.asn1.cms.Time(genTime))));
         org.bouncycastle.cms.SignerInfoGenerator signerInfo =
                 new org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder(
                         new JcaDigestCalculatorProviderBuilder().setProvider("BC").build())
+                        .setSignedAttributeGenerator(
+                                new org.bouncycastle.cms.DefaultSignedAttributeTableGenerator(
+                                        signingTime))
                         .build(new JcaContentSignerBuilder("SHA256withRSA").setProvider("BC")
                                         .build(authority.tsaKeys().getPrivate()),
                                 new X509CertificateHolder(authority.tsa().getEncoded()));
@@ -144,7 +172,7 @@ class TheTrustComesFromOutsideTest {
                 new ASN1ObjectIdentifier(POLICY));
         generator.addCertificates(new org.bouncycastle.cert.jcajce.JcaCertStore(
                 List.of(authority.tsa(), authority.ca())));
-        return generator.generate(request, BigInteger.ONE, new Date()).getEncoded();
+        return generator.generate(request, BigInteger.ONE, genTime).getEncoded();
     }
 
     private static Map<String, byte[]> packageWith(byte[] token, String merkleRoot) {
@@ -358,5 +386,94 @@ class TheTrustComesFromOutsideTest {
         assertTrue(TrustProfile.read(file).requireRevocationAtIssuance(),
                 "the safe default for 'must the issuance-time material be there' is yes; a "
                         + "profile that omitted it and got no would weaken P3 by silence");
+    }
+
+    @Test
+    @DisplayName("the path is judged at the token's time: a signer certificate that has since expired still anchors the token it signed while valid")
+    void thePathIsJudgedAtTheTokensTimeNotNow(@TempDir Path dir) throws Exception {
+        long day = 86_400_000L;
+        Authority expired = authority(true, true,
+                new Date(System.currentTimeMillis() - 3 * day),
+                new Date(System.currentTimeMillis() - day));
+        Date whileValid = new Date(System.currentTimeMillis() - 2 * day);
+        TrustProfile trust = profileWith(dir, expired.ca(), POLICY);
+
+        List<Outcome.Check> checks = TrustedRfc3161.check(
+                packageWith(tokenOver(expired, ROOT, whileValid), ROOT), trust);
+
+        assertEquals(Outcome.PASSED, named(checks, "token pkix").outcome(),
+                "every TSA certificate expires within a few years of issuing. Judged at 'now', "
+                        + "every timestamp older than that failed its path and a consistent "
+                        + "package exited 2 (9-6 review, P1): "
+                        + named(checks, "token pkix").detail());
+        assertEquals(Outcome.PASSED, named(checks, "token signature").outcome(),
+                "the signature check beside it already judged at the token's time; the two "
+                        + "have to agree about WHEN: " + named(checks, "token signature").detail());
+
+        // The time that matters is the token's, not the verifier's: a token this authority
+        // supposedly issued before its certificates existed has no path at that time.
+        Date beforeItExisted = new Date(System.currentTimeMillis() - 4 * day);
+        Outcome.Check pkix = named(TrustedRfc3161.check(
+                packageWith(tokenOver(expired, ROOT, beforeItExisted), ROOT), trust), "token pkix");
+        assertEquals(Outcome.FAILED, pkix.outcome(), pkix.detail());
+    }
+
+    @Test
+    @DisplayName("an anchor target that is not a well-formed document fails the imprint, not 'no target'")
+    void aMalformedTargetFailsTheImprint(@TempDir Path dir) throws Exception {
+        Authority authority = authority(true, true);
+        TrustProfile trust = profileWith(dir, authority.ca(), POLICY);
+        Map<String, byte[]> entries = packageWith(tokenOver(authority, ROOT), ROOT);
+        entries.put(DIR + "anchor-target-checkpoint.json", "[]".getBytes(StandardCharsets.UTF_8));
+
+        Outcome.Check imprint = named(TrustedRfc3161.check(entries, trust), "token imprint");
+
+        assertEquals(Outcome.FAILED, imprint.outcome(),
+                "a target that is there and is not an object is §3.2's FAILED; as absent, a "
+                        + "package with a broken target said 'no target' and exit 3");
+        assertTrue(imprint.detail().contains("anchor-target-checkpoint.json"), imprint.detail());
+        entries.remove(DIR + "anchor-target-checkpoint.json");
+        assertEquals(Outcome.NOT_PRESENT,
+                named(TrustedRfc3161.check(entries, trust), "token imprint").outcome());
+    }
+
+    @Test
+    @DisplayName("a token whose imprint is not SHA-256 is UNKNOWN here, as it is at P2 — not a finding")
+    void anotherImprintAlgorithmIsUnknownNotAFinding(@TempDir Path dir) throws Exception {
+        Authority authority = authority(true, true);
+        TrustProfile trust = profileWith(dir, authority.ca(), POLICY);
+        byte[] sha384Token = tokenWith(authority, "2.16.840.1.101.3.4.2.2", new byte[48], new Date());
+
+        Outcome.Check imprint = named(TrustedRfc3161.check(packageWith(sha384Token, ROOT), trust),
+                "token imprint");
+
+        assertEquals(Outcome.UNAVAILABLE, imprint.outcome(),
+                "a 48-byte imprint compared with a 32-byte root said FAILED here while "
+                        + "ANCHORED_CHECKPOINT_V1 said UNAVAILABLE about the same token — two "
+                        + "answers for one file (9-6 review, P3)");
+        assertEquals("UNKNOWN_ALGORITHM", imprint.reasonCode());
+    }
+
+    @Test
+    @DisplayName("a trust profile whose fields have the wrong type is refused, not read with defaults")
+    void aProfileOfTheWrongShapeIsRefused(@TempDir Path dir) throws Exception {
+        Authority authority = authority(true, true);
+        String pem = Base64.getEncoder().encodeToString(authority.ca().getEncoded());
+        // The MESSAGE is asserted, not only the type: with the type checks gone, "anchors" as
+        // a string still refused — as "names no anchor", a sibling arm — and this lock stayed
+        // green under that sabotage (control SP4 did not fire).
+        for (Map.Entry<String, String> bad : Map.of(
+                "{\"anchors\":\"" + pem + "\"}", "anchors is not a list",
+                "{\"anchors\":[\"" + pem + "\"],\"policyOids\":\"1.2.3\"}", "policyOids is not a list",
+                "{\"anchors\":[\"" + pem + "\"],\"requireRevocationAtIssuance\":\"false\"}",
+                "requireRevocationAtIssuance is not a boolean").entrySet()) {
+            Path file = Files.writeString(dir.resolve("trust.json"), bad.getKey());
+            TrustProfile.Unreadable refusal = assertThrows(TrustProfile.Unreadable.class,
+                    () -> TrustProfile.read(file),
+                    "a field of the wrong type was read as absent, so the holder's instruction "
+                            + "became the default without a word: " + bad.getKey());
+            assertTrue(refusal.getMessage().contains(bad.getValue()),
+                    "refused, but not for the wrong type: " + refusal.getMessage());
+        }
     }
 }

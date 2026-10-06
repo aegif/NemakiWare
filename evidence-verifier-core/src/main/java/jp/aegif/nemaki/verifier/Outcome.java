@@ -68,7 +68,8 @@ public enum Outcome {
          */
         public static final java.util.Set<String> REASON_CODES = java.util.Set.of(
                 "AMBIGUOUS_PAYLOAD", "AMBIGUOUS_PREMIS", "ANCHOR_NOT_PARSED",
-                "CERTIFICATE_UNREADABLE", "DUPLICATE_ENTRY", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",
+                "CERTIFICATE_UNREADABLE", "CHAIN_STARTS_AFTER_EXPECTED", "DUPLICATE_ENTRY",
+                "INCONSISTENT_ARCHIVE", "LEGACY_PACKAGE_LAYOUT", "NOT_A_ZIP",
                 "METS_NOT_PARSED", "MULTIPLE_PACKAGES", "NO_BLOCK_HEADER_SOURCE", "OTS_NOT_PARSED", "PKIX_UNAVAILABLE",
                 "PREMIS_NOT_PARSED",
                 "RESOURCE_LIMIT",

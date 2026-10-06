@@ -580,4 +580,21 @@ class TransitionPackagesAreReadTest {
         assertEquals(Outcome.Verdict.VERIFIED, p1Verdict(checks),
                 "adding the continuity check made a good state package stop verifying");
     }
+
+    @Test
+    @DisplayName("a shipped prior entry that is not a well-formed document is FAILED, not 'the prior is not in the package'")
+    void aMalformedPriorEntryIsFailed() {
+        Fixture fixture = new Fixture();
+        Map<String, byte[]> entries = fixture.entries();
+        entries.put(DIR + "prior/ledger-entry.json", bytes("{\"sequence\":1,\"sequence\":1}"));
+
+        Outcome.Check continuity = named(RecordLedger.check(entries), "transition continuity");
+
+        assertEquals(Outcome.FAILED, continuity.outcome(),
+                "a prior that is there and does not parse is §3.2's FAILED. Folded into null it "
+                        + "was reported as the cited prior not being in the package — UNAVAILABLE "
+                        + "— so a copy whose source could not be read passed as merely unshipped "
+                        + "(9-6 review, P1)");
+        assertTrue(continuity.detail().contains("prior/ledger-entry.json"), continuity.detail());
+    }
 }
