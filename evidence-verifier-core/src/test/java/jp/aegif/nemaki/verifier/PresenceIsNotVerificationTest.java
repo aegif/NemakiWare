@@ -661,4 +661,22 @@ class PresenceIsNotVerificationTest {
             assertEquals(Outcome.NOT_PRESENT, named(checks, name).outcome(), name + ": " + checks);
         }
     }
+
+    @Test
+    @DisplayName("an anchor target that is not a well-formed document, or whose root is not a string, FAILS the data object — not 'states none'")
+    void aMalformedAnchorTargetFailsTheDataObject() {
+        for (String target : List.of("[]", "{\"merkleRoot\":5}", "{\"domain\":\"x\",\"domain\":\"y\"}",
+                "{\"merkleRoot\":\"not hex\"}")) {
+            Map<String, byte[]> entries = new LinkedHashMap<>();
+            entries.put(DIR + "anchor-target-checkpoint.json", target.getBytes(StandardCharsets.UTF_8));
+            entries.put(DIR + "anchors/ers.der", GoldenErs.der());
+
+            Outcome.Check dataObject = named(LongTermErs.check(entries), "ers data object");
+
+            assertEquals(Outcome.FAILED, dataObject.outcome(),
+                    "P2 and P3 answer FAILED for this file and P5 answered NOT_PRESENT — 'the "
+                            + "package states no root' about a root it could not read (c96 "
+                            + "confirmation review, P2): " + target + " → " + dataObject.detail());
+        }
+    }
 }

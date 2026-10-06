@@ -57,6 +57,8 @@
               "CERTIFICATE_UNREADABLE",
               "CHAIN_STARTS_AFTER_EXPECTED",
               "DUPLICATE_ENTRY",
+              "EXPECTED_AFTER_TARGET",
+              "EXPECTED_SEQUENCE_UNKNOWN",
               "INCONSISTENT_ARCHIVE",
               "LEGACY_PACKAGE_LAYOUT",
               "METS_NOT_PARSED",

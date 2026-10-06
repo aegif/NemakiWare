@@ -84,4 +84,20 @@ class TheJsonReaderIsNoLooserThanJsonTest {
         refused("{\"a\":1}\u2028", "a line separator after the document, the same");
         assertEquals(Map.of("a", 1L), Json.parse(" \t\n\r{ \"a\" : 1 }\r\n"));
     }
+
+    @Test
+    @DisplayName("only ASCII digits are digits — not every script's")
+    void onlyAsciiDigitsAreDigits() {
+        refused("{\"a\":\uFF13}", "a fullwidth THREE is a digit to Character.isDigit and to "
+                + "Long.valueOf and not to JSON: this reader made 3 of it and the Python reference "
+                + "refused it — the split §3.2 closes (c96 confirmation review, P3)");
+        refused("{\"a\":\u0663}", "an Arabic-Indic THREE, the same");
+        refused("{\"a\":-\uFF11}", "a sign followed by a fullwidth digit, the same");
+        refused("{\"a\":\uFF10}", "a fullwidth ZERO — the leading-zero rule looked for '0' and would "
+                + "not have seen it either");
+        refused("{\"a\":\"\\u\uFF10\uFF10\uFF14\uFF11\"}", "fullwidth hex digits in an escape: "
+                + "Character.digit(c, 16) took them and Integer.parseInt made 'A' of them");
+        assertEquals(Map.of("a", 3L), Json.parse("{\"a\":3}"));
+        assertEquals(Map.of("a", "A"), Json.parse("{\"a\":\"\\u0041\"}"));
+    }
 }

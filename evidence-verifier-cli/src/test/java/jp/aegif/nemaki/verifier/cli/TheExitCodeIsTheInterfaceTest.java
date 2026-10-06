@@ -316,18 +316,52 @@ class TheExitCodeIsTheInterfaceTest {
     }
 
     @Test
-    @DisplayName("an expected checkpoint that is on the chain leaves exit 0; one that is not, on a chain from the first checkpoint, is exit 2")
+    @DisplayName("an expected checkpoint that is on the chain leaves exit 0; one that is not, placed inside the presented period by its toSequence, is exit 2; hash alone is exit 3")
     void anExpectedCheckpointIsLookedForOnTheChain(@TempDir Path tmp) throws Exception {
         Anchored anchored = anchoredPackage(tmp, null);
 
         assertEquals(Verify.EXIT_VERIFIED, run("verify", anchored.zip().toString(),
                 "--profile", "ANCHORED_CHECKPOINT_V1",
                 "--expected-checkpoint", anchored.coveringHash()).code());
+        // The fixture's chain covers toSequence 5 (covering) to 6 (target) from the ledger's
+        // first checkpoint; a retained checkpoint at 6 that is not on it is missing from the
+        // presented period.
         Run missing = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
-                "--expected-checkpoint", anchored.notOnTheChain());
+                "--expected-checkpoint", anchored.notOnTheChain(),
+                "--expected-checkpoint-sequence", "6");
         assertEquals(Verify.EXIT_FAILED, missing.code(),
-                "the chain starts at the ledger's first checkpoint, so it presents the whole "
-                        + "history, and the holder's checkpoint is not in it: " + missing.out());
+                "the chain presents toSequence 5..6 from the ledger's first checkpoint, and the "
+                        + "holder's checkpoint at 6 is not in it: " + missing.out());
+        Run hashOnly = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
+                "--expected-checkpoint", anchored.notOnTheChain(), "--json");
+        assertEquals(Verify.EXIT_INDETERMINATE, hashOnly.code(),
+                "the hash alone does not place the checkpoint: it may lie after this package's "
+                        + "target. Exit 2 here accused every package older than the holder's record "
+                        + "(c96 confirmation review, P2): " + hashOnly.out());
+        assertTrue(hashOnly.out().contains("\"reasonCode\":\"EXPECTED_SEQUENCE_UNKNOWN\""),
+                hashOnly.out());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint after this package's target is exit 3 with EXPECTED_AFTER_TARGET; a sequence without a hash, or that is not an integer, is usage")
+    void anExpectedCheckpointAfterThePackageIsNotDecided(@TempDir Path tmp) throws Exception {
+        Anchored anchored = anchoredPackage(tmp, null);
+
+        Run after = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
+                "--expected-checkpoint", anchored.notOnTheChain(),
+                "--expected-checkpoint-sequence", "7", "--json");
+        assertEquals(Verify.EXIT_INDETERMINATE, after.code(),
+                "the package's target closes at toSequence 6 and the holder's checkpoint at 7 "
+                        + "was retained later: the package cannot carry it, and that is not a "
+                        + "rollback (c96 confirmation review, P2): " + after.out());
+        assertTrue(after.out().contains("\"reasonCode\":\"EXPECTED_AFTER_TARGET\""), after.out());
+
+        assertEquals(Verify.EXIT_USAGE, run("verify", anchored.zip().toString(),
+                "--profile", "ANCHORED_CHECKPOINT_V1", "--expected-checkpoint-sequence", "6").code(),
+                "a sequence with no checkpoint to place is a question this run would silently not answer");
+        assertEquals(Verify.EXIT_USAGE, run("verify", anchored.zip().toString(),
+                "--profile", "ANCHORED_CHECKPOINT_V1", "--expected-checkpoint", anchored.notOnTheChain(),
+                "--expected-checkpoint-sequence", "six").code());
     }
 
     @Test
@@ -341,7 +375,8 @@ class TheExitCodeIsTheInterfaceTest {
                 "--profile", "ANCHORED_CHECKPOINT_V1").code());
 
         Run result = run("verify", anchored.zip().toString(), "--profile", "ANCHORED_CHECKPOINT_V1",
-                "--expected-checkpoint", anchored.notOnTheChain(), "--json");
+                "--expected-checkpoint", anchored.notOnTheChain(),
+                "--expected-checkpoint-sequence", "4", "--json");
 
         assertEquals(Verify.EXIT_INDETERMINATE, result.code(),
                 "the chain starts after a predecessor the package does not carry, so the "

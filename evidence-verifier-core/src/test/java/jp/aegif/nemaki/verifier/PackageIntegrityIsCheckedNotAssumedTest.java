@@ -2660,6 +2660,42 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertTrue(refusal.getMessage().contains("different bytes"), refusal.getMessage());
     }
 
+    @Test
+    @DisplayName("a central directory record longer than the local one is refused where the local bytes end — the rest is not read")
+    void aLongerCentralRecordIsRefusedWhereTheLocalBytesEnd(@TempDir Path tmp) throws Exception {
+        String premis = ROOT + "metadata/preservation/premis.xml";
+        String pad = ROOT + "metadata/other/pad.bin";
+        Map<String, String> entries = goodPackage("the minutes");
+        byte[] honest = utf8(entries.get(premis));
+        byte[] longer = utf8(entries.get(premis) + "<!-- " + "x".repeat(4096) + " -->");
+        byte[] hidden = java.nio.ByteBuffer
+                .allocate(RawZip.localHeader(premis, longer).length + longer.length)
+                .put(RawZip.localHeader(premis, longer)).put(longer).array();
+        RawZip raw = new RawZip();
+        for (Map.Entry<String, String> e : entries.entrySet()) {
+            if (e.getKey().equals(premis)) {
+                raw.put(premis, honest);
+                continue;
+            }
+            raw.list(e.getKey(), utf8(e.getValue()), raw.put(e.getKey(), utf8(e.getValue())));
+        }
+        int padOffset = raw.put(pad, hidden);
+        raw.list(pad, hidden, padOffset);
+        raw.list(premis, longer, padOffset + RawZip.localHeader(pad, hidden).length);
+        Path zip = raw.writeTo(tmp.resolve("longer-central.zip"));
+
+        PackageReader.Unreadable refusal =
+                assertThrows(PackageReader.Unreadable.class, () -> PackageReader.open(zip));
+
+        assertEquals(PackageReader.Refusal.INCONSISTENT_ARCHIVE, refusal.refusal());
+        assertTrue(refusal.getMessage().contains(
+                        "runs past the local record's " + honest.length + " bytes"),
+                "the central record was read whole and compared afterwards. A directory whose "
+                        + "records point at large regions is then held in memory before any "
+                        + "comparison, with no total bound on this second table (c96 confirmation "
+                        + "review, P3): " + refusal.getMessage());
+    }
+
     private static Map<String, String> nestedPackage(int depth) throws Exception {
         Map<String, String> entries = goodPackage("the minutes");
         entries.put(ROOT + "metadata/preservation/premis.xml",

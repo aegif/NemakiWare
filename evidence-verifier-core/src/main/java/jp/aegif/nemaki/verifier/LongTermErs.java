@@ -193,9 +193,10 @@ public final class LongTermErs {
         }
         checks.add(Outcome.Check.passed("ers parse"));
 
-        byte[] wanted = anchoredRoot(entries);
-        checks.add(dataObject(chains.get(0).get(0), wanted));
-        checks.add(chain(chains, sequence, wanted));
+        AnchoredRoot wanted = anchoredRoot(entries);
+        checks.add(wanted.refusal() != null ? wanted.refusal()
+                : dataObject(chains.get(0).get(0), wanted.value()));
+        checks.add(chain(chains, sequence, wanted.value()));
         checks.add(algorithms(declared, chains));
         return checks;
     }
@@ -348,21 +349,37 @@ public final class LongTermErs {
 
     // ------------------------------------------------------------------ the checks
 
-    /** The root the package says was anchored, or {@code null} when it states none. */
-    private static byte[] anchoredRoot(Map<String, byte[]> entries) {
-        byte[] targetJson = fileIn(entries, "anchor-target-checkpoint.json");
-        if (targetJson == null) {
-            return null;
+    /** The anchored root, or the answer that stands in for it when the target cannot give one. */
+    private record AnchoredRoot(byte[] value, Outcome.Check refusal) {
+    }
+
+    /**
+     * The root the package says was anchored: absent when it states none, FAILED when the
+     * target is there and is not a document or its root is not a hex string (§3.2, §5).
+     *
+     * <p>Every way of not getting a root used to be null — "states none" — so a target that
+     * did not parse made {@code ers data object} NOT_PRESENT, where the sibling readers of the
+     * same file (P2, P3) say FAILED (c96 confirmation review, P2).
+     */
+    private static AnchoredRoot anchoredRoot(Map<String, byte[]> entries) {
+        Section.Doc target = Section.read(entries, "anchor-target-checkpoint.json");
+        if (target.malformed()) {
+            return new AnchoredRoot(null,
+                    Section.malformed("ers data object", "anchor-target-checkpoint.json"));
+        }
+        if (target.value() == null || target.value().get("merkleRoot") == null) {
+            return new AnchoredRoot(null, null);
+        }
+        Object root = target.value().get("merkleRoot");
+        if (!(root instanceof String hex) || hex.isBlank()) {
+            return new AnchoredRoot(null, Outcome.Check.failed("ers data object",
+                    "the anchor target's merkleRoot is not a string (§5: a field of the wrong type)"));
         }
         try {
-            Object parsed = Json.parse(new String(targetJson, StandardCharsets.UTF_8));
-            Object root = parsed instanceof Map<?, ?> document ? document.get("merkleRoot") : null;
-            if (!(root instanceof String hex) || hex.isBlank()) {
-                return null;
-            }
-            return unhex(hex);
-        } catch (RuntimeException unreadable) {
-            return null;
+            return new AnchoredRoot(unhex(hex), null);
+        } catch (RuntimeException notHex) {
+            return new AnchoredRoot(null, Outcome.Check.failed("ers data object",
+                    "the anchor target's merkleRoot is not hex: " + notHex.getMessage()));
         }
     }
 

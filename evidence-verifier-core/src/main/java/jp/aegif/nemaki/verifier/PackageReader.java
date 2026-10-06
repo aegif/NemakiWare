@@ -161,7 +161,14 @@ public final class PackageReader {
      * unreadable rather than judged from either.
      */
     private static void refuseUnlessTheCentralDirectoryAgrees(Path zip, Map<String, byte[]> local) {
-        Map<String, byte[]> central = new LinkedHashMap<>();
+        // Names from the central directory, and the first entry whose bytes disagree with the
+        // local record. The bytes are compared as they stream and not held: the second table
+        // used to be read whole into memory with no total bound, so a directory whose records
+        // point at large regions could exhaust the heap before any comparison, and a sound
+        // 512 MiB package peaked at twice its size (c96 confirmation review, P3).
+        Set<String> central = new LinkedHashSet<>();
+        Set<String> onlyCentral = new LinkedHashSet<>();
+        String disagreeing = null;
         try (ZipFile file = new ZipFile(zip.toFile())) {
             Enumeration<? extends ZipEntry> entries = file.entries();
             while (entries.hasMoreElements()) {
@@ -174,12 +181,20 @@ public final class PackageReader {
                             "the central directory lists more than " + MAX_ENTRIES + " entries");
                 }
                 String name = entry.getName();
-                if (central.containsKey(name)) {
+                if (!central.add(name)) {
                     throw new Unreadable(Refusal.DUPLICATE_ENTRY, "the central directory lists \""
                             + name + "\" twice");
                 }
-                try (InputStream in = file.getInputStream(entry)) {
-                    central.put(name, readBounded(in, name));
+                byte[] expected = local.get(name);
+                if (expected == null) {
+                    // Named in the refusal below; its bytes are not read.
+                    onlyCentral.add(name);
+                    continue;
+                }
+                if (disagreeing == null) {
+                    try (InputStream in = file.getInputStream(entry)) {
+                        disagreeing = sameBytes(in, expected, name);
+                    }
                 }
             }
         } catch (Unreadable refusal) {
@@ -189,9 +204,7 @@ public final class PackageReader {
                     "the package's central directory could not be read: " + broken.getMessage());
         }
         Set<String> onlyLocal = new LinkedHashSet<>(local.keySet());
-        onlyLocal.removeAll(central.keySet());
-        Set<String> onlyCentral = new LinkedHashSet<>(central.keySet());
-        onlyCentral.removeAll(local.keySet());
+        onlyLocal.removeAll(central);
         if (!onlyLocal.isEmpty() || !onlyCentral.isEmpty()) {
             throw new Unreadable(Refusal.INCONSISTENT_ARCHIVE,
                     "the central directory and the local headers list different files"
@@ -200,14 +213,41 @@ public final class PackageReader {
                                     + onlyCentral)
                             + ". Two readers of this zip would see two packages; neither is judged");
         }
-        for (Map.Entry<String, byte[]> entry : local.entrySet()) {
-            if (!Arrays.equals(entry.getValue(), central.get(entry.getKey()))) {
-                throw new Unreadable(Refusal.INCONSISTENT_ARCHIVE,
-                        "the entry \"" + entry.getKey() + "\" has different bytes behind its "
-                                + "local header and behind its central directory record. Two "
-                                + "readers of this zip would see two packages; neither is judged");
-            }
+        if (disagreeing != null) {
+            throw new Unreadable(Refusal.INCONSISTENT_ARCHIVE, disagreeing);
         }
+    }
+
+    /**
+     * Null when the stream holds exactly {@code expected}; otherwise the refusal's detail. Reads
+     * at most one buffer past the local record's length — a longer central record already
+     * disagrees, and none of it needs to be held.
+     */
+    private static String sameBytes(InputStream in, byte[] expected, String name) throws IOException {
+        byte[] buffer = new byte[8192];
+        int at = 0;
+        int n;
+        while ((n = in.read(buffer)) > 0) {
+            if (at + n > expected.length) {
+                return "the entry \"" + name + "\" has different bytes behind its local header and "
+                        + "behind its central directory record: the central record runs past the "
+                        + "local record's " + expected.length + " bytes (reading stopped there). "
+                        + "Two readers of this zip would see two packages; neither is judged";
+            }
+            if (!Arrays.equals(buffer, 0, n, expected, at, at + n)) {
+                return "the entry \"" + name + "\" has different bytes behind its local header and "
+                        + "behind its central directory record. Two readers of this zip would see "
+                        + "two packages; neither is judged";
+            }
+            at += n;
+        }
+        if (at != expected.length) {
+            return "the entry \"" + name + "\" has different bytes behind its local header and "
+                    + "behind its central directory record: the central record ends at " + at
+                    + " bytes where the local record holds " + expected.length + ". Two readers of "
+                    + "this zip would see two packages; neither is judged";
+        }
+        return null;
     }
 
     /**

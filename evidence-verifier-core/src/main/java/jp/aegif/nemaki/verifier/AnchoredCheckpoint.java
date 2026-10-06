@@ -77,24 +77,38 @@ public final class AnchoredCheckpoint {
      */
     public static List<Outcome.Check> check(Map<String, byte[]> entries,
             String expectedCheckpointHash) {
+        return check(entries, expectedCheckpointHash, null);
+    }
+
+    /**
+     * As above, with the retained checkpoint's {@code toSequence} when the holder has it.
+     *
+     * <p>The hash alone says whether the checkpoint is on the chain. Only the sequence places
+     * one that is NOT on it: after this package's anchor target (the package was made before
+     * the holder retained the checkpoint, and cannot carry it), before the chain's start, or
+     * inside the period the chain presents — where a linked chain carries every checkpoint
+     * issued, and a missing one is what a rollback or a fork looks like. A hash-only miss on a
+     * complete chain was FAILED, which accused every package older than the holder's record
+     * (c96 confirmation review, P2).
+     */
+    public static List<Outcome.Check> check(Map<String, byte[]> entries,
+            String expectedCheckpointHash, Long expectedCheckpointSequence) {
         List<Outcome.Check> checks = new ArrayList<>();
 
         Section.Doc chainRead = Section.read(entries, "checkpoint-chain.json");
         Section.Doc coveringRead = Section.read(entries, "covering-checkpoint.json");
         Section.Doc targetRead = Section.read(entries, "anchor-target-checkpoint.json");
-        List<String> malformed = new ArrayList<>();
-        if (chainRead.malformed()) malformed.add("checkpoint-chain.json");
-        if (coveringRead.malformed()) malformed.add("covering-checkpoint.json");
-        if (targetRead.malformed()) malformed.add("anchor-target-checkpoint.json");
-        if (!malformed.isEmpty()) {
+        if (chainRead.malformed()) {
             // §3.2: a file that is there and is not a well-formed JSON object is FAILED for
-            // every check that reads it. Folded into null, it read as "no chain" (9-6 review,
-            // P1). The rollback is not decided over a chain that could not be read.
+            // every check that reads it — and every chain check reads the chain. Folded into
+            // null, it read as "no chain" (9-6 review, P1). The rollback reads the chain too,
+            // when a checkpoint was supplied to look for; without one it is the usual
+            // NOT_PRESENT (c96 confirmation review, P2 — it was NOT_PRESENT either way).
             for (String name : REQUIRED) {
-                checks.add(Section.malformed(name, malformed.toArray(String[]::new)));
+                checks.add(Section.malformed(name, "checkpoint-chain.json"));
             }
-            checks.add(Outcome.Check.absent("rollback", "the chain could not be read as a "
-                    + "document, so there is nothing to look for the expected checkpoint in"));
+            checks.add(expectedCheckpointHash == null ? rollback(null, null, null)
+                    : Section.malformed("rollback", "checkpoint-chain.json"));
             return checks;
         }
         Map<String, Object> chainDoc = chainRead.value();
@@ -106,7 +120,7 @@ public final class AnchoredCheckpoint {
                 checks.add(Outcome.Check.absent(name,
                         "the package carries no checkpoint chain"));
             }
-            checks.add(rollback(null, expectedCheckpointHash));
+            checks.add(rollback(null, expectedCheckpointHash, expectedCheckpointSequence));
             return checks;
         }
 
@@ -116,7 +130,7 @@ public final class AnchoredCheckpoint {
                 checks.add(Outcome.Check.failed(name,
                         "the checkpoint chain is not a list of links"));
             }
-            checks.add(rollback(null, expectedCheckpointHash));
+            checks.add(rollback(null, expectedCheckpointHash, expectedCheckpointSequence));
             return checks;
         }
         if (links.isEmpty()) {
@@ -127,18 +141,32 @@ public final class AnchoredCheckpoint {
                         "the checkpoint chain is empty, so nothing connects the covering "
                                 + "checkpoint to an anchored one"));
             }
-            checks.add(rollback(links, expectedCheckpointHash));
+            checks.add(rollback(links, expectedCheckpointHash, expectedCheckpointSequence));
             return checks;
         }
 
         checks.add(chainRecompute(links));
         checks.add(chainLinked(links));
         checks.add(chainForward(links));
-        checks.add(Section.alsoCanonicalForm(Section.alsoCanonicalForm(
-                chainEnds(links, covering, target), entries, "covering-checkpoint"),
-                entries, "anchor-target-checkpoint"));
+        // The covering and target documents are read by "chain ends" alone, so a malformed
+        // one fails that check and no other — failing the recompute, the links and the order
+        // for a covering that did not parse reported defects in a walk that was never hindered
+        // (c96 confirmation review, P2).
+        List<String> endsMalformed = new ArrayList<>();
+        if (coveringRead.malformed()) {
+            endsMalformed.add("covering-checkpoint.json");
+        }
+        if (targetRead.malformed()) {
+            endsMalformed.add("anchor-target-checkpoint.json");
+        }
+        boolean endsReadable = endsMalformed.isEmpty();
+        checks.add(endsReadable
+                ? Section.alsoCanonicalForm(Section.alsoCanonicalForm(
+                        chainEnds(links, covering, target), entries, "covering-checkpoint"),
+                        entries, "anchor-target-checkpoint")
+                : Section.malformed("chain ends", endsMalformed.toArray(String[]::new)));
         checks.add(anchorCommitsRoot(entries, links));
-        checks.add(rollback(links, expectedCheckpointHash));
+        checks.add(rollback(links, expectedCheckpointHash, expectedCheckpointSequence));
         return checks;
     }
 
@@ -451,7 +479,8 @@ public final class AnchoredCheckpoint {
         return found == null ? new byte[0] : found;
     }
 
-    static Outcome.Check rollback(List<Map<String, Object>> links, String expected) {
+    static Outcome.Check rollback(List<Map<String, Object>> links, String expected,
+            Long expectedSequence) {
         if (expected == null) {
             // NOT_PRESENT, and the detail says why. Without a checkpoint held OUTSIDE the
             // package there is nothing a rollback could be detected against — the package's own
@@ -471,29 +500,81 @@ public final class AnchoredCheckpoint {
         }
         for (Map<String, Object> link : links) {
             if (expected.equals(link.get("checkpointHash"))) {
+                Long at = sequenceOf(link);
+                if (expectedSequence != null && !expectedSequence.equals(at)) {
+                    return Outcome.Check.failed("rollback",
+                            "the chain carries the checkpoint " + expected + " at toSequence " + at
+                                    + " and the holder retained it at toSequence " + expectedSequence
+                                    + ": the retained record and this package disagree about the "
+                                    + "same checkpoint");
+                }
                 return Outcome.Check.passed("rollback");
             }
         }
-        // Not on the chain. Whether that is a rollback depends on where the chain starts: the
-        // package carries the chain from the covering checkpoint forward, so a checkpoint the
-        // holder saw BEFORE that period cannot be on it however honest the ledger is — only a
-        // chain whose first link has no predecessor presents the whole history and can be
-        // said to omit it (9-6 review, P1: a holder's checkpoint older than the covering one
-        // was reported as a rollback). The hash alone does not say which side of the covering
-        // checkpoint it lies on, so the answer for a chain with a predecessor is "not decided".
+        // Not on the chain. The hash alone does not say where the checkpoint lies relative to
+        // the period the chain presents: before its start (a chain with a predecessor carries
+        // the history from the covering checkpoint forward only — 9-6 review, P1), after its
+        // end (a package made before the holder retained the checkpoint cannot carry it — c96
+        // confirmation review, P2), or inside it, where a linked chain carries every checkpoint
+        // issued and a missing one is what a rollback or a fork looks like. Only the retained
+        // checkpoint's toSequence places it; without one the answer is "not decided", never an
+        // accusation.
         Object firstPredecessor = links.get(0).get("prevCheckpointHash");
-        if (firstPredecessor != null) {
+        Long first = sequenceOf(links.get(0));
+        Long last = sequenceOf(links.get(links.size() - 1));
+        if (expectedSequence == null) {
+            return Outcome.Check.unavailable("rollback", "EXPECTED_SEQUENCE_UNKNOWN",
+                    "the checkpoint " + expected + " is not on this package's chain (toSequence "
+                            + first + " to " + last + (firstPredecessor == null
+                                    ? ", from the ledger's first checkpoint"
+                                    : ", after a predecessor " + firstPredecessor
+                                            + " the package does not carry")
+                            + "). Its hash alone does not say whether it lies after this package's "
+                            + "anchor target — a package made before the holder retained it cannot "
+                            + "carry it — " + (firstPredecessor == null ? ""
+                                    : "or before the chain's start, ")
+                            + "or was removed from the history. Supply the retained checkpoint's "
+                            + "toSequence (--expected-checkpoint-sequence) to decide");
+        }
+        if (first == null || last == null) {
+            return Outcome.Check.failed("rollback",
+                    "the chain's toSequence values could not be read as integers, so the retained "
+                            + "checkpoint cannot be placed on it (§3.2: a field of the wrong type)");
+        }
+        if (expectedSequence > last) {
+            return Outcome.Check.unavailable("rollback", "EXPECTED_AFTER_TARGET",
+                    "the retained checkpoint (toSequence " + expectedSequence + ") lies after this "
+                            + "package's anchor target (toSequence " + last + "): the package was "
+                            + "made before the holder retained it and cannot carry it. A rollback "
+                            + "can neither be confirmed nor ruled out from this package; a package "
+                            + "whose chain reaches that checkpoint can decide");
+        }
+        if (expectedSequence < first && firstPredecessor != null) {
             return Outcome.Check.unavailable("rollback", "CHAIN_STARTS_AFTER_EXPECTED",
-                    "the checkpoint " + expected + " is not on this package's chain, and the "
-                            + "chain starts at a checkpoint whose predecessor (" + firstPredecessor
-                            + ") the package does not carry — the expected one may lie before it."
-                            + " A rollback can neither be confirmed nor ruled out from this "
-                            + "package; a package whose chain reaches that checkpoint can decide");
+                    "the retained checkpoint (toSequence " + expectedSequence + ") lies before this "
+                            + "package's chain, which starts at toSequence " + first + " after a "
+                            + "predecessor (" + firstPredecessor + ") the package does not carry. A "
+                            + "rollback can neither be confirmed nor ruled out from this package; a "
+                            + "package whose chain reaches that checkpoint can decide");
+        }
+        if (expectedSequence < first) {
+            return Outcome.Check.failed("rollback",
+                    "the retained checkpoint (toSequence " + expectedSequence + ") lies before the "
+                            + "ledger's first checkpoint (toSequence " + first + ") in the complete "
+                            + "history this package presents: no history has a checkpoint before "
+                            + "its first");
         }
         return Outcome.Check.failed("rollback",
-                "the checkpoint " + expected + " is not on this package's chain, which starts at "
-                        + "the ledger's first checkpoint, so the package presents the whole history "
-                        + "and it does not include what the holder already saw");
+                "the retained checkpoint " + expected + " (toSequence " + expectedSequence
+                        + ") lies inside the period this package's linked chain presents "
+                        + "(toSequence " + first + " to " + last + ") and is not on it: the history "
+                        + "the package presents has no such checkpoint, which is what a rollback "
+                        + "or a fork looks like");
+    }
+
+    private static Long sequenceOf(Map<String, Object> link) {
+        Object value = link.get("toSequence");
+        return value instanceof Long l ? l : value instanceof Integer i ? i.longValue() : null;
     }
 
     @SuppressWarnings("unchecked")

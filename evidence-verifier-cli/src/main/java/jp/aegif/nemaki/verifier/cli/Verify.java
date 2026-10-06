@@ -84,6 +84,7 @@ public final class Verify {
         Path sip = null;
         String profile = "PACKAGE_INTEGRITY_V1";
         String expectedCheckpoint = null;
+        Long expectedCheckpointSequence = null;
         Path trustProfileFile = null;
         boolean asJson = false;
 
@@ -107,6 +108,23 @@ public final class Verify {
                         return EXIT_USAGE;
                     }
                     expectedCheckpoint = args[i];
+                }
+                case "--expected-checkpoint-sequence" -> {
+                    if (++i >= args.length) {
+                        err.println("--expected-checkpoint-sequence needs a value");
+                        return EXIT_USAGE;
+                    }
+                    try {
+                        expectedCheckpointSequence = Long.valueOf(args[i]);
+                    } catch (NumberFormatException notAnInteger) {
+                        err.println("--expected-checkpoint-sequence takes the retained checkpoint's "
+                                + "toSequence, an integer; got " + args[i]);
+                        return EXIT_USAGE;
+                    }
+                    if (expectedCheckpointSequence < 0) {
+                        err.println("--expected-checkpoint-sequence cannot be negative; got " + args[i]);
+                        return EXIT_USAGE;
+                    }
                 }
                 case "--profile" -> {
                     if (++i >= args.length) {
@@ -143,7 +161,16 @@ public final class Verify {
         if (sip == null) {
             err.println("usage: nemaki-evidence verify <sip.zip> [--profile "
                     + String.join("|", KNOWN_PROFILES)
-                    + "] [--trust-profile <file>] [--expected-checkpoint <hash>] [--json]");
+                    + "] [--trust-profile <file>] [--expected-checkpoint <hash> "
+                    + "[--expected-checkpoint-sequence <toSequence>]] [--json]");
+            return EXIT_USAGE;
+        }
+        if (expectedCheckpointSequence != null && expectedCheckpoint == null) {
+            // Refused, not ignored: the sequence places the checkpoint --expected-checkpoint
+            // names, and a caller who passed one without the other asked a question this run
+            // would otherwise silently not answer.
+            err.println("--expected-checkpoint-sequence places the checkpoint named by "
+                    + "--expected-checkpoint; without one there is nothing to place");
             return EXIT_USAGE;
         }
         if (!KNOWN_PROFILES.contains(profile)) {
@@ -198,7 +225,7 @@ public final class Verify {
                     || "ANCHORED_OTS_V1".equals(profile)
                     || "LONG_TERM_ERS_V1".equals(profile)) {
                 checks.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.check(
-                        entries, expectedCheckpoint));
+                        entries, expectedCheckpoint, expectedCheckpointSequence));
                 // With an expected checkpoint the rollback check is required (§11): a holder who
                 // supplied one gets an answer or INDETERMINATE, never VERIFIED over "not decided".
                 requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.requiredFor(

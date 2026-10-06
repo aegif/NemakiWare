@@ -296,17 +296,74 @@ class TheChainIsWalkedNotAssumedTest {
     }
 
     @Test
-    @DisplayName("an expected checkpoint missing from a chain that starts at the ledger's first checkpoint is a FAILURE")
+    @DisplayName("an expected checkpoint missing from the period a complete chain presents is a FAILURE — once its toSequence places it there")
     void anExpectedCheckpointNotOnTheChainFails() {
+        Outcome.Check rollback = named(
+                AnchoredCheckpoint.check(chainOf(twoLinked()), "9".repeat(64), 15L), "rollback");
+
+        assertEquals(Outcome.FAILED, rollback.outcome(),
+                "the package presents a linked history over toSequence 1..20 that does not "
+                        + "include the checkpoint the holder retained at 15 — which is exactly what "
+                        + "a rollback or a fork looks like: " + rollback.detail());
+        // The premise of the verdict: this chain's first link has no predecessor, so the
+        // package presents the history from the ledger's first checkpoint.
+        assertNull(twoLinked().get(0).get("prevCheckpointHash"));
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint missing from the chain, with no toSequence to place it, is NOT decided — never an accusation")
+    void anExpectedCheckpointNotOnTheChainWithoutItsSequenceIsNotDecided() {
         Outcome.Check rollback = named(
                 AnchoredCheckpoint.check(chainOf(twoLinked()), "9".repeat(64)), "rollback");
 
+        assertEquals(Outcome.UNAVAILABLE, rollback.outcome(),
+                "the hash alone does not say whether the holder's checkpoint lies after this "
+                        + "package's target — a package made before the checkpoint was retained "
+                        + "cannot carry it — or was removed. FAILED here accused every package "
+                        + "older than the holder's record (c96 confirmation review, P2): "
+                        + rollback.detail());
+        assertEquals("EXPECTED_SEQUENCE_UNKNOWN", rollback.reasonCode());
+        assertTrue(rollback.detail().contains("--expected-checkpoint-sequence"), rollback.detail());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint after this package's anchor target is NOT decided — the package predates it")
+    void anExpectedCheckpointAfterTheTargetIsNotDecided() {
+        Outcome.Check rollback = named(
+                AnchoredCheckpoint.check(chainOf(twoLinked()), "9".repeat(64), 25L), "rollback");
+
+        assertEquals(Outcome.UNAVAILABLE, rollback.outcome(), rollback.detail());
+        assertEquals("EXPECTED_AFTER_TARGET", rollback.reasonCode(),
+                "a holder re-verifying last month's package with this week's checkpoint was told "
+                        + "'rollback' (c96 confirmation review, P2): " + rollback.detail());
+    }
+
+    @Test
+    @DisplayName("an expected checkpoint before the ledger's first, on a complete chain, is a FAILURE")
+    void anExpectedCheckpointBeforeACompleteChainFails() {
+        Outcome.Check rollback = named(
+                AnchoredCheckpoint.check(chainOf(twoLinked()), "9".repeat(64), 5L), "rollback");
+
         assertEquals(Outcome.FAILED, rollback.outcome(),
-                "the package presents a history that does not include what the holder already "
-                        + "saw — which is exactly what a rollback looks like");
-        // The premise of the verdict: this chain's first link has no predecessor, so the
-        // package presents the WHOLE history and can be said to omit the checkpoint.
-        assertNull(twoLinked().get(0).get("prevCheckpointHash"));
+                "the chain starts at the ledger's first checkpoint (toSequence 10) and the holder "
+                        + "retained one at 5: no history has a checkpoint before its first: "
+                        + rollback.detail());
+    }
+
+    @Test
+    @DisplayName("a retained toSequence that disagrees with the chain's record of the same hash is a FAILURE, not a pass")
+    void aRetainedSequenceThatDisagreesWithTheChainFails() {
+        List<Map<String, Object>> links = twoLinked();
+        String firstHash = String.valueOf(links.get(0).get("checkpointHash"));
+
+        assertEquals(Outcome.PASSED, named(AnchoredCheckpoint.check(chainOf(links), firstHash, 10L),
+                "rollback").outcome(), "the hash is on the chain at the retained toSequence");
+        Outcome.Check disagreeing = named(AnchoredCheckpoint.check(chainOf(links), firstHash, 11L),
+                "rollback");
+        assertEquals(Outcome.FAILED, disagreeing.outcome(),
+                "the holder's record says this hash closed at 11 and the package says 10: the two "
+                        + "disagree about the same checkpoint, and passing on the hash alone would "
+                        + "read the holder's record as confirmed: " + disagreeing.detail());
     }
 
     @Test
@@ -317,7 +374,7 @@ class TheChainIsWalkedNotAssumedTest {
                 link(21, 30, "cc", String.valueOf(first.get("checkpointHash")));
         List<Map<String, Object>> links = new ArrayList<>(List.of(first, second));
 
-        List<Outcome.Check> checks = AnchoredCheckpoint.check(chainOf(links), "9".repeat(64));
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(chainOf(links), "9".repeat(64), 5L);
         Outcome.Check rollback = named(checks, "rollback");
 
         assertEquals(Outcome.UNAVAILABLE, rollback.outcome(),
@@ -387,15 +444,37 @@ class TheChainIsWalkedNotAssumedTest {
     }
 
     @Test
-    @DisplayName("a covering checkpoint that is not a well-formed document is FAILED, not absent")
+    @DisplayName("a covering checkpoint that is not a well-formed document fails the check that reads it — and only that one")
     void aMalformedCoveringCheckpointIsFailed() {
         Map<String, byte[]> entries = chainOf(twoLinked());
         entries.put(DIR + "covering-checkpoint.json", "null".getBytes(StandardCharsets.UTF_8));
 
-        for (Outcome.Check check : requiredOf(AnchoredCheckpoint.check(entries, null))) {
-            assertEquals(Outcome.FAILED, check.outcome(), check.name());
-            assertTrue(check.detail().contains("covering-checkpoint.json"), check.detail());
+        List<Outcome.Check> checks = AnchoredCheckpoint.check(entries, null);
+
+        Outcome.Check ends = named(checks, "chain ends");
+        assertEquals(Outcome.FAILED, ends.outcome(), ends.detail());
+        assertTrue(ends.detail().contains("covering-checkpoint.json"), ends.detail());
+        // The walk itself read only the chain, which is sound: failing it too reported defects
+        // in a walk that was never hindered (c96 confirmation review, P2).
+        for (String name : List.of("chain recompute", "chain linked", "chain forward")) {
+            assertEquals(Outcome.PASSED, named(checks, name).outcome(), name);
         }
+    }
+
+    @Test
+    @DisplayName("a malformed chain fails the rollback when a checkpoint was supplied to look for in it")
+    void aMalformedChainFailsTheRollbackThatWasAsked() {
+        Map<String, byte[]> entries = chainOf(twoLinked());
+        entries.put(DIR + "checkpoint-chain.json",
+                "{\"links\":[],\"links\":[]}".getBytes(StandardCharsets.UTF_8));
+
+        Outcome.Check asked = named(AnchoredCheckpoint.check(entries, "9".repeat(64)), "rollback");
+        assertEquals(Outcome.FAILED, asked.outcome(),
+                "the holder supplied a checkpoint and the chain it would be looked for in does "
+                        + "not parse: §3.2's FAILED, not 'nothing to look in' (c96 confirmation "
+                        + "review, P2)");
+        Outcome.Check notAsked = named(AnchoredCheckpoint.check(entries, null), "rollback");
+        assertEquals(Outcome.NOT_PRESENT, notAsked.outcome(), "no checkpoint, no question");
     }
 
     @Test

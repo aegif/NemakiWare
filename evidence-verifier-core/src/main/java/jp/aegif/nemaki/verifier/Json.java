@@ -192,7 +192,7 @@ public final class Json {
                     String hex = text.substring(at, at + 4);
                     for (int i = 0; i < 4; i++) {
                         // Integer.parseInt would also take a sign, which JSON does not.
-                        if (Character.digit(hex.charAt(i), 16) < 0) {
+                        if (!isAsciiHex(hex.charAt(i))) {
                             throw new NotCanonicalisable("the escape \\u" + hex + " at offset "
                                     + (at - 2) + " is not four hex digits");
                         }
@@ -218,7 +218,7 @@ public final class Json {
         if (peek() == '-') {
             at++;
         }
-        while (at < text.length() && Character.isDigit(text.charAt(at))) {
+        while (at < text.length() && isAsciiDigit(text.charAt(at))) {
             at++;
         }
         if (at == start || (at == start + 1 && text.charAt(start) == '-')) {
@@ -251,9 +251,28 @@ public final class Json {
         }
     }
 
-    /** JSON's four — not Character.isWhitespace, which also takes U+00A0, U+2028 and friends. */
+    /**
+     * JSON's four — not Character.isWhitespace, which also takes U+000B, U+001C–U+001F, U+2028,
+     * U+3000 and friends. (It does NOT take U+00A0, which an earlier reading of this comment
+     * claimed; a no-break space is refused by either rule and tells them apart no more than any
+     * other letter does — c96 confirmation review, P3.)
+     */
     private static boolean isJsonWhitespace(char c) {
         return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    }
+
+    /**
+     * JSON's digits are ASCII 0-9 — not Character.isDigit, which also takes U+FF13, U+0663 and
+     * every other script's digits, and Long.valueOf follows it: {@code {"a":３}} parsed to 3
+     * here and was refused by the Python reference, which is the split §3.2 closes (c96
+     * confirmation review, P3).
+     */
+    private static boolean isAsciiDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    private static boolean isAsciiHex(char c) {
+        return isAsciiDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 
     /**
