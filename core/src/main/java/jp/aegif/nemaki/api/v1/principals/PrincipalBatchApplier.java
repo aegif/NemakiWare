@@ -120,15 +120,32 @@ final class PrincipalBatchApplier {
             } catch (RuntimeException e) {
                 // The text is whatever the failing layer wrote — a store URL, a class name. It
                 // goes to the log under an incident id; the client gets the id (#1410 rule).
-                // The row's CELLS are not logged either: one of them may be a password.
+                // The row's CELLS are not logged either: one of them may be a password — and a
+                // lower layer that echoes its input would put that cell into the message, so the
+                // password's value is redacted from the text, and the throwable logged carries
+                // the frames of the failure without its message or its cause chain (9-6 review
+                // of area C, P1: nothing measured the log, and the claim rested on the layers
+                // below never echoing a cell).
                 incidentId = UUID.randomUUID().toString();
+                String why = withoutThePassword(e.getMessage(), row);
+                RuntimeException frames = new RuntimeException(e.getClass().getName() + ": " + why);
+                frames.setStackTrace(e.getStackTrace());
                 logger.warn("Principal batch {} {} stopped at line {} (id {}) [incident {}]: {}",
-                        kind, operation, row.line(), row.id(), incidentId, e.getMessage(), e);
+                        kind, operation, row.line(), row.id(), incidentId, why, frames);
                 outcomes.add(new RowOutcome(row.line(), row.id(), Outcome.FAILED, "INCIDENT_" + incidentId));
                 stoppedAt = row.line();
             }
         }
         return new Applied(List.copyOf(outcomes), stoppedAt, incidentId);
+    }
+
+    /** {@code text} with every occurrence of the row's password cell replaced, when it has one. */
+    static String withoutThePassword(String text, Row row) {
+        String password = row.cell("password");
+        if (text == null || password == null || password.isBlank()) {
+            return text;
+        }
+        return text.replace(password, "[password redacted]");
     }
 
     /** Applies one expected row. Returns null when applied, or a registry reason when the

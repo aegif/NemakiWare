@@ -19,7 +19,11 @@ package jp.aegif.nemaki.api.v1.resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.api.v1.exception.ApiException;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatch;
+import org.slf4j.LoggerFactory;
 import jp.aegif.nemaki.audit.AuditLogger;
 import jp.aegif.nemaki.audit.AuditOperation;
 import jp.aegif.nemaki.businesslogic.ContentService;
@@ -30,6 +34,7 @@ import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -300,6 +305,98 @@ class PrincipalBatchResourceTest {
         verify(audit).logOperation(eq(AuditOperation.PRINCIPAL_BATCH), eq(REPO), eq(ACTOR), anyString(), eq(true),
                 any(), details.capture());
         assertFalse(String.valueOf(details.getValue()).contains(secret), "the audit line carried the password");
+    }
+
+    // ---- gate: the log is an exit too (9-6 review of area C, P1: nothing measured it) ----
+
+    /** The applier is package-private to its own package; its logger is reached by name. */
+    private static final String APPLIER_LOGGER = "jp.aegif.nemaki.api.v1.principals.PrincipalBatchApplier";
+    private final List<ListAppender<ILoggingEvent>> attached = new ArrayList<>();
+
+    @AfterEach
+    void detachAppenders() {
+        for (Logger logger : List.of((Logger) LoggerFactory.getLogger(APPLIER_LOGGER),
+                (Logger) LoggerFactory.getLogger(PrincipalBatchResource.class))) {
+            for (ListAppender<ILoggingEvent> appender : attached) {
+                logger.detachAppender(appender);
+            }
+        }
+        attached.clear();
+    }
+
+    /** Everything the applier and the resource log, messages and throwables rendered. */
+    private ListAppender<ILoggingEvent> capturingTheLog() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        for (Logger logger : List.of((Logger) LoggerFactory.getLogger(APPLIER_LOGGER),
+                (Logger) LoggerFactory.getLogger(PrincipalBatchResource.class))) {
+            logger.addAppender(appender);
+        }
+        attached.add(appender);
+        return appender;
+    }
+
+    private static String rendered(ListAppender<ILoggingEvent> appender) {
+        StringBuilder out = new StringBuilder();
+        for (ILoggingEvent event : appender.list) {
+            out.append(event.getFormattedMessage()).append('\n');
+            for (var proxy = event.getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
+                out.append(proxy.getClassName()).append(": ").append(proxy.getMessage()).append('\n');
+                for (var frame : proxy.getStackTraceElementProxyArray()) {
+                    out.append("  at ").append(frame.getSTEAsString()).append('\n');
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    @Test
+    @DisplayName("a row that fails inside the store is logged under an incident id — without its cells")
+    void thePasswordIsNotLoggedWhenARowFails() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(new IllegalStateException("couchdb answered 503"));
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertFalse(String.valueOf(execute.getEntity()).contains(secret));
+        String logged = rendered(log);
+        assertTrue(logged.contains("stopped at line 2") && logged.contains("couchdb answered 503"),
+                "the incident line is the one measured here, and it was not written: " + logged);
+        assertFalse(logged.contains(secret),
+                "the password reached the log. The design (principal-batch.md, the C-1 gate) says the "
+                        + "value is in no response, plan, audit line or LOG, and until this lock the log "
+                        + "was the one exit no test read (9-6 review of area C, P1): " + logged);
+    }
+
+    @Test
+    @DisplayName("a lower layer that echoes the password in its exception is redacted in the log — message, throwable and cause")
+    void aLowerLayerThatEchoesThePasswordIsRedactedInTheLog() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(new IllegalStateException("rejected the credential " + secret,
+                        new IllegalArgumentException("weak: " + secret)));
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("rejected the credential [password redacted]"),
+                "the failing layer's text is kept, with the password's value taken out: " + logged);
+        assertFalse(logged.contains(secret),
+                "the password reached the log through the exception the store threw — its message, "
+                        + "or the cause chain the throwable carries (9-6 review of area C, P1): " + logged);
     }
 
     // ---- gate: the empty groups column is 'do not touch'; replace's empty members is 'make empty' ----
