@@ -130,7 +130,13 @@ public final class AnchoredCheckpoint {
                 checks.add(Outcome.Check.failed(name,
                         "the checkpoint chain is not a list of links"));
             }
-            checks.add(rollback(null, expectedCheckpointHash, expectedCheckpointSequence));
+            // The file is there and unusable: a retained checkpoint cannot be looked for in it,
+            // and that is §11's FAILED, not "the package carries no chain" (c96 confirmation
+            // review, round 2, P3 — the malformed-JSON form was FAILED, these siblings were not).
+            checks.add(expectedCheckpointHash == null ? rollback(null, null, null)
+                    : Outcome.Check.failed("rollback", "the checkpoint chain is not a list of "
+                            + "links, so the retained checkpoint cannot be looked for in the chain "
+                            + "the package shipped (§11: links missing is FAILED)"));
             return checks;
         }
         if (links.isEmpty()) {
@@ -141,7 +147,10 @@ public final class AnchoredCheckpoint {
                         "the checkpoint chain is empty, so nothing connects the covering "
                                 + "checkpoint to an anchored one"));
             }
-            checks.add(rollback(links, expectedCheckpointHash, expectedCheckpointSequence));
+            checks.add(expectedCheckpointHash == null ? rollback(null, null, null)
+                    : Outcome.Check.failed("rollback", "the checkpoint chain is empty, so the "
+                            + "retained checkpoint cannot be looked for in the chain the package "
+                            + "shipped (§11: links empty is FAILED)"));
             return checks;
         }
 
@@ -544,10 +553,11 @@ public final class AnchoredCheckpoint {
         if (expectedSequence > last) {
             return Outcome.Check.unavailable("rollback", "EXPECTED_AFTER_TARGET",
                     "the retained checkpoint (toSequence " + expectedSequence + ") lies after this "
-                            + "package's anchor target (toSequence " + last + "): the package was "
-                            + "made before the holder retained it and cannot carry it. A rollback "
-                            + "can neither be confirmed nor ruled out from this package; a package "
-                            + "whose chain reaches that checkpoint can decide");
+                            + "package's anchor target (toSequence " + last + "): a package made "
+                            + "before the holder retained it cannot carry it, and a history "
+                            + "rewritten and anchored again short of it would look the same from "
+                            + "here. A rollback can neither be confirmed nor ruled out from this "
+                            + "package; a package whose chain reaches that checkpoint can decide");
         }
         if (expectedSequence < first && firstPredecessor != null) {
             return Outcome.Check.unavailable("rollback", "CHAIN_STARTS_AFTER_EXPECTED",

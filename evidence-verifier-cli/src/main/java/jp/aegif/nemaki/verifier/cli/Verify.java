@@ -72,6 +72,10 @@ public final class Verify {
             List.of("PACKAGE_INTEGRITY_V1", "RECORD_LEDGER_V1", "ANCHORED_CHECKPOINT_V1",
                     "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1", "LONG_TERM_ERS_V1");
 
+    /** The profiles that run P2's checks — the rollback check among them (§11). */
+    static final List<String> ROLLBACK_PROFILES = List.of("ANCHORED_CHECKPOINT_V1",
+            "TRUSTED_RFC3161_V1", "ANCHORED_OTS_V1", "LONG_TERM_ERS_V1");
+
     private Verify() {
     }
 
@@ -171,6 +175,16 @@ public final class Verify {
             // would otherwise silently not answer.
             err.println("--expected-checkpoint-sequence places the checkpoint named by "
                     + "--expected-checkpoint; without one there is nothing to place");
+            return EXIT_USAGE;
+        }
+        if (expectedCheckpoint != null && !ROLLBACK_PROFILES.contains(profile)) {
+            // Refused, not ignored: the rollback check belongs to ANCHORED_CHECKPOINT_V1 and
+            // above. Below it the check never ran, and a holder who supplied a checkpoint was
+            // told VERIFIED over a question nobody asked (c96 confirmation review, round 2, P1).
+            err.println("--expected-checkpoint asks the rollback check, which belongs to "
+                    + "ANCHORED_CHECKPOINT_V1 and above; at " + profile + " it is never run, and "
+                    + "the question would go unanswered under exit 0. Request "
+                    + String.join(", ", ROLLBACK_PROFILES) + ", or drop the option");
             return EXIT_USAGE;
         }
         if (!KNOWN_PROFILES.contains(profile)) {

@@ -79,8 +79,14 @@ class TheJsonReaderIsNoLooserThanJsonTest {
     @Test
     @DisplayName("only JSON's four whitespace characters separate tokens")
     void onlyJsonWhitespaceIsWhitespace() {
-        refused("{\u00a0\"a\":1}", "a no-break space is whitespace to Character.isWhitespace and "
-                + "not to JSON");
+        refused("{\u00a0\"a\":1}", "a no-break space is whitespace to neither JSON nor "
+                + "Character.isWhitespace — refused by any reader; the examples that tell the two "
+                + "apart are the ones below (c96 confirmation review, P3: the message here used to "
+                + "claim isWhitespace takes it, and round 2 found the correction had reached the "
+                + "javadoc but not this line)");
+        refused("{\u000b\"a\":1}", "a vertical tab is whitespace to Character.isWhitespace and not "
+                + "to JSON");
+        refused("{\u3000\"a\":1}", "an ideographic space, the same");
         refused("{\"a\":1}\u2028", "a line separator after the document, the same");
         assertEquals(Map.of("a", 1L), Json.parse(" \t\n\r{ \"a\" : 1 }\r\n"));
     }

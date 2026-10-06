@@ -390,6 +390,42 @@ class TheChainIsWalkedNotAssumedTest {
     }
 
     @Test
+    @DisplayName("an expected checkpoint AT the chain's first toSequence with another hash is inside the presented period — a FAILURE, not 'before the start'")
+    void anExpectedCheckpointAtTheChainsFirstSequenceWithAnotherHashFails() {
+        Map<String, Object> first = link(11, 20, "bb", "a".repeat(64));
+        Map<String, Object> second =
+                link(21, 30, "cc", String.valueOf(first.get("checkpointHash")));
+        List<Map<String, Object>> links = new ArrayList<>(List.of(first, second));
+
+        Outcome.Check rollback = named(AnchoredCheckpoint.check(chainOf(links), "9".repeat(64), 20L),
+                "rollback");
+
+        assertEquals(Outcome.FAILED, rollback.outcome(),
+                "the chain's first link closes at 20 and the holder retained a different checkpoint "
+                        + "closing at 20: two checkpoints at one sequence are two histories. 'Before "
+                        + "the start' begins below 20, not at it (c96 confirmation review, round 2, "
+                        + "P3 — the boundary was unlocked): " + rollback.detail());
+    }
+
+    @Test
+    @DisplayName("a shipped chain whose links are empty or not a list fails the rollback that was asked — the file is there and unusable")
+    void aChainWhoseLinksAreNotAListOrEmptyFailsTheRollbackThatWasAsked() {
+        for (String links : List.of("[]", "\"x\"")) {
+            Map<String, byte[]> entries = new LinkedHashMap<>();
+            entries.put(DIR + "checkpoint-chain.json",
+                    ("{\"links\":" + links + "}").getBytes(StandardCharsets.UTF_8));
+
+            Outcome.Check asked = named(AnchoredCheckpoint.check(entries, "9".repeat(64), 15L), "rollback");
+            assertEquals(Outcome.FAILED, asked.outcome(),
+                    "the chain file is there and says links=" + links + ": the holder's checkpoint "
+                            + "cannot be looked for in it, which §11 calls FAILED, not 'the package "
+                            + "carries no chain' (c96 confirmation review, round 2, P3): " + asked.detail());
+            Outcome.Check notAsked = named(AnchoredCheckpoint.check(entries, null), "rollback");
+            assertEquals(Outcome.NOT_PRESENT, notAsked.outcome(), "no checkpoint, no question");
+        }
+    }
+
+    @Test
     @DisplayName("an expected checkpoint with no chain to look in is NOT_PRESENT, not a rollback")
     void anExpectedCheckpointWithNoChainIsAbsentNotFailed() {
         Map<String, byte[]> entries = chainOf(twoLinked());

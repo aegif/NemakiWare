@@ -476,6 +476,23 @@ class PresenceIsNotVerificationTest {
     @Test
     @DisplayName("a chain started with no hash tree is read, not refused")
     void aChainStartedWithNoTreeIsRead() throws Exception {
+        byte[] der = renewedWithoutATree();
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put(DIR + "anchor-target-checkpoint.json",
+                GoldenErs.anchorTarget(GoldenErs.root()));
+        entries.put(DIR + "anchors/ers.der", der);
+
+        List<Outcome.Check> checks = LongTermErs.check(entries);
+        assertEquals(Outcome.PASSED, named(checks, "ers chain").outcome(),
+                "a hash-tree renewal in the shape BouncyCastle produces was reported as a "
+                        + "finding, so a standard record exits 2 against this verifier: "
+                        + checks);
+        assertEquals(Outcome.PASSED, named(checks, "ers parse").outcome(), checks + "");
+    }
+
+    /** The golden record renewed once by a second chain whose first timestamp has no hash tree — the degenerate §5.3 form BouncyCastle writes. */
+    private static byte[] renewedWithoutATree() throws Exception {
         ASN1Sequence sequence = GoldenErs.timestampSequence();
         ASN1Sequence chainZero = ASN1Sequence.getInstance(sequence.getObjectAt(0));
         ASN1Sequence ats = ASN1Sequence.getInstance(chainZero.getObjectAt(0));
@@ -499,18 +516,25 @@ class PresenceIsNotVerificationTest {
         byte[] der = GoldenErs.withElement(2, new DERSequence(
                 new org.bouncycastle.asn1.ASN1Encodable[] {
                         chainZero, new DERSequence(new DERSequence(renewal)) }));
+        return der;
+    }
 
+    @Test
+    @DisplayName("an anchor target that does not parse FAILS the renewal chain check too — the h term of §5.3 is unreadable, not 'not stated'")
+    void aMalformedTargetFailsTheRenewalChainToo() throws Exception {
         Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put(DIR + "anchor-target-checkpoint.json",
-                GoldenErs.anchorTarget(GoldenErs.root()));
-        entries.put(DIR + "anchors/ers.der", der);
+        entries.put(DIR + "anchor-target-checkpoint.json", "[]".getBytes(StandardCharsets.UTF_8));
+        entries.put(DIR + "anchors/ers.der", renewedWithoutATree());
 
         List<Outcome.Check> checks = LongTermErs.check(entries);
-        assertEquals(Outcome.PASSED, named(checks, "ers chain").outcome(),
-                "a hash-tree renewal in the shape BouncyCastle produces was reported as a "
-                        + "finding, so a standard record exits 2 against this verifier: "
-                        + checks);
-        assertEquals(Outcome.PASSED, named(checks, "ers parse").outcome(), checks + "");
+
+        assertEquals(Outcome.FAILED, named(checks, "ers data object").outcome());
+        Outcome.Check chain = named(checks, "ers chain");
+        assertEquals(Outcome.FAILED, chain.outcome(),
+                "'ers data object' answers FAILED for this file and the renewal chain, which reads "
+                        + "the same root as the h term of H(sorted(h, ha)), answered NOT_PRESENT — "
+                        + "'the package states no root' about a root it could not read (c96 "
+                        + "confirmation review, round 2, P2): " + chain.detail());
     }
 
     /**

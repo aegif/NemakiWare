@@ -196,7 +196,7 @@ public final class LongTermErs {
         AnchoredRoot wanted = anchoredRoot(entries);
         checks.add(wanted.refusal() != null ? wanted.refusal()
                 : dataObject(chains.get(0).get(0), wanted.value()));
-        checks.add(chain(chains, sequence, wanted.value()));
+        checks.add(chain(chains, sequence, wanted));
         checks.add(algorithms(declared, chains));
         return checks;
     }
@@ -510,7 +510,7 @@ public final class LongTermErs {
      * chain, and that is a PASS with the reason stated rather than a silent one.
      */
     static Outcome.Check chain(List<List<ArchiveTimeStamp>> chains, ASN1Sequence sequence,
-            byte[] wanted) {
+            AnchoredRoot wanted) {
         int total = chains.stream().mapToInt(List::size).sum();
         if (total == 1) {
             return Outcome.Check.passed("ers chain",
@@ -585,8 +585,15 @@ public final class LongTermErs {
 
     /** §5.3: the first Archive Timestamp of chain {@code c} commits to every earlier chain. */
     private static Outcome.Check chainStart(List<List<ArchiveTimeStamp>> chains,
-            ASN1Sequence sequence, int c, byte[] wanted) {
+            ASN1Sequence sequence, int c, AnchoredRoot anchored) {
         ArchiveTimeStamp first = chains.get(c).get(0);
+        if (anchored.refusal() != null) {
+            // The target is there and could not be read, so the h term is not "not stated" —
+            // §3.2's FAILED, as 'ers data object' already answers for the same file (c96
+            // confirmation review, round 2, P2: this arm still read the refusal as "no root").
+            return Outcome.Check.failed("ers chain", anchored.refusal().detail());
+        }
+        byte[] wanted = anchored.value();
         if (wanted == null) {
             return Outcome.Check.absent("ers chain",
                     "the package states no anchor target Merkle root, so the h term of §5.3's "

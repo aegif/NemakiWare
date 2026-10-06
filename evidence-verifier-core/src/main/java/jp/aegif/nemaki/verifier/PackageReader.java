@@ -220,19 +220,20 @@ public final class PackageReader {
 
     /**
      * Null when the stream holds exactly {@code expected}; otherwise the refusal's detail. Reads
-     * at most one buffer past the local record's length — a longer central record already
-     * disagrees, and none of it needs to be held.
+     * at most ONE BYTE past the local record's length — a longer central record already
+     * disagrees, and none of it needs to be held (a whole buffer past was read before, which
+     * the diagnostic and the release notes overstated — c96 confirmation review, round 2, P3).
      */
     private static String sameBytes(InputStream in, byte[] expected, String name) throws IOException {
         byte[] buffer = new byte[8192];
         int at = 0;
         int n;
-        while ((n = in.read(buffer)) > 0) {
+        while ((n = in.read(buffer, 0, Math.min(buffer.length, expected.length + 1 - at))) > 0) {
             if (at + n > expected.length) {
                 return "the entry \"" + name + "\" has different bytes behind its local header and "
                         + "behind its central directory record: the central record runs past the "
-                        + "local record's " + expected.length + " bytes (reading stopped there). "
-                        + "Two readers of this zip would see two packages; neither is judged";
+                        + "local record's " + expected.length + " bytes (reading stopped one byte "
+                        + "past them). Two readers of this zip would see two packages; neither is judged";
             }
             if (!Arrays.equals(buffer, 0, n, expected, at, at + n)) {
                 return "the entry \"" + name + "\" has different bytes behind its local header and "

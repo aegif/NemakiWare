@@ -389,6 +389,21 @@ class TheExitCodeIsTheInterfaceTest {
     }
 
     @Test
+    @DisplayName("an expected checkpoint with a profile below ANCHORED_CHECKPOINT_V1 is usage — not a question silently unasked")
+    void anExpectedCheckpointBelowP2IsUsage(@TempDir Path tmp) throws Exception {
+        Path sip = zip(tmp, "good.zip", goodPackage("the minutes"));
+
+        Run result = run("verify", sip.toString(), "--profile", "PACKAGE_INTEGRITY_V1",
+                "--expected-checkpoint", "9".repeat(64), "--expected-checkpoint-sequence", "6");
+
+        assertEquals(Verify.EXIT_USAGE, result.code(),
+                "the rollback check belongs to ANCHORED_CHECKPOINT_V1 and above; at P0 it never "
+                        + "ran, and the holder who supplied a checkpoint was told VERIFIED (c96 "
+                        + "confirmation review, round 2, P1): " + result.out() + result.err());
+        assertTrue(result.err().contains("ANCHORED_CHECKPOINT_V1"), result.err());
+    }
+
+    @Test
     @DisplayName("a package that passes P0 exits 0")
     void aGoodPackageExitsZero(@TempDir Path tmp) throws Exception {
         Path sip = zip(tmp, "good.zip", goodPackage("the minutes"));
