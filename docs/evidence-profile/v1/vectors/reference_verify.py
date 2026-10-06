@@ -104,29 +104,29 @@ def document_digest(text):
 
 
 def entry_hash(domain, sequence, subject_kind, subject_id, payload_digest, occurred_at, prev):
-    """Spec section 4."""
+    """Spec section 6 (the ledger entry)."""
     return hash_parts(["LEDGER_ENTRY_V1", domain, sequence, subject_kind,
                        subject_id, payload_digest, occurred_at, prev])
 
 
 def checkpoint_hash(domain, from_seq, to_seq, merkle_root, prev, created_at):
-    """Spec section 5."""
+    """Spec section 7 (the checkpoint)."""
     return hash_parts(["LEDGER_CHECKPOINT_V1", domain, from_seq, to_seq,
                        merkle_root, prev, created_at])
 
 
 def hash_leaf(value):
-    """Spec section 6. Note: hex string in, hex string out."""
+    """Spec section 8. Note: hex string in, hex string out."""
     return hashlib.sha256(bytes([0x00]) + (value or "").encode("utf-8")).hexdigest()
 
 
 def hash_node(left, right):
-    """Spec section 6: the CONCATENATED HEX is hashed, not the raw bytes."""
+    """Spec section 8: the CONCATENATED HEX is hashed, not the raw bytes."""
     return hashlib.sha256(bytes([0x01]) + ((left or "") + (right or "")).encode("utf-8")).hexdigest()
 
 
 def merkle_root(leaf_values):
-    """Spec section 6: fold pairwise; an odd one is carried up, not duplicated."""
+    """Spec section 8: fold pairwise; an odd one is carried up, not duplicated."""
     if not leaf_values:
         return None
     level = [hash_leaf(v) for v in leaf_values]
@@ -143,7 +143,7 @@ def merkle_root(leaf_values):
 
 
 def verify_proof(leaf_value, path, expected_root):
-    """Spec section 6."""
+    """Spec section 8 (the inclusion proof)."""
     current = hash_leaf(leaf_value)
     for step in path:
         sibling = step["siblingHash"]

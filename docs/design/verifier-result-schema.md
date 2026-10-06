@@ -44,7 +44,7 @@ JSON Schema の draft は **2020-12**。
   「空でない STRING」
 - `checks[].reasonCode` は **enum にする**。理由コードは受け取る側が分岐する値であり、
   自由文にすると `REVOCATION_NOT_REQUIRED` と `REVOCATION_NOT_REQUIRE` が別物になる。
-  値は **`Outcome.Check.REASON_CODES` という登録簿**から取る — `REASON_CODES`（23 値）。**初版は grep で導出して 5 つを落とした**
+  値は **`Outcome.Check.REASON_CODES` という登録簿**から取る — `REASON_CODES`（25 値）。**初版は grep で導出して 5 つを落とした**
   — 第 1 引数が変数の呼び出しと、第 2 引数がメソッド呼び出し（`refusal.reasonCode()`）を拾えなかった。
   grep は「コードがどう書かれているか」の推測であり、constructor はそうではない。**未登録の理由は構築時に拒否**する
 - `limits` は `minLength: 1`。**空の limits を通す schema は、限界文を落とした CLI を通す**

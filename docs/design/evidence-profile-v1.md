@@ -89,7 +89,7 @@ v1 を壊さずに v2 を足すことでしか行わない。**
 **狭める**変更（契約が任意と定めたものを必須にする、新しい拒否を足す）は、
 適合 package を 1 つでも拒否するなら contract の変更である。
 
-この版で 5 件、訂正として直した。
+この版で 8 件、訂正として直した。
 
 | 訂正 | 向き | なぜ contract の変更ではないか |
 |---|---|---|
@@ -98,6 +98,9 @@ v1 を壊さずに v2 を足すことでしか行わない。**
 | §14 の `ERS_PARSE` から `digestAlgorithm [0]` 必須を外し、縮約を「2 つ以上のときだけ hash」に | **緩める** | **書いた規定のほうが RFC より狭かった**。間違った狭め方を戻すので、適合記録の判定は**通る方向にしか動かない** |
 | §9 の矛盾判定を「1 object の digest の個数」から「**1 つの算法の中で食い違ったとき**」に | **緩める** | **`premis:fixity` は PREMIS で repeatable** であり、同じ bytes を MD5 と SHA-256 で記録するのがその用途。個数で見た規定のほうが PREMIS より狭く、**問い 2 に「拒否されるようになる」と答えていた**（2 名が独立に実測）。戻すので通る方向にしか動かない |
 | §9 の METS href 解決を「どこかの entry が同名で終わる」から「**URI reference として、decode した綴りを、名前のついた base に対して厳密に**」に | 狭める + 緩める | **狭める側**: 別の METS の近所や payload の中の写しが参照を満たすのをやめる — これは fail-open の是正で、**適合 package は動かない**（参照は自分の場所から解決できるのが適合の条件）。**緩める側**: `../` を畳み、**producer が percent-encode した href を decode し**、`file:` を剥がし、`LOCTYPE` が指す非ローカル locator を数えないので、第三者の正当な METS が**拒否されなくなる**。**この「緩める側」は実測で必須だった** — commons-ip2 は href を `URLEncoder` で encode して zip entry は生のまま書くため、**空白や非 ASCII を含む名前の payload を持つ package は、この製品が書いたものを含めて全部拒否されていた**（日本語の repository では普通の場合）|
+| §9 に `INCONSISTENT_ARCHIVE`（zip の 2 つの目次の食い違いを読まない）を追加（2026-10-06） | 狭める | 適合 package は 2 つの目次が一致している — 標準的な writer（`ZipOutputStream`・zipfile・zip）はそう書く。拒否されるのは、2 つの reader が 2 つの package を見る archive だけ。verifier が片方しか読んでいなかったのは、相手が見ない bytes を判定する欠陥だった |
+| §11 の `ROLLBACK` を「与えられたときだけ必須」「chain が後から始まるなら `UNAVAILABLE`」「chain 無しは `NOT_PRESENT`」に（2026-10-06） | **緩める**（`FAILED` → `UNAVAILABLE` / `NOT_PRESENT`）＋ 与えたときの必須化 | 必須化は「与えられたとき」に限る — 与えない run は変わらない。与えた run で `UNAVAILABLE` が verdict を `INDETERMINATE` にするのは §15 の合成そのもので、それまで `VERIFIED` と答えていたのが誤り。`FAILED` の 2 つの腕は根拠の無い断定で、適合 package を拒否していた |
+| §12 の `TOKEN_PKIX` の評価時刻を token の `genTime` に（2026-10-06） | **緩める** | 「今」での評価は、適合 package を発行者の証明書の失効とともに `FAILED` にしていた。`TOKEN_CMS` は既に `genTime` で判定しており、1 つの token に 2 つの時刻があった |
 
 3 件目は「問い 2 に変わると答える」ように読めるが、**変わるのは拒否 → 受理の向き**である。
 規則は「読めなくなるか」を問うので、これは訂正にあたる。**狭めた当初の規定のほうが
@@ -165,6 +168,10 @@ JSON 文書 `D` の正準形は `enc(parse(D))` である。対応は次のと�
   重複を許すと、同じバイト列が 2 つの意味を持ち、正準形が 2 つになる。
 - object の key でない位置の非文字列 key（JSON では起こらないが、実装が Map を
   経由するときに起こり得る）。
+- **JSON の文法にない字面** — 先頭ゼロの数（`007`）、文字列中の生の制御文字、4 桁の 16 進でない
+  `\u`、対になっていないサロゲート、JSON の 4 種（空白・tab・LF・CR）以外の空白。JSON でない文書に
+  正準形は無い（2026-10-06 明文化 — Java の reader がこれらを受け付け、Python の参照実装と答えが
+  割れていた。適合 package は JSON なので、受理される package は変わらない）。
 
 定義:
 
@@ -275,7 +282,11 @@ metadata/other/nemaki-evidence/
 | `files` | LIST of MAP | `{path, sha256}`。**package 内の相対 path** |
 | `anchors` | LIST of MAP | `{kind, state, path?}`。`kind` は `RFC3161_TSA` / `OPENTIMESTAMPS` / `ATLAS_CATALOG` |
 
-`files` は §4.2 の 12 ファイルを**漏れなく**含む。manifest に無いファイルが
+`files` は **section に在る** §4.2 のファイルを**漏れなく**含む。置かなかった部分（§4.2「無い種別は
+file を置かない」、writer の「無い部分は書かない」 — 例えば checkpoint の無い記録の chain・anchor
+target）は列挙しない。12 ファイル全部が在るのは、statement・entry・proof・checkpoint・chain・anchor
+target が全部そろった package だけである（2026-10-06 明文化 — それまでの「12 ファイルを漏れなく」は、
+薄い package を全部不適合と読めた）。manifest に無いファイルが
 `nemaki-evidence/` 配下に在れば `FAILED`（未参照の追加物）。
 
 ### 5.3 `record-content-statement.json`
@@ -473,8 +484,21 @@ current == merkleRoot なら PASS
 主張しないこと: 台帳・外部 anchor。
 
 - **重複エントリ名は `FAILED`**。片方だけ検査して PASS と言う形を封じる。
+- **zip の 2 つの目次（central directory と local header）が食い違う package は読まない** —
+  `UNAVAILABLE` + reason `INCONSISTENT_ARCHIVE`（→ `INDETERMINATE`）。名前の集合が違う
+  （片方にしか無い entry）、同じ名前の bytes が違う（central directory の record が別の
+  local header — 他の entry のデータの中に隠したもの — を指す）のいずれも。local header を
+  順に読む verifier と、central directory から読む保存システム（`ZipFile`・Python の
+  zipfile・RODA・Archivematica・unzip）は、この形で**別の package を見る**。片方だけを読んで
+  出した判定は、相手が持っていない package についての判定である（2026-10-06 訂正 — それまで
+  verifier は local header しか読んでいなかった。9-6 の独立レビュー、P1）。適合 package を
+  新たに拒否するか — 標準的な writer（`ZipOutputStream`・zipfile・zip）は 2 つの目次を一致させて
+  書くので、しない（§1.1 の問い 2）。
 - **上限到達は crash でも FAIL でもなく `UNAVAILABLE` + reason `RESOURCE_LIMIT`**
   （→ `INDETERMINATE`）。「大きすぎて調べられなかった」は「調べて問題が無かった」ではない。
+  上限は entry の数と大きさに加えて **METS / PREMIS の入れ子の深さ（50,000 段）** — 2026-10-06 に
+  明文化。JDK 24 以降の XML parser は既定で 100 段で止まり、JDK 21 は止まらないので、verifier は
+  自分の上限を parser に明示して JDK に依らず同じ答えを出す（深い入れ子を「XML でない」と報告しない）。
 - **一対一は `FAILED` の規定だが、それは「どの digest がどの file を describe しているか」
   についての規定である。** この verifier は **PREMIS の object → file の結び付きを読まない**ので、
   一対一が崩れていることを**言えない**。したがって digest が 2 つ以上、あるいは payload が
@@ -548,7 +572,7 @@ current == merkleRoot なら PASS
 | `CHAIN_FORWARD` | `links[i].toSequence` が狭義単調増加。covering が target より後なら `FAILED` |
 | `CHAIN_RECOMPUTE` | 各 link の `checkpointHash` を §7 で再計算して一致 |
 | `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（manifest の `kind` が `RFC3161_TSA` で path が `anchors/rfc3161.der` の rung**だけ**）: token を parse し、**`hex(messageImprint) == chain の末尾 link の `merkleRoot`**（root は既に SHA-256 digest なので、timestamp されるのは**その bytes**。hex 文字列を再度 hash しない。§12 の `TOKEN_IMPRINT` と同じ読み）。さらに **token の署名を、token が運ぶ証明書に対して検証**する（「誰かが発行した」を言うために必要。**誰が**は P3）。両方が通れば PASS。parse 不能・不一致は `FAILED`。**署名者証明書が token に無ければ `NOT_PRESENT`**（P3 と同じ答え — package についての事実であって、読めなかったのではない）。**imprint の算法が SHA-256 でない**、または**署名アルゴリズムをこの build が計算できない**ときは `UNAVAILABLE`（どちらも `UNKNOWN_ALGORITHM`。**detail がどちらかを述べる** — 1 つの reason code が 2 つの事情を指すので、機械は「この check は行われていない」までしか読めない）。**署名の判定は P3 と同じ 1 か所**（`TokenSignature`）で行う — 同じ token に 2 つの答えを出さないため。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
-| `ROLLBACK` | `--expected-checkpoint` が与えられたとき、chain 上にその hash が在る |
+| `ROLLBACK` | `--expected-checkpoint` が与えられたとき**だけ必須**（下記）。chain 上にその hash が在れば PASS。無いとき: chain が台帳の最初の checkpoint から始まっている（`links[0].prevCheckpointHash` が null）なら `FAILED` — package は全履歴を提示していて、その中に無い。chain がそれより後から始まっている（null でない）なら `UNAVAILABLE` + `CHAIN_STARTS_AFTER_EXPECTED` — 保持していた checkpoint は covering より前の期間のものかもしれず、この package からは判定できない。chain を持たない package では `NOT_PRESENT` |
 
 主張しないこと: token の PKIX（それは P3）。
 
@@ -561,7 +585,16 @@ current == merkleRoot なら PASS
 
 言えるのは「anchor target の期間に含まれる entry 集合は、anchor の時点で確定していた」まで。
 **それ以前の期間の書き換えを検出するには、外部で保持した checkpoint
-（`--expected-checkpoint`）が要る。** 無ければ `ROLLBACK` は `NOT_CHECKED`。
+（`--expected-checkpoint`）が要る。** 無ければ `ROLLBACK` は `NOT_PRESENT` で、verdict を動かさない。
+**与えられたときは必須 check である** — 判定できなかった（`UNAVAILABLE`）なら全体は `INDETERMINATE` で、
+`VERIFIED` にはならない。
+
+> **2026-10-06 の訂正（9-6 の独立レビュー、P1 が 2 件）。** 表は `ROLLBACK` を常に必須と読め、実装は
+> 一度も必須にしていなかった — 与えた checkpoint について「判定できない」と答えた run が `VERIFIED` になった。
+> また chain を持たない package、保持 checkpoint が covering より前の期間のものである package を `FAILED`
+> としていた。anchor が commit するのは末尾 link の `merkleRoot` だけで、chain は covering から先しか運ばない
+> （上の段落）。その chain に無いことは、chain が台帳の最初の checkpoint から始まっているときにだけ
+> 「提示された全履歴に無い」を意味する。それ以外は根拠の無い「書き換え」の断定だった。
 
 `links` が空、重複、逆順、欠落のいずれかなら `FAILED`。
 
@@ -581,7 +614,7 @@ checkpoint の root を commit している」であって、その誰かを信�
 | `TOKEN_IMPRINT` | `messageImprint` が anchor target の `merkleRoot` に一致 |
 | `TOKEN_CMS` | CMS 署名が埋め込み証明書で検証できる |
 | `TOKEN_EKU` | 署名者証明書が `id-kp-timeStamping` を**critical で**持つ |
-| `TOKEN_PKIX` | **trust profile が名指す anchor** への path が作れる |
+| `TOKEN_PKIX` | **trust profile が名指す anchor** への path が作れる。path の有効性は **token の `genTime` で評価する**（検証時刻ではない — TSA の証明書は数年で失効し、「今」で評価すると古い token は全部 `FAILED` になる。`TOKEN_CMS` が証明書を判定する時刻と同じ。2026-10-06 訂正、9-6 の独立レビュー P1） |
 | `TOKEN_POLICY` | token の policy OID が trust profile の許可集合に在る |
 | `TOKEN_REVOCATION` | **発行時に取得した** CRL / OCSP が package 内に在り、署名者を失効と言っていない |
 
@@ -738,7 +771,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 23 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 25 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 

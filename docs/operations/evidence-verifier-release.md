@@ -23,7 +23,7 @@ profile spec、vectors。
 |---|---|
 | **SBOM**（タグのもの） | ~~`cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。~~ **2026-09-23 から `tools/sbom/make-sbom.sh` で作れる**（Maven の全 module を aggregate した CycloneDX 1.6 — verifier の 2 module も入る — と、UI の npm 依存）。**ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**タグの SBOM はまだ無い** — この作業コピーで出したものは今の HEAD の依存であって、タグの依存ではない。リリース時に git worktree で切った tagged tree から作る。script は署名しない（下の detached signature） |
 | **detached signature** | **鍵は持っていない。** 署名はリリース担当者が自分の鍵で行う作業で、自動化してはならない（鍵を CI に置くことと同義になる） |
-| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（23 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
+| ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（25 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
 
@@ -39,9 +39,15 @@ mvn -q package  -f evidence-verifier-cli/pom.xml
 ### 2. 動作確認（成果物を信じる前に）
 
 ```bash
-java -cp evidence-verifier-cli/target/classes:evidence-verifier-core/target/classes:$(ls ~/.m2/repository/org/bouncycastle/bcpkix-jdk18on/1.85/bcpkix-jdk18on-1.85.jar) \
-  jp.aegif.nemaki.verifier.cli.Verify verify <sip.zip> --profile RECORD_LEDGER_V1
+java -jar evidence-verifier-cli/target/evidence-verifier-cli-3.4.0.jar verify <sip.zip> --profile RECORD_LEDGER_V1
 ```
+
+`package` が `target/lib/` に 4 つの jar（`evidence-verifier-core` と BouncyCastle 1.85 の `bcpkix` /
+`bcprov` / `bcutil`）を複写し、CLI の jar の manifest がそこを `Class-Path` で指す。**配布物は jar と
+`lib/` の組**で、同じディレクトリに置けば `java -jar` で動く（2026-10-06 に実測: golden の
+`product-sip-v1-section.zip` を `RECORD_LEDGER_V1` で exit 0）。shaded jar にはしない —
+BouncyCastle の jar を Maven Central の checksum と照合できるままにする。それまで RELEASE_NOTES は
+`java -jar evidence-verifier-cli.jar` と書き、ビルドはそう動く jar を作っていなかった（9-6 の独立レビュー、P1）。
 
 **exit code を見ること。** `0` は `VERIFIED` だけで、`3`（`INDETERMINATE`）は成功ではない。
 
@@ -53,7 +59,7 @@ java -cp evidence-verifier-cli/target/classes:evidence-verifier-core/target/clas
 ### 3. SHA-256SUMS
 
 ```bash
-cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json . && shasum -a 256 *.jar verifier-result.schema.json > SHA-256SUMS
+cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json . && shasum -a 256 evidence-verifier-cli-3.4.0.jar lib/*.jar verifier-result.schema.json > SHA-256SUMS
 ```
 
 ### 4. 署名（リリース担当者の作業）

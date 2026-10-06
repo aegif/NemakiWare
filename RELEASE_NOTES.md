@@ -66,6 +66,9 @@ advisory（CRITICAL 1・HIGH 6・MODERATE 9・LOW 1。Jackson は 2 系と 3 系
 | junrar（RAR の展開。Tika 経由） | 7.5.5 | 7.6.1 | MODERATE 2・LOW 1 |
 | jsoup（Tika 経由） | 1.21.2 | 1.23.2 | MODERATE 1 |
 | log4j-api（POI 経由） | 2.24.3 | 2.26.1 | MODERATE 1 |
+| BouncyCastle（`bcprov` / `bcpkix` / `bcutil`。RFC 3161 と証拠 verifier） | 1.81.1 | 1.85 | この PR の途中で上げた分（OSV の警告ではなく版の追従） |
+| Apache HttpComponents client5 / core5 | 5.5.1 / 5.3.6 | 5.6.3 / 5.4.3 | 同上。family をそろえる（ずれると起動時に `NoSuchMethodError`） |
+| veraPDF（PDF/A の検証） | 1.28.2 | 1.30.2 | 同上 |
 
 - **Graph SDK は、この版のコードからは呼ばれていません**（版上げは警告を解くため）。上げたことで WAR に
   jjwt 0.13.0・jwks-rsa 0.24.1・opentelemetry-common が入り、opentelemetry-semconv が抜けました。Kiota が
@@ -96,6 +99,8 @@ axios 1.18.1 → 1.20.0、brace-expansion 5.0.9 → 5.0.12、dompurify 3.4.13 �
   これからは残ります。線の太さ（`vector-effect="non-scaling-stroke"`）などの見え方が変わることがあります。
   2 つの版をプレビューと同じ設定で比べた差は、この 2 つの属性だけでした（残す要素は同じ）
 
+`js-yaml` も 4.3.1 → **4.3.2** に上げています（本番の依存。`swagger-client` が 4 系を要求するため 5.x には上げません）。
+
 ## ユーザー・グループ・所属を CSV で一括是正できるようになりました
 
 管理画面のユーザー管理・グループ管理に「一括」を足しました（API は
@@ -103,12 +108,16 @@ axios 1.18.1 → 1.20.0、brace-expansion 5.0.9 → 5.0.12、dompurify 3.4.13 �
 設計は [`docs/design/principal-batch.md`](docs/design/principal-batch.md)。
 
 - **preview は何も書きません**。行ごとに「想定どおり／想定外（理由付き）／禁止」を返し、plan（10 分有効）を作ります
-- 「確認して実行」は plan を確認して適用します。preview の後に対象（と、行が名指すメンバーやグループ）が変わっていれば
-  409 で 0 件です。**想定外か禁止の行が 1 行でもあれば、既定では何も書かずに 409** です。想定外の行を飛ばすのは
+- 「確認して実行」は plan を確認して適用します。preview の後に対象（各行の principal）の版が変わっていれば 409 で
+  0 件です。行が名指すメンバーやグループは、消えた・入れ子が循環になった・禁止に変わったときだけ 409 で、それ以外の
+  変化（名指したグループのメンバーの増減など）は見ません。**想定外か禁止の行が 1 行でもあれば、既定では何も書かずに 409** です。想定外の行を飛ばすのは
   確認ダイアログ付きの別ボタン（API では `onUnexpected=skip`）で、既定にはしていません
 - **禁止**の行（built-in の `admin`、Solr ユーザー、`mcp-service`、実行者自身の削除と admin の剥奪）は、飛ばす指定でも書きません
 - `update` の空欄は「その列は触らない」です（`groups` が空でも所属は変わりません）。所属を空にするのは
-  `memberships / replace` の空の `members` だけで、`members` 列そのものが無いファイルは 400 です
+  `memberships / replace` の空の `members` だけで、`members` 列そのものが無いファイルは 400 です。
+  空でないのに id を 1 つも名指さないセル（`;` だけ、JSON の `["", ""]`）も 400 です
+- `update` の `groups`（ユーザー）・`users` / `groups`（グループ）の列は、所属の**全リスト**です。書かれていない
+  所属からは外れます（同期由来らしいグループからも外れます。削除や memberships の remove と違い、ID の接頭辞では止めません）
 - パスワードの値は応答・plan・監査・ログのどこにも残しません。パスワードを含む plan の実行には同じファイルの再送が要ります
 - 上限は 5,000 行・2 MiB（超えると 413）。書き込みは既存の作成・更新・削除と同じ経路だけを通り、監査ログは 1 回の実行につき 1 行です
 
@@ -272,7 +281,7 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
   新しいファイルに届きません**（死信キューが直るまで毎回同じです）。import service が自分で
   書いた行を orchestrator がもう一度書くので、`failureCount` が 1 回の失敗で 2 回増えることが
   あります（残件 R110）
-- **死信キューの再送（`POST /api/v1/ingest/dlq/{id}/retry`）は、bytes を持たない FILE_SHARE の行を
+- **死信キューの再送（`POST /core/api/v1/admin/ingest/dlq/{id}/retry`）は、bytes を持たない FILE_SHARE の行を
   元から取り直してから取り込みます**（Box も Dropbox もファイル id で — パスは「今そこにある物」を
   指すので使いません。poll の download も Dropbox は id で行います）。健全な保存済み payload が
   ある行はそれ（失敗した時点の bytes）を使い、無い行だけ元から取り直します（再送時点の bytes）。
@@ -281,6 +290,10 @@ Box も Dropbox もフォルダを更新時刻順には返さないので、そ�
   は再送せず行を残します。**Google Drive / OneDrive の同じ形の
   行は再送を拒否して行を残します**（以前はこれらの行を bytes 無しで取り込み、空の文書を作って
   「成功」と報告し、行を消していました。取り直しの実装は残件 R111）
+- **webhook で起動した取込も、プロファイルの scheduler params を使います**（`boxCheckpointLagMinutes` を
+  含む）。Box の webhook は folderId と limit だけで取込を起動していたので、下記の checkpoint の猶予が
+  webhook 起動の実行には効かず、listing に遅れて現れたファイルをその実行の checkpoint が越えていました
+  （2026-10-06 の独立レビューで直しました。Dropbox の webhook は最初からプロファイルの params で起動していました）
 - checkpoint は listing を始めた時刻の `boxCheckpointLagMinutes` / `dropboxCheckpointLagMinutes`
   （既定 5 分、上限 43,200）前までしか進みません。フォルダの listing は snapshot ではなく、読んで
   いる間に追加・移動されたファイルは今回の listing に無いことがあるからです — その猶予の中で
@@ -342,7 +355,7 @@ id が数でないメッセージは黙って飛ばされ、取込が失敗を�
 - 「欠落の可能性」の行は、欠落があったことを示しません（ちょうど 100 件が届いただけのときも書かれます）。
   欠落していたメッセージは取り直せません（API が返さない）。記録するだけです。poll の間に 100 件以上の
   メッセージが届くルームでは欠落が起きうるので、poll の間隔を短くしてください
-- ファイルは、これまでどおりルームの最新 100 件を毎回試します（取り込み済みは重複判定が飛ばします）
+- ファイルは、これまでどおりルームの最新 100 件を毎回試します（取り込み済みは重複判定が飛ばします）。ファイルの一覧が読めなかったとき、一覧にあるファイルの download URL が得られなかったときは、エラーとして記録します
 
 ## Salesforce コネクタが、SystemModstamp と Id の順にレコードを読むようになりました (**挙動変更**)
 
@@ -500,6 +513,30 @@ checkpoint がその時刻を越えた後は二度と候補になりませんで
   は飛ばします）は取り込みません。死信キューのメールの行は MIME を持たないので、再送はメール取込が拒否します
   （行は残ります — Microsoft 365 から取り直す再送は未実装、残件 R111）
 
+## IMAP コネクタが、checkpoint より新しいメッセージを UID の範囲で求め、古い順に取り込むようになりました (**挙動変更**)
+
+これまでは 1 回の実行でフォルダの**新しい側 `limit` 件**を一覧し、その中から checkpoint より新しいものを
+取り込んでいました。前回から `limit` 件を超えて届いていると、**古い側の新着は一覧に入らず**、checkpoint が
+最新に進んだ後は二度と一覧されませんでした（Box / Dropbox / Slack と同じ形 — 残件 R107 の IMAP の分。
+2026-10-06 の独立レビューで見つかりました）。
+
+- サーバに **checkpoint の UID より大きい範囲**を求め、古い順に `limit` 件を取り込みます。残りがあれば
+  実行結果は `PARTIAL` で、理由に「`limit` 件より多い新着があり、古い N 件を読んだ」と付きます。
+  checkpoint は読んだ最後の UID で止まるので、次回はその続きからです
+- import がエラーを答えたメッセージ、添付の一部が失敗したメッセージは**死信キューに記録します**
+  （以前は記録せず、同じ実行の後続の成功が checkpoint をそのメッセージの先へ進めていました）
+- UIDVALIDITY が変わっていたら、checkpoint を捨てて先頭から読み直します（従来どおり。重複は import の
+  dedupe で skip されます）
+
+### 主張しないこと
+
+- **IMAP サーバが UID の範囲に正しく答えることを前提にします。** 範囲の末尾 `*` に対して範囲より小さい
+  最大 UID のメッセージを返すサーバ（RFC 3501 の規定どおりの挙動）は、こちらで checkpoint 以下を除いて
+  います。範囲の中のメッセージを返さないサーバの取りこぼしは検出しません
+- IMAP IDLE（即時通知）の経路は、本文は取り込めたが添付やリンクが欠けたメッセージを**死信キューに記録する**
+  ようになりました（以前は「取り込んだ」とだけ記録していました。IMAP は再配信しないので、記録が無いと欠けた部分は見えません）。
+  読む範囲（通知された 1 件ずつ）は変わっていません
+
 ## Mattermost コネクタが、checkpoint より新しい投稿を全部読んでから古い順に取り込むようになりました (**挙動変更**)
 
 これまでは新しい順の先頭 `limit` 件（既定 50）だけを読んで、checkpoint 以下の投稿を飛ばし、その中の最新の
@@ -553,6 +590,10 @@ checkpoint より古くなり、**二度と取り込まれませんでした**�
   行を消してください）。この版より前に書かれた行は id を持たないので、再送した添付は単独の文書になります
 - 本文の取込が失敗していた間に取り込まれた添付は、本文を後から再送してもその本文にはリンクされません
   （従来どおり）
+- **再送は、行が名指すコネクタが読めないとき拒否します**（存在するのに読めない、または存在を確かめられない
+  — 503、行は残ります）。以前は読めなかったコネクタを「無い」と読み、FILE_SHARE の行を普通の取込として
+  再送して空の文書を作っていました。コネクタが本当に無くなっていて、行が元を一度も読めていない（本文も
+  bytes も持たない）ときは 409 で拒否します — 取り直す元が無いためです（2026-10-06 の独立レビューで直しました）
 
 ## Teams コネクタが、Graph の delta feed を追うようになりました (**挙動変更**)
 
@@ -1376,6 +1417,27 @@ POST /core/api/v1/admin/eark/{repositoryId}/objects/{objectId}/bag?submissionId=
   「検査していない」と「不正」は別の答えで、無関係なローカル障害を記録の欠陥に
   見せないためです。判定は `X-Nemaki-Csip-Validated` ヘッダに出ます
 
+**証拠が読めなかった記録は書き出しを拒否します (409)。** 台帳・content-write journal・anchor の受領が
+読めない、読む上限 (1 版あたりの entry 50 件、checkpoint の遡り 1,000 段) に当たった、保存された statement を
+この版が読み戻せない — これらは「証拠が無い」ではないので、`BEST_AVAILABLE` でも package を作りません。
+作れば `profile.json` と manifest が「この記録に証拠は無い」と述べ、受け取った側はそれを事実と
+区別できないからです (2026-10-06 の独立レビューで直しました。それまでは読めなかった部分を「無い」として
+書き出していました)。
+
+`profile.json` の `declaredProfiles` は、この package が材料を持つ profile の**集合**です (以前は 1 つ)。
+profile は一直線に並びません — `TRUSTED_RFC3161_V1` と `ANCHORED_OTS_V1` はどちらも
+`ANCHORED_CHECKPOINT_V1` の上に並ぶ別の枝です — ので、`REQUIRE_*` の判定は「要求した profile が
+集合に在るか」です。RFC 3161 token しか無い記録に `REQUIRE_ANCHORED_OTS` を要求すると 409 で、
+応答の `evidenceProfiles` に持っている profile を列挙します (以前は順位で比べていて、token だけの
+記録が OTS の要求を満たしていました)。OpenTimestamps の proof だけの記録は `ANCHORED_CHECKPOINT_V1`
+を満たしません — 仕様 §11 の anchor の検査は RFC 3161 の材料しか読まないためです。
+
+**PREMIS の fixity は package に入れた bytes の digest です。** 取込時に記録した digest（authenticity
+report の content 節）と違うとき — 取込後に新しい内容で check-in した版 — は export の note
+(`X-Nemaki-Export-Note`) にその旨が出て、report は記録した digest を持ち続けます。以前は記録した digest を
+PREMIS に写していたので、そういう版の package は受け取り側の P0 で `FAILED` になっていました
+（2026-10-06 の独立レビューで直しました）。
+
 ### 主張しないこと
 
 - **E-ARK 準拠とは名乗りません。** 通ったのは `commons-ip2` に同梱された検証器であって、
@@ -1391,8 +1453,28 @@ POST /core/api/v1/admin/eark/{repositoryId}/objects/{objectId}/bag?submissionId=
 コマンドを同梱しました。受け取る組織が自分の手元で走らせるためのものです。
 
 ```
-java -jar evidence-verifier-cli.jar verify <package.zip> --profile RECORD_LEDGER_V1
+java -jar evidence-verifier-cli-3.4.0.jar verify <package.zip> --profile RECORD_LEDGER_V1
 ```
+
+配布物は `evidence-verifier-cli-3.4.0.jar` と、**同じ場所に置く `lib/`**
+(`evidence-verifier-core-3.4.0.jar` と BouncyCastle 1.85 の `bcpkix` / `bcprov` / `bcutil`) です。
+jar の manifest が `lib/` を指すので、2 つを同じディレクトリに展開すれば上のコマンドで動きます。
+1 つに固めた (shaded) jar にはしていません — BouncyCastle の jar を Maven Central の checksum と
+照合できるままにするためで、受け取る側が信頼するものを 1 つ増やさないという選択です。
+
+この版の verifier が読む形について、はっきりさせておくこと:
+
+- **zip は 2 つの目次 (central directory と local header) を両方読み**、食い違えば
+  `INCONSISTENT_ARCHIVE` で読みません (exit 3)。central directory から読む保存システムと、
+  local header を順に読む検証器が**別の package を見る**形を封じます
+- 在るのに JSON object として読めない文書は、それを読む検査が `FAILED` です (仕様 §3.2)。
+  「無い」(`NOT_PRESENT`、exit 3) とは区別します
+- `--expected-checkpoint` を渡したとき `rollback` は**必須検査**です — 判定できなければ exit 3 で、
+  exit 0 にはなりません。渡した checkpoint が chain に無いとき、chain が台帳の最初の checkpoint
+  から始まっていれば exit 2、それより後から始まっていれば `CHAIN_STARTS_AFTER_EXPECTED` (exit 3)。
+  chain を持たない package では `NOT_PRESENT` です
+- `TRUSTED_RFC3161_V1` の `token pkix` は、署名者証明書への path を **token の生成時刻**で評価します。
+  TSA の証明書は数年で失効するので、「今」で評価すると古い token は全部 exit 2 になります
 
 **exit code が interface です。**
 
@@ -1403,6 +1485,11 @@ java -jar evidence-verifier-cli.jar verify <package.zip> --profile RECORD_LEDGER
 | `3` | `INDETERMINATE` — 必須の材料が無い・読めない・この版が対応していない |
 | `4` | 使い方の誤り (未知の profile、読めない trust profile など) |
 | `5` | この検証器自身の異常 |
+
+**読める package の大きさに上限があります。** 1 エントリ 256 MiB・展開後の合計 512 MiB・
+エントリ 10,000 件、METS / PREMIS の入れ子は 50,000 段で、超えた package はどの profile でも `RESOURCE_LIMIT` で読みません (exit 3 —
+「大きすぎて調べられなかった」であって「調べて問題が無かった」ではありません)。verifier は package を
+丸ごとメモリに読むので、この上限は検証する機械のメモリの話でもあります。
 
 **`3` は成功ではありません。** `0` 以外を一律に失敗として扱うのは正しく、
 **`3` を「実質 OK」として畳むのは誤り**です。畳んだ時点で、この検証器が積み上げた
@@ -1421,19 +1508,27 @@ exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は prof
 必須検査に残っているためで、package の欠陥ではありません。詳細は
 [独立 verifier のリリース手順](docs/operations/evidence-verifier-release.md)。
 
-### 全部の必須検査が通った package について、名乗れる文
+### 要求した profile の必須検査が全部通った package について、名乗れる文
 
 > この SIP に含まれる対象 bytes は、同梱された record content statement と一致し、
-> その statement の digest は証拠台帳 entry に結び付いています。当該 entry から
-> checkpoint までの inclusion proof、checkpoint chain、および指定 trust profile による
-> 外部 anchor の検証を、NemakiWare を起動せずに再実行できます。
+> その statement の digest は証拠台帳 entry に結び付いています（`RECORD_LEDGER_V1` 以上）。
+> 当該 entry から covering checkpoint への inclusion proof、covering checkpoint から
+> anchor target までの checkpoint chain、および anchor target の `merkleRoot` を RFC 3161
+> token が commit していることを、NemakiWare を起動せずに再計算して確かめました
+> （`ANCHORED_CHECKPOINT_V1`）。`PACKAGE_INTEGRITY_V1` だけが `VERIFIED` の package に
+> ついては、容器（zip・METS・PREMIS の digest）が自分と整合していることまでしか言えません。
 
 ### 必ず併記すること
 
 > この検証は、取込前の内容の真実性、対象が漏れなく取り込まれたこと、
 > 提示 checkpoint が最新であること、法令適合、JIIMA 認証、または管理者による
-> 変更の防止を証明しません。外部で保持した checkpoint または trust profile を基準に、
-> 提示された証拠範囲の事後変更を検出するものです。
+> 変更の防止を証明しません。token の署名者が誰か、信頼してよいか、失効していないかは
+> `TRUSTED_RFC3161_V1` の問いで、この版では `VERIFIED` に届きません。anchor が commit するのは
+> anchor target の `merkleRoot` だけで、それ以前の期間との連結は package 自身が運ぶ chain です。
+> 外部で保持した checkpoint（`--expected-checkpoint`）を渡したとき、それが chain に無ければ、
+> chain が台帳の最初の checkpoint から始まっているなら `FAILED`、それより後から始まっているなら
+> 判定できない（`CHAIN_STARTS_AFTER_EXPECTED`）と報告します。渡さなければ、package は
+> 自分と整合しているだけです。
 
 **この 2 つは対です。** 上だけを引くと、この検証器が**設計として答えない**ことまで
 答えたように読めます。
@@ -1441,7 +1536,8 @@ exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は prof
 ### 主張しないこと
 
 - **「改ざんされていない」とは言いません。** 言えるのは「**外部で保持した**
-  checkpoint または trust profile を基準に、提示された範囲の事後変更を検出できる」まで。
+  checkpoint を渡したとき、提示された chain にそれが無いことを検出できる」まで。trust profile は
+  anchor の署名者を誰として信頼するかを決めるもので、事後変更の検出はしません。
   基準を外から持っていなければ、package は自分と整合しているだけです
 - **認定タイムスタンプ事業者かどうかを判定しません。** 暗号からは推論できません。
   契約と登録簿の事実です。trust profile に置いた証明書がそうであることは、
@@ -1660,7 +1756,10 @@ CouchDB の view が答えなかった、行は返ったが文書が付いてこ
   読めなかった分が黙って結果から抜け、呼び出し元が「存在しない」と読んでいました。併せて: **型レジストリ**は型定義が読めないとき「基本 2 型
   だけで起動完了」せずエラーで止まります / **バージョン一覧が読めないときの文書削除**は
   「1 版だけ消して系列も消す」に化けず中止されます / **関係の削除が一部失敗**したら
-  オブジェクト削除ごと中止します (孤児辺を残さない) / **`maxItems=0` + 継続トークン**が
+  オブジェクト削除ごと中止します (孤児辺を残さない — ただし、他の削除で先に消えていた辺は「残った」と
+  数えず、自分を source と target の両方に持つ辺は 1 本と数えます。この 2 つが中止を起こし、そのオブジェクトを
+  二度と削除できなくしていた形と、変更ログの DELETED と archive を辺より先に書いていた順序は、2026-10-06 の
+  独立レビューで直しました) / **`maxItems=0` + 継続トークン**が
   「同じ空ページを永遠に返す」ループになる穴も塞ぎました
 - **ユーザー/グループ削除は、参照元グループを読み直せないとき中止されます。**
   今までは読めなかった親グループだけをスキップして削除が成功し、その親には
@@ -1885,7 +1984,8 @@ SIP の検証は「ペイロードのダイジェスト」と「監査経路」�
 
 **この版に SIP を検証するエンドポイントはありません。** 検証器 (`SipVerifier`) は
 core の中にあり、呼び出し元はテストだけです。上の規則は、**第三者が自分で検証器を
-実装するための仕様**であり、独立した検証ツールとして配布するのは次の増分です。
+実装するための仕様**です。独立した検証ツールはこの版で同梱しました — 「受け取った側が、
+NemakiWare を起動せずに package を検証できるようになりました」の節を見てください。
 したがって移行作業はありません — 現在この判定を読んでいる利用者はいません。
 
 規則が変わったことを書いているのは、**以前の規則で「検証済み」と読める package が

@@ -119,7 +119,7 @@ stream を閉じる。時計を見るループでは `read()` の中で止まっ
   169.254.169.254 は `validateExternalUrl` と `pinRequestToValidatedAddress` の両方が拒否し、loopback 名は
   固定を**通って**（URI が IP リテラル、`Host` が元の名前）受け入れられる。off なら loopback も拒否（control）
 - **上限の錠** `theFetchIsBounded`: 定数 8 MiB / 20 秒、本体に `readNBytes((int) MAX_CRL_BYTES + 1)` と
-  `new BodyBudget(` が在る、運用文書 §O5-2 の「上限 8 MiB」「本文の上限 20 秒」が定数と一致（2 巡目: 初版は
+  `new BodyBudget(` が在る、運用文書 §O5-2 の「上限 5 MiB」（2026-10-06 まで 8 MiB）「本文の上限 20 秒」が定数と一致（2 巡目: 初版は
   定数を literal と比べるだけで、`readAllBytes()` に戻しても運用文書を 16 MiB にしても緑だった）
 - **挙動の錠**（`Rfc3161AnchorTargetTest.RevocationCollection`）: `localhost` 名の stub から CAPTURED（固定分岐を
   通る）／8 MiB + 1 は `CRL_TOO_LARGE`／escape off で loopback は `SecurityException` → `UNAVAILABLE`／

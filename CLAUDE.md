@@ -48,9 +48,10 @@ CMIS 1.1 準拠のオープンソース ECM。技術スタックは `pom.xml` / 
     **ルートが SELECT ノードそのもの** (1.1.0 では nil ノードが包んでいた)。
     子だけを見る抽出は WHERE を取りこぼし、Solr 側が `*:*` に落ちて**全件返す** —
     parse は成功しログも出ないので、TCK でしか気づけません。
-  - **HttpComponents 5 はファミリで動く**。client-bindings が httpclient5 5.5.1 を
-    持ち込むので core5 も 5.3.6 に揃える。ずれると Tomcat 起動時に
-    `NoSuchMethodError` でアプリが上がりません (enforcer で検出)。
+  - **HttpComponents 5 はファミリで動く**。client-bindings が持ち込む httpclient5 5.5.1 は
+    除外し、`core/pom.xml` の `httpcomponents.client5.version` / `httpcomponents.core5.version`
+    （2026-10-06 時点 5.6.3 / 5.4.3）で client5 と core5 を同じ family に揃える。ずれると
+    Tomcat 起動時に `NoSuchMethodError` でアプリが上がりません (enforcer で検出)。
   - Browser binding の multipart は `MultipartReplayRequestWrapper` が再生します。
     servlet がルーティングのため body を先に読む必要があり、1.1.0-nemakiware は
     フォーク側パッチで救っていましたが、2.0 系にそれはありません。
