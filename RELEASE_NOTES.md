@@ -522,7 +522,8 @@ checkpoint がその時刻を越えた後は二度と候補になりませんで
 
 - サーバに **checkpoint の UID より大きい範囲**を求め、古い順に `limit` 件を取り込みます。残りがあれば
   実行結果は `PARTIAL` で、理由に「`limit` 件より多い新着があり、古い N 件を読んだ」と付きます。
-  checkpoint は読んだ最後の UID で止まるので、次回はその続きからです
+  checkpoint は読んだ最後の UID で止まるので、次回はその続きからです。一覧は UID で `limit` 件に切ってから
+  header を取ります（切る前に範囲の全件の header を取る形は、確認レビューで直しました）
 - import がエラーを答えたメッセージ、添付の一部が失敗したメッセージは**死信キューに記録します**
   （以前は記録せず、同じ実行の後続の成功が checkpoint をそのメッセージの先へ進めていました）
 - UIDVALIDITY が変わっていたら、checkpoint を捨てて先頭から読み直します（従来どおり。重複は import の
@@ -1466,12 +1467,16 @@ jar の manifest が `lib/` を指すので、2 つを同じディレクトリ�
 
 - **zip は 2 つの目次 (central directory と local header) を両方読み**、食い違えば
   `INCONSISTENT_ARCHIVE` で読みません (exit 3)。central directory から読む保存システムと、
-  local header を順に読む検証器が**別の package を見る**形を封じます
+  local header を順に読む検証器が**別の package を見る**形を封じます。2 つ目の目次の bytes は local 側の長さまで
+  しか読みません（上限は 1 つ目と同じ）
 - 在るのに JSON object として読めない文書は、それを読む検査が `FAILED` です (仕様 §3.2)。
   「無い」(`NOT_PRESENT`、exit 3) とは区別します
 - `--expected-checkpoint` を渡したとき `rollback` は**必須検査**です — 判定できなければ exit 3 で、
-  exit 0 にはなりません。渡した checkpoint が chain に無いとき、chain が台帳の最初の checkpoint
-  から始まっていれば exit 2、それより後から始まっていれば `CHAIN_STARTS_AFTER_EXPECTED` (exit 3)。
+  exit 0 にはなりません。渡した checkpoint が chain に在れば PASS。無いとき、hash だけでは「anchor target
+  より後（保持より前に作られた package）」と「書き換え」が区別できないので、保持した checkpoint の
+  `toSequence` を `--expected-checkpoint-sequence` で渡してください — 提示された期間の中に無ければ exit 2、
+  target より後なら `EXPECTED_AFTER_TARGET` (exit 3)、chain の始まりより前で前任者を運んでいなければ
+  `CHAIN_STARTS_AFTER_EXPECTED` (exit 3)。渡さなければ `EXPECTED_SEQUENCE_UNKNOWN` (exit 3)。
   chain を持たない package では `NOT_PRESENT` です
 - `TRUSTED_RFC3161_V1` の `token pkix` は、署名者証明書への path を **token の生成時刻**で評価します。
   TSA の証明書は数年で失効するので、「今」で評価すると古い token は全部 exit 2 になります
@@ -1525,10 +1530,11 @@ exit 3 で、**食い違いが見つかれば exit 2** です (`FAILED` は prof
 > 変更の防止を証明しません。token の署名者が誰か、信頼してよいか、失効していないかは
 > `TRUSTED_RFC3161_V1` の問いで、この版では `VERIFIED` に届きません。anchor が commit するのは
 > anchor target の `merkleRoot` だけで、それ以前の期間との連結は package 自身が運ぶ chain です。
-> 外部で保持した checkpoint（`--expected-checkpoint`）を渡したとき、それが chain に無ければ、
-> chain が台帳の最初の checkpoint から始まっているなら `FAILED`、それより後から始まっているなら
-> 判定できない（`CHAIN_STARTS_AFTER_EXPECTED`）と報告します。渡さなければ、package は
-> 自分と整合しているだけです。
+> 外部で保持した checkpoint（`--expected-checkpoint` と、その `toSequence` を `--expected-checkpoint-sequence`）を
+> 渡したとき、それが chain に無ければ、提示された期間の中にあるはずなら `FAILED`、anchor target より後
+> （package のほうが古い）か chain の始まりより前なら判定できない（`EXPECTED_AFTER_TARGET` /
+> `CHAIN_STARTS_AFTER_EXPECTED`）と報告します。`toSequence` を渡さなければ、chain に無い checkpoint は
+> 判定できない（`EXPECTED_SEQUENCE_UNKNOWN`）です。渡さなければ、package は自分と整合しているだけです。
 
 **この 2 つは対です。** 上だけを引くと、この検証器が**設計として答えない**ことまで
 答えたように読めます。

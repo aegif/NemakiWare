@@ -89,7 +89,7 @@ v1 を壊さずに v2 を足すことでしか行わない。**
 **狭める**変更（契約が任意と定めたものを必須にする、新しい拒否を足す）は、
 適合 package を 1 つでも拒否するなら contract の変更である。
 
-この版で 8 件、訂正として直した。
+この版で 9 件、訂正として直した。
 
 | 訂正 | 向き | なぜ contract の変更ではないか |
 |---|---|---|
@@ -101,6 +101,7 @@ v1 を壊さずに v2 を足すことでしか行わない。**
 | §9 に `INCONSISTENT_ARCHIVE`（zip の 2 つの目次の食い違いを読まない）を追加（2026-10-06） | 狭める | 適合 package は 2 つの目次が一致している — 標準的な writer（`ZipOutputStream`・zipfile・zip）はそう書く。拒否されるのは、2 つの reader が 2 つの package を見る archive だけ。verifier が片方しか読んでいなかったのは、相手が見ない bytes を判定する欠陥だった |
 | §11 の `ROLLBACK` を「与えられたときだけ必須」「chain が後から始まるなら `UNAVAILABLE`」「chain 無しは `NOT_PRESENT`」に（2026-10-06） | **緩める**（`FAILED` → `UNAVAILABLE` / `NOT_PRESENT`）＋ 与えたときの必須化 | 必須化は「与えられたとき」に限る — 与えない run は変わらない。与えた run で `UNAVAILABLE` が verdict を `INDETERMINATE` にするのは §15 の合成そのもので、それまで `VERIFIED` と答えていたのが誤り。`FAILED` の 2 つの腕は根拠の無い断定で、適合 package を拒否していた |
 | §12 の `TOKEN_PKIX` の評価時刻を token の `genTime` に（2026-10-06） | **緩める** | 「今」での評価は、適合 package を発行者の証明書の失効とともに `FAILED` にしていた。`TOKEN_CMS` は既に `genTime` で判定しており、1 つの token に 2 つの時刻があった |
+| §11 の `ROLLBACK` — hash だけで chain に無いときの `FAILED` を、`toSequence` で位置が決まるときだけに（2026-10-06） | **緩める** | 保持した checkpoint より前に作られた適合 package を、後から検証すると全部 `FAILED` にしていた。位置が決まらなければ `UNAVAILABLE`（`EXPECTED_SEQUENCE_UNKNOWN`）、target より後なら `EXPECTED_AFTER_TARGET`。reason code の追加は閉じた enum の拡張で、既存の値の意味は変えない |
 
 3 件目は「問い 2 に変わると答える」ように読めるが、**変わるのは拒否 → 受理の向き**である。
 規則は「読めなくなるか」を問うので、これは訂正にあたる。**狭めた当初の規定のほうが
@@ -572,7 +573,7 @@ current == merkleRoot なら PASS
 | `CHAIN_FORWARD` | `links[i].toSequence` が狭義単調増加。covering が target より後なら `FAILED` |
 | `CHAIN_RECOMPUTE` | 各 link の `checkpointHash` を §7 で再計算して一致 |
 | `ANCHOR_COMMITS_ROOT` | manifest が `PRESENT` と記録する rung の**材料を読む**（2026-09-22 まではファイルの有無だけを見て常に `UNAVAILABLE` だった）。RFC 3161（manifest の `kind` が `RFC3161_TSA` で path が `anchors/rfc3161.der` の rung**だけ**）: token を parse し、**`hex(messageImprint) == chain の末尾 link の `merkleRoot`**（root は既に SHA-256 digest なので、timestamp されるのは**その bytes**。hex 文字列を再度 hash しない。§12 の `TOKEN_IMPRINT` と同じ読み）。さらに **token の署名を、token が運ぶ証明書に対して検証**する（「誰かが発行した」を言うために必要。**誰が**は P3）。両方が通れば PASS。parse 不能・不一致は `FAILED`。**署名者証明書が token に無ければ `NOT_PRESENT`**（P3 と同じ答え — package についての事実であって、読めなかったのではない）。**imprint の算法が SHA-256 でない**、または**署名アルゴリズムをこの build が計算できない**ときは `UNAVAILABLE`（どちらも `UNKNOWN_ALGORITHM`。**detail がどちらかを述べる** — 1 つの reason code が 2 つの事情を指すので、機械は「この check は行われていない」までしか読めない）。**署名の判定は P3 と同じ 1 か所**（`TokenSignature`）で行う — 同じ token に 2 つの答えを出さないため。OTS / ERS / Atlas の材料はこの profile では**読まない**（P4 / P5 が読む）— 読める rung が 1 つも無ければ `UNAVAILABLE`（`ANCHOR_NOT_PARSED`）。rung が 1 つも `PRESENT` でなければ `NOT_PRESENT` |
-| `ROLLBACK` | `--expected-checkpoint` が与えられたとき**だけ必須**（下記）。chain 上にその hash が在れば PASS。無いとき: chain が台帳の最初の checkpoint から始まっている（`links[0].prevCheckpointHash` が null）なら `FAILED` — package は全履歴を提示していて、その中に無い。chain がそれより後から始まっている（null でない）なら `UNAVAILABLE` + `CHAIN_STARTS_AFTER_EXPECTED` — 保持していた checkpoint は covering より前の期間のものかもしれず、この package からは判定できない。chain を持たない package では `NOT_PRESENT` |
+| `ROLLBACK` | `--expected-checkpoint` が与えられたとき**だけ必須**（下記）。chain 上にその hash が在れば PASS（`--expected-checkpoint-sequence` も与えられていて、その link の `toSequence` と違えば `FAILED` — 保持記録と package が同じ checkpoint について食い違う）。無いとき、**hash だけでは chain のどこに在るべきだったかが決まらない** — anchor target より後（保持より前に作られた package は運べない）か、chain の始まりより前か、提示された期間の中（連結した chain は発行された checkpoint を全部運ぶので、無ければ書き換えか fork）か。保持した checkpoint の `toSequence`（`--expected-checkpoint-sequence`）が無ければ `UNAVAILABLE` + `EXPECTED_SEQUENCE_UNKNOWN`。与えられていれば: 末尾 link の `toSequence` より後なら `UNAVAILABLE` + `EXPECTED_AFTER_TARGET`、`links[0].toSequence` より前で `links[0].prevCheckpointHash` が null でなければ `UNAVAILABLE` + `CHAIN_STARTS_AFTER_EXPECTED`（covering より前の期間は運んでいない）、null なら `FAILED`（台帳の最初の checkpoint より前に checkpoint は無い）、期間の中なら `FAILED`。chain を持たない package では `NOT_PRESENT` |
 
 主張しないこと: token の PKIX（それは P3）。
 
@@ -595,6 +596,14 @@ current == merkleRoot なら PASS
 > としていた。anchor が commit するのは末尾 link の `merkleRoot` だけで、chain は covering から先しか運ばない
 > （上の段落）。その chain に無いことは、chain が台帳の最初の checkpoint から始まっているときにだけ
 > 「提示された全履歴に無い」を意味する。それ以外は根拠の無い「書き換え」の断定だった。
+
+> **2026-10-06 の訂正（確認レビュー 1 巡目、P2）。** 上の訂正は「chain が台帳の最初の checkpoint から始まっていれば
+> `FAILED`」としたが、package が提示するのは **anchor target までの**履歴であって「全履歴」ではない。保持した
+> checkpoint が target より後のもの（保持より前に作られた package を後から検証する）でも hash は chain に無く、
+> hash だけではそれと書き換えを区別できない。位置を決めるのは保持した checkpoint の `toSequence`
+> （`--expected-checkpoint-sequence`）で、無ければ `UNAVAILABLE`（`EXPECTED_SEQUENCE_UNKNOWN`）。`FAILED` は位置が
+> 提示された期間の中（または完全な chain の最初より前）にあると分かるときだけ。`EXPECTED_AFTER_TARGET` と
+> `EXPECTED_SEQUENCE_UNKNOWN` を登録簿に足した（27 値）。
 
 `links` が空、重複、逆順、欠落のいずれかなら `FAILED`。
 
@@ -771,7 +780,7 @@ check の結果は **4 値**。「調べて正しい」「調べて誤り」「�
 | `PASSED` | 調べて正しい |
 | `FAILED` | 調べて誤り |
 | `NOT_PRESENT` | package がその check に要るものを持っていない |
-| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 25 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
+| `UNAVAILABLE` | 調べられなかった。**理由は reason code で述べる** — `RESOURCE_LIMIT`（上限到達）、`NO_BLOCK_HEADER_SOURCE / REVOCATION_NOT_CAPTURED`、`UNKNOWN_ALGORITHM`、`LEGACY_PACKAGE_LAYOUT`、`TRANSITION_PRIOR_NOT_IN_PACKAGE` など（全 27 値は verifier の登録簿 `Outcome.Check.REASON_CODES` と result schema の enum） |
 
 合成:
 
