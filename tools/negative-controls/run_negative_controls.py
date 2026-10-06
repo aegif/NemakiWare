@@ -9766,8 +9766,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9886,8 +9886,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 86 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 87 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10888,7 +10888,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10902,7 +10902,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10958,8 +10958,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 86 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 87 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10972,8 +10972,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **86 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **86 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **87 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **87 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11809,7 +11809,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **86 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **87 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13793,8 +13793,8 @@ CONTROLS = [
         # Re-pointed when controls sit above the boundary again (QK4〜QQ4, 2026-10-06): the
         # empty-range form of this control (a count stated for no range) comes back when the
         # next full sweep empties the range. Here the count is wrong by one.
-        find='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
-        replace='**9 回目以後に足した control は 86 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
+        find='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
+        replace='**9 回目以後に足した control は 87 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13863,7 +13863,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 1809 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 1810 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13948,7 +13948,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **86 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **87 本**（通し未実施）。',
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **213 本**（通し未実施）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
@@ -13958,7 +13958,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **1809**（2026-10-06 時点）',
+        find='- コントロール **1810**（2026-10-06 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -20604,7 +20604,8 @@ CONTROLS = [
         find='                    secrets.redact(unexpected.getMessage()), secrets.loggable(unexpected));',
         replace='                    unexpected.getMessage(), unexpected);',
         test='PrincipalBatchResourceTest',
-        expect_fail=['thePasswordIsNotLoggedWhenThePolicyFails'],
+        # The nested-password lock also fails through the catch-all (its policy echoes the longer password).
+        expect_fail=['thePasswordIsNotLoggedWhenThePolicyFails', 'aNestedPasswordLeavesNoTailInTheLog'],
     ),
     dict(
         id='TQ4',
@@ -20621,8 +20622,8 @@ CONTROLS = [
         what="a password equal to the placeholder is 'redacted' into itself and logged — the replacement is not checked for a secret that survived it (c96 round 3, P1 by Codex / P3 by subagent)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/api/v1/principals/Secrets.java',
-        find='        for (String value : values) {\n            if (out.contains(value)) {\n                return WITHHELD_ECHO;\n            }\n        }\n        return out;',
-        replace='        return out;',
+        find='        for (String value : values) {\n            if (result.contains(value)) {\n                return WITHHELD_ECHO;\n            }\n        }\n        return result;',
+        replace='        return result;',
         test='PrincipalBatchResourceTest',
         expect_fail=['aPasswordEqualToThePlaceholderIsWithheld'],
     ),
@@ -20651,10 +20652,24 @@ CONTROLS = [
         what="a one-letter password is replaced out of the incident text again, mangling the one diagnostic line the operator has instead of withholding it (c96 round 3, P3 by subagent)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/api/v1/principals/Secrets.java',
-        find='            if (value.length() < SHORTEST_REPLACEABLE) {',
-        replace='            if (false && value.length() < SHORTEST_REPLACEABLE) {',
+        find='            if (value.length() < SHORTEST_REPLACEABLE && text.contains(value)) {',
+        replace='            if (false && value.length() < SHORTEST_REPLACEABLE && text.contains(value)) {',
         test='PrincipalBatchResourceTest',
         expect_fail=['aShortPasswordWithholdsTheMessage'],
+    ),
+    # ---- c96 round 4 (subagent: P2 1 / P3 4; Codex ran out of workspace credits mid-review), 2026-10-06 ----
+    dict(
+        id='TS4',
+        what="a learned password longer than eight characters is not redacted, so a shorter one that is its prefix is replaced and the longer one's tail stays in the log — the shape of replacing values one after another instead of as merged spans (c96 round 4, P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/api/v1/principals/Secrets.java',
+        find='            if (value.length() < SHORTEST_REPLACEABLE) {\n                continue;\n            }\n            for (int at = text.indexOf(value); at >= 0; at = text.indexOf(value, at + 1)) {',
+        replace='            if (value.length() < SHORTEST_REPLACEABLE || value.length() > 8) {\n                continue;\n            }\n            for (int at = text.indexOf(value); at >= 0; at = text.indexOf(value, at + 1)) {',
+        test='PrincipalBatchResourceTest',
+        # Every lock whose echoed password is longer than eight characters fails under this sabotage;
+        # the placeholder-equal one is caught by the residual check and stays green.
+        expect_fail=['aNestedPasswordLeavesNoTailInTheLog', 'thePasswordIsNotLoggedWhenPlanningFails',
+                     'thePasswordIsNotLoggedWhenThePolicyFails', 'aLowerLayerThatEchoesThePasswordIsRedactedInTheLog'],
     ),
 ]
 
