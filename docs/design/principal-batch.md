@@ -298,8 +298,6 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
 | `forbidden` は `skip` でも適用しない | skip の腕が `forbidden` を `unexpected` と同じに扱う |
 | `planId` の snapshot ずれ → 409、適用 0 | snapshot の比較を外す |
 | 応答・plan・監査・ログにパスワードの値が無い（値を `assertFalse(contains)` で。ログは applier と resource の logger を捕捉し、store の例外が値を echo しても消えていること — 2026-10-06 の 9-6 の領域 C の Codex まで、ログは読んでいなかった） | 応答に `password` を写す／incident の warn に `row.cells()` を足す／redaction を外す／resource の 2 つの catch を素通し／cause 鎖を落とす／置換で消えなかった値を見ない／長い値を置換しない（接頭辞の尾が残る） |
-
-既知の効き過ぎ（漏れではない）: resource の incident 行は request の全行のパスワードを学ぶので、数千行の request では、無関係な store 障害の文も 1〜3 文字のパスワードが 1 つあれば withhold になり、4 文字の一般語（`user` 等）のパスワードは文を崩す。行ごとに学ぶのは planner の構造上できない。rows を読む前の withhold は防御的で、今日の parser の失敗は全部 log されない 400 なので引き金が無く、未測定（2026-10-06、確認レビュー 4 巡目）。
 | `update` の空欄は触らない（`groups` 空欄の後、所属が同じ） | 空欄を「空にする」と読む |
 | `memberships / replace` の空 `members` は所属を空にする | 空を「触らない」と読む（上の逆） |
 | 同期由来の prefix を持つ delete は `LOOKS_DIRECTORY_SYNCED` | prefix の表から `ldap_` を落とす |
@@ -307,6 +305,8 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
 | 対象の読みが失敗したら 503（`NOT_FOUND` にしない） | 例外を `NOT_FOUND` に潰す |
 | 非 admin は 403、`X-Requested-With` 無しは 403 | （filter の既存錠が覆う。無ければ足す） |
 | 同じ ID の 2 行は 400 | 重複検査を外す |
+
+既知の効き過ぎ（漏れではない）: resource の incident 行は request の全行のパスワードを学ぶので、数千行の request では、無関係な store 障害の文も 1〜3 文字のパスワードが 1 つあって文に含まれていれば withhold になり、4 文字の一般語（`user` 等）のパスワードは文を崩す。行ごとに学ぶのは planner の構造上できない。rows を読む前の withhold は防御的で、parser の失敗は全部 log されない 400（読解で届くと分かった唯一の本文 — JSON リテラル `null` — は 5 巡目で 400 にした）なので引き金が無く、未測定（2026-10-06、確認レビュー 4〜5 巡目）。
 
 runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）を通す。協力者クラスだけの錠で
 済ませない。控えの control は helper でなく呼び出し側を壊す。
