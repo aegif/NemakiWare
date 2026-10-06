@@ -69,6 +69,7 @@ advisory（CRITICAL 1・HIGH 6・MODERATE 9・LOW 1。Jackson は 2 系と 3 系
 | BouncyCastle（`bcprov` / `bcpkix` / `bcutil`。RFC 3161 と証拠 verifier） | 1.81.1 | 1.85 | この PR の途中で上げた分（OSV の警告ではなく版の追従） |
 | Apache HttpComponents client5 / core5 | 5.5.1 / 5.3.6 | 5.6.3 / 5.4.3 | 同上。family をそろえる（ずれると起動時に `NoSuchMethodError`） |
 | veraPDF（PDF/A の検証） | 1.28.2 | 1.30.2 | 同上 |
+| Spring Framework（全 module） | 7.0.8 | 7.0.9 | CRITICAL 1（GHSA-pc63-qcmh-9cmg — `XsltView` を使う構成の SSRF / RCE。この版のコードは `XsltView` を使っていません）。2026-10-07 の照合で見つかった分 |
 
 - **Graph SDK は、この版のコードからは呼ばれていません**（版上げは警告を解くため）。上げたことで WAR に
   jjwt 0.13.0・jwks-rsa 0.24.1・opentelemetry-common が入り、opentelemetry-semconv が抜けました。Kiota が
@@ -76,11 +77,15 @@ advisory（CRITICAL 1・HIGH 6・MODERATE 9・LOW 1。Jackson は 2 系と 3 系
   持つため。2026-05 に xml-apis を外したのと同じ理由です）
 - 上げた後の SBOM（Maven 405・npm 561 component）を同じ日に照合し直し、警告のある component は 0 でした。
   照合の道具は `tools/sbom/osv-check.py`（`tools/sbom/make-sbom.sh` が出した SBOM を渡す）
+- **2026-10-07 に照合し直すと**（タグの成果物を作る直前）、10-05 以後に公開された advisory が 3 件ありました —
+  Spring Framework 7.0.8 の CRITICAL 1（上の表）、UI の source-map-js 1.2.1 の HIGH 1 と sprintf-js 1.0.3 の
+  MODERATE 1（下の UI の節）。上げた後の照合は Maven 側 0 件、npm 側は sprintf-js の 1 件だけで、これは直った版が
+  無いため例外台帳（`SECURITY-EXCEPTIONS.md`）に理由と期限を付けて記録しました
 
 ### 主張しないこと
 
-- この版に既知の脆弱性が無いこと — 照合したのは 2026-10-05 時点の OSV の答えで、その後に出た advisory は
-  含みません。照合は依存の名前と版だけを見ます（その依存が実際に呼ばれるかは見ません）
+- この版に既知の脆弱性が無いこと — 2026-10-07 の照合でも sprintf-js の 1 件が残っています（例外台帳）。
+  照合したのはその時点の OSV の答えで、その後に出た advisory は含みません。照合は依存の名前と版だけを見ます（その依存が実際に呼ばれるかは見ません）
 - コンテナイメージの中身 — OS・Tomcat・JDK・LibreOffice・Solr のイメージは SBOM に入っておらず、照合して
   いません（イメージの走査は Trivy で、情報扱いです）
 - CI の OSV ジョブ（`security-scan.yml`）が WAR の Java の依存を見ていること — osv-scanner は
@@ -100,6 +105,15 @@ axios 1.18.1 → 1.20.0、brace-expansion 5.0.9 → 5.0.12、dompurify 3.4.13 �
   2 つの版をプレビューと同じ設定で比べた差は、この 2 つの属性だけでした（残す要素は同じ）
 
 `js-yaml` も 4.3.1 → **4.3.2** に上げています（本番の依存。`swagger-client` が 4 系を要求するため 5.x には上げません）。
+
+2026-10-07 の照合（上のサーバの節）で UI 側に見つかった 2 件:
+
+- `source-map-js` 1.2.1 → **1.2.2**（HIGH 1 — GHSA-68fv-2mgg-jv7q）。ビルドと test の道具（vite の postcss、jsdom の
+  css-tree）の依存で、出荷する bundle には入っていません。変えたのは package-lock.json だけです
+- `sprintf-js` 1.0.3（MODERATE 1 — GHSA-hp3w-g68c-fv3c）は**直った版がありません**。`swagger-ui-react` →
+  `remarkable` → `argparse`（remarkable のコマンドラインの道具）の下にだけあり、出荷する bundle には入っていません
+  （3.4.0 の RC の WAR の `ui/assets` で確かめました）。例外台帳（`SECURITY-EXCEPTIONS.md`）と `osv-scanner.toml` に
+  理由と期限（2027-01-31）を付けて記録しました
 
 ## ユーザー・グループ・所属を CSV で一括是正できるようになりました
 

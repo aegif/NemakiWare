@@ -8,7 +8,7 @@ QA 94/94 / Playwright 929 passed・0 failed・104 skipped (1 flaky は retry 通
 
 v3.3 のリリース条件は「Spring Framework 7.0 へのアップグレード完了」と置かれていたが、
 棚卸しの結果、**Framework 本体の 7.0 化はこのブランチでも master でも完了済み**である
-(7.0.8。WAR 内の全 spring jar が 7.0.8、Spring 7 で削除された API の使用ゼロ、
+(7.0.8。WAR 内の全 spring jar が 7.0.8 — 2026-10-07 に全 module を 7.0.9 へ上げた（GHSA-pc63-qcmh-9cmg）、Spring 7 で削除された API の使用ゼロ、
 jakarta 移行漏れゼロ、`RestTemplate` 使用ゼロ)。
 
 したがって本計画は「アップグレード計画」ではなく、次の 2 部construction からなる:
@@ -24,7 +24,7 @@ jakarta 移行漏れゼロ、`RestTemplate` 使用ゼロ)。
 
 | 領域 | 現在 | 判定 |
 |---|---|---|
-| Spring Framework | 7.0.8 (全モジュール同版) | ✅ 完了 |
+| Spring Framework | 7.0.9 (全モジュール同版。2026-10-07 に 7.0.8 から — GHSA-pc63-qcmh-9cmg) | ✅ 完了 |
 | Jersey / Jakarta REST | 4.0.0 | ✅ 完了 |
 | Solr server / SolrJ | 10.0.0 | ✅ 完了 |
 | Tomcat / Java | 11.0 / JDK 21 | ✅ 完了 |
