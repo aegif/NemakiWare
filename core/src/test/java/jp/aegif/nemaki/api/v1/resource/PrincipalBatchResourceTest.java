@@ -451,6 +451,39 @@ class PrincipalBatchResourceTest {
     }
 
     @Test
+    @DisplayName("a password that is a prefix of another row's password does not leave the longer one's tail in the log")
+    void aNestedPasswordLeavesNoTailInTheLog() throws Exception {
+        String shorter = "Welcome1";
+        String longer = "Welcome1-Tokyo";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        PasswordPolicyService policy = mock(PasswordPolicyService.class);
+        when(policy.validate(eq(shorter), anyString())).thenReturn(PasswordPolicyService.PasswordPolicyResult.ok());
+        when(policy.validate(eq(longer), anyString()))
+                .thenThrow(new IllegalStateException("cannot validate " + longer));
+        set(resource, "passwordPolicyService", policy);
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response preview = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u8\",\"name\":\"Eight\",\"password\":\"" + shorter + "\"},"
+                        + "{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + longer + "\"}]"));
+
+        assertEquals(500, preview.getStatus(), String.valueOf(preview.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("cannot validate [password redacted]\n"),
+                "the whole of the longer password is one placeholder, to the end of the line: " + logged);
+        assertFalse(logged.contains("Tokyo") || logged.contains(shorter),
+                "the shorter password was replaced first and the tail of the longer one stayed in "
+                        + "the log (confirmation review, round 4, P2): " + logged);
+    }
+
+    /**
+     * Discriminating only once the registry has a second column: with {@code SECRET_COLUMNS ==
+     * {"password"}} an implementation that spells "password" passes this too. Recorded, not
+     * pretended (confirmation review, round 4, P3).
+     */
+    @Test
     @DisplayName("every column the registry names as secret is redacted — the log does not spell 'password' itself")
     void everyRegisteredSecretColumnIsRedacted() {
         for (String column : PrincipalBatch.SECRET_COLUMNS) {

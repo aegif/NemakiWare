@@ -1,9 +1,12 @@
 package jp.aegif.nemaki.api.v1.principals;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Row;
@@ -23,7 +26,14 @@ import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Row;
  * redacted one message with a fixed placeholder and dropped the cause chain).
  *
  * <p>Until the request has been read as rows ({@link #learn}), what it carries is not known, so
- * nothing of a message is logged: a parser's text may quote the body.
+ * nothing of a message is logged: a parser's text may quote the body. This arm is defensive and
+ * UNMEASURED: every parse failure the resource knows of today is reported as a 400 that is not
+ * logged, so only a parser bug would reach it (confirmation review, round 4, P3).
+ *
+ * <p>The resource learns every row of a request, so a request of thousands of rows is redacted
+ * against all of their passwords at once: a one-letter password anywhere withholds the text of
+ * an unrelated store failure, and a four-letter common word mangles it. Not a leak; the cost of
+ * one log line per batch rather than one per row.
  */
 public final class Secrets {
 
@@ -72,24 +82,46 @@ public final class Secrets {
         if (!known) {
             return WITHHELD_UNREAD;
         }
-        String out = text;
+        for (String value : values) {
+            // "e" is in almost every message; replacing it mangles the one diagnostic line
+            // the operator has, and leaves the question open anyway.
+            if (value.length() < SHORTEST_REPLACEABLE && text.contains(value)) {
+                return WITHHELD_SHORT;
+            }
+        }
+        // Every occurrence of every value, as spans on the ORIGINAL text, merged, then replaced.
+        // Replacing one value after another left the tail of a longer one in place when a
+        // shorter one was its prefix — "Welcome1" before "Welcome1-Tokyo" logged "-Tokyo"
+        // (confirmation review, round 4, P2).
+        List<int[]> spans = new ArrayList<>();
         for (String value : values) {
             if (value.length() < SHORTEST_REPLACEABLE) {
-                // "e" is in almost every message; replacing it mangles the one diagnostic line
-                // the operator has, and leaves the question open anyway.
-                if (out.contains(value)) {
-                    return WITHHELD_SHORT;
-                }
                 continue;
             }
-            out = out.replace(value, PLACEHOLDER);
+            for (int at = text.indexOf(value); at >= 0; at = text.indexOf(value, at + 1)) {
+                spans.add(new int[] {at, at + value.length()});
+            }
         }
+        spans.sort(Comparator.comparingInt(span -> span[0]));
+        StringBuilder out = new StringBuilder();
+        int cursor = 0;
+        for (int[] span : spans) {
+            if (span[0] < cursor) {
+                // Inside, or overlapping, the span just replaced: extend it.
+                cursor = Math.max(cursor, span[1]);
+                continue;
+            }
+            out.append(text, cursor, span[0]).append(PLACEHOLDER);
+            cursor = span[1];
+        }
+        out.append(text, cursor, text.length());
+        String result = out.toString();
         for (String value : values) {
-            if (out.contains(value)) {
+            if (result.contains(value)) {
                 return WITHHELD_ECHO;
             }
         }
-        return out;
+        return result;
     }
 
     /**
