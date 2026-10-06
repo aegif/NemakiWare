@@ -13803,8 +13803,10 @@ CONTROLS = [
         what="the readiness document states a verifier test count the verifier does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='verifier-core 242 / cli 20 は、9-6 の修正を入れた木で JDK 21',
-        replace='verifier-core 190 / cli 20 は、9-6 の修正を入れた木で JDK 21',
+        # Re-pointed 2026-10-07: the §1.4 record of 2026-10-06 rewrote the sentence after the count, and
+        # the anchor went with it (found by a dry anchor check, not by a run). Anchored on the count alone.
+        find='verifier-core 242 / cli 20 は',
+        replace='verifier-core 190 / cli 20 は',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessVerifierCountIsTheVerifiers'],
     ),
@@ -13906,7 +13908,8 @@ CONTROLS = [
         what="the readiness document's unit total drops below what the sources declare and no lock notices, so a figure left behind while the suite grew reads as a measurement",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**7,834 本 green**',
+        # Re-pointed 2026-10-07: the §1.4 record of 2026-10-06 moved the figure to 7,880.
+        find='**7,880 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
