@@ -401,6 +401,15 @@ class TheExitCodeIsTheInterfaceTest {
                         + "ran, and the holder who supplied a checkpoint was told VERIFIED (c96 "
                         + "confirmation review, round 2, P1): " + result.out() + result.err());
         assertTrue(result.err().contains("ANCHORED_CHECKPOINT_V1"), result.err());
+
+        // An unknown or miscased profile is unknown, with or without the option — not "a profile
+        // without the rollback check" (round 3, P3).
+        Run unknown = run("verify", sip.toString(), "--profile", "anchored_checkpoint_v1",
+                "--expected-checkpoint", "9".repeat(64));
+        assertEquals(Verify.EXIT_USAGE, unknown.code());
+        assertTrue(unknown.err().contains("is not a profile this version evaluates"), unknown.err());
+        assertFalse(unknown.err().contains("ANCHORED_CHECKPOINT_V1 and above"),
+                "the diagnosis for a misspelt profile changed with the option: " + unknown.err());
     }
 
     @Test

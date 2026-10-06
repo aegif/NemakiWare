@@ -177,10 +177,14 @@ public final class Verify {
                     + "--expected-checkpoint; without one there is nothing to place");
             return EXIT_USAGE;
         }
-        if (expectedCheckpoint != null && !ROLLBACK_PROFILES.contains(profile)) {
+        if (expectedCheckpoint != null && KNOWN_PROFILES.contains(profile)
+                && !ROLLBACK_PROFILES.contains(profile)) {
             // Refused, not ignored: the rollback check belongs to ANCHORED_CHECKPOINT_V1 and
             // above. Below it the check never ran, and a holder who supplied a checkpoint was
             // told VERIFIED over a question nobody asked (c96 confirmation review, round 2, P1).
+            // Known profiles only: an unknown or miscased one is refused as unknown below,
+            // whether or not a checkpoint came with it (round 3, P3 — the diagnosis changed with
+            // the option).
             err.println("--expected-checkpoint asks the rollback check, which belongs to "
                     + "ANCHORED_CHECKPOINT_V1 and above; at " + profile + " it is never run, and "
                     + "the question would go unanswered under exit 0. Request "
