@@ -297,7 +297,7 @@ memberships / replace は「現在の所属を読む → `GroupMembershipEditor.
 | `abort` + 想定外 1 行 → 適用 0、409 | 想定外を数える腕を落として全部 `expected` にする |
 | `forbidden` は `skip` でも適用しない | skip の腕が `forbidden` を `unexpected` と同じに扱う |
 | `planId` の snapshot ずれ → 409、適用 0 | snapshot の比較を外す |
-| 応答・plan・監査・ログにパスワードの値が無い（値を `assertFalse(contains)` で。ログは applier と resource の logger を捕捉し、store の例外が値を echo しても消えていること — 2026-10-06 の 9-6 の領域 C の Codex まで、ログは読んでいなかった） | 応答に `password` を写す／incident の warn に `row.cells()` を足す／redaction を外す |
+| 応答・plan・監査・ログにパスワードの値が無い（値を `assertFalse(contains)` で。ログは applier と resource の logger を捕捉し、store の例外が値を echo しても消えていること — 2026-10-06 の 9-6 の領域 C の Codex まで、ログは読んでいなかった） | 応答に `password` を写す／incident の warn に `row.cells()` を足す／redaction を外す／resource の 2 つの catch を素通し／cause 鎖を落とす／置換で消えなかった値を見ない |
 | `update` の空欄は触らない（`groups` 空欄の後、所属が同じ） | 空欄を「空にする」と読む |
 | `memberships / replace` の空 `members` は所属を空にする | 空を「触らない」と読む（上の逆） |
 | 同期由来の prefix を持つ delete は `LOOKS_DIRECTORY_SYNCED` | prefix の表から `ldap_` を落とす |
