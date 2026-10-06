@@ -397,6 +397,131 @@ class PrincipalBatchResourceTest {
         assertFalse(logged.contains(secret),
                 "the password reached the log through the exception the store threw — its message, "
                         + "or the cause chain the throwable carries (9-6 review of area C, P1): " + logged);
+        // The cause chain is kept — class, frames, redacted message — because the cause is where
+        // the failure actually happened (confirmation review, round 3, P2: the first fix dropped it).
+        assertTrue(logged.contains("java.lang.IllegalArgumentException: weak: [password redacted]"),
+                "the cause's class and redacted message are not in the log: " + logged);
+    }
+
+    @Test
+    @DisplayName("a password equal to the placeholder is withheld, not 'redacted' into itself")
+    void aPasswordEqualToThePlaceholderIsWithheld() throws Exception {
+        String secret = "[password redacted]";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(new IllegalStateException("rejected " + secret));
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret.replace("\"", "") + "\"}]"));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("stopped at line 2"), logged);
+        assertFalse(logged.contains(secret),
+                "the password IS the placeholder, so replacing it with the placeholder changed nothing "
+                        + "and the value went to the log (confirmation review, round 3, P1): " + logged);
+        assertTrue(logged.contains("withheld"), logged);
+    }
+
+    @Test
+    @DisplayName("a password too short to replace withholds the message instead of mangling it")
+    void aShortPasswordWithholdsTheMessage() throws Exception {
+        String secret = "e";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(new IllegalStateException("couchdb answered 503"));
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("stopped at line 2"), logged);
+        assertTrue(logged.contains("too short to replace"),
+                "a one-letter password cannot be replaced out of a message without mangling it "
+                        + "(confirmation review, round 3, P3). The echo arm's withholding would read "
+                        + "the same to a looser assertion, so the reason is named: " + logged);
+        assertFalse(logged.contains("couchdb answ"), "the text was mangled rather than withheld: " + logged);
+    }
+
+    @Test
+    @DisplayName("every column the registry names as secret is redacted — the log does not spell 'password' itself")
+    void everyRegisteredSecretColumnIsRedacted() {
+        for (String column : PrincipalBatch.SECRET_COLUMNS) {
+            String secret = "V4lue-of-" + column;
+            jp.aegif.nemaki.api.v1.principals.Secrets secrets = new jp.aegif.nemaki.api.v1.principals.Secrets();
+            secrets.learn(new PrincipalBatch.Row(2, "u9", Map.of(column, secret)));
+            String redacted = secrets.redact("the store said no to " + secret);
+            assertFalse(redacted.contains(secret),
+                    "the column '" + column + "' is in PrincipalBatch.SECRET_COLUMNS and its value "
+                            + "reached the log text — the log redaction read a spelt-out column, "
+                            + "not the registry (confirmation review, round 3, P3): " + redacted);
+        }
+    }
+
+    @Test
+    @DisplayName("a failure before the applier — in planning — is logged by the resource without the password either")
+    void thePasswordIsNotLoggedWhenPlanningFails() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        // The planner reads the target to decide the row; a store that echoes what it was asked
+        // with the request's cells in its message is the shape under test.
+        when(cs.getUserItemById(eq(REPO), anyString()))
+                .thenThrow(new IllegalStateException("cannot read u9 while validating " + secret,
+                        new IllegalArgumentException("policy saw " + secret)));
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response preview = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        // The planner wraps a store that could not answer into the 503 the resource returns;
+        // the store's own text goes to the log under the incident id.
+        assertEquals(503, preview.getStatus(), String.valueOf(preview.getEntity()));
+        assertFalse(String.valueOf(preview.getEntity()).contains(secret));
+        String logged = rendered(log);
+        assertTrue(logged.contains("could not read the store [incident"),
+                "the resource's own incident line was not written: " + logged);
+        assertTrue(logged.contains("cannot read u9 while validating [password redacted]")
+                        && logged.contains("java.lang.IllegalArgumentException: policy saw [password redacted]"),
+                "the message and the cause are kept, redacted: " + logged);
+        assertFalse(logged.contains(secret),
+                "the resource's catch logged the planning failure as the store wrote it — the "
+                        + "applier's line was redacted and this one was not (confirmation review, "
+                        + "round 3, P1): " + logged);
+    }
+
+    @Test
+    @DisplayName("a failure in the password policy — before any store — is logged by the resource's catch-all without the password either")
+    void thePasswordIsNotLoggedWhenThePolicyFails() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        // A policy layer that echoes what it was asked to validate: the shape under test.
+        PasswordPolicyService policy = mock(PasswordPolicyService.class);
+        when(policy.validate(anyString(), anyString()))
+                .thenThrow(new IllegalStateException("cannot validate " + secret));
+        set(resource, "passwordPolicyService", policy);
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response preview = resource.previewJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        assertEquals(500, preview.getStatus(), String.valueOf(preview.getEntity()));
+        assertFalse(String.valueOf(preview.getEntity()).contains(secret));
+        String logged = rendered(log);
+        assertTrue(logged.contains("failed [incident"), "the catch-all's incident line was not written: " + logged);
+        assertTrue(logged.contains("cannot validate [password redacted]"), logged);
+        assertFalse(logged.contains(secret),
+                "the catch-all logged the policy's failure as the policy wrote it — the applier's line "
+                        + "was redacted and this one was not (confirmation review, round 3, P1): " + logged);
     }
 
     // ---- gate: the empty groups column is 'do not touch'; replace's empty members is 'make empty' ----

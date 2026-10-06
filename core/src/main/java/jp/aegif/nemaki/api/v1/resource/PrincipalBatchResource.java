@@ -34,6 +34,7 @@ import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Outcome;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Row;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.RowVerdict;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Verdict;
+import jp.aegif.nemaki.api.v1.principals.Secrets;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatchEngine;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatchPlan;
 import jp.aegif.nemaki.api.v1.principals.PrincipalBatchRequestException;
@@ -124,8 +125,9 @@ public class PrincipalBatchResource {
     public Response previewMultipart(@PathParam("repositoryId") String repositoryId,
             @FormDataParam("file") InputStream file, @FormDataParam("kind") String kind,
             @FormDataParam("operation") String operation) {
-        return guarded(repositoryId, "preview", actor -> {
+        return guarded(repositoryId, "preview", (actor, secrets) -> {
             Input input = Input.fromCsv(readBounded(file), kind, operation, null, null);
+            secrets.learn(input.rows);
             return preview(repositoryId, input);
         });
     }
@@ -134,7 +136,11 @@ public class PrincipalBatchResource {
     @Path("/preview")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response previewJson(@PathParam("repositoryId") String repositoryId, String body) {
-        return guarded(repositoryId, "preview", actor -> preview(repositoryId, Input.fromJson(json, body)));
+        return guarded(repositoryId, "preview", (actor, secrets) -> {
+            Input input = Input.fromJson(json, body);
+            secrets.learn(input.rows);
+            return preview(repositoryId, input);
+        });
     }
 
     // ---- execute ----
@@ -147,13 +153,14 @@ public class PrincipalBatchResource {
             @FormDataParam("operation") String operation,
             @FormDataParam("onUnexpected") String onUnexpected,
             @FormDataParam("planId") String planId) {
-        return guarded(repositoryId, "execute", actor -> {
+        return guarded(repositoryId, "execute", (actor, secrets) -> {
             byte[] bytes = file == null ? null : readBounded(file);
             if (bytes != null && bytes.length == 0) {
                 bytes = null;
             }
             Input input = bytes == null ? Input.withoutRows(kind, operation, onUnexpected, planId)
                     : Input.fromCsv(bytes, kind, operation, onUnexpected, planId);
+            secrets.learn(input.rows);
             return execute(repositoryId, actor, input);
         });
     }
@@ -162,7 +169,11 @@ public class PrincipalBatchResource {
     @Path("/execute")
     @Consumes(MediaType.APPLICATION_JSON)
     public Response executeJson(@PathParam("repositoryId") String repositoryId, String body) {
-        return guarded(repositoryId, "execute", actor -> execute(repositoryId, actor, Input.fromJson(json, body)));
+        return guarded(repositoryId, "execute", (actor, secrets) -> {
+            Input input = Input.fromJson(json, body);
+            secrets.learn(input.rows);
+            return execute(repositoryId, actor, input);
+        });
     }
 
     // ---- the two flows ----
@@ -358,14 +369,22 @@ public class PrincipalBatchResource {
     // ---- plumbing ----
 
     private interface Flow {
-        Response run(String actor);
+        /** {@code secrets} is told the rows as soon as the request has been read as rows. */
+        Response run(String actor, Secrets secrets);
     }
 
-    /** Admin check, then the flow, with every failure turned into a body this resource wrote. */
+    /**
+     * Admin check, then the flow, with every failure turned into a body this resource wrote.
+     *
+     * <p>What is logged goes through {@link Secrets}: the messages (and the cause chains) a
+     * store or a policy wrote may echo a password cell (9-6 review of area C, confirmation:
+     * the applier's line was redacted and this one was not).
+     */
     private Response guarded(String repositoryId, String what, Flow flow) {
         String actor = requireAdmin();
+        Secrets secrets = new Secrets();
         try {
-            return flow.run(actor);
+            return flow.run(actor, secrets);
         } catch (PrincipalBatchRequestException refused) {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", refused.status() == 409 ? "refused" : "error");
@@ -377,7 +396,8 @@ public class PrincipalBatchResource {
                 // A store that could not answer: its text is logged, not returned.
                 String incidentId = UUID.randomUUID().toString();
                 logger.warn("Principal batch {} on {} could not read the store [incident {}]: {}", what,
-                        repositoryId, incidentId, refused.getCause().getMessage(), refused.getCause());
+                        repositoryId, incidentId, secrets.redact(refused.getCause().getMessage()),
+                        secrets.loggable(refused.getCause()));
                 body.put("incidentId", incidentId);
             }
             return Response.status(refused.status()).entity(body).build();
@@ -387,7 +407,7 @@ public class PrincipalBatchResource {
             // Never let this reach ApiExceptionMapper, which copies getMessage() into the body.
             String incidentId = UUID.randomUUID().toString();
             logger.error("Principal batch {} on {} failed [incident {}]: {}", what, repositoryId, incidentId,
-                    unexpected.getMessage(), unexpected);
+                    secrets.redact(unexpected.getMessage()), secrets.loggable(unexpected));
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("status", "error");
             body.put("message", "the batch failed; the details were logged under incidentId");
