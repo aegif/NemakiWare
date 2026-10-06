@@ -241,12 +241,16 @@
 				<version>${org.springframework.version}</version>
 			</dependency>
 			<!-- spring-ldap-core 4.1.0 declares spring-core / spring-beans /
-			     spring-context / spring-tx 7.0.8. The direct declarations win the
-			     resolution (those nodes are "omitted for conflict"), but the
-			     enforce-spring-single-version rule reads the whole collected graph
-			     and bans an omitted 7.0.8 node all the same — it did, the moment the
-			     framework went to 7.0.9 (GHSA-pc63-qcmh-9cmg, 2026-10-07). Managed
-			     here, they are "version managed" in that graph too.
+			     spring-context / spring-tx 7.0.8. For core / beans / context the
+			     direct declarations in <dependencies> win the resolution (those nodes
+			     are "omitted for conflict"), but the enforce-spring-single-version rule
+			     reads the whole collected graph and bans an omitted 7.0.8 node all the
+			     same — it did, the moment the framework went to 7.0.9
+			     (GHSA-pc63-qcmh-9cmg, 2026-10-07). Managed here, they are "version
+			     managed" in that graph too. spring-tx is different: nothing declares it
+			     directly, so the entry above is the ONLY thing that pins it — remove it
+			     and spring-tx resolves to whatever spring-ldap declares and ships in the
+			     WAR (the enforcer would stop that build).
 			     THE COST: with all four modules spring-ldap declares managed, the
 			     enforcer no longer sees the Spring version spring-ldap was built
 			     against. When bumping spring-ldap-core, read its pom: if it declares
