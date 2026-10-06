@@ -242,9 +242,12 @@ class WhichProfilesCanPassIsMeasuredTest {
                         + "Verify.java"), StandardCharsets.UTF_8);
         for (Map.Entry<String, List<String>> entry : COMPOSITION.entrySet()) {
             for (String className : entry.getValue()) {
-                assertTrue(cli.contains(className + ".REQUIRED"),
-                        "the CLI never adds " + className + ".REQUIRED, so this test's idea of "
-                                + "what " + entry.getKey() + " composes is not the CLI's");
+                // AnchoredCheckpoint's required set is requiredFor(expected != null) since the
+                // 9-6 review: REQUIRED, plus the rollback check when a checkpoint was supplied.
+                assertTrue(cli.contains(className + ".REQUIRED")
+                                || cli.contains(className + ".requiredFor("),
+                        "the CLI never adds " + className + ".REQUIRED (or requiredFor), so this "
+                                + "test's idea of what " + entry.getKey() + " composes is not the CLI's");
             }
         }
         assertEquals(6, COMPOSITION.size(),
