@@ -22,7 +22,7 @@ profile spec、vectors。
 | 成果物 | なぜ |
 |---|---|
 | **SBOM**（タグのもの） | ~~`cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。~~ **2026-09-23 から `tools/sbom/make-sbom.sh` で作れる**（Maven の全 module を aggregate した CycloneDX 1.6 — verifier の 2 module も入る — と、UI の npm 依存）。**ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**タグの SBOM はまだ無い** — この作業コピーで出したものは今の HEAD の依存であって、タグの依存ではない。リリース時に git worktree で切った tagged tree から作る。script は署名しない（下の detached signature） |
-| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵はリリース担当者が手元で作った RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名はリリース担当者が自分の鍵で行う作業で、自動化してはならない（鍵を CI に置くことと同義になる）— コマンドを打つのは agent でもよいが、**passphrase は pinentry でリリース担当者が入力する**。鍵も passphrase も agent・CI に渡さない |
+| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵はリリース担当者の手元の RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。**署名はリリース担当者が 1 回ずつ承認して行う作業で、自動化してはならない**（鍵を CI に置くことと同義になる）。passphrase は pinentry でリリース担当者が入力し、agent・CI は持たない。**ただし agent が担当者と同じ OS ユーザーで動くと、gpg-agent が passphrase を覚えている間は、担当者に見えないまま別の内容に署名できる** — 手順 4 の設定で塞ぐ |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
@@ -65,12 +65,27 @@ cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-re
 ### 4. 署名（リリース担当者の作業）
 
 ```bash
+cat SHA-256SUMS && shasum -a 256 -c SHA-256SUMS
 gpg --armor --detach-sign --local-user DEE52327184999342FC7C689C321AD4ED1A20918 --output SHA-256SUMS.asc SHA-256SUMS
+gpg --verify SHA-256SUMS.asc SHA-256SUMS
 gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-release-key.asc
 ```
 
+**passphrase の入力を、その 1 回の署名の承認として扱う。** gpg-agent は既定で passphrase を覚え
+（10 分、使うたびに延びて最長 2 時間）、pinentry は**何に**署名するかを示さない。覚えている間は、
+担当者と同じ OS ユーザーで動く agent が、担当者に見えないまま別の内容に署名できる。だから:
+
+- 署名のコマンドは、1 行目で中身を確かめた担当者が自分の端末で打つのが基本
+- agent にコマンドを打たせるなら、先に gpg-agent.conf に `ignore-cache-for-signing`（署名のたびに
+  passphrase を求める）と `no-allow-external-cache`（pinentry-mac の「キーチェーンに保存」を出さない）を
+  置いて `gpgconf --reload gpg-agent` する（設定するのは担当者）。署名の後に担当者が `gpg --verify` と
+  `SHA-256SUMS` の中身を確かめる
+- **鍵を CI に置かないこと。** 自動化できないことが署名の値打ちである
+
 公開鍵（`nemakiware-release-key.asc`）を Release に添え、**fingerprint は Release の本文とこの文書に書く**。
-受け取る側は fingerprint を、Release の添付物とは別の経路（この文書・リポジトリ）で照合してから鍵を信頼する。
+受け取る側は、添付の鍵を信頼する前に fingerprint を照合する。**ただしこの文書も Release と同じ
+リポジトリにある** — リポジトリに書ける者は両方を差し替えられるので、この照合が防ぐのはミラーや
+配布の経路での差し替えまで。GitHub の外の経路（鍵サーバ・組織の Web など）での公開は、まだしていない。
 
 **鍵を CI に置かないこと。** 自動化できないことが署名の値打ちである。
 

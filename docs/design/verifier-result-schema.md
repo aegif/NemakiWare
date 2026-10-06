@@ -78,7 +78,7 @@ schema は受け取る側が**自分の**道具で検証するためのもの。
 | 未決 | なぜここで決めないか |
 |---|---|
 | `detail` を契約に含めるか | **決定（2026-09-21）: 契約外。** 機械の分岐は `reasonCode` |
-| schema の**署名** | **決定: 今はしない**（鍵が無い）。**`SHA-256SUMS` に載せる**、まで |
+| schema の**署名** | **決定: schema 単体には署名しない。** **`SHA-256SUMS` に載せる**。2026-10-07 から `SHA-256SUMS` にリリース担当者が署名するので、schema はその署名で覆われる（[配布手順書](../operations/evidence-verifier-release.md)） |
 | `profile` を enum にするか | **決定: enum にしない。** 未知の profile は CLI が exit 4 で先に拒否する |
 
 ---
