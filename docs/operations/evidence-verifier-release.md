@@ -22,7 +22,7 @@ profile spec、vectors。
 | 成果物 | なぜ |
 |---|---|
 | **SBOM**（タグのもの） | ~~`cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。~~ **2026-09-23 から `tools/sbom/make-sbom.sh` で作れる**（Maven の全 module を aggregate した CycloneDX 1.6 — verifier の 2 module も入る — と、UI の npm 依存）。**ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**タグの SBOM はまだ無い** — この作業コピーで出したものは今の HEAD の依存であって、タグの依存ではない。リリース時に git worktree で切った tagged tree から作る。script は署名しない（下の detached signature） |
-| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵はリリース担当者の手元の RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。**署名はリリース担当者が 1 回ずつ承認して行う作業で、自動化してはならない**（鍵を CI に置くことと同義になる）。passphrase は pinentry でリリース担当者が入力し、agent・CI は持たない。**ただし担当者と同じ OS ユーザーで agent が動く機械では、gpg-agent が passphrase を覚えている間は誰が打ったコマンドでも署名でき、それを設定で塞いでも、同じユーザーの process は設定そのものを書き換えられる** — 手順 4 の前提を読むこと |
+| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵は RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名はリリース担当者が passphrase を入力して行い、自動化しない（鍵を CI に置かない）。**3.4.0 の署名はリリース担当者の開発機で行う** — その機械で担当者と同じ OS ユーザーとして 動くもの（agent・ビルドの道具・gpg と pinentry 自体）を信頼することが、この署名の前提になる（手順 4）。**残件**: 署名専用の機械か ハードウェアの鍵での署名、GitHub の外での鍵の公開 |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
@@ -71,35 +71,30 @@ gpg --verify SHA-256SUMS.asc SHA-256SUMS
 gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-release-key.asc
 ```
 
-**passphrase の入力を、その 1 回の署名の承認として扱う。** そう扱えるのは、次の 2 つを満たすときだけである。
-pinentry は**何に**署名するかを示さない。
+**この署名が言えるのは、「fingerprint `DEE5…0918` の鍵を使える環境が、この `SHA-256SUMS` に署名した」まで**
+である。誰が・どの機械で、の部分は次の事実に依る（3.4.0、2026-10-07）:
 
-1. **gpg-agent が passphrase を覚えていない。** 既定では覚える（10 分、使うたびに延びて最長 2 時間）。cache は
-   鍵ごとで、どの process が passphrase を入れたかを区別しないので、**誰がコマンドを打つかによらず**、
-   覚えている間は同じ OS ユーザーの process が担当者に見えないまま別の内容に署名できる。署名の前に
-   gpg-agent.conf に `ignore-cache-for-signing`（署名のたびに求める）と `no-allow-external-cache`
-   （pinentry-mac の「キーチェーンに保存」を出さない）を置いて `gpgconf --reload gpg-agent` する（設定するのは
-   担当者）。設定の無いまま署名したら、直後に `gpgconf --reload gpg-agent` で cache を捨て、キーチェーンには
-   保存しない
-2. **署名する機械で、担当者と同じ OS ユーザーで動く agent を信頼している。** 同じユーザーの process は
-   gpg-agent.conf も pinentry も書き換えられる。1 の設定が塞ぐのは cache を経由した署名までで、そういう
-   process は塞げない（担当者が待っている 1 回の prompt を、別の内容の署名に使うこともできる）。agent を
-   信頼しないなら、agent の動いていない OS ユーザーか機械で署名する
+- 署名はリリース担当者の開発機で、担当者が pinentry に passphrase を入力して行う。pinentry は**何に**署名するかを示さない
+- その機械では、agent（Claude Code）とビルドの道具（WAR のビルドの `npm install`、SBOM の `npx`）が担当者と同じ OS
+  ユーザーで動き、鍵もそのユーザーの `~/.gnupg` にある。gpg と pinentry-mac は同じユーザーが書き換えられる
+  `/opt/homebrew` にある
+- 同じユーザーで動くものは、gpg-agent が passphrase を覚えている間（既定で 10 分、使うたびに延びて最長 2 時間）は
+  prompt なしに署名でき、gpg・pinentry・gpg-agent の設定そのものも書き換えられる。**この鍵は git の commit の署名にも
+  設定されている**ので、commit が passphrase を cache に残す
 
-署名の後に担当者が `gpg --verify` と `SHA-256SUMS` の中身を確かめる。**想定外の pinentry や `gpg --verify` の
-食い違いは鍵の誤用の合図**で、そのときは gpg が鍵を作ったときに `~/.gnupg/openpgp-revocs.d/` に置いた失効
-証明書で鍵を失効させ、鍵を公開した先に失効を出す。
+したがって、この署名を信頼することは、その機械で同じユーザーとして動いていたものを信頼することでもある。
+gpg-agent.conf の `ignore-cache-for-signing` と `no-allow-external-cache` は cache を経由した署名の窓を狭めるが、
+同じユーザーの process には効かない。署名の後に担当者が `gpg --verify` と `SHA-256SUMS` の中身を確かめる。
+**より強い保証が要る版では、鍵を作るところから、署名専用の機械かハードウェアの鍵で行う**（残件）。
 
 **鍵を CI に置かないこと。** 自動化できないことが署名の値打ちである。
 
 公開鍵（`nemakiware-release-key.asc`）を Release に添え、**fingerprint は Release の本文とこの文書に書く**。
 受け取る側は、添付の鍵を信頼する前に、**Release の添付物とは別の経路で得た** fingerprint と照合する
-（同じ Release のページの本文と照合しても、鍵と本文を一緒に差し替えたミラーには一致してしまう）。
-**ただし fingerprint を載せているこの文書も Release と同じリポジトリにある** — リポジトリに書ける者は
-両方を差し替えられるので、この文書から得た fingerprint で防げるのは、ミラーや配布の経路での差し替えまで。
-GitHub の外の経路（鍵サーバ・組織の Web など）での公開は、まだしていない。
-
-**鍵を CI に置かないこと。** 自動化できないことが署名の値打ちである。
+（同じ Release のページの本文と照合しても、鍵と本文を一緒に差し替えたものには一致してしまう）。
+この文書から得た fingerprint で防げるのは、**GitHub の aegif/NemakiWare から読んだ場合に**、Release の添付物だけが
+差し替わった配布物まで。リポジトリごと写したミラーや、リポジトリに書ける者による差し替えは防げない。
+GitHub の外の経路（鍵サーバ・組織の Web など）での公開は、まだしていない（残件）。
 
 ---
 
