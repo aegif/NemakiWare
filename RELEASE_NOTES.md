@@ -15,22 +15,28 @@ only repository gotchas.
 `productVersion` に `3.3.0` を返していました。`repositories-default.yml` の `product.version` を
 3.3.0 のリリースで書いたまま、上げていなかったためです。
 
-- `productVersion` はビルドの版（`/core/rest/all/build-info` と同じ値）になります。
-- `repositories.yml` の `product.version` は読みません。書いてあれば起動時に WARN を出します。
+- `productVersion` はビルドの版（`/core/rest/all/build-info` と同じ値）になります。どちらも WAR の
+  `version.properties` から読み、読めない配備では `unknown` です。
+- `repositories.yml` の `product.version` は、値に関わらず読みません。書いてあれば起動時に 1 度 WARN を出します。
 - 3.4.0 以前の版を相手に版を確かめるときは、`/core/rest/all/build-info` を使ってください。
 
 ## setup が CouchDB に送る要求は、リダイレクトに従わなくなりました
 
 setup が CouchDB に送る要求のうち、admin のパスワード変更、設定の書き込み、`/apply` での
-データベースの作成と初期データの投入は、CouchDB の URL の先がリダイレクトを返すと、転送先へ
-要求を送り直していました。JDK 21 では PUT も本文ごと送り直します（Authorization ヘッダは宛先が
-変わると外れます）。setup の URL の検査は、その転送先を見ていません。
+データベースの作成と初期データの投入は、CouchDB の URL の先が同じプロトコルのままリダイレクトを
+返すと、転送先へ要求を送り直していました。JDK 21 では PUT も本文ごと送り直します（Authorization
+ヘッダは宛先が変わると外れます。プロトコルが変わるリダイレクト — http から https など — には
+もともと従いません）。setup の URL の検査は、その転送先を見ていません。
 
 - これらの要求は、ほかの setup の要求と同じくリダイレクトに従いません。リダイレクトはその要求の
   失敗として扱います。
-- 起動時のデータベースの初期化（`DatabasePreInitializer`）も同じです。設定した CouchDB の URL が
-  リダイレクトを返す構成（http から https へ転送するプロキシなど）では、起動時の作成と投入が
-  失敗するようになります。CouchDB を直接指してください。
+- 起動時のデータベースの初期化（`DatabasePreInitializer`）も同じです。影響を受けるのは、CouchDB の
+  ルートは応答するのに、データベースのパスだけが同じプロトコルのままリダイレクトを返す構成だけです。
+  ルートがリダイレクトを返す構成は、3.3.0 から起動時の確認でセットアップが必要と判定され、
+  この初期化は走りません。
+- admin のパスワード変更がどのリポジトリでもできなかったときの応答は、「admin の文書が見つからない」
+  ではなく「見つからない、または書き込みを拒まれた」と言い、リポジトリごとの結果（`results`）を
+  付けます。
 - 検査と接続の間に DNS の答えが変わる窓（R53）は、この修正では閉じていません。
 
 ---
