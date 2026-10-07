@@ -30,9 +30,12 @@ python3 tools/bench/cmis_bench.py --run --only create --label 3.3 --levels 8
 確かめてください。
 
 ```bash
-curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo" \
-  | python3 -c "import json,sys;print(list(json.load(sys.stdin).values())[0]['productVersion'])"
+curl -s "http://localhost:8080/core/rest/all/build-info"
 ```
+
+CMIS の `productVersion` では見分けられません — 3.3.0 のリリースで書いた値のまま、
+3.3.1 でも 3.4.0 でも `3.3.0` を返します（`docs/design/v3.4-release-readiness.md` §7）。
+`build-info` は Maven の版を返し、3.0.0-RC1 以後の版にはどれも在ります。
 
 ### 2. Solr イメージに古い索引が焼き込まれる
 

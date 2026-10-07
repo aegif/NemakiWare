@@ -77,7 +77,11 @@ internet-facing); **java/sensitive-log (144)** — verified across every site to
 log CMIS change tokens / ids / key-prefixes (metadata), with the only two
 credential-touching sites being intentional guarded one-time displays (MCP
 auto-generated password with opt-out, setup-token file-write-failure fallback);
-**java/user-controlled-bypass** — the authorization checks themselves;
+**java/user-controlled-bypass** — the authorization checks themselves, except
+the setup change-password site (#148, `SetupAdminResource`): that one is not an
+authorization check — CodeQL reads `CouchDbConfigWriter.basicAuth`, which only
+builds an outgoing header, as an auth method by its name. Its successor #1409
+stays **open** by owner decision (`docs/design/v3.4-release-readiness.md` §6);
 **java/xss** — output escaped via escapeForJavaScript; **polynomial-redos /
 client-side sanitization** — authenticated/size-bounded or server-authoritative;
 plus vendored JS (Solr admin webapp) and test-only findings.
