@@ -37,12 +37,14 @@ import {
 import { CMISService } from '../../services/cmis';
 import { Group, User } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 interface GroupManagementProps {
   repositoryId: string;
 }
 
 import { useAuth } from '../../contexts/AuthContext';
+import { PrincipalBatchModal } from '../PrincipalBatch/PrincipalBatchModal';
 
 /**
  * Detect circular reference in group hierarchy
@@ -99,6 +101,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [searchText, setSearchText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -144,7 +147,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('groupManagement.messages.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -261,7 +264,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('common.errors.permissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -296,7 +299,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
       } else if (error.status === 403) {
         errorMessage = t('groupManagement.messages.deletePermissionError');
       } else if (error.message) {
-        errorMessage = error.message;
+        errorMessage = withDetail(errorMessage, error);
       }
 
       message.error(errorMessage);
@@ -425,14 +428,26 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
         <h2 style={{ margin: 0 }}>
           <TeamOutlined /> {t('groupManagement.title')}
         </h2>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
-          {t('common.create')}
-        </Button>
+        <Space>
+          <Button onClick={() => setBatchOpen(true)} data-testid="principal-batch-open">
+            {t('principalBatch.open')}
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setModalVisible(true)}
+          >
+            {t('common.create')}
+          </Button>
+        </Space>
       </div>
+      <PrincipalBatchModal
+        open={batchOpen}
+        repositoryId={repositoryId}
+        kinds={['groups', 'memberships']}
+        onClose={() => setBatchOpen(false)}
+        onApplied={() => loadGroups(1, searchText)}
+      />
 
       <Input.Search
         placeholder={t('groupManagement.searchPlaceholder')}
@@ -454,7 +469,7 @@ export const GroupManagement: React.FC<GroupManagementProps> = ({ repositoryId }
           pageSize: pageSize,
           total: totalCount,
           showSizeChanger: false,
-          showTotal: (total) => t('common.totalItems', { total }),
+          showTotal: (total) => t('common.totalItems', { total, count: total }),
           onChange: (page) => loadGroups(page),
         }}
       />

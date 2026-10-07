@@ -97,15 +97,38 @@ public class Patch_WebAuthnCredentialViews extends AbstractNemakiPatch {
     @Override
     public boolean apply() {
         log.info("Applying patch: " + getName() + " (always-run, idempotent)");
-        applySystemPatch();
 
+        // The system stage is gated here too. The per-repository half was closed first and
+        // this line was left above it, so §61's claim that "the override's bypass was closed"
+        // covered one of the two halves. This patch's own system stage is a log line, so
+        // nothing changes today — but the override is a template, and the next one to copy
+        // it would inherit the hole.
         boolean allSucceeded = true;
+        if (!systemStageMayRun()) {
+            log.error("[patch=" + getName() + "] the SYSTEM stage was skipped: at least one"
+                    + " repository's views are not answering.");
+            allSucceeded = false;
+        } else {
+            applySystemPatch();
+        }
         for (String repositoryId : patchUtil.getRepositoryInfoMap().keys()) {
             // Skip archive repositories — patches are only for main repositories
             if (patchUtil.getRepositoryInfoMap().isArchiveRepository(repositoryId)) {
                 if (log.isDebugEnabled()) {
                     log.debug("[patch=" + getName() + "] Skipping archive repository: " + repositoryId);
                 }
+                continue;
+            }
+            // The gate, which this override used to skip entirely. "Always run, idempotent"
+            // is true of the VIEW work — views.has() is read from the design document — but
+            // not of the two lines below it: isApplied() is a view-based existence check and
+            // createPathHistory() writes under a generated id, which is exactly how bedroom
+            // ended up with two history rows for one patch name.
+            if (!patchUtil.cmisViewsAreAnswering(repositoryId)) {
+                log.error("[patch=" + getName() + ", repositoryId=" + repositoryId
+                        + "] skipped: the repository's views are not answering, so its patch"
+                        + " history cannot be read without risking a duplicate row.");
+                allSucceeded = false;
                 continue;
             }
             try {

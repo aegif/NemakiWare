@@ -79,6 +79,12 @@ public final class ReceiptSignatureVerifier {
      *
      * <p>Excludes {@code signature} and {@code signatureVerified}: a signature cannot cover
      * itself, and whether we checked it is our finding, not theirs.
+     *
+     * <p>Uses {@link CustodyReceipt#asReported()} rather than
+     * {@code verificationOutcome}: when a connector maps a receiver's vocabulary into ours
+     * (design §13.1), the far end signed ITS word, not our translation of it. Signing the
+     * mapped word would make every mapped receipt fail verification — which is the same
+     * defect, one layer along, as putting the raw word where the state machine reads it.
      */
     public static byte[] canonicalForm(CustodyReceipt receipt) {
         String joined = String.join("\n",
@@ -86,7 +92,7 @@ public final class ReceiptSignatureVerifier {
                 nullToEmpty(receipt.aipId()),
                 nullToEmpty(receipt.aipChecksum()),
                 nullToEmpty(receipt.sipDigest()),
-                nullToEmpty(receipt.verificationOutcome()),
+                nullToEmpty(receipt.asReported()),
                 nullToEmpty(receipt.receivingAgent()),
                 nullToEmpty(receipt.receivedAt()));
         return joined.getBytes(StandardCharsets.UTF_8);
@@ -142,8 +148,8 @@ public final class ReceiptSignatureVerifier {
 
     private static CustodyReceipt withVerified(CustodyReceipt receipt, boolean verified) {
         return new CustodyReceipt(receipt.submissionId(), receipt.aipId(), receipt.aipChecksum(),
-                receipt.sipDigest(), receipt.verificationOutcome(), receipt.receivingAgent(),
-                receipt.receivedAt(), receipt.signature(), verified);
+                receipt.sipDigest(), receipt.verificationOutcome(), receipt.reportedOutcome(),
+                receipt.receivingAgent(), receipt.receivedAt(), receipt.signature(), verified);
     }
 
     private static String nullToEmpty(String value) {

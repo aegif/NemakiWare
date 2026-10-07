@@ -61,6 +61,12 @@ paths = [
   # Legacy / suspended Ruby modules (not the shipped product).
   '''nemakishare/.*''',
   '''nemakiplay/.*''',
+  # Evidence profile v1 test vectors: SHA-256 digests of canonical documents
+  # ("docKeysSorted": "<64 hex>"), flagged as generic-api-key. The historical
+  # path is listed too because the PR-diff scan walks every commit in the range
+  # (PR #516: 3 hits at the old path in commit 67bf3f313).
+  '''docs/evidence-profile/v1/vectors/.*''',
+  '''core/src/test/resources/evidence/profile-v1-vectors\.json''',
 ]
 
 # Ubiquitous dev-default patterns (documented in CLAUDE.md as the local
@@ -72,4 +78,7 @@ regexes = [
   '''KEYCLOAK_ADMIN_PASSWORD["=: ]+admin''',
   # Commented-out example values in docker/core/nemakiware.properties.
   '''#\s*purview\.(basic\.password|client\.secret)=.*''',
+  # RODA's shipped demo credential, used against a local RODA in
+  # docs/operations/roda-round-trip-runbook.md (curl -u admin:roda). Not ours.
+  '''admin:roda''',
 ]

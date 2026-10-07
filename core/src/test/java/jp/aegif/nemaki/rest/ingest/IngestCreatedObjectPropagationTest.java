@@ -34,6 +34,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -83,6 +85,7 @@ class IngestCreatedObjectPropagationTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -90,6 +93,7 @@ class IngestCreatedObjectPropagationTest {
         connector.setSourceArchetype(archetype);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
 
         // any() for the content stream: note and mail imports supply one.
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
@@ -152,6 +156,76 @@ class IngestCreatedObjectPropagationTest {
                 "the mail entry point rebuilds the inner result before returning it, and the "
                         + "rebuild dropped this flag — so a message it had just created was "
                         + "reported to its caller as one that was already here");
+    }
+
+    @Test
+    @DisplayName("an unowned preserveOriginalEml flag does not create a raw .eml child")
+    void anUnownedPreserveFlagDoesNotCreateARawEmlChild() {
+        // execute() re-resolves an unowned leftover, then the mail wrapper called get()
+        // again and honoured THAT row's preserveOriginalEml. A review found the split.
+        wire(SourceArchetype.MESSAGE_CONTEXT);
+        ImportProfileDefinition unowned = new ImportProfileDefinition();
+        unowned.setProfileId("p1");
+        unowned.setEnabled(true);
+        unowned.setPreserveOriginalEml(true);
+        ImportProfileDefinition mine = new ImportProfileDefinition();
+        mine.setProfileId("p1");
+        mine.setEnabled(true);
+        mine.setTargetFolderId("folder-1");
+        mine.setRepositoryId("bedroom");
+        mine.setPreserveOriginalEml(false);
+        when(profileService.get("p1")).thenReturn(unowned);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(mine);
+
+        ExternalIngestRequest req = baseRequest("mail-1", "message.eml");
+        req.setSourceObjectType("message");
+        req.setMetadata(new LinkedHashMap<>(Map.of("mailboxId", "ishii@example.com")));
+        req.setContentStream(new java.io.ByteArrayInputStream(
+                ("From: otsuka@example.com\r\nTo: ishii@example.com\r\n"
+                        + "Subject: minutes\r\nMessage-ID: <m1@example.com>\r\n"
+                        + "Date: Mon, 1 Jul 2024 09:00:00 +0900\r\n\r\nbody\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        ExternalIngestResult result = service.executeMailImport(ctx(), req);
+
+        assertTrue(result.isSuccess(), "control: " + result.errors());
+        verify(objectService, times(1))
+                .createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                        any(), any(), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("a later unreadable profile does not silently skip raw .eml preservation")
+    void aLaterUnreadableProfileDoesNotSilentlySkipRawEml() {
+        wire(SourceArchetype.MESSAGE_CONTEXT);
+        ImportProfileDefinition mine = new ImportProfileDefinition();
+        mine.setProfileId("p1");
+        mine.setEnabled(true);
+        mine.setTargetFolderId("folder-1");
+        mine.setRepositoryId("bedroom");
+        mine.setPreserveOriginalEml(true);
+        when(profileService.getForRepository("p1", "bedroom"))
+                .thenReturn(mine, mine)
+                .thenThrow(new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "walk failed"));
+
+        ExternalIngestRequest req = baseRequest("mail-1", "message.eml");
+        req.setSourceObjectType("message");
+        req.setMetadata(new LinkedHashMap<>(Map.of("mailboxId", "ishii@example.com")));
+        req.setContentStream(new java.io.ByteArrayInputStream(
+                ("From: otsuka@example.com\r\nTo: ishii@example.com\r\n"
+                        + "Subject: minutes\r\nMessage-ID: <m1@example.com>\r\n"
+                        + "Date: Mon, 1 Jul 2024 09:00:00 +0900\r\n\r\nbody\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        ExternalIngestResult result = service.executeMailImport(ctx(), req);
+
+        assertTrue(result.warnings() != null && result.warnings().stream()
+                        .anyMatch(w -> w.contains("could not be decided")),
+                "a failed re-read skipped raw .eml with no warning: " + result.warnings());
+        verify(objectService, times(1))
+                .createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
+                        any(), any(), isNull(), isNull(), isNull(), isNull());
     }
 
     @Test

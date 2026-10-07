@@ -281,6 +281,30 @@ class ImportProfileOwnershipTransferTest {
     }
 
     @Test
+    void adminToDelegated_connectorRowCouldNotBeRead_is503NotUnknown() {
+        // "Unknown connector" is a statement about the database, written into the audit
+        // trail, from a read that answers null for a row it could not show as readily as for
+        // one that is not there. The sibling check in the same service (validateSchedulerParams)
+        // already split the two; a review found this one left behind, on a path that runs for
+        // every non-admin create and update.
+        adminCtx();
+        when(importProfileDefinitionService.get(PROF)).thenReturn(adminOwnedProfile());
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolderAsUser(NEW_OWNER, REPO, FOLDER))
+                .thenReturn(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        ResponseEntity<Map<String, Object>> res = controller.transferOwnership(
+                PROF, Map.of("mode", "delegated", "createdByUserId", NEW_OWNER));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a connector row that exists but could not be read was called unknown");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"),
+                "the audit trail recorded a fact the read never established");
+    }
+
+    @Test
     void adminToDelegated_emptyAllowedConnectorIds_isRefused() {
         adminCtx();
         ImportProfileDefinition p = adminOwnedProfile();
@@ -471,5 +495,63 @@ class ImportProfileOwnershipTransferTest {
         assertEquals("delegated", details.get("transferTo"));
         assertEquals(NEW_OWNER, details.get("newOwnerUserId"));
         assertEquals(FOLDER, details.get("targetFolderId"));
+    }
+
+    @Test
+    void create_connectorRowCouldNotBeRead_is503NotUnknown_throughTheEndpoint() {
+        // Through the ENDPOINT, not the helper. The first version of this lock invoked
+        // validateDelegatedConnectors by reflection, so if the create path stopped calling it
+        // the lock and its control both stayed green — the project's own
+        // "sabotage the call site, not the helper" trap, inside the fix written to close an
+        // instance of it. A review named it.
+        CallContext ctx = nonAdminCtx();
+        ImportProfileDefinition def = new ImportProfileDefinition();
+        def.setProfileId("p-new");
+        def.setRepositoryId(REPO);
+        def.setTargetFolderId(FOLDER);
+        def.setAllowedConnectorIds(java.util.List.of(CONN));
+        when(ingestAuthorizationService.resolveFolderId(REPO, FOLDER, null)).thenReturn(FOLDER);
+        when(ingestAuthorizationService.canManageProfileForFolder(ctx, REPO, FOLDER))
+                .thenReturn(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        // assertDoesNotThrow: without the scope check the create runs on into the service and
+        // throws, which the control runner scores as "harness broken" rather than a firing.
+        ResponseEntity<Map<String, Object>> res = org.junit.jupiter.api.Assertions
+                .assertDoesNotThrow(() -> controller.create(def),
+                        "the create ran past the connector scope check");
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a connector row that exists and could not be read was called unknown on the "
+                        + "path that runs for every non-admin create");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"));
+    }
+
+    @Test
+    void createAndUpdate_connectorRowCouldNotBeRead_is503NotUnknown() throws Exception {
+        // The OTHER half of the same split, and the one that runs most: every non-admin
+        // create and update goes through validateDelegatedConnectors. The control for the
+        // transfer site anchors 20-space-indented code and cannot reach this one, so the
+        // ledger's "measured" covered half of what it named. A review found the gap.
+        adminCtx();
+        ImportProfileDefinition def = adminOwnedProfile();
+        def.setDelegated(true);
+        when(connectorDefinitionService.get(CONN)).thenReturn(null);
+        when(connectorDefinitionService.existsIndexFree(CONN)).thenReturn(true);
+
+        java.lang.reflect.Method validate = ImportProfileDefinitionController.class
+                .getDeclaredMethod("validateDelegatedConnectors",
+                        org.apache.chemistry.opencmis.commons.server.CallContext.class,
+                        String.class, String.class, ImportProfileDefinition.class);
+        validate.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        ResponseEntity<Map<String, Object>> res = (ResponseEntity<Map<String, Object>>)
+                validate.invoke(controller, null, REPO, FOLDER, def);
+
+        assertNotNull(res, "a connector row that could not be read was accepted");
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, res.getStatusCode(),
+                "a row that exists and could not be read was called unknown");
+        assertNotEquals("UNKNOWN_CONNECTOR", res.getBody().get("denialReason"));
     }
 }

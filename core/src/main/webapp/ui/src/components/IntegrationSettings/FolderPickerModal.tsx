@@ -3,6 +3,7 @@ import { Alert, Modal, Spin, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { FolderOutlined, FolderOpenOutlined, CheckCircleTwoTone, CloseCircleTwoTone } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { CMISService } from '../../services/cmis';
 import { listConnectorSummary } from '../../services/externalIngest';
 
@@ -100,7 +101,7 @@ export function FolderPickerModal({
         }]);
       } catch (err) {
         if (cancelled) return;
-        setRootLoadError(err instanceof Error ? err.message : 'load failed');
+        setRootLoadError(withDetail(t('folderPicker.loadFailed'), err));
       } finally {
         if (!cancelled) setRootLoading(false);
       }
@@ -141,7 +142,7 @@ export function FolderPickerModal({
       // a friendly Japanese/English line; the underlying status is
       // available in the dev console for support.
       setProbeError(err instanceof Error
-        ? t('folderPicker.noPermission', { defaultValue: 'このフォルダに cmis:all 権限がありません。' })
+        ? t('folderPicker.noPermission')
         : null);
     }
   };
@@ -150,12 +151,12 @@ export function FolderPickerModal({
 
   return (
     <Modal
-      title={t('folderPicker.title', { defaultValue: '対象フォルダを選択' })}
+      title={t('folderPicker.title')}
       open={open}
       onCancel={onCancel}
       onOk={() => selectedId && onSelect(selectedId, selectedName ?? undefined)}
       okButtonProps={{ disabled: !canConfirm }}
-      okText={t('common.select', { defaultValue: '選択' })}
+      okText={t('common.select')}
       cancelText={t('common.cancel')}
       width={600}
       destroyOnClose
@@ -181,20 +182,20 @@ export function FolderPickerModal({
           />
           {selectedId && (
             <div style={{ marginTop: 12 }}>
-              <Text strong>{t('folderPicker.selected', { defaultValue: '選択中' })}:</Text>{' '}
+              <Text strong>{t('folderPicker.selected')}:</Text>{' '}
               <Text code>{selectedName}</Text> <Text type="secondary">({selectedId})</Text>
               <div style={{ marginTop: 8 }}>
                 {accessProbe === 'checking' && <Spin size="small" />}
                 {accessProbe === 'ok' && (
                   <span style={{ color: '#52c41a' }}>
                     <CheckCircleTwoTone twoToneColor="#52c41a" />{' '}
-                    {t('folderPicker.permissionOk', { defaultValue: 'このフォルダの管理権限があります' })}
+                    {t('folderPicker.permissionOk')}
                   </span>
                 )}
                 {accessProbe === 'denied' && (
                   <span style={{ color: '#ff4d4f' }}>
                     <CloseCircleTwoTone twoToneColor="#ff4d4f" />{' '}
-                    {probeError ?? t('folderPicker.noPermission', { defaultValue: 'このフォルダに cmis:all 権限がありません。' })}
+                    {probeError ?? t('folderPicker.noPermission')}
                   </span>
                 )}
               </div>

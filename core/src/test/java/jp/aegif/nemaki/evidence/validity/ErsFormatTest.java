@@ -80,9 +80,28 @@ class ErsFormatTest {
         // part that is still narrower than the name: WHAT the record is about, and what nobody
         // checked.
         String limits = String.valueOf(body.get("renewalFormatLimits"));
-        assertTrue(limits.contains("checkpoint hash"),
+        // The INTENT, not the phrasing. This asserted contains("checkpoint hash") -- and
+        // "checkpoint hash" is the exact wording p2-3 §8 records as WRONG: calling the hash the
+        // data object produced records no standard tool could read. So the lock was pinning the
+        // sentence it should have been rejecting, and correcting the shipped text made the test
+        // go red. A lock written against the words you just typed keeps whatever was typed.
+        assertTrue(limits.contains("checkpoint") && limits.contains("not a document"),
                 "the disclaimer does not say the record is about a checkpoint rather than a "
                         + "document, which is the assumption the name invites: " + limits);
+        // Both withdrawn readings are forbidden by name, because a lock that only forbade the
+        // first let the second ship (R70): "the checkpoint hash" was replaced by "the
+        // checkpoint's canonical bytes", and NO TOKEN IN THIS SYSTEM COVERS EITHER. What a
+        // token covers is what was anchored, and that is the merkleRoot.
+        assertFalse(limits.contains("DATA OBJECT is a checkpoint hash"),
+                "the disclaimer calls the checkpoint's HASH the data object: " + limits);
+        assertFalse(limits.contains("canonical serialisation of a checkpoint"),
+                "the disclaimer calls the checkpoint's canonical bytes the data object. No "
+                        + "token covers that value either — the anchor is over the merkleRoot "
+                        + "(p2-3 §8, R70): " + limits);
+        assertTrue(limits.contains("MERKLE ROOT"),
+                "the disclaimer no longer names what the record's data object hash actually is, "
+                        + "so a receiver following it compares against something no token in "
+                        + "this system covers: " + limits);
         assertTrue(limits.contains("not a claim of conformance"), limits);
         assertTrue(limits.contains("signature and certificate are not verified"), limits);
         assertFalse(limits.contains("does NOT generate"),
@@ -115,11 +134,30 @@ class ErsFormatTest {
     }
 
     @Test
-    @DisplayName("the placement in a CSIP package is decided in one place")
+    @DisplayName("the placement in a CSIP package is decided in one place, and it is not PREMIS's")
     void thePlacementIsDecidedOnce() {
         // Otherwise the exporter decides it again, differently, on the day it is implemented.
-        assertEquals("metadata/preservation", ErsFormat.CSIP_LOCATION,
-                "an evidence record is preservation metadata; descriptive metadata and "
-                        + "documentation are different sections of a CSIP package");
+        //
+        // This said metadata/preservation until 2026-08-27, with the reasoning "an evidence
+        // record is preservation metadata" -- an OAIS category mapped onto a CSIP directory.
+        //
+        // The FOLDER was never the problem. What decides the folder is the commons-ip2 call, and
+        // addPreservationMetadata declares the file in <amdSec><digiprovMD> -- the slot CSIP32
+        // names for PREMIS. RODA 6.3.0 reads that slot into SIP.getPreservationMetadata() and
+        // pushes every entry through PremisV3Utils.binaryToGenericPremis, so a DER there fails
+        // the WHOLE ingest. Measured with controls; the same record via addOtherMetadata ingests
+        // and survives. Note CSIP32's level is SHOULD, so this is a departure from its intent,
+        // not a requirement violation -- see ErsFormat's javadoc.
+        //
+        // This constant only DESCRIBES the outcome. The assertion that guards the cause is in
+        // ErsIsInTheSipAtItsDeclaredPlaceTest, over the parsed SIP's metadata lists.
+        assertEquals("metadata/other", ErsFormat.CSIP_LOCATION,
+                "the evidence record's declared place changed. If it went back to "
+                        + "metadata/preservation, check the add*Metadata call too: declaring a "
+                        + "DER blob in <digiprovMD> makes at least one receiver reject the "
+                        + "ENTIRE package (docs/design/p3-4-custody-transfer.md §11)");
+        // No assertNotEquals("metadata/preservation", ...) here: the assertEquals above already
+        // implies it, so it could never fail on its own. An earlier version of this test added
+        // one and the commit message called it extra discrimination -- it was not.
     }
 }

@@ -94,7 +94,45 @@ public record EvidenceLedgerEntry(
          * gap so the chain appears continuous is the one outcome that must not happen
          * (design §5).
          */
-        GENESIS
+        GENESIS,
+        /**
+         * The bytes of one version of one document, as they stood when this was written (E1).
+         *
+         * <p>Its own kind, and not folded into {@link #CAPTURE_COMPLETED}, because that entry
+         * commits to the METADATA of an ingest — {@code captureDigest} hashes the intent and the
+         * applied fields and never touches the document's bytes. A reader who saw one kind for
+         * both would read "this ingest happened with these fields" as "these bytes are the ones
+         * that were stored", which is the gap E1 exists to close.
+         *
+         * <p>{@code payloadDigest} is the digest of a {@link RecordContentStatementV1}, not of
+         * the content. The statement is what carries the version key, the length and the
+         * commitment kind, and hashing it rather than the bytes is what lets a third party check
+         * that the entry and the package's statement are about the same version — the bytes
+         * alone would match any document that happens to have the same content.
+         */
+        RECORD_CONTENT_STATE,
+        /**
+         * Something happened to the bytes of one version of one document: they were copied to
+         * the archive, moved to cold storage, destroyed, or removed from the version (Phase 3's
+         * remaining paths, W10 / W12 / W13 / W14 / deleteContentStream).
+         *
+         * <p>Its own kind, and not a nullable {@code contentDigest} on
+         * {@link #RECORD_CONTENT_STATE}, because the two are statements about different
+         * subjects: "this version's bytes are these" and "this happened to this version's
+         * bytes". Folded together, every reader of {@code contentDigest} would decide for
+         * itself whether null means "the digest is broken" or "the bytes are gone" — one
+         * claim with as many exits as there are readers.
+         *
+         * <p>{@code payloadDigest} is the digest of a {@link RecordContentTransitionV1}. The
+         * package ships it under the same file name as a state statement; the reader tells
+         * them apart by THIS value in {@code ledger-entry.json}, which is the discriminator
+         * the ledger already had.
+         *
+         * <p>Appended after {@link #RECORD_CONTENT_STATE}: the name is what is hashed and
+         * shipped (spec §6), never the ordinal, but a value inserted in the middle would still
+         * move every later ordinal for a reader that persisted one.
+         */
+        RECORD_CONTENT_TRANSITION
     }
 
     public EvidenceLedgerEntry {

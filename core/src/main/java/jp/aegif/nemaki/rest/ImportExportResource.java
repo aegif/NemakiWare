@@ -800,12 +800,36 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                    // close() calls finish(), which writes the ZIP central directory — so
+                    // with try-with-resources the client received a 200 and an archive that
+                    // OPENS, with the last entry silently truncated. A review measured it:
+                    // the "no central directory" this refusal was documented to produce only
+                    // held because the response had not been committed yet (a one-document
+                    // export fits the container buffer).
+                    //
+                    // Leaving it unclosed on the refusal path fixed that and leaked the
+                    // deflater — a second review caught THAT. Both properties are wanted, so
+                    // the archive is always closed, and on the refusal path it is closed
+                    // into a stream that has stopped forwarding: the directory is produced
+                    // and discarded, the deflater is freed, and the client's response ends
+                    // where the failure happened.
+                    jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream sink =
+                            new jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream(output);
+                    ZipOutputStream zos = new ZipOutputStream(sink);
+                    try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
                             collectCustomTypeIds(repositoryId, folder, customTypeIds);
                         } catch (Exception e) {
-                            log.warn("Failed to collect custom type definitions: " + e.getMessage(), e);
+                            // Warned and carried on: the walk that decides WHICH type
+                            // definitions the archive needs failed, so .nemaki-types/ was
+                            // written from a short list — and the package still unpacked.
+                            // The archive is the response body; an aborted stream is the only
+                            // way it can say "incomplete".
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the custom types used by this folder could not be"
+                                            + " collected, so the archive's type definitions"
+                                            + " would be incomplete", e);
                         }
 
                         Set<String> exportedObjectIds = new HashSet<>();
@@ -817,16 +841,25 @@ public class ImportExportResource extends ResourceBase {
                         try {
                             Set<String> relTypeIds = zipExporter.collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
                             customTypeIds.addAll(relTypeIds);
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the relationships between the exported objects could not"
+                                            + " be written, so the archive would say they have"
+                                            + " none", e);
                         }
 
                         try {
                             if (!customTypeIds.isEmpty()) {
                                 zipExporter.exportTypeDefinitions(repositoryId, customTypeIds, zos);
                             }
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the type definitions this archive refers to could not be"
+                                            + " written; the importer cannot restore it", e);
                         }
 
                         // The artifact exists only once the ZIP central directory is written —
@@ -859,7 +892,13 @@ public class ImportExportResource extends ResourceBase {
                             audit.logOperation(AuditOperation.EXPORT_EXECUTE, repositoryId,
                                     exportUsername, folderId, true, null);
                         }
+                        zos.close();
                     } catch (Exception e) {
+                        // Stop forwarding FIRST, then close: the close writes the central
+                        // directory into the discard, so the deflater is freed and the
+                        // client still gets a stream that ends without its directory.
+                        sink.stopForwarding();
+                        closeQuietly(zos);
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         AuditLogger audit = getAuditLogger();
                         if (audit != null) {
@@ -967,7 +1006,23 @@ public class ImportExportResource extends ResourceBase {
             StreamingOutput streamingOutput = new StreamingOutput() {
                 @Override
                 public void write(OutputStream output) throws IOException {
-                    try (ZipOutputStream zos = new ZipOutputStream(output)) {
+                    // close() calls finish(), which writes the ZIP central directory — so
+                    // with try-with-resources the client received a 200 and an archive that
+                    // OPENS, with the last entry silently truncated. A review measured it:
+                    // the "no central directory" this refusal was documented to produce only
+                    // held because the response had not been committed yet (a one-document
+                    // export fits the container buffer).
+                    //
+                    // Leaving it unclosed on the refusal path fixed that and leaked the
+                    // deflater — a second review caught THAT. Both properties are wanted, so
+                    // the archive is always closed, and on the refusal path it is closed
+                    // into a stream that has stopped forwarding: the directory is produced
+                    // and discarded, the deflater is freed, and the client's response ends
+                    // where the failure happened.
+                    jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream sink =
+                            new jp.aegif.nemaki.rest.importexport.ImportExportUtils.DiscardableOutputStream(output);
+                    ZipOutputStream zos = new ZipOutputStream(sink);
+                    try {
                         Set<String> customTypeIds = new HashSet<>();
                         try {
                             for (Content c : contents) {
@@ -981,7 +1036,13 @@ public class ImportExportResource extends ResourceBase {
                                 }
                             }
                         } catch (Exception e) {
-                            log.warn("Failed to collect custom type definitions: " + e.getMessage(), e);
+                            // The objects-export sibling of the folder-export refusal above.
+                            // Fixed one and left the other, which is the shape this batch has
+                            // spent five rounds on; the control run is what showed it.
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the custom types used by the selected objects could not"
+                                            + " be collected, so the archive's type"
+                                            + " definitions would be incomplete", e);
                         }
 
                         ContentService cs = getContentService();
@@ -1013,16 +1074,25 @@ public class ImportExportResource extends ResourceBase {
                         try {
                             Set<String> relTypeIds = zipExporter.collectAndExportRelationships(repositoryId, exportedObjectIds, zos, callContext);
                             customTypeIds.addAll(relTypeIds);
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export relationships: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the relationships between the exported objects could not"
+                                            + " be written, so the archive would say they have"
+                                            + " none", e);
                         }
 
                         try {
                             if (!customTypeIds.isEmpty()) {
                                 zipExporter.exportTypeDefinitions(repositoryId, customTypeIds, zos);
                             }
+                        } catch (ZipExporter.ExportRefusedException e) {
+                            throw e;
                         } catch (Exception e) {
-                            log.warn("Failed to export type definitions: " + e.getMessage(), e);
+                            throw new ZipExporter.ExportRefusedException(
+                                    "the type definitions this archive refers to could not be"
+                                            + " written; the importer cannot restore it", e);
                         }
 
                         // The artifact exists only once the ZIP central directory is written.
@@ -1050,7 +1120,10 @@ public class ImportExportResource extends ResourceBase {
                                         java.time.Instant.now().toString());
                             }, "repo=" + repositoryId + " op=" + lineageOperationId + " type=EXPORT_SELECTED_OBJECTS");
                         }
+                        zos.close();
                     } catch (Exception e) {
+                        sink.stopForwarding();
+                        closeQuietly(zos);
                         log.error("Export streaming failed: " + e.getMessage(), e);
                         throw new IOException("Export failed: " + e.getMessage(), e);
                     }
@@ -1417,6 +1490,21 @@ public class ImportExportResource extends ResourceBase {
     }
 
     // ========== Utility ==========
+
+    /**
+     * Closes a refused archive without letting the close itself replace the refusal.
+     *
+     * <p>Called only after the sink has stopped forwarding, so what this frees is the native
+     * deflater and what it writes goes nowhere.
+     */
+    private static void closeQuietly(java.io.Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // The refusal is the story; a failure to close the discarded wrapper is not.
+        }
+    }
+
 
     private CallContext createCallContext(HttpServletRequest request, String repositoryId) {
         CallContext filterContext = (CallContext) request.getAttribute("CallContext");

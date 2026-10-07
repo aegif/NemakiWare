@@ -47,7 +47,8 @@
     "importing": "Importing...",
     "uploading": "Uploading...",
     "total": "Total: {{count}} items",
-    "items": "{{count}} items",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items",
     "moreResults": "More results available",
     "unknownError": "Unknown error",
     "beta": "Beta",
@@ -79,12 +80,23 @@
       "authError": "Authentication error: Please log in again",
       "permissionError": "Permission error: You do not have permission for this operation",
       "navigationFailed": "Navigation failed",
-      "details": "Details: {{details}}"
+      "details": "Details: {{details}}",
+      "withDetail": "{{message}} (details: {{detail}})"
     },
     "confirmDelete": "Delete this {{item}}?",
-    "totalItems": "Total {{total}} items",
+    "totalItems_one": "Total {{total}} item",
+    "totalItems_other": "Total {{total}} items",
     "copyFailed": "Copy failed",
-    "noData": "No data"
+    "noData": "No data",
+    "booleanTrue": "Yes (true)",
+    "booleanFalse": "No (false)",
+    "idWithValue": "(ID: {{id}})",
+    "durationMs": "{{value}}ms",
+    "kilobytes": "{{value}} KB",
+    "coreLabel": "Core:",
+    "uiLabel": "UI:",
+    "adminSuffix": " [Admin]",
+    "id": "ID"
   },
   "navigation": {
     "home": "Home",
@@ -105,7 +117,8 @@
     "rssManagement": "RSS Token Management",
     "accountSettings": "Account Settings",
     "lineageJournalTitle": "Lineage Journal",
-    "help": "Help"
+    "help": "Help",
+    "evidenceAnchoring": "Evidence and time-stamping"
   },
   "help": {
     "title": "NemakiWare Help",
@@ -256,7 +269,8 @@
       "pkDone": "Done",
       "passkeyReq": "Passkeys are only available in HTTPS environments (or localhost). WebAuthn must be enabled in the server settings.",
       "langTitle": "Language Switching",
-      "langDesc": "Switch between Japanese and English using the language selector in the upper right corner. The setting is saved in the browser and persisted across sessions."
+      "langDesc": "Switch between Japanese and English using the language selector in the upper right corner. The setting is saved in the browser and persisted across sessions.",
+      "uploadFormatsOffice": "PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx)"
     },
     "admin": {
       "usersTitle": "User Management",
@@ -406,7 +420,7 @@
       "ingestJobManagement": "Job Management & Checkpoints",
       "ingestJobManagementDesc": "A job record is created for each scheduler execution, with progress tracked in real-time.",
       "ingestJobStatus": "Job Status",
-      "ingestJobStatusDesc": "RUNNING: In progress (monitored via heartbeat). COMPLETED: Successfully finished. PARTIAL: Some succeeded, some failed. FAILED: All items failed. Fetch timeout (default 30 minutes, configurable via ingest.scheduler.fetchTimeoutMinutes) interrupts the thread and marks the job FAILED. Consecutive connector failures trigger the circuit breaker, skipping until the next cycle.",
+      "ingestJobStatusDesc": "RUNNING: In progress (monitored via heartbeat). COMPLETED: Finished without failures. NOT a statement that the run saw the whole source — only the Notion connector reports truncation today, so the others record COMPLETED even when they stopped at a limit. PARTIAL: Either some items failed, OR nothing failed but the run did not see the whole source (it stopped at a limit) — the reason is on the status badge and failed stays 0. FAILED: All items failed. Fetch timeout (default 30 minutes, configurable via ingest.scheduler.fetchTimeoutMinutes) interrupts the thread and marks the job FAILED. Consecutive connector failures trigger the circuit breaker, skipping until the next cycle.",
       "ingestCheckpoint": "Checkpoint",
       "ingestCheckpointDesc": "Remembers the last successfully ingested position for each profile. Next execution ingests only from this position. Checkpoints vary by adapter (Gmail: date, Slack: message ts, IMAP: UID, etc.). Checkpoints can be reset via the admin API for full re-ingestion.",
       "ingestContentHash": "Content Hash",
@@ -558,8 +572,45 @@
       "mcpUsageSimilarDesc": "Ask \"Find documents related to this contract\" and it will use nemakiware_similar_documents to search for semantically similar documents (when RAG is enabled).",
       "mcpRagNote": "About RAG Search",
       "mcpRagNoteDesc": "nemakiware_rag_search and nemakiware_similar_documents always appear in the tool list, but executing them when RAG (vector search) is not enabled results in a \"Vector search is not enabled\" error. When RAG is disabled, use nemakiware_search (CMIS SQL) instead.",
-      "toggleNote": "Some admin features below may be disabled by server configuration (feature toggles). Features not shown in the menu are not available in your environment."
-    }
+      "toggleNote": "Some admin features below may be disabled by server configuration (feature toggles). Features not shown in the menu are not available in your environment.",
+      "mcpOtherUrlValue": "http://<{{host}}>:8080/core/mcp/message",
+      "mcpOtherAuthHeaderValue": "Authorization: Basic <base64(username:password)>",
+      "ingestDelegationOpsAuditQuery": "# Profiles created under delegation\ngrep '\"operation\":\"externalProfileCreated\"' audit.log \\\n  | jq 'select(.details.delegated == true)'\n\n# Denial reasons, counted (last 24h)\njq -r 'select(.details.denialReason) | .details.denialReason' audit.log \\\n  | sort | uniq -c | sort -nr\n\n# Attempts at folder-swap escalation\njq 'select(.details.denialReason == \"CMIS_ALL_REQUIRED_NEW\")' audit.log",
+      "ingestDelegation": "Delegation to folder owners",
+      "ingestDelegationField1": "delegated (default false)",
+      "ingestDelegationField1Desc": "Opts a connector into delegation. While false it is admin-only. Toggle it per connector on the connector screen.",
+      "ingestDelegationField2": "allowedFolderIds",
+      "ingestDelegationField2Desc": "The folder IDs delegated to. Delegation reaches the folders under them too (decided by folder ID and the parent chain, not a path prefix, so it survives rename / move). Left empty with delegateAllFolders=false it means \"no delegation\" — on purpose, so a missed setting never delegates widely.",
+      "ingestDelegationField3": "delegateAllFolders (default false)",
+      "ingestDelegationField3Desc": "An explicit flag that allows delegation across the whole repository. The credential then reaches every folder, so turn it on only when it is really needed.",
+      "ingestDelegationField4": "allowedPrincipalIds",
+      "ingestDelegationField4Desc": "Narrows the users by user ID and group ID (groups expanded by PrincipalService, fail-closed). Left empty there is no principal restriction (the folder restriction only).",
+      "ingestDelegationIntro": "Within the scope an administrator explicitly allows, managing manual import profiles can be delegated to folder owners (holders of cmis:all). Scheduled imports, creating connectors and editing admin-owned profiles stay admin-only.",
+      "ingestDelegationLimits": "Limits in this release",
+      "ingestDelegationLimitsDesc": "Profiles created by non-admins cannot use scheduler / defaultProfile / targetFolderOverride; if those are needed, an administrator creates the profile on their behalf. If a delegated connector is later disabled (delegated=false), existing profiles are refused at run time and rejected by the TOCTOU check on the next PUT. See docs/design/connector-delegation.md.",
+      "ingestDelegationOps": "Operating delegation",
+      "ingestDelegationOpsAudit": "Example audit queries",
+      "ingestDelegationOpsIntro": "The typical flow from an administrator delegating one connector to auditing and revoking it.",
+      "ingestDelegationOpsStep1": "Create and commit the connector",
+      "ingestDelegationOpsStep1Desc": "Create the connector as usual, set credentialRef / endpoint / authType and save. delegated can stay at its initial false — it can be enabled later.",
+      "ingestDelegationOpsStep2": "Choose the scope and enable delegation",
+      "ingestDelegationOpsStep2Desc": "On the connector's edit screen turn on \"Enable delegation\" and give at least one folder ID in allowedFolderIds. Several folders are allowed, and folders under them are included. Turn on delegateAllFolders=true only to open it to the whole repository (the credential then reaches every folder — wide delegation).",
+      "ingestDelegationOpsStep3": "Narrow the principals (optional)",
+      "ingestDelegationOpsStep3Desc": "Left empty, allowedPrincipalIds delegates to any user with cmis:all. List usernames / group IDs only to narrow it to particular users or groups.",
+      "ingestDelegationOpsStep4": "Tell the delegated users",
+      "ingestDelegationOpsStep4Desc": "Tell the folder owners they can create profiles from the \"Integration Settings → Import Profiles\" tab. The connector ID is shown in the UI's selector through the /summary endpoint. A delegated profile requires targetFolderId and hides the path field (so the picker, the audit and the cache key all use the one ID).",
+      "ingestDelegationOpsStep5": "Check usage in the audit log",
+      "ingestDelegationOpsStep5Desc": "Filter audit.log by operation=externalProfileCreated / externalIngest; the delegated users' activity is in the records with details.delegated=true. Failed events carry details.denialReason, so the common causes can be told apart mechanically.",
+      "ingestDelegationOpsStep6": "Revoke the delegation",
+      "ingestDelegationOpsStep6Desc": "Set delegated=false on the connector, remove the folder from allowedFolderIds, or remove the user/group from allowedPrincipalIds — revoked at once. Existing delegated profiles remain but are refused at run time (re-evaluated on every run) and rejected by the TOCTOU check on the next PUT. To delete the profile records themselves, an administrator DELETEs them.",
+      "ingestDelegationRunbook": "Operating flow",
+      "ingestDelegationRunbook1": "An administrator creates the connector and, as needed, sets delegated=true + allowedFolderIds (or delegateAllFolders=true) + allowedPrincipalIds",
+      "ingestDelegationRunbook2": "A folder owner (holder of cmis:all) who opens \"Integration Settings\" sees only the import-profiles and manual-ingest tabs",
+      "ingestDelegationRunbook3": "When creating a profile, only connectors delegated for its targetFolderId are offered (through /connectors/summary)",
+      "ingestDelegationRunbook4": "A saved profile is fixed at delegated=true / schedulerEnabled=false / defaultProfile=false",
+      "ingestDelegationRunbook5": "cmis:all and the connector's delegation are re-evaluated at run time too. targetFolderOverride is 403 for non-admins"
+    },
+    "imageZoom": "Click to enlarge"
   },
   "purviewManagement": {
     "title": "Microsoft Purview Management",
@@ -584,7 +635,8 @@
       "applyRequired": "Purview schema apply is required",
       "applyRequiredDescription": "Apply type definitions before running repository sync jobs.",
       "deadLettersPresent": "Dead letters are present",
-      "deadLettersPresentDescription": "{{count}} retry candidates are waiting."
+      "deadLettersPresentDescription_one": "{{count}} retry candidate is waiting.",
+      "deadLettersPresentDescription_other": "{{count}} retry candidates are waiting."
     },
     "latestAction": {
       "title": "Latest Action"
@@ -618,7 +670,8 @@
     "governanceLookup": {
       "objectIdPlaceholder": "Enter object IDs separated by commas or new lines",
       "failed": "Failed to load governance metadata",
-      "resultSummary": "Loaded {{count}} objects ({{successCount}} successful)",
+      "resultSummary_one": "Loaded {{count}} object ({{successCount}} successful)",
+      "resultSummary_other": "Loaded {{count}} objects ({{successCount}} successful)",
       "objectId": "Object ID",
       "status": "Status",
       "qualifiedName": "Qualified Name",
@@ -699,7 +752,12 @@
       "containmentReconciliationStarted": "Started containment reconciliation",
       "deleteResolutionStarted": "Started delete resolution",
       "retryFailedStarted": "Started dead-letter retry",
-      "purgeJobHistoryCompleted": "Purged {{count}} old job states"
+      "purgeJobHistoryCompleted_one": "Purged {{count}} old job state",
+      "purgeJobHistoryCompleted_other": "Purged {{count}} old job states",
+      "jobFailed": "The job failed",
+      "actionFailed": "The action failed",
+      "jobRejected": "The job was not started ({{status}})",
+      "jobCompletedWithErrors": "The job ran to the end, but some items failed ({{status}})"
     },
     "purgeJobHistory": {
       "confirmTitle": "Purge Job History",
@@ -726,7 +784,8 @@
     },
     "messages": {
       "loadError": "Failed to load configuration properties",
-      "totalItems": "{{count}} items total"
+      "totalItems_one": "{{count}} item total",
+      "totalItems_other": "{{count}} items total"
     }
   },
   "typeManagement": {
@@ -896,7 +955,10 @@
       "integer": "Integer (integer)",
       "decimal": "Decimal (decimal)",
       "boolean": "Boolean (boolean)",
-      "datetime": "DateTime (datetime)"
+      "datetime": "DateTime (datetime)",
+      "id": "ID (id)",
+      "html": "HTML (html)",
+      "uri": "URI (uri)"
     },
     "cardinalityOptions": {
       "single": "Single (single)",
@@ -1005,7 +1067,8 @@
     "warnings": {
       "nonCmisCompliant": "This operation is not CMIS compliant",
       "existingDocuments": "Existing documents of this type may be affected"
-    }
+    },
+    "jsonButton": "JSON"
   },
   "propertyEditor": {
     "propertyId": "Property ID",
@@ -1022,7 +1085,8 @@
     "readOnlyTooltip": "This property is read-only",
     "secondaryTypeTooltip": "Edit in the Secondary Types section above",
     "dedicatedUI": "Dedicated UI",
-    "totalItems": "Total {{total}} items",
+    "totalItems_one": "Total {{total}} item",
+    "totalItems_other": "Total {{total}} items",
     "columns": {
       "propertyName": "Property Name",
       "value": "Value"
@@ -1124,7 +1188,8 @@
       "thisObject": "This Object",
       "propertyName": "Property Name",
       "value": "Value",
-      "propertiesCount": "Properties ({{count}} items)",
+      "propertiesCount_one": "Properties ({{count}} item)",
+      "propertiesCount_other": "Properties ({{count}} items)",
       "fieldRequired": "{{field}} is required"
     },
     "messages": {
@@ -1209,7 +1274,9 @@
         "erp": "ERP",
         "chat": "Chat",
         "email": "Email"
-      }
+      },
+      "charCount_one": "{{chars}} char",
+      "charCount_other": "{{chars}} chars"
     },
     "purviewGovernance": {
       "tab": "Purview",
@@ -1273,6 +1340,10 @@
         "child_updated": "Child Batch (Updated)",
         "child_deleted": "Child Batch (Deleted)"
       }
+    },
+    "relationshipTypeNames": {
+      "bidirectional": "Bidirectional",
+      "parentChild": "Parent-Child"
     }
   },
   "folderBrowser": {
@@ -1338,8 +1409,10 @@
       "userIdRequired": "Please enter a user ID",
       "userNameRequired": "Please enter a user name",
       "passwordRequired": "Please enter a password",
-      "passwordMinLength": "Password must be at least {{min}} characters",
-      "passwordMinLength8": "Password must be at least {{min}} characters",
+      "passwordMinLength_one": "Password must be at least {{min}} character",
+      "passwordMinLength_other": "Password must be at least {{min}} characters",
+      "passwordMinLength8_one": "Password must be at least {{min}} character",
+      "passwordMinLength8_other": "Password must be at least {{min}} characters",
       "confirmPasswordRequired": "Please confirm the password"
     },
     "messages": {
@@ -1618,7 +1691,8 @@
       "repositoryRequired": "Please select a repository",
       "usernameRequired": "Please enter your username",
       "passwordRequired": "Please enter your password"
-    }
+    },
+    "subtitle": "CMIS Document Management System"
   },
   "auth": {
     "checkingStatus": "Checking authentication status...",
@@ -1692,7 +1766,8 @@
     "objectIdSearchNotFound": "No object found with the specified ID",
     "objectIdSearchDescription": "Search objects directly by CouchDB internal ID",
     "fulltext": "Full-text Search",
-    "semantic": "Semantic Search"
+    "semantic": "Semantic Search",
+    "objectIdSearchFailed": "The ID search failed"
   },
   "searchResults": {
     "title": "Search",
@@ -1707,7 +1782,8 @@
     "customPropertySearch": "Search by Custom Properties",
     "secondaryPropertySearch": "Search by Secondary Type Properties",
     "executedQuery": "Executed CMIS Query",
-    "results": "Search Results ({{count}} items)",
+    "results_one": "Search Results ({{count}} item)",
+    "results_other": "Search Results ({{count}} items)",
     "baseTypes": {
       "document": "Document",
       "folder": "Folder",
@@ -1772,6 +1848,7 @@
     "uploadFile": "Upload File",
     "runConnector": "Import from {{name}}",
     "runConnectorMenu": "Run connector",
+    "runConnectorIncomplete": "the run did not see the whole source (it stopped at a limit)",
     "runConnectorDone": "Import finished ({{imported}} imported / {{skipped}} skipped)",
     "runConnectorError": "Failed to run the connector",
     "runConnectorAuthError": "Connector authentication failed. The token must be re-set (please ask an administrator).",
@@ -1807,7 +1884,8 @@
     "renameTitle": "Rename \"{{name}}\"",
     "changeButton": "Change",
     "newName": "New Name",
-    "bulkDelete": "Delete {{count}} items",
+    "bulkDelete_one": "Delete {{count}} item",
+    "bulkDelete_other": "Delete {{count}} items",
     "bulkDeleteConfirmation": "Confirm Bulk Delete",
     "bulkDeleteConfirmMessage": "Are you sure you want to delete {{count}} selected item(s)? This action cannot be undone.",
     "columns": {
@@ -2039,7 +2117,8 @@
       "contentsLoadError": "Failed to get folder contents",
       "searchKeywordRequired": "Please enter search keywords",
       "searchError": "Search failed"
-    }
+    },
+    "root": "Root"
   },
   "archiveManagement": {
     "title": "Archive Management",
@@ -2163,7 +2242,8 @@
     "currentFolder": "Current folder",
     "selected": "Selected",
     "loadRootFolderError": "Failed to load root folder",
-    "loadTreeError": "Failed to load folder tree"
+    "loadTreeError": "Failed to load folder tree",
+    "repositoryRoot": "Repository Root"
   },
   "solrMaintenance": {
     "title": "Solr Index Maintenance",
@@ -2181,7 +2261,8 @@
       "missingInSolr": "Missing in Solr",
       "orphanedInSolr": "Orphaned Documents",
       "healthy": "Index is healthy",
-      "error": "Index health check failed"
+      "error": "Index health check failed",
+      "unhealthy": "The index reports a problem"
     },
     "reindexStatus": {
       "title": "Reindex Status",
@@ -2197,14 +2278,17 @@
       "verificationSkippedCount": "Verification Skipped",
       "verificationSkippedCountTooltip": "Number of documents skipped from verification due to query length limits. These documents are not checked for silent drops.",
       "errorMessage": "Error Message",
-      "errorDetails": "Error Details ({{count}} errors)",
-      "warningDetails": "Warning Details ({{count}} warnings)",
+      "errorDetails_one": "Error Details ({{count}} error)",
+      "errorDetails_other": "Error Details ({{count}} errors)",
+      "warningDetails_one": "Warning Details ({{count}} warning)",
+      "warningDetails_other": "Warning Details ({{count}} warnings)",
       "cancel": "Cancel"
     },
     "status": {
       "idle": "Idle",
       "running": "Running",
       "completed": "Completed",
+      "completedWithErrors": "Completed with errors",
       "error": "Error",
       "cancelled": "Cancelled"
     },
@@ -2246,7 +2330,8 @@
       "simulateAsUserTooltip": "Apply ACL filtering with the specified user's permissions. Admin only.",
       "selectUser": "Select user (no filtering if not selected)",
       "executeQuery": "Execute Query",
-      "results": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
+      "results_one": "Showing {{start}}-{{end}} of {{numFound}} result ({{queryTime}}ms)",
+      "results_other": "Showing {{start}}-{{end}} of {{numFound}} results ({{queryTime}}ms)",
       "resultsWithAcl": "{{numFound}} total, {{visibleCount}} visible, {{aclFilteredCount}} filtered by ACL (showing {{start}}-{{end}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "document": "Document {{number}}",
@@ -2265,7 +2350,8 @@
       "simulateAsUserTooltip": "Execute search with the specified user's permissions. Admin only.",
       "selectUser": "Select user (searches as yourself if not selected)",
       "executeQuery": "Execute Query",
-      "results": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
+      "results_one": "Showing {{displayed}} of {{numFound}} result (more: {{hasMore}}, {{queryTime}}ms)",
+      "results_other": "Showing {{displayed}} of {{numFound}} results (more: {{hasMore}}, {{queryTime}}ms)",
       "noResults": "0 results ({{queryTime}}ms)",
       "columnName": "Name",
       "columnObjectId": "Object ID",
@@ -2308,7 +2394,8 @@
       "reindex": "Reindex",
       "deleteConfirm": "Delete this document from the index?",
       "deleteFromIndex": "Delete from Index"
-    }
+    },
+    "solrUrl": "Solr URL: {{url}}"
   },
   "semanticSearch": {
     "title": "Semantic Search",
@@ -2322,7 +2409,8 @@
     "minSimilarity": "Min Similarity",
     "searchingInFolder": "Searching in this folder",
     "searching": "Searching...",
-    "resultsCount": "{{count}} results",
+    "resultsCount_one": "{{count}} result",
+    "resultsCount_other": "{{count}} results",
     "noResults": "No matching documents found",
     "searchFailed": "Search failed",
     "similarity": "Similarity",
@@ -2408,7 +2496,8 @@
       "skipped": "Skipped",
       "errorCount": "Error Count",
       "errorMessage": "Error Message",
-      "errorDetails": "Error Details ({{count}} errors)",
+      "errorDetails_one": "Error Details ({{count}} error)",
+      "errorDetails_other": "Error Details ({{count}} errors)",
       "cancel": "Cancel"
     },
     "status": {
@@ -2538,7 +2627,9 @@
     "loadEntries": "Load Logs",
     "loadError": "Failed to load audit log entries",
     "clientIp": "Client IP",
-    "errorMessage": "Error"
+    "errorMessage": "Error",
+    "resultSuccess": "Success",
+    "resultFailure": "Failure"
   },
   "filesystemImportExport": {
     "title": "Filesystem Import/Export",
@@ -2635,7 +2726,8 @@
       "testWebhook": "Test Webhook"
     },
     "pagination": {
-      "total": "Total {{total}} items"
+      "total_one": "Total {{total}} item",
+      "total_other": "Total {{total}} items"
     },
     "messages": {
       "loadError": "Failed to load delivery logs",
@@ -2711,7 +2803,9 @@
     "ldapNotConfigured": "LDAP sync is not configured. Set directory.sync.enabled=true in server configuration.",
     "dryRun": "Dry Run",
     "userSearchBase": "User Search Base",
-    "groupSearchBase": "Group Search Base"
+    "groupSearchBase": "Group Search Base",
+    "googleTab": "Google Workspace",
+    "microsoftTab": "Microsoft Entra ID"
   },
   "accountSettings": {
     "title": "Account Settings",
@@ -2746,7 +2840,8 @@
     "currentPasswordRequired": "Please enter your current password",
     "newPasswordRequired": "Please enter a new password",
     "confirmPasswordRequired": "Please confirm your new password",
-    "passwordMinLength": "Password must be at least {{min}} characters",
+    "passwordMinLength_one": "Password must be at least {{min}} character",
+    "passwordMinLength_other": "Password must be at least {{min}} characters",
     "passwordMismatch": "Passwords do not match",
     "passwordChanged": "Password changed successfully",
     "passwordChangeError": "Failed to change password",
@@ -2830,7 +2925,8 @@
       "createError": "Failed to create API key",
       "revokeSuccess": "API key revoked successfully",
       "revokeError": "Failed to revoke API key",
-      "loadError": "Failed to load API keys"
+      "loadError": "Failed to load API keys",
+      "userIdUnavailable": "User ID not available"
     },
     "confirmRevoke": "Are you sure you want to revoke this API key? This action cannot be undone.",
     "revoke": "Revoke",
@@ -2896,7 +2992,9 @@
     "modifiedTime": "Modified",
     "size": "Size",
     "googleDrive": "Google Drive",
-    "oneDrive": "OneDrive"
+    "oneDrive": "OneDrive",
+    "popupBlocked": "The popup was blocked. Please allow popups for this site.",
+    "loginCancelled": "Sign-in was cancelled"
   },
   "rssManagement": {
     "title": "RSS Token Management",
@@ -2946,7 +3044,11 @@
     "targetFolders": "Target Folders",
     "feedUrlColumn": "Feed URL",
     "showFeedUrls": "Show URLs",
-    "pathResolveFailed": "Path resolution failed"
+    "pathResolveFailed": "Path resolution failed",
+    "rssLabel": "RSS:",
+    "atomLabel": "Atom:",
+    "disableError": "Failed to disable RSS token",
+    "refreshError": "Failed to extend RSS token expiry"
   },
   "setup": {
     "title": "NemakiWare Setup Wizard",
@@ -2955,7 +3057,9 @@
       "description": "Retrieve the setup token from the container log or token file.",
       "placeholder": "Enter setup token",
       "verify": "Verify",
-      "invalid": "Invalid token"
+      "invalid": "Invalid token",
+      "command": "docker exec <container> cat /usr/local/tomcat/conf/setup-token",
+      "verifyFailed": "Could not verify the token"
     },
     "steps": {
       "couchdb": "CouchDB Connection",
@@ -2982,7 +3086,8 @@
       "password": "Password",
       "testConnection": "Test Connection",
       "connected": "Connected",
-      "connectionFailed": "Connection Failed"
+      "connectionFailed": "Connection Failed",
+      "versionTag": "CouchDB {{version}}"
     },
     "probe": {
       "scanning": "Scanning repositories...",
@@ -3022,7 +3127,9 @@
       "testSamlCertificate": "Validate Certificate",
       "samlCertValid": "Valid ({{subject}})",
       "samlCertInvalid": "Invalid certificate",
-      "lockoutWarning": "At least one authentication method must be enabled"
+      "lockoutWarning": "At least one authentication method must be enabled",
+      "clientIdCheck": "Client ID check",
+      "samlCertWarning": "Certificate warning"
     },
     "admin": {
       "info": "You can change the admin password. Leave blank to keep the current password.",
@@ -3030,7 +3137,8 @@
       "confirmPassword": "Confirm Password",
       "passwordPlaceholder": "Enter password",
       "confirmPlaceholder": "Re-enter password",
-      "passwordTooShort": "Password must be at least {{min}} characters",
+      "passwordTooShort_one": "Password must be at least {{min}} character",
+      "passwordTooShort_other": "Password must be at least {{min}} characters",
       "passwordMismatch": "Passwords do not match",
       "noChange": "No change",
       "passkeyNote": "Passkey (WebAuthn) registration can be done from the login screen after setup is complete."
@@ -3051,7 +3159,9 @@
       "bedrockCredentialNote": "Leave blank to use environment variables or IAM role for authentication",
       "bedrockCredentials": "Authentication",
       "bedrockExplicitCredentials": "Explicit Keys",
-      "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)"
+      "bedrockDefaultCredentials": "Default (Environment Variables / IAM Role)",
+      "dimensionTag": "Dimension: {{dimension}}",
+      "dimensionWarningLead": "Dimension warning"
     },
     "confirm": {
       "apply": "Apply",
@@ -3064,7 +3174,8 @@
       "retry": "Retry",
       "proceedAnyway": "Proceed Anyway",
       "applyFailed": "Setup apply failed",
-      "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart."
+      "persistenceNote": "CouchDB connection settings have been applied at runtime. To persist across restarts, configure the environment variables in docker-compose.yml. Vector search settings will take effect after restart.",
+      "proceedFailed": "Could not mark the setup as complete"
     },
     "provenance": {
       "description": "Whether to record the provenance of operations such as ingest, export and archive — when, what, and where it came from. Provenance cannot be reconstructed after the fact: there is no way to produce evidence later for a period that was not recorded.",
@@ -3080,7 +3191,8 @@
     "title": "Password Policy",
     "minLength": "Minimum password length",
     "noConstraint": "No constraint (0)",
-    "currentSetting": "Current setting: {{min}} characters",
+    "currentSetting_one": "Current setting: {{min}} character",
+    "currentSetting_other": "Current setting: {{min}} characters",
     "currentSettingNone": "Current setting: No constraint",
     "updateSuccess": "Password policy updated",
     "updateError": "Failed to update password policy",
@@ -3108,7 +3220,8 @@
       "importProfiles": "Import Profiles",
       "manualIngest": "Manual Import",
       "ingestJobs": "Job History",
-      "schedulerStatus": "Scheduler"
+      "schedulerStatus": "Scheduler",
+      "mcp": "MCP"
     },
     "save": "Save",
     "testConnection": "Test Connection",
@@ -3187,6 +3300,7 @@
       "disabledNotice": "Microsoft Purview integration is currently disabled."
     },
     "lineage": {
+      "undecodableRows": "{{count}} row(s) could not be read and are NOT in this list. This is NOT a finding that they are absent.",
       "mode": "Lineage Mode",
       "modeDisabled": "Disabled (no storage)",
       "modeDirect": "Direct (publish only)",
@@ -3270,7 +3384,8 @@
       "nonTerminalByTarget": "Backlog by Target",
       "estimatedSize": "Estimated Size",
       "replayAllConfirm": "Replay all unreplayed dead-letters?",
-      "replayedCount": "Replayed {{count}} events",
+      "replayedCount_one": "Replayed {{count}} event",
+      "replayedCount_other": "Replayed {{count}} events",
       "repoOverridesActive": "repository overrides active"
     },
     "atlas": {
@@ -3297,6 +3412,16 @@
       "credentialsFile": "Service Account Credentials File Path",
       "credentialsFileHelp": "Absolute path to the JSON key file on the server",
       "notice": "Google Cloud Dataplex Lineage API integration. Required IAM role: roles/datalineage.admin"
+    },
+    "configuredPlaceholder": "[configured]",
+    "mcp": {
+      "description": "Manages the MCP (Model Context Protocol) server settings: how the server behaves when AI tools such as Claude Code access the repository.",
+      "endpointHealth": "Health check (always public)",
+      "endpointInfo": "Server information (always public)",
+      "endpointMessage": "Main endpoint (JSON-RPC)",
+      "note": "MCP endpoints",
+      "toolsListPublic": "Public tools list",
+      "toolsListPublicHelp": "When on, the MCP tools list (tools/list) can be read without authentication. It is on by default for compatibility with MCP clients; turning it off is recommended on internet-facing deployments."
     }
   },
   "connectorManagement": {
@@ -3323,7 +3448,14 @@
       "sourceSystem": "Source System",
       "webhookUrl": "Webhook URL",
       "enabled": "Enabled",
-      "actions": "Actions"
+      "actions": "Actions",
+      "delegation": "Delegation",
+      "delegationAdminOnly": "admin only",
+      "delegationAllFolders": "all folders",
+      "delegationAnyUser": "any user with cmis:all",
+      "delegationFolders": "{{count}} folder(s)",
+      "delegationMisconfigured": "misconfigured",
+      "delegationPrincipals": "{{count}} principal(s)"
     },
     "form": {
       "connectorId": "Connector ID",
@@ -3337,7 +3469,16 @@
       "webhookSecretHint": "Secret for verifying inbound webhook signatures (Slack signing secret, Graph clientState, etc.)",
       "webhookSecretPlaceholder": "Signing secret or client state",
       "enabled": "Enabled",
-      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ..."
+      "sourceSystemHint": "google_drive, notion, imap, slack, teams, ...",
+      "allowedFolderIds": "Delegated folder IDs",
+      "allowedFolderIdsHint": "The folders given and everything under them. Paste a folder ID, or press Enter to add several.",
+      "allowedPrincipalIds": "Delegated user / group IDs (optional)",
+      "allowedPrincipalIdsHint": "Left empty, any user with cmis:all can use it. To narrow it, list usernames or group IDs.",
+      "delegateAllFolders": "Delegate in every folder (wide)",
+      "delegateAllFoldersHint": "When on, it can be used in any folder regardless of allowedFolderIds. The credential then reaches the whole repository, so turn this on only when it is really needed.",
+      "delegated": "Enable delegation",
+      "delegationHint": "Lets folder owners with cmis:all use this connector. With delegated on, set either allowedFolderIds or delegateAllFolders.",
+      "delegationSection": "Delegation"
     }
   },
   "connectorGovernance": {
@@ -3382,8 +3523,10 @@
     "groupRequired": "Enter a group ID first.",
     "groupLookupFailed": "Group lookup failed",
     "groupNotResolved": "This ID did not resolve to a group, but any connectors granting it directly are still shown.",
-    "groupSummary": "{{name}} ({{count}} members)",
-    "groupMembersShowing": "Showing {{shown}} of {{total}} members",
+    "groupSummary_one": "{{name}} ({{count}} member)",
+    "groupSummary_other": "{{name}} ({{count}} members)",
+    "groupMembersShowing_one": "Showing {{shown}} of {{total}} member",
+    "groupMembersShowing_other": "Showing {{shown}} of {{total}} members",
     "groupMembersTruncated": "Member list capped at memberLimit ({{limit}}); raise the limit to see more.",
     "includeMembersLabel": "Compute member impact",
     "memberLimitLabel": "memberLimit",
@@ -3397,13 +3540,17 @@
     "colUserId": "User ID",
     "colLost": "Connectors lost",
     "pickerLoadedHint": "{{loaded}} of {{total}} loaded",
-    "pickerNarrowSearch": "Directory is large — only a subset is shown. Narrow the search to find more."
+    "pickerNarrowSearch": "Directory is large — only a subset is shown. Narrow the search to find more.",
+    "principalTypeUser": "User",
+    "principalTypeGroup": "Group",
+    "principalTypeUnknown": "Unknown"
   },
   "folderPicker": {
     "title": "Select a target folder",
     "selected": "Selected",
     "permissionOk": "You hold management permission on this folder",
-    "noPermission": "You do not hold cmis:all on this folder."
+    "noPermission": "You do not hold cmis:all on this folder.",
+    "loadFailed": "Failed to load folders"
   },
   "importProfileManagement": {
     "loadError": "Failed to load import profiles",
@@ -3437,8 +3584,10 @@
     "autoDisabledBadge": "auto-disabled",
     "autoDisabledHint": "Auto-disabled by the scheduler after detecting an inactive creator",
     "autoDisabledFilter": "Show only auto-disabled",
-    "autoDisabledBanner": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
-    "autoDisabledBannerRecent": "{{count}} of {{total}} auto-disabled profiles were disabled in the last {{days}} day(s).",
+    "autoDisabledBanner_one": "{{count}} profile was auto-disabled by the scheduler. Review the reason before re-enabling.",
+    "autoDisabledBanner_other": "{{count}} profiles were auto-disabled by the scheduler. Review the reason before re-enabling.",
+    "autoDisabledBannerRecent_one": "Auto-disabled profiles: {{total}}, of which {{count}} was disabled in the last {{days}} day(s).",
+    "autoDisabledBannerRecent_other": "Auto-disabled profiles: {{total}}, of which {{count}} were disabled in the last {{days}} day(s).",
     "autoDisabledWindowAll": "All time",
     "autoDisabledWindow1d": "Last 24 hours",
     "autoDisabledWindow7d": "Last 7 days",
@@ -3495,7 +3644,13 @@
       "preserveOriginalEml": "Preserve Original .eml",
       "preserveOriginalEmlHint": "Store the raw .eml MIME message alongside extracted body for audit/compliance",
       "schedulerParamsHint": "Source-scope parameters for scheduled fetches (JSON key-value pairs, e.g. channelId, query, folderId)",
-      "enabled": "Enabled"
+      "enabled": "Enabled",
+      "schedulerParamRequired": "{{key}} is required when scheduler is enabled",
+      "folderAccessDenied": "✗ No cmis:all permission on this folder",
+      "folderAccessOk": "✓ You can manage this folder",
+      "folderUnresolved": "? The folder ID cannot be resolved",
+      "switchToJson": "Switch to JSON input",
+      "switchToStructured": "Switch to structured input"
     },
     "schedulerParamsInvalid": "Scheduler parameters must be valid JSON (e.g. {\"channelId\": \"C12345\"})",
     "updatePolicies": {
@@ -3512,7 +3667,9 @@
       "inheritFromFolder": "Inherit from folder",
       "copyFromSource": "Copy from source",
       "none": "None"
-    }
+    },
+    "daysSuffix": "d",
+    "autoDisabledBy": "Auto-disabled by the scheduler"
   },
   "manualIngest": {
     "title": "Manual Import",
@@ -3558,6 +3715,9 @@
     }
   },
   "ingestJobs": {
+    "unreadableRows": "{{count}} row(s) could not be decoded by this node and are NOT in the list below, so the history looks shorter than it is. The server log names them by document id.",
+    "loadFailed": "Could not load the job history",
+    "incompleteReads": "Not seen by this run",
     "title": "Ingest Job History & Dead-Letter Queue",
     "tabs": {
       "history": "Job History",
@@ -3597,6 +3757,7 @@
     "title": "Scheduler & IMAP IDLE Status",
     "noProfiles": "No scheduler-enabled profiles configured",
     "trigger": "Trigger",
+    "triggerPartial": "Ran, but not in full",
     "triggerSuccess": "Fetch triggered successfully",
     "triggerFailed": "Fetch trigger failed",
     "stopIdle": "Stop",
@@ -3610,6 +3771,132 @@
       "ready": "Ready",
       "idle": "IDLE",
       "actions": "Actions"
-    }
+    },
+    "imapIdle": "IDLE"
+  },
+  "evidenceAnchoring": {
+    "title": "Evidence and time-stamping",
+    "intro": "The leader node seals the evidence ledger's checkpoint and sends it (to the destinations below) on its own, when the time or count condition set here is met. Nothing runs by default. Whether it runs and when is set per domain (this repository, or record-content).",
+    "domain": "Domain",
+    "domainRepository": "Repository {{repositoryId}} (fixity, capture, custody, disposition, renditions)",
+    "domainRecordContent": "record-content (record content state — shared by all repositories; an exported package's evidence comes from here)",
+    "loadFailed": "The settings could not be read",
+    "noRungTitle": "No destination rung is configured",
+    "noRungDescription": "This node has neither a TSA URL nor an OpenTimestamps sidecar URL, so nothing is sealed even when enabled. Destinations are start-up system properties (see Destinations below).",
+    "scheduleCard": "When to seal and send",
+    "settingsUnreadable": "The saved settings could not be read (this is not \"not set\"). They cannot be changed until they can be read.",
+    "enabled": "Seal and send automatically",
+    "intervalMinutes": "Interval (minutes) — seal once the oldest unanchored entry is this old",
+    "intervalHint": "At least 5. Required to enable. Once a day (1440) is a reasonable start.",
+    "maxUnanchoredEntries": "Count limit — seal once this many entries are unanchored (optional)",
+    "maxHint": "At least 1. Empty means the time condition only.",
+    "minIntervalMinutes": "Minimum interval (minutes) — nothing is sent this soon after the last seal",
+    "minIntervalHint": "At least 1 and not above the interval. Empty means 5. Avoids buying TSA tokens back to back.",
+    "upgradeIntervalMinutes": "OpenTimestamps upgrade period (minutes)",
+    "upgradeHint": "At least 5. Empty means 60. Runs only when the OpenTimestamps rung is configured.",
+    "retryUnsettledIntervalMinutes": "Retry period for failed rungs (minutes, optional)",
+    "retryHint": "At least 60. Empty means no automatic retry. A retry makes a new commitment and, on a TSA, buys a token.",
+    "atLeast": "Must be at least {{n}}",
+    "intervalRequired": "Cannot be saved with an empty interval (enabling requires one)",
+    "saved": "Saved. It takes effect on the next tick (within a minute)",
+    "effectiveInvalid": "The values in effect do not pass the check (they came from a start-up -D or similar). Nothing is sealed until they are corrected",
+    "stateCard": "Current state",
+    "unanchoredCount": "Unanchored entries (no time-stamp receipt yet)",
+    "orMore": "or more (no receipt in the 20 checkpoints looked at, so this is a lower bound)",
+    "notReadable": "Not readable",
+    "oldestUnanchored": "Oldest unanchored entry",
+    "unsealedCount": "Entries not yet sealed into a checkpoint",
+    "lastSealAt": "Last seal (checkpoint created)",
+    "lastOutcome": "Last decision on this node",
+    "noTickYet": "This node has not decided yet",
+    "lastUpgrade": "Last upgrade",
+    "lastRetry": "Last retry",
+    "leader": "Is this node the leader",
+    "leaderUnknown": "Not decided yet",
+    "isLeader": "Yes",
+    "notLeader": "No",
+    "electionOff": "Leader election is off. With several replicas every node treats itself as the leader and sends the same root. Set lineage.leader-election.enabled=true on a multi-replica deployment.",
+    "rung": "Rung",
+    "receiptStatus": "Receipt for the latest checkpoint",
+    "anchoredAt": "Time",
+    "notAsked": "Why it was not asked",
+    "destinationsCard": "Destinations (display only)",
+    "tsaUrl": "TSA (RFC 3161) URL",
+    "policyOid": "Requested policy OID",
+    "trustAnchor": "Trust anchor (PEM)",
+    "trustAnchorSet": "Configured (the certificate is not shown)",
+    "trustAnchorNotSet": "Not configured",
+    "otsUrl": "OpenTimestamps sidecar URL",
+    "rungOff": "Not set — this rung is not used",
+    "otsOff": "Not set — rung 2 is not used (no sidecar URL on this node)",
+    "destinationsReadOnly": "Destinations are start-up system properties (anchor.rfc3161.* / anchor.opentimestamps.sidecar.url) and cannot be changed from this screen: the requests to them carry no SSRF check, so they are not made editable from a screen.",
+    "runNowCard": "Run once now",
+    "runNowDescription": "Calls the existing POST /checkpoint-and-anchor: seals the ledger as it is and sends it to the configured rungs. A rung whose URL carries an @ is not asked, and the answer names it under notAsked. The answer is shown as it came.",
+    "runNow": "Seal and send now",
+    "saveFailed": "The settings could not be saved",
+    "runFailed": "Seal and send now failed",
+    "nodeLabel": " (node {{nodeId}})",
+    "scheduleLimitsLead": "Notes on the schedule"
+  },
+  "principalBatch": {
+    "open": "Bulk",
+    "title": "Bulk correction (CSV)",
+    "stepChoose": "Kind and operation",
+    "stepUpload": "CSV",
+    "stepPreview": "Preview",
+    "stepResult": "Result",
+    "kind": {
+      "users": "Users",
+      "groups": "Groups",
+      "memberships": "Memberships"
+    },
+    "operation": {
+      "create": "Create",
+      "update": "Update",
+      "delete": "Delete",
+      "add": "Add",
+      "remove": "Remove",
+      "replace": "Replace"
+    },
+    "columns": "Columns",
+    "blankMeans": {
+      "other": "A blank cell means \"leave this column alone\" (an empty groups column in an update keeps the memberships).",
+      "replace": "The members column is required. A blank cell means \"make the membership empty\" (a file without the column is refused with 400)."
+    },
+    "template": "Download a template CSV",
+    "uploadHint": "Drag a CSV here or click to choose one (UTF-8, at most 5,000 rows and 2 MiB)",
+    "preview": "Preview (writes nothing)",
+    "count": {
+      "rows": "Rows",
+      "expected": "Expected",
+      "unexpected": "Unexpected",
+      "forbidden": "Forbidden",
+      "adminGrants": "Admin grants"
+    },
+    "passwordPresent": "Some rows carry a password. The preview's plan keeps no password, so the same file is sent again on execution.",
+    "willAbort": "{{n}} row(s) are unexpected or forbidden. \"Confirm and run\" then writes nothing (abort). To apply the expected rows only, use \"Skip unexpected and run\" (forbidden rows are not written even then).",
+    "line": "Line",
+    "verdict": "Verdict",
+    "verdictName": {
+      "expected": "Expected",
+      "unexpected": "Unexpected",
+      "forbidden": "Forbidden"
+    },
+    "reason": "Reason",
+    "message": "Detail",
+    "expiresAt": "This preview expires at {{at}} (preview again after that)",
+    "confirm": "Confirm and run",
+    "skip": "Skip unexpected and run",
+    "skipConfirmTitle": "Run and skip the unexpected rows?",
+    "skipConfirmBody": "{{unexpected}} unexpected row(s) are skipped and only the expected rows are applied. {{forbidden}} forbidden row(s) are not written either way.",
+    "skipConfirmOk": "Skip and run",
+    "partial": "Stopped at line {{line}}. The rows after it were not applied and nothing was rolled back — preview the same file again and the applied rows show as unexpected.",
+    "applied": "Applied",
+    "outcome": "Outcome",
+    "again": "Continue with another file",
+    "previewFailed": "Could not preview the batch",
+    "executeFailed": "Could not apply the batch",
+    "refused": "The batch request ended with an error ({{code}})",
+    "incidentIdSuffix": " (incident ID: {{incidentId}})"
   }
 }

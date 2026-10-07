@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Descriptions, Button, Result, Spin, Alert, Tag, Space } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../../i18n/withDetail';
 import { setupApi, ApplyResult } from '../../../services/setupApi';
 import type { CouchDbConfig } from './CouchDbStep';
 import type { AuthConfig } from './AuthStep';
@@ -64,10 +65,10 @@ export function ConfirmStep({ couchdb, auth, admin, vector, provenance, onComple
       });
       setResult(res);
       if (!res.success) {
-        setError(res.error || t('setup.confirm.applyFailed'));
+        setError(withDetail(t('setup.confirm.applyFailed'), res.error));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(withDetail(t('setup.confirm.applyFailed'), e));
     } finally {
       setApplying(false);
     }
@@ -89,7 +90,7 @@ export function ConfirmStep({ couchdb, auth, admin, vector, provenance, onComple
       await setupApi.markComplete();
       onComplete();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(withDetail(t('setup.confirm.proceedFailed'), e));
     } finally {
       setProceeding(false);
     }

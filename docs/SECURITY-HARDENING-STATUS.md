@@ -16,7 +16,7 @@ Tracks the reviewed hardening roadmap (Phase 0/1/2). Most items landed on the
 | 1-3 | gitleaks secret scan (PR diff blocking, full history scheduled) + allowlist |
 | 1-4 | `.github/dependabot.yml` grouped weekly version updates (maven/npm/docker/actions) |
 | 1-5 | OSV `--config` + documented `ignoreUntil`; blocking exception-expiry job |
-| 1-6 | Trivy on the Solr + core images (security-scan.yml + release-images.yml), **informational** — third-party bundled-lib CVEs aren't independently patchable, so base bumps come from Dependabot(docker) and our own deps stay hard-gated by maven-dep-check + OSV (see SECURITY-EXCEPTIONS.md) |
+| 1-6 | Trivy on the Solr + core images (security-scan.yml + release-images.yml), **informational** — third-party bundled-lib CVEs aren't independently patchable, so base bumps come from Dependabot(docker); our own Java deps are gated by maven-dep-check (a hand-written denylist), and before a tag the resolved SBOM is matched against OSV by hand (`tools/sbom/osv-check.py` — no workflow runs it; the OSV job is informational and cannot parse `core/pom.xml`; see SECURITY-EXCEPTIONS.md) |
 | 2-1 | Core image runs non-root + HEALTHCHECK |
 | 2-2 | Image SBOM + SLSA provenance attestation; CycloneDX Java SBOM; all Actions SHA-pinned; scanner binaries checksum-verified |
 | 2-3 | Deleted the dead `docker/solr/{pom.xml,src,target}` duplicate module (also removes the drifted 2.4.1 twin pom) |

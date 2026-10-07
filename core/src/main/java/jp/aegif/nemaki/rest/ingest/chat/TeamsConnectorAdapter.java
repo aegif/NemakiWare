@@ -75,47 +75,152 @@ public class TeamsConnectorAdapter {
         return result;
     }
 
+    /** How many delta-feed page requests one run may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_MESSAGE_REQUESTS = 50;
+
     /**
-     * Fetch messages from a channel with {@code @odata.nextLink} pagination.
-     *
-     * <p>Graph API returns max 50 messages per page.  This method follows
-     * {@code @odata.nextLink} URLs until {@code top} messages are collected
-     * or no more pages remain, capped at {@link #MAX_PAGES} pages.
-     *
-     * @param teamId    team ID
-     * @param channelId channel ID
-     * @param top       max total messages to return (also used as page size, Graph API max: 50)
+     * One page of the channel's delta feed: the messages it carries (deleted ones counted, not
+     * carried), and the link to the next page ({@code @odata.nextLink}) or, when the round is
+     * complete, the link the next round starts from ({@code @odata.deltaLink}).
      */
-    public List<TeamsMessage> getMessages(String teamId, String channelId, int top) throws Exception {
-        int pageSize = Math.min(top, 50);
-        String url = apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId)
-                + "/messages?$top=" + pageSize;
+    public record DeltaPage(List<TeamsMessage> messages, int deleted, String nextLink, String deltaLink) {}
 
-        List<TeamsMessage> allMessages = new ArrayList<>();
-        for (int page = 0; page < MAX_PAGES && url != null; page++) {
-            JsonNode root = graphGet(url);
-            JsonNode values = root.get("value");
-            if (values == null || !values.isArray() || values.isEmpty()) break;
+    /** The channel's delta feed on this endpoint, the path segments encoded as this connector writes them. */
+    private String deltaBase(String teamId, String channelId) {
+        return apiBase + "/teams/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(teamId) + "/channels/"
+                + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(channelId) + "/messages/delta";
+    }
 
-            for (JsonNode msg : values) {
-                allMessages.add(parseMessage(msg));
-                if (allMessages.size() >= top) break; // Respect total cap
+    /**
+     * The first request of a round of the channel's delta feed ({@code /messages/delta}): every
+     * root message created or changed after {@code modifiedAfter} — Graph's only delta filter,
+     * {@code lastModifiedDateTime gt}, written to the millisecond — or the whole feed when null.
+     *
+     * <p>Why the feed and not the channel listing: Graph lists channel messages sorted by the last
+     * modified time of the whole reply chain (List channel messages, "Response"), so a root with a
+     * fresh reply comes first whatever its creation time, and no listing can stop at a checkpoint
+     * on the creation time; the feed is Graph's own change tracking. Graph documents it with an
+     * eight-month window (older copies of the chatMessage delta page), and without {@code $top}
+     * here: its page size is Graph's default. Measured against a stub, not against Graph.
+     */
+    public String initialDeltaLink(String teamId, String channelId, java.time.Instant modifiedAfter) {
+        String url = deltaBase(teamId, channelId);
+        if (modifiedAfter != null) {
+            String stamp = java.time.format.DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'")
+                    .withZone(java.time.ZoneOffset.UTC).format(modifiedAfter);
+            url += "?$filter=" + java.net.URLEncoder.encode("lastModifiedDateTime gt " + stamp, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+        }
+        return url;
+    }
+
+    /**
+     * Whether a link points into THIS channel's delta feed on THIS endpoint — the only links read
+     * or saved. Compared on the scheme, the host, the effective port and the DECODED path read as
+     * OData segments: Graph writes the channel id raw in the links it returns ({@code 19:…@thread.tacv2})
+     * where this connector writes it encoded, and Graph's links may use the key syntax
+     * ({@code teams('…')/channels('…')/messages/delta()} — its mail delta links do). The same feed in
+     * every one of these spellings; a comparison of the strings refused every link Graph handed back
+     * and stopped the channel for good.
+     *
+     * <p>The names in the path ({@code teams}, {@code channels}, {@code messages}, {@code delta}, the
+     * version) are compared ignoring case, as Graph reads them; the RESOURCE IDS are not — Graph's
+     * ids are case-sensitive, and a channel id folded to another case can name another channel
+     * (review, P1). A team id that is a GUID is compared as a GUID, whose case does not matter.
+     */
+    public boolean isOwnDeltaLink(String link, String teamId, String channelId) {
+        if (link == null || teamId == null || channelId == null) return false;
+        try {
+            URI candidate = URI.create(link);
+            URI own = URI.create(apiBase);
+            if (candidate.getScheme() == null || own.getScheme() == null
+                    || !candidate.getScheme().equalsIgnoreCase(own.getScheme())) {
+                return false;
             }
-            if (allMessages.size() >= top) break;
+            if (candidate.getHost() == null || own.getHost() == null
+                    || !candidate.getHost().equalsIgnoreCase(own.getHost())) {
+                return false;
+            }
+            if (effectivePort(candidate) != effectivePort(own)) {
+                return false;
+            }
+            List<String> basePath = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(own);
+            List<String> actual = jp.aegif.nemaki.rest.ingest.GraphLinkPath.odataSegments(candidate);
+            int base = basePath.size();
+            // base…, teams, <team>, channels, <channel>, messages, delta
+            if (actual.size() != base + 6) {
+                return false;
+            }
+            for (int i = 0; i < base; i++) {
+                if (!basePath.get(i).equalsIgnoreCase(actual.get(i))) return false;
+            }
+            return "teams".equalsIgnoreCase(actual.get(base))
+                    && sameTeamId(teamId, actual.get(base + 1))
+                    && "channels".equalsIgnoreCase(actual.get(base + 2))
+                    && channelId.equals(actual.get(base + 3))
+                    && "messages".equalsIgnoreCase(actual.get(base + 4))
+                    && "delta".equalsIgnoreCase(actual.get(base + 5));
+        } catch (IllegalArgumentException malformed) {
+            return false;
+        }
+    }
 
-            // Follow @odata.nextLink for next page
-            JsonNode nextLink = root.get("@odata.nextLink");
-            url = (nextLink != null && !nextLink.isNull()) ? nextLink.asText(null) : null;
 
-            if (url != null) {
-                logger.debug("Teams pagination: page {}, fetched {} of {} max",
-                        page + 1, allMessages.size(), top);
+    /** A team id: the same GUID in either case, otherwise exactly the same string. */
+    private static boolean sameTeamId(String expected, String actual) {
+        if (expected.length() == 36 && actual.length() == 36) {
+            try {
+                return java.util.UUID.fromString(expected).equals(java.util.UUID.fromString(actual));
+            } catch (IllegalArgumentException notAGuid) {
+                // fall through to the exact comparison
             }
         }
+        return expected.equals(actual);
+    }
 
-        logger.info("Teams getMessages: team={}, channel={}, fetched={}, limit={}",
-                teamId, channelId, allMessages.size(), top);
-        return allMessages;
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() != -1) return uri.getPort();
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : "http".equalsIgnoreCase(uri.getScheme()) ? 80 : -1;
+    }
+
+    /**
+     * One page of the delta feed at {@code link}. A deleted message — {@code deletedDateTime}
+     * set, or the delta convention {@code @removed} — is counted, not carried: there is nothing to
+     * import. Refused: a response without a {@code value} array, and a page that carries neither
+     * {@code @odata.nextLink} nor {@code @odata.deltaLink} — the feed could not be continued from
+     * it, and a page taken as the end would drop what follows. A page whose next link is the link
+     * it was read from is refused too: it cannot move forward.
+     */
+    public DeltaPage delta(String link) throws Exception {
+        JsonNode root = graphGet(link);
+        JsonNode values = root.get("value");
+        if (values == null || !values.isArray()) {
+            throw new RuntimeException("Graph answered the delta feed without a value array, so the page cannot be read");
+        }
+        List<TeamsMessage> messages = new ArrayList<>();
+        int deleted = 0;
+        for (JsonNode node : values) {
+            if (node.hasNonNull("deletedDateTime") || node.has("@removed")) {
+                deleted++;
+                continue;
+            }
+            messages.add(parseMessage(node));
+        }
+        JsonNode nextNode = root.get("@odata.nextLink");
+        JsonNode deltaNode = root.get("@odata.deltaLink");
+        String next = nextNode == null || nextNode.isNull() ? null : nextNode.asText(null);
+        String deltaLink = deltaNode == null || deltaNode.isNull() ? null : deltaNode.asText(null);
+        if (next != null && next.isBlank()) next = null;
+        if (deltaLink != null && deltaLink.isBlank()) deltaLink = null;
+        if (next == null && deltaLink == null) {
+            throw new RuntimeException("Graph answered a delta page without @odata.nextLink or @odata.deltaLink, "
+                    + "so the feed cannot be continued from it");
+        }
+        if (link.equals(next)) {
+            throw new RuntimeException("Graph returned the delta page's own link as its @odata.nextLink (" + next
+                    + "), so the feed cannot move forward");
+        }
+        return new DeltaPage(messages, deleted, next, deltaLink);
     }
 
     /**

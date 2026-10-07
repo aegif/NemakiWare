@@ -101,6 +101,25 @@ public final class LineageCanonicalHash {
         return LineageDigests.sha256Hex(out.toByteArray());
     }
 
+    /**
+     * The typed encoding of ONE value, as bytes.
+     *
+     * <p>Not {@link #hash}: that wraps its arguments in a LIST, which is right for "these fields,
+     * in this order" and wrong for "this document". The evidence profile's {@code .c14n} files
+     * are the bytes of a single MAP, so a caller that went through {@code hash} would ship a
+     * canonical form one LIST deeper than the one the spec defines, and a third-party verifier
+     * recomputing it from the document would never match.
+     *
+     * <p>Returns the bytes rather than a digest because the {@code .c14n} file IS the bytes —
+     * and because a reader has to be able to compare them, not just their hash. See
+     * {@code docs/design/evidence-profile-v1.md} §3.2.
+     */
+    public static byte[] canonicalBytes(Object value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        write(out, value);
+        return out.toByteArray();
+    }
+
     /** {@link List#of} rejects nulls, and null is a value we must be able to encode. */
     private static Object[] nullSafe(Object[] parts) {
         Object[] copy = new Object[parts.length];

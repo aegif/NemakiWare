@@ -52,10 +52,96 @@ import java.util.Set;
  */
 public final class ImportExportUtils {
 
+    /**
+     * An output stream that can be told to stop passing bytes on.
+     *
+     * <p>Exists for one job: a refused ZIP export has to leave the client with an archive
+     * that does not open, AND must not leak the {@code ZipOutputStream}'s native deflater.
+     * Those pull in opposite directions — {@code ZipOutputStream.close()} is what frees the
+     * deflater, and it is also what writes the central directory that makes the archive open.
+     * Not closing (the first attempt) satisfied the first and leaked; closing in a finally
+     * satisfied the second and handed back a readable, silently short archive. Two review
+     * rounds found one each.
+     *
+     * <p>So the archive is closed either way, and on the refusal path it is closed into
+     * nothing: {@link #stopForwarding()} makes every later write a no-op, so the central
+     * directory is produced, consumed here, and never reaches the client.
+     *
+     * <p>What the CLIENT sees, at the strength it was measured: once the response is
+     * committed, Jersey logs the write failure and completes normally, so the status stays
+     * 200 and the body simply lacks its central directory — the archive does not open, and
+     * the reason is only in the server log. Before commit it is a 500. A failure AFTER
+     * {@code zos.finish()} hands over a complete archive: bytes already forwarded cannot be
+     * taken back. (Lineage publication and the audit log, which this sentence originally
+     * named as examples, actually run BEFORE the close in both streamers — a review
+     * corrected the pair.) The guarantee is "the archive does not open", not
+     * "the client is told".
+     */
+    public static final class DiscardableOutputStream extends java.io.OutputStream {
+
+        private final java.io.OutputStream delegate;
+        private volatile boolean forwarding = true;
+
+        public DiscardableOutputStream(java.io.OutputStream delegate) {
+            this.delegate = delegate;
+        }
+
+        /** After this, bytes are accepted and dropped. */
+        public void stopForwarding() {
+            this.forwarding = false;
+        }
+
+        @Override
+        public void write(int b) throws java.io.IOException {
+            if (forwarding) {
+                delegate.write(b);
+            }
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws java.io.IOException {
+            if (forwarding) {
+                delegate.write(b, off, len);
+            }
+        }
+
+        @Override
+        public void flush() throws java.io.IOException {
+            if (forwarding) {
+                delegate.flush();
+            }
+        }
+
+        @Override
+        public void close() throws java.io.IOException {
+            // The response stream belongs to the container; this wrapper never closes it.
+            flush();
+        }
+    }
+
+
     private static final Log log = LogFactory.getLog(ImportExportUtils.class);
 
     // Custom format naming conventions
     public static final String META_SUFFIX = ".meta.json";
+    // The half-written copy a filesystem export leaves beside its destination. Named here,
+    // not in the exporter, because the IMPORTER has to skip it: it collects every regular
+    // file and excludes only sidecars and version files, so a staging file that outlived a
+    // failed export — or one seen by an import running concurrently — was ingested as a
+    // document with whatever bytes had been written. The exporter's own comment asserted the
+    // opposite ("no importer reads it"), which a review checked and disproved.
+    public static final String EXPORT_STAGING_PREFIX = ".nemaki-export-";
+    public static final String EXPORT_STAGING_SUFFIX = ".part";
+
+    /** Is this a filesystem export's half-written staging file? */
+    public static boolean isExportStagingFile(String relativePath) {
+        String name = relativePath;
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) {
+            name = name.substring(slash + 1);
+        }
+        return name.startsWith(EXPORT_STAGING_PREFIX) && name.endsWith(EXPORT_STAGING_SUFFIX);
+    }
     public static final String VERSION_PREFIX = ".v";
     public static final String TYPE_DEFINITIONS_DIR = ".nemaki-types/";
     public static final String TYPE_DEFINITION_SUFFIX = ".type.json";

@@ -27,8 +27,16 @@
 **主張しない**:
 
 - **E-ARK 準拠とは名乗らない。** 通ったのは `commons-ip2` に同梱された検証器であって、
-  DILCIS Board の公式サービスでも、受入側 (RODA / Archivematica) の実機受入でもない。
-  版・profile・検証器の版を固定して**「この版のこの検証器を通った」とだけ言う**
+  DILCIS Board の公式サービスではない。版・profile・検証器の版を固定して
+  **「この版のこの検証器を通った」とだけ言う**。
+  **受入側の実機は RODA 6.3.0 の SIP→AIP プラグインと Archivematica 1.18.0 の
+  automated ingest を測った** (2026-08-27、
+  [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10 / §12) — RODA の
+  `EARKSIP2ToAIPPlugin` が AIP object を作り、AM は E-ARK 専用 type が無いので
+  `zipfile` / `zipped bag` / 展開 `standard` で **AM の AIP** になった。
+  **受入承認を含む RODA ingest workflow は未実施**。
+  1 つ通ったことは「E-ARK 準拠」でも「どの archive でも通る」でも
+  「先方が保持する」でも「AM が E-ARK として読んだ」でもない
 - **「記録の真正性が移送先で保たれる」とは言わない。** 検証器が言うのは**容器が
   仕様に合っている**ことだけで、中身が真実かどうかについては何も言わない
 - ~~**PREMIS はまだ 1 件も書いていない。**~~ **2026-08-26 訂正**: PREMIS は
@@ -235,8 +243,33 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    ロードマップ §4 Phase 3 が要求している成果物
 2. **evidence package (`.ots` / TSA トークン / inclusion proof) の CSIP 上の置き場所**。
    正位置は仕様で要確認 (ロードマップも「着手時に要確認」と書いている)
-3. **RODA 実機受入試験** — `docker/docker-compose-roda.yml` は arm64 で動くことを
-   確認済み。ただし**受入 profile / 版の対応表は未確認**なので、通ることは前提にしない
+3. ~~**RODA 実機受入試験**~~ **SIP→AIP プラグイン試験は実施済み** (2026-08-27、
+   [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §10)。RODA 6.3.0 では
+   CSIP 2.x 用の `EARKSIP2ToAIPPlugin` が AIP object を作り、本文が
+   `representations/rep1/data/` に入った。v1 用の `EARKSIPToAIPPlugin` は
+   同じ package を拒否した。
+   **ただしこの節が作っている `premis.xml` は、生成された AIP の PREMIS metadata に
+   無かった** — `metadata/preservation/` に在ったのは RODA 自身の event 2 件
+   (`wellformedness check` / `unpacking`) だけである。**「置き換えた」とは書かない**:
+   測ったのは我々のものの不在と RODA のものの存在であって、変換や置換の機構は
+   確かめていない。§4-1 のクロスウォークが**この受け手に届く保証は無い**。
+   `metadata/other/` の JSON 2 本は `metadata/descriptive/` に在った。
+   **`ers.der` は測った** (2026-08-27 追試): 初回の package には入っていなかったので、
+   スタブの記録を注入して投げ直した (**本物の RFC 3161 ベース ERS では未測定**)。
+   **`addPreservationMetadata` で出すと `Failed to load PREMIS` で package ごと
+   rollback する** — その呼び出しは METS の `<digiprovMD>` に宣言を書き、
+   CSIP32 が preservation 情報に PREMIS を使うと述べているのがその枠だからである。
+   **フォルダの話ではない。** ただし **CSIP32 も CSIPSTR6 と同じ SHOULD** であって
+   (`LEVEL = SHOULD` / `0..n`)、「`digiprovMD` に PREMIS 以外を置くな」とは書いていない —
+   **規格違反ではなく、PREMIS のための枠に PREMIS でないものを載せた**、が正確な言い方である
+   ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
+   **`metadata/other` へ移すと取り込まれ、記録も残った** (ただし AIP では
+   `metadata/descriptive/ers.der` へ移されている — 受け取った側が `other/` を探しても
+   見つからない)。本製品は同日 `metadata/other` へ変更した
+   ([`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §11)。
+   **未**: 受入承認を含む full ingest workflow、他版の RODA。Archivematica は
+   [`p3-4-custody-transfer.md`](p3-4-custody-transfer.md) §12
+   (E-ARK 専用 type は無く、`zipfile` / bag / 展開 `standard` で AM の AIP になった)
 
 ---
 
@@ -246,7 +279,11 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
 
 `metadata/other/nemaki-evidence.json`:
 
-- **この文書を連鎖に結び付ける inclusion proof** (`leafHash` / `merkleRoot` / `auditPath`)
+- **この文書を連鎖に結び付ける inclusion proof** — **`inclusionProof` オブジェクトの内側**に
+  `leafHash` / `merkleRoot` / `auditPath` を置く。**検証器は必ずその内側から読む**こと
+  (外側に同名のキーがあっても proof ではない。緩いキーで proof を上書きできてはならない)。
+  組めなかったときは `inclusionProof` に**理由を持つオブジェクト**を置き
+  (`status` / `message`)、**文書の直下にも** `inclusionProofFailed` を書く
 - その文書について台帳が持つエントリの一覧 (sequence / kind / payloadDigest /
   occurredAt / entryHash / prevEntryHash)
 - 何を establish しないか (`limits`)
@@ -273,6 +310,63 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
    - 奇数のときは**複製せず 1 段繰り上げ**る (CVE-2012-2459 型の可鍛性を持たせない)
    - `auditPath` を下から順に適用し、`siblingIsLeft` なら sibling が左
 
+   **`auditPath` は 4 通りに読み分ける** (2026-09-19。ここを 1 通りにしたのが実際の欠陥だった):
+
+   | 読み | 答え |
+   |---|---|
+   | key が無い | `NOT_PRESENT`。**空の path として歩かない** — 歩けば `leaf(leafHash)` と `merkleRoot` を直接比べることになり、どちらも package 自身が書いた値である |
+   | key は在るが値が配列でない / 閉じていない / step が読めない (siblingHash が無い、どちら側かが無い) | `UNAVAILABLE`。**`FAILED` にしない** — 「その entry は封じた span に入っていない」と言ったことになるが、実際に起きたのは「読めなかった」である |
+   | 配列が**空** | `UNAVAILABLE`。単一 entry を封じた checkpoint は本当にこの形を作るが、**leaf とその hash を書けば誰でも同じ形が作れる**。package の中だけでは分けられない。分けるには checkpoint の span が要る |
+   | 配列に step がある | 歩いて `merkleRoot` と比べる。一致で `PASSED`、不一致で `FAILED` |
+
+   **JSON は JSON として読む** (2026-09-20 に手組みの走査から替えた)。値の型は明示的に
+   検査する — `inclusionProof` は object、`leafHash` / `merkleRoot` は string、`auditPath` は
+   array、step は object で `siblingHash` は string・`siblingIsLeft` は boolean。
+   どれかが違えば `UNAVAILABLE`。**重複キーは error** にする (後勝ち・先勝ちで読み手ごとに
+   答えが変わらないように)。先頭の BOM は飛ばす。
+
+   `inclusionProof` が **null** のときは「型が違う」ではなく「**無い**」として扱い、
+   次の段の読み分けに進む。
+
+   **proof が無いときは、package 自身が書いた理由を読む。**
+
+   | package が言っていること | 答え |
+   |---|---|
+   | 「台帳に届かなかった」「読み取りに失敗した」「path を組めなかった」 | `UNAVAILABLE` |
+   | 「どの entry もこのオブジェクトを名指していない」(`status: "not-chained"`) | `NOT_PRESENT` |
+   | **この版が知らない理由を述べている** (未知の `status`、または `message` だけ) | `UNAVAILABLE`。**分からない文を分類しない** |
+   | 何も述べていない | `NOT_PRESENT`（proof が無い、という事実だけ） |
+
+   **これらを 1 つの文にしない** — 書き出し側は 3 か所で「これは鎖に載っていないという
+   判定ではない」と明記している。
+
+   **理由が書かれる場所は 3 つ**で、読む側は**優先順に**見る:
+
+   1. 文書直下の `inclusionProofFailed`（「path を組めなかった」）— **最優先**
+   2. proof オブジェクトの中の `status` / `message`
+   3. **文書直下の `status` / `message`**（2 が無いときだけ）
+
+   2 と 3 は**同じ表を当てる**（書いた場所で答えが変わってはならない）。
+   `status` と `message` は**同じ場所から対で読む** — 一方を proof から、もう一方を
+   文書から取ると、ある状態に別の状態の説明が付く。**その帰結として、proof の中に
+   `status` か `message` のどちらかでも在れば、文書直下の理由は読まない**
+   （message だけを持つ proof は、理由ごと自分の側に引き受ける）。
+
+   **片方だけ読めないときは、読めた方を述べる。** 両方読めないときだけ
+   「理由が読める文字列ではない」と述べる（読めた `status` は、読み手が次に何をするかを
+   決める唯一の語であることが多い）。
+
+   `status: "success"` なのに proof が使えないときは、**package が自分と矛盾している**。
+   proof オブジェクトが**在る**なら（空でも）その欄について述べ、**無い**なら
+   `UNAVAILABLE`（「成功したと言っていて、読むものが無い」）。
+   **「理由を述べていない」とは書かない。** 判定は**オブジェクトの有無**であって
+   中身の有無ではない。
+
+   **「述べている」かどうかは、キーが**在るか**で決める。** 値が文字列として読めなくても
+   （`message` が i18n のオブジェクトでも）、その package は理由を述べている。
+   読めない値について「理由を述べていない」と書くのは、確かめていないことの断定である。
+   ただし**「読めなかった」と「この版が知らない状態だ」は別の文で述べる**。
+
 `leafHash` は**エントリの生ハッシュ**であって葉ハッシュではない。
 最初の実装はここを取り違えていて、**本物のパッケージを全部「壊れている」と報告する**
 ところだった (ラウンドトリップのテストが捕まえた)。
@@ -285,6 +379,41 @@ CSIP 版を落とす)。**うち「非 ASCII を潰す」は 1 度目の細工�
 
 そして **1 つも検査が走らなかったパッケージは `verified` にしない**。
 「何も問題が無かった」と「何も調べていない」は、同じ文で意味が逆になる。
+
+### 全体の答えも 3 値 — `verdict` (2026-09-19 に狭めた)
+
+検査ごとの 4 値に対して、**パッケージ全体の答えは `VERIFIED` / `FAILED` /
+`INDETERMINATE` の 3 値**である。規則は:
+
+1. `FAILED` の検査が 1 つでもあれば `FAILED`
+2. **必須の検査 (`payload digest` と `audit path`) が両方 `PASSED`** なら `VERIFIED`
+3. それ以外は `INDETERMINATE` — 必須のどれかが `NOT_PRESENT` / `UNAVAILABLE` のとき、
+   および**必須の検査そのものが結果に無いとき**（package が読めず検査に入れなかった場合、
+   結果は `package readable` の 1 行だけになる）
+
+`verified` (boolean) は `VERIFIED` のときだけ true で、**`FAILED` でないこと**ではない。
+`Result.asMap()` は `verdict` も入れる — boolean は 3 値を運べないので、それだけを読む
+呼び手は「壊れている」と「確かめられなかった」を同じ答えとして受け取る。
+**なお `SipVerifier` に本番の呼び出し元は無い**（下の「公開ツールとして配布していない」の
+とおり）。この規則は、第三者が再実装するときの仕様であり、独立 verifier（3.4 の Phase 5）
+が実装するものである。
+
+> **元の規則は「1 つでも `PASSED` があり `FAILED` が無い」だった。**
+> そのため **digest が一致し inclusion proof が無いパッケージが `verified` になる**。
+> digest が言うのは「この zip の中で、隣に書かれた digest と bytes が整合する」
+> だけで、**同じ手が同じ瞬間に同じ袋の中で作れる**。外の連鎖がその bytes を
+> 持っていたことは何も言わない。この検証器が一段下で防いでいる誤り
+> —「調べていない」を「問題が無い」と読むこと — を、検証器自身が一段上でやっていた。
+> **台帳を繋いでいない配備で自分の exporter が作るパッケージ**が現にこれに当たる
+> (ラウンドトリップの錠がその形を測っている)。
+>
+> 逆向きも同時に固定した。**`FAILED` は `INDETERMINATE` に薄めない** —
+> 「壊れている」と「確かめられなかった」は読み手の次の行動が違う
+> (前者は調べに行く、後者は材料を集めに行く)。
+>
+> 負のコントロール 3 本実測 (CR3 旧規則へ戻す / CS3 `FAILED` の優先を外す /
+> CT3 body から `verdict` を落とす)。CR3 は 4 本の錠を落とし、その 1 本は
+> ラウンドトリップである。
 
 ### 何を主張し、何を主張しないか
 

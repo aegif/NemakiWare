@@ -34,6 +34,7 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.constant.DomainType;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -245,8 +246,14 @@ public class NavigationServiceImpl implements NavigationService {
 		final int DEFAULT_MAX_ITEMS = 100;
 
 		long totalCount = contentService.getChildrenCount(repositoryId, folderId);
-		int _maxItems = (maxItems != null) ? maxItems.intValue() : DEFAULT_MAX_ITEMS;
-		int _skipCount = (skipCount != null) ? skipCount.intValue() : 0;
+		// intValue() TRUNCATES: 2^31 arrives as a negative number and 2^32 as zero, and both
+		// then flow into the paging arithmetic below (dbLimit = _maxItems * oversampleFactor
+		// overflows a second time). The change feed learned this live — an unbounded ask
+		// became first a CouchDB 400 and then a heap OOM — so the same shape is bounded here:
+		// compare before converting, and cap the page. A client asking for more receives a
+		// page plus hasMoreItems, which is what CMIS paging is for.
+		int _maxItems = (maxItems != null) ? clampToPage(maxItems) : DEFAULT_MAX_ITEMS;
+		int _skipCount = (skipCount != null) ? clampSkip(skipCount) : 0;
 
 		// Whether totalCount is an accurate DB-level count (from _count reduce)
 		boolean totalCountAccurate = (totalCount > 0);
@@ -255,6 +262,21 @@ public class NavigationServiceImpl implements NavigationService {
 		// Use a lightweight probe to decide whether to use the legacy or pagination path.
 		if (totalCount == 0) {
 			List<Content> probe = contentService.getChildrenPaged(repositoryId, folderId, 0, FULL_FETCH_THRESHOLD + 1);
+			// An empty probe whose rows ALL failed to decode is not an empty folder — it is a
+			// folder whose children are invisible, and answering "no children" here hides them
+			// from every listing until the rows are repaired, with nothing saying so.
+			// Not just when the probe came back EMPTY. A probe of two readable rows and one
+			// the store could not decode is the small-folder branch's whole listing, and it
+			// was served as the folder's contents with the third child simply absent — the
+			// same defect the oversampling branch has, in the branch this test suite's small
+			// fixtures actually take. Fixing the paged branch alone would have been the
+			// one-arm correction this batch keeps finding.
+			int probeUnreadable = contentService.lastUnreadableChildCount();
+			if (probeUnreadable > 0) {
+				throw new CmisRuntimeException("the folder's children could not be decoded ("
+						+ probeUnreadable + " row(s)); this is NOT a finding that they do not "
+						+ "exist, and a listing without them would be read as complete");
+			}
 			if (probe.isEmpty()) {
 				// "No children" and "no folder" look identical from here, and this is the branch a
 				// deleted folder actually takes: deleteTree removes the children before the folder,
@@ -282,6 +304,17 @@ public class NavigationServiceImpl implements NavigationService {
 			// Legacy path: fetch all, filter, sort, subList
 			// Used for small folders (accurate global sort) or when client specifies explicit orderBy
 			List<Content> contents = contentService.getChildren(repositoryId, folderId);
+			// The THIRD branch. The probe guard covers totalCount == 0 and the oversampling
+			// loop covers the large-folder walk; this one — an accurate count of 500 or
+			// fewer, or any request with an orderBy — is the ordinary small-folder path and
+			// had no check at all. A review found it after the other two were closed, which
+			// is the same one-arm shape this batch keeps re-committing.
+			int unreadableHere = contentService.lastUnreadableChildCount();
+			if (unreadableHere > 0) {
+				throw new CmisRuntimeException("the folder's children are short by "
+						+ unreadableHere + " row(s) the store could not decode; serving them "
+						+ "would present a listing that is missing children as a complete one");
+			}
 
 			// The folder itself belongs in this set, not outside it: an ordering is a property of
 			// a set, and a lock taken before it is not ordered against anything in it.
@@ -298,10 +331,15 @@ public class NavigationServiceImpl implements NavigationService {
 
 				contents = permissionService.getFiltered(callContext, repositoryId, contents);
 
+				// The CLAMPED values, not the raw ones: this branch used to hand the
+				// originals straight through, so a maxItems the oversampling branch bounded
+				// still truncated here (a live probe returned an empty page with
+				// hasMoreItems=true for maxItems=2^32). One notion of the page per method.
 				ObjectList ol = compileService.compileObjectDataList(callContext,
 						repositoryId, contents, filter,
 						includeAllowableActions, includeRelationships, renditionFilter, false,
-						maxItems, skipCount, folderOnly, orderBy);
+						BigInteger.valueOf(_maxItems), BigInteger.valueOf(_skipCount),
+						folderOnly, orderBy);
 
 				// Build ObjectInFolderList
 				for (ObjectData od : ol.getObjects()) {
@@ -336,10 +374,31 @@ public class NavigationServiceImpl implements NavigationService {
 			List<Content> pageContents = new ArrayList<>();
 			long scanned = 0;
 			boolean pageFilled = false;
+			// Rows consumed while assembling THIS page that the store could not decode. They
+			// are not "children that are not there": they shift the page boundary and shorten
+			// the answer, and a client cannot tell a page of nine from a page of nine-plus-one
+			// it never heard about. The empty-probe refusal above is the same rule for the
+			// whole folder; this is it for the page — recorded as a known approximation for
+			// several rounds on the grounds that it was "the same layer as numItems", which
+			// is a statement about a COUNT and this is a statement about which objects exist.
+			int unreadableOnThisPage = 0;
 
 			while (!pageFilled) {
 				List<Content> batch = contentService.getChildrenPaged(repositoryId, folderId, dbSkip, dbLimit);
+				// Read once per page: skip/limit address RAW view rows, and rows the store
+				// cannot decode are consumed on the wire but absent from `batch` — so both
+				// "is this the last page?" and "where does the next page start?" need the raw
+				// count, not the decoded size.
+				int unreadableInBatch = contentService.lastUnreadableChildCount();
+				unreadableOnThisPage += unreadableInBatch;
 				if (batch.isEmpty()) {
+					if (unreadableInBatch > 0) {
+						// Every row of this page failed to decode. The page is spent; the
+						// folder is not — later offsets can still hold readable children,
+						// and breaking here made one bad page hide all of them.
+						dbSkip += dbLimit;
+						continue;
+					}
 					break;
 				}
 
@@ -371,10 +430,23 @@ public class NavigationServiceImpl implements NavigationService {
 				scanned += processedInBatch;
 				dbSkip += processedInBatch;
 
-				// Safety: if batch returned fewer than requested, we've reached the end
 				if (batch.size() < dbLimit) {
+					if (unreadableInBatch > 0 && !pageFilled) {
+						// Not the end: the shortfall is decode loss, not exhaustion. Advance
+						// the raw cursor over the rows the wire consumed but decode dropped,
+						// or the next iteration re-reads the same broken rows for ever.
+						dbSkip += (dbLimit - batch.size());
+						continue;
+					}
+					// A genuinely short page IS the end.
 					break;
 				}
+			}
+
+			if (unreadableOnThisPage > 0) {
+				throw new CmisRuntimeException("this page of the folder's children is short by "
+						+ unreadableOnThisPage + " row(s) the store could not decode; serving it "
+						+ "would present a listing that is missing children as a complete one");
 			}
 
 			// hasMore: true if page was filled AND there are unscanned rows,
@@ -483,7 +555,11 @@ public class NavigationServiceImpl implements NavigationService {
 			// Body of the method
 			// //////////////////
 			// check depth
-			d = (depth == null ? 2 : depth.intValue());
+			// Same truncation trap: 2^32 would arrive as 0, which invalidArgumentDepth above
+			// has just rejected as an explicit value — so a client asking for an enormous
+			// depth would silently get the "no descendants" answer instead. -1 (unlimited)
+			// is preserved as CMIS defines it.
+			d = (depth == null ? 2 : clampDepth(depth));
 
 			// set defaults if values not set
 			iaa = (includeAllowableActions == null ? false
@@ -718,4 +794,48 @@ public class NavigationServiceImpl implements NavigationService {
 	public void setPropertyManager(PropertyManager propertyManager) {
 		this.propertyManager = propertyManager;
 	}
+	/** The largest page this server serves for a children/descendants request. */
+	private static final int MAX_PAGE = 10_000;
+
+	/**
+	 * Converts a client's maxItems without truncating it into a negative or zero.
+	 *
+	 * <p>{@code BigInteger.intValue()} keeps only the low 32 bits, so 2^31 becomes
+	 * {@code Integer.MIN_VALUE} and 2^32 becomes 0 — a "give me everything" ask silently
+	 * turned into "give me a negative page" or "give me nothing", and the oversampling
+	 * multiplication below overflowed again on top of it.
+	 */
+	private static int clampToPage(java.math.BigInteger maxItems) {
+		if (maxItems.signum() <= 0) {
+			return DEFAULT_PAGE_FOR_NON_POSITIVE;
+		}
+		return maxItems.compareTo(java.math.BigInteger.valueOf(MAX_PAGE)) >= 0
+				? MAX_PAGE
+				: maxItems.intValue();
+	}
+
+	/** A skip count is a position, never negative — and never a truncated one. */
+	private static int clampSkip(java.math.BigInteger skipCount) {
+		if (skipCount.signum() <= 0) {
+			return 0;
+		}
+		return skipCount.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: skipCount.intValue();
+	}
+
+	/** A non-positive maxItems is not "no limit"; it gets the ordinary default page. */
+	private static final int DEFAULT_PAGE_FOR_NON_POSITIVE = 100;
+
+	/** Converts a client's depth without truncating an enormous value into 0 or a negative. */
+	private static int clampDepth(java.math.BigInteger depth) {
+		if (depth.signum() < 0) {
+			// -1 is CMIS's "unlimited"; invalidArgumentDepth has already rejected < -1.
+			return -1;
+		}
+		return depth.compareTo(java.math.BigInteger.valueOf(Integer.MAX_VALUE)) >= 0
+				? Integer.MAX_VALUE
+				: depth.intValue();
+	}
+
 }

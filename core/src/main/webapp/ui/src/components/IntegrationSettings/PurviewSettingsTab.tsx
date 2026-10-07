@@ -62,7 +62,7 @@ export function PurviewSettingsTab() {
       <Alert
         message={
           <Space>
-            <Tag color="blue">Beta</Tag>
+            <Tag color="blue">{t('common.beta')}</Tag>
             {isEnabled
               ? t('integrationSettings.purview.betaNotice')
               : t('integrationSettings.purview.disabledNotice')}

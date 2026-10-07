@@ -17,7 +17,8 @@ import java.util.Map;
 import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**
- * Salesforce REST API connector adapter — fetches records and attachments.
+ * Salesforce REST API connector adapter — reads the result of a SOQL query batch by batch, and
+ * single records.
  *
  * <p>Uses Salesforce REST API v59.0 with OAuth2 Bearer token.
  */
@@ -26,6 +27,8 @@ public class SalesforceConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(SalesforceConnectorAdapter.class);
     private static final String API_VERSION = "v59.0";
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
+    /** How many batches {@link #query} reads before it calls the result too long to read whole. */
+    static final int MAX_QUERY_BATCHES = 50;
 
     private final String instanceUrl;
     private final String accessToken;
@@ -48,41 +51,141 @@ public class SalesforceConnectorAdapter {
     public record SalesforceRecord(String id, String type, String name, Map<String, Object> fields) {}
 
     /**
-     * Query records using SOQL.
-     * SOQL is passed as a query parameter to Salesforce REST API, which handles
-     * its own validation. However, we reject obviously malicious patterns.
+     * One batch of a query's result: its records, and the path of the next batch
+     * ({@code nextRecordsUrl}), or null when the result is complete ({@code done}).
+     */
+    public record QueryPage(List<SalesforceRecord> records, String nextRecordsUrl) {}
+
+    /**
+     * The first batch of the result of a SOQL query. SOQL is passed as a query parameter to the
+     * Salesforce REST API, which handles its own validation; obviously mutating patterns are
+     * rejected here as well.
+     */
+    public QueryPage queryPage(String soql) throws Exception {
+        rejectMutations(soql);
+        return page(instanceUrl + "/services/data/" + API_VERSION + "/query?q="
+                + java.net.URLEncoder.encode(soql, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A later batch of a result, by the {@code nextRecordsUrl} Salesforce answered — read as a path
+     * on THIS instance, never as a URL: an answer does not choose the host the token is sent to.
+     */
+    public QueryPage nextPage(String nextRecordsUrl) throws Exception {
+        if (nextRecordsUrl == null || !nextRecordsUrl.startsWith("/services/data/") || nextRecordsUrl.contains("://")
+                || nextRecordsUrl.contains("..")) {
+            throw new IllegalStateException("Salesforce answered a nextRecordsUrl that is not a query path on this instance ('"
+                    + nextRecordsUrl + "'), so the rest of the result cannot be read");
+        }
+        return page(instanceUrl + nextRecordsUrl);
+    }
+
+    /**
+     * Every batch of the result of a SOQL query. A result longer than {@link #MAX_QUERY_BATCHES}
+     * batches is refused rather than cut: a caller given part of it would read the rest as absent.
      */
     public List<SalesforceRecord> query(String soql) throws Exception {
-        // Basic safety: reject SOQL with suspicious patterns
-        if (soql != null) {
-            String upper = soql.toUpperCase();
-            if (upper.contains("DELETE") || upper.contains("UPDATE") || upper.contains("INSERT")
-                    || upper.contains("--") || upper.contains(";")) {
-                throw new IllegalArgumentException("SOQL contains prohibited keywords");
+        List<SalesforceRecord> all = new ArrayList<>();
+        QueryPage page = queryPage(soql);
+        all.addAll(page.records());
+        int batches = 1;
+        while (page.nextRecordsUrl() != null) {
+            if (++batches > MAX_QUERY_BATCHES) {
+                throw new IllegalStateException("the query result runs past " + MAX_QUERY_BATCHES + " batches; it was not read whole");
             }
+            page = nextPage(page.nextRecordsUrl());
+            all.addAll(page.records());
         }
-        String url = instanceUrl + "/services/data/" + API_VERSION + "/query?q=" +
-                java.net.URLEncoder.encode(soql, java.nio.charset.StandardCharsets.UTF_8);
+        return all;
+    }
 
+    /**
+     * One batch. Refused rather than read around: an answer without a {@code records} array, one
+     * without {@code done}, and one that says {@code done: false} without a {@code nextRecordsUrl} —
+     * each would read the records it does not carry as absent.
+     */
+    private QueryPage page(String url) throws Exception {
         HttpResponse<String> response = get(url);
         JsonNode root = MAPPER.readTree(response.body());
         JsonNode records = root.get("records");
-        if (records == null || !records.isArray()) return List.of();
-
+        if (records == null || !records.isArray()) {
+            throw new IllegalStateException("Salesforce answered a query without a records array, so the batch cannot be read");
+        }
+        JsonNode done = root.get("done");
+        if (done == null || !done.isBoolean()) {
+            throw new IllegalStateException("Salesforce answered a query without done, so whether the result is complete cannot be told");
+        }
+        String next = null;
+        if (!done.asBoolean()) {
+            JsonNode nextNode = root.get("nextRecordsUrl");
+            if (nextNode == null || !nextNode.isTextual() || nextNode.asText().isBlank()) {
+                throw new IllegalStateException("Salesforce answered done=false without a nextRecordsUrl, so the rest of the result cannot be read");
+            }
+            next = nextNode.asText();
+        }
         List<SalesforceRecord> result = new ArrayList<>();
         for (JsonNode rec : records) {
-            String id = rec.path("Id").asText();
-            String type = rec.path("attributes").path("type").asText();
-            String name = rec.has("Name") ? rec.path("Name").asText() : id;
-            Map<String, Object> fields = new LinkedHashMap<>();
-            rec.properties().forEach(f -> {
-                if (!"attributes".equals(f.getKey())) {
-                    fields.put(f.getKey(), f.getValue().isTextual() ? f.getValue().asText() : f.getValue().toString());
-                }
-            });
-            result.add(new SalesforceRecord(id, type, name, fields));
+            result.add(record(rec, rec.path("attributes").path("type").asText(), rec.path("Id").asText("")));
         }
-        return result;
+        return new QueryPage(result, next);
+    }
+
+    private static SalesforceRecord record(JsonNode rec, String type, String id) {
+        String name = rec.has("Name") ? rec.path("Name").asText() : id;
+        Map<String, Object> fields = new LinkedHashMap<>();
+        rec.properties().forEach(f -> {
+            if (!"attributes".equals(f.getKey())) {
+                fields.put(f.getKey(), f.getValue().isTextual() ? f.getValue().asText() : f.getValue().toString());
+            }
+        });
+        return new SalesforceRecord(id, type, name, fields);
+    }
+
+    private static void rejectMutations(String soql) {
+        String prohibited = prohibitedIn(soql);
+        if (prohibited != null) {
+            throw new IllegalArgumentException("refused to send a SOQL that carries '" + prohibited + "' outside a quoted string");
+        }
+    }
+
+    /** The words that change data. A query has no use for them outside a quoted string. */
+    private static final java.util.Set<String> MUTATIONS = java.util.Set.of("DELETE", "UPDATE", "INSERT");
+
+    /**
+     * What a SOQL string carries outside its quoted strings that one read-only query has no use for:
+     * a statement separator ({@code ;}), a comment ({@code --}), or a word that changes data — as a
+     * whole word, in any case. Null when it carries none.
+     *
+     * <p>The first version searched the whole string for the letters: {@code WHERE Status = 'Updated'}
+     * and a field named {@code Last_Updated__c} were refused on every poll, reported as a failed
+     * connection (review, P2). Inside a quoted string (backslash escapes read) these are data.
+     */
+    static String prohibitedIn(String soql) {
+        if (soql == null) return null;
+        boolean quoted = false;
+        for (int i = 0; i < soql.length(); i++) {
+            char c = soql.charAt(i);
+            if (quoted) {
+                if (c == '\\') i++;
+                else if (c == '\'') quoted = false;
+                continue;
+            }
+            if (c == '\'') { quoted = true; continue; }
+            if (c == ';') return ";";
+            if (c == '-' && i + 1 < soql.length() && soql.charAt(i + 1) == '-') return "--";
+            if (Character.isLetter(c) && (i == 0 || !isWordChar(soql.charAt(i - 1)))) {
+                int end = i;
+                while (end < soql.length() && isWordChar(soql.charAt(end))) end++;
+                String word = soql.substring(i, end).toUpperCase(java.util.Locale.ROOT);
+                if (MUTATIONS.contains(word)) return word;
+                i = end - 1;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isWordChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     /**
@@ -92,14 +195,7 @@ public class SalesforceConnectorAdapter {
         String url = instanceUrl + "/services/data/" + API_VERSION + "/sobjects/" + objectType + "/" + recordId;
         HttpResponse<String> response = get(url);
         JsonNode rec = MAPPER.readTree(response.body());
-        String name = rec.has("Name") ? rec.path("Name").asText() : recordId;
-        Map<String, Object> fields = new LinkedHashMap<>();
-        rec.properties().forEach(f -> {
-            if (!"attributes".equals(f.getKey())) {
-                fields.put(f.getKey(), f.getValue().isTextual() ? f.getValue().asText() : f.getValue().toString());
-            }
-        });
-        return new SalesforceRecord(recordId, objectType, name, fields);
+        return record(rec, objectType, recordId);
     }
 
     /**
@@ -111,25 +207,11 @@ public class SalesforceConnectorAdapter {
     }
 
     /** Validate that a value is a Salesforce ID (15 or 18 alphanumeric chars). */
-    private static String validateSalesforceId(String value) {
+    static String validateSalesforceId(String value) {
         if (value == null || !value.matches("[a-zA-Z0-9]{15,18}")) {
             throw new IllegalArgumentException("Invalid Salesforce ID format: " + (value != null ? value.substring(0, Math.min(value.length(), 20)) : "null"));
         }
         return value;
-    }
-
-    /**
-     * Escape a value for inclusion in a SOQL string literal.
-     * Handles backslash, single quote, and null byte to prevent SOQL injection.
-     */
-    private static String escapeSoql(String value) {
-        if (value == null) return "";
-        return value
-                .replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\0", "")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
     }
 
     private HttpResponse<String> get(String url) throws Exception {

@@ -41,6 +41,12 @@ public class ImapConnectorAdapter {
         this.password = password;
     }
 
+    /** For tests: an adapter over a store that is already open. */
+    ImapConnectorAdapter(ConnectorDefinition connector, String password, Store store) {
+        this(connector, password);
+        this.store = store;
+    }
+
     /**
      * Summary of a message in a mailbox (for listing without full download).
      */
@@ -137,6 +143,72 @@ public class ImapConnectorAdapter {
         }
     }
 
+    /** What a UID-ordered listing answered: the messages, whether more remain, the folder's UIDVALIDITY. */
+    public record Listing(List<MessageSummary> messages, boolean more, long uidValidity) {
+    }
+
+    /**
+     * The messages with UID greater than {@code afterUid}, oldest first, at most {@code limit}
+     * of them — and whether more remain beyond them.
+     *
+     * <p>{@link #listMessages} answers the NEWEST {@code limit} messages of the folder, and the
+     * orchestrator then kept those above its checkpoint: with more than {@code limit} new
+     * messages since the last run, the oldest of them were never answered, and once the
+     * checkpoint advanced to the newest they never would be — the shape of R107 (9-6 review,
+     * P1). This asks the server for the range above the checkpoint instead.
+     */
+    public Listing listMessagesAfterUid(String folderName, long afterUid, int limit) throws MessagingException {
+        Folder folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            if (!(folder instanceof UIDFolder uf)) {
+                throw new MessagingException("folder " + folderName + " does not support UIDs, so the "
+                        + "messages above a checkpoint cannot be asked for");
+            }
+            long uidValidity = uf.getUIDValidity();
+            Message[] messages = uf.getMessagesByUID(afterUid + 1, UIDFolder.LASTUID);
+            // UIDs first — the server answered them with the range, so no round trip — then the
+            // sort and the cut, and only then the headers of the messages that are returned. The
+            // summaries of the whole backlog were fetched before the cut, three round trips a
+            // message, so a 50,000-message mailbox cost 150,000 round trips a run and every run
+            // read the backlog again (c96 confirmation review, P2).
+            record Above(long uid, Message message) {
+            }
+            List<Above> above = new ArrayList<>();
+            for (Message msg : messages) {
+                long uid = uf.getUID(msg);
+                // A server answers "N:*" with the message of the highest UID even when that UID is
+                // below N (RFC 3501, UID FETCH), so the bound is applied here too.
+                if (uid <= afterUid) {
+                    continue;
+                }
+                above.add(new Above(uid, msg));
+            }
+            // Sorted here so the order is this method's, not the server's.
+            above.sort((a, b) -> Long.compare(a.uid(), b.uid()));
+            boolean more = above.size() > limit;
+            List<Above> returned = more ? above.subList(0, limit) : above;
+            FetchProfile headers = new FetchProfile();
+            headers.add(FetchProfile.Item.ENVELOPE);
+            headers.add(FetchProfile.Item.SIZE);
+            headers.add("Message-ID");
+            folder.fetch(returned.stream().map(Above::message).toArray(Message[]::new), headers);
+            List<MessageSummary> summaries = new ArrayList<>();
+            for (Above one : returned) {
+                summaries.add(summaryOf(one.message(), one.uid(), uidValidity));
+            }
+            return new Listing(summaries, more, uidValidity);
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    private static MessageSummary summaryOf(Message msg, long uid, long uidValidity) throws MessagingException {
+        String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
+        String from = msg.getFrom() != null && msg.getFrom().length > 0 ? msg.getFrom()[0].toString() : null;
+        return new MessageSummary(uid, uidValidity, messageId, msg.getSubject(), from, msg.getSentDate(), msg.getSize());
+    }
+
     /**
      * Fetch a single message as an .eml byte stream.
      */
@@ -195,11 +267,27 @@ public class ImapConnectorAdapter {
         if (store == null || !store.isConnected()) {
             throw new MessagingException("Not connected — call connect() first");
         }
-
-        idleRunning = true;
+        // stopIdle can run after the session was registered and before this loop is
+        // entered. Writing idleRunning=true here used to re-arm a stopped adapter, so a
+        // DELETE that had already taken the session out of the registry left a live
+        // connection nobody could stop. A review named the window.
+        if (!armIdle()) {
+            throw new MessagingException("IDLE was stopped before start");
+        }
         Folder folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         idleFolder = folder;
+        // Arming and publishing the folder are two steps, and a stop can land between them:
+        // it then has no folder to close, waits ten seconds for a thread that has not started
+        // its loop, and gives up — after which this method would go on to install the
+        // listener and import messages the caller was told had been stopped. Re-checking
+        // after publication closes that window; the folder is now visible to stopIdle either
+        // way. A review measured the ordering.
+        if (!idleRunning) {
+            try { folder.close(false); } catch (Exception ignored) { /* already stopped */ }
+            idleFolder = null;
+            throw new MessagingException("IDLE was stopped while the mailbox was opening");
+        }
 
         long uidValidity = folder instanceof UIDFolder uf ? uf.getUIDValidity() : 0;
         final long uidV = uidValidity;
@@ -208,6 +296,13 @@ public class ImapConnectorAdapter {
             @Override
             public void messagesAdded(MessageCountEvent e) {
                 for (Message msg : e.getMessages()) {
+                    if (!idleRunning) {
+                        // A stop that arrived while this batch was in flight. Delivering the
+                        // rest would import mail after stopIdle() returned to its caller.
+                        logger.info("IDLE: stopped; dropping {} remaining notification(s)",
+                                e.getMessages().length);
+                        return;
+                    }
                     try {
                         String messageId = msg instanceof MimeMessage mm ? mm.getMessageID() : null;
                         String from = msg.getFrom() != null && msg.getFrom().length > 0
@@ -267,6 +362,7 @@ public class ImapConnectorAdapter {
 
     /** Stop the IDLE loop and wait for the thread to exit. */
     public void stopIdle() {
+        stopRequested.set(true);
         idleRunning = false;
         if (idleFolder != null && idleFolder.isOpen()) {
             try { idleFolder.close(false); } catch (Exception e) { /* triggers FolderClosedException in idle loop */ }
@@ -282,8 +378,30 @@ public class ImapConnectorAdapter {
     }
 
     private volatile boolean idleRunning;
+    private final java.util.concurrent.atomic.AtomicBoolean stopRequested =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile Thread idleThread;
     private volatile Folder idleFolder;
+
+    /**
+     * Claim the loop. False when {@link #stopIdle()} has already run — the only thing
+     * that keeps a late {@link #startIdle} from writing {@code idleRunning} back to true.
+     */
+    boolean armIdle() {
+        if (stopRequested.get()) {
+            return false;
+        }
+        idleRunning = true;
+        if (stopRequested.get()) {
+            idleRunning = false;
+            return false;
+        }
+        return true;
+    }
+
+    boolean isIdleRunning() {
+        return idleRunning;
+    }
 
     /** Set the thread running the IDLE loop (called by scheduler after thread start). */
     public void setIdleThread(Thread thread) { this.idleThread = thread; }

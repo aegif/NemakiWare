@@ -470,4 +470,58 @@ class FormatDuplicationRecorderTest {
                 "an unconfigured ledger produced a warning on every preview: "
                         + recorded.warning());
     }
+
+
+    @Test
+    @DisplayName("EVERY way of not reaching the chain is counted, not just the loud ones")
+    void everyGapIsCounted() {
+        // The gap had one destination and it was the log. The class contract says "a gap is
+        // reported, not raised", and the three fail-open recorders reported theirs three ways:
+        // capture returns a warning to its caller AND counts (surfaced as
+        // chainGapsOnThisReplicaSinceStartup), the fixity pass puts chained/chainWarning on its
+        // response, and a duplication only logged -- its caller returns a Rendition with nowhere
+        // to put a warning, and the three REST rendition endpoints carry none.
+        //
+        // All three gap paths, because counting only the loud ones would leave the commonest
+        // (no ledger wired) invisible -- and that is the arm that logs at DEBUG.
+        EvidenceLedgerService throwing = mock(EvidenceLedgerService.class);
+        when(throwing.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenThrow(new RuntimeException("couchdb is down"));
+        EvidenceLedgerService refusing = mock(EvidenceLedgerService.class);
+        when(refusing.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new EvidenceLedgerService.AppendResult(
+                        EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null, "no store"));
+
+        for (EvidenceLedgerService service
+                : new EvidenceLedgerService[] { null, throwing, refusing }) {
+            FormatDuplicationRecorder recorder = recorderOver(service);
+            long before = recorder.gapsSinceStartup();
+
+            recorder.recordDuplication(REPO, "obj-1", "src", "out",
+                    Converter.JODCONVERTER_LIBREOFFICE,
+                    FormatDuplicationRecorder.TargetFormat.PDF, "admin",
+                    "2026-08-26T00:00:00Z");
+
+            assertEquals(before + 1, recorder.gapsSinceStartup(),
+                    "a duplication that did not reach the chain was not counted, so the only "
+                            + "trace of it is a log line");
+        }
+    }
+
+    @Test
+    @DisplayName("a duplication that DOES reach the chain is not counted — the control")
+    void aChainedDuplicationIsNotCountedAsAGap() {
+        EvidenceLedgerService service = mock(EvidenceLedgerService.class);
+        when(service.append(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn(new EvidenceLedgerService.AppendResult(
+                        EvidenceLedgerService.AppendOutcome.APPENDED, 5, "hash", null));
+        FormatDuplicationRecorder recorder = recorderOver(service);
+
+        recorder.recordDuplication(REPO, "obj-1", "src", "out",
+                Converter.JODCONVERTER_LIBREOFFICE,
+                FormatDuplicationRecorder.TargetFormat.PDF, "admin", "2026-08-26T00:00:00Z");
+
+        assertEquals(0, recorder.gapsSinceStartup(),
+                "a chained duplication was counted as a gap, so the number means nothing");
+    }
 }

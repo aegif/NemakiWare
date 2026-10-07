@@ -367,6 +367,27 @@ public interface ContentDaoService {
 	List<Content> getChildren(String repositoryId, String parentId);
 
 	/**
+	 * How many children the last enumeration on this thread could not decode.
+	 *
+	 * <p>Zero means the enumeration was complete. A POSITIVE number is how many rows the store
+	 * returned and could not read — children that exist and are not in the list.
+	 *
+	 * <p>The cached decorator answers for the listing it hands back, including on a cache HIT:
+	 * the count is taken when the tree is built and stored with it. It briefly answered
+	 * {@code -1} ("unknown") on every hit instead, which was honest and was also an outage — a
+	 * hit is the ordinary state of a working cache, and the callers refuse on a non-zero count,
+	 * so external ingest stopped for any folder listed twice. Callers may still write
+	 * {@code != 0} defensively; nothing returns a negative today.
+	 *
+	 * <p>Anything recording a verdict about "everything under here" — the fixity scan writes
+	 * one into an append-only chain — must consult this before calling a listing whole.
+	 */
+	default int lastUnreadableChildCount() {
+		return 0;
+	}
+
+
+	/**
 	 * Get a page of children in a folder using CouchDB skip/limit.
 	 * @param repositoryId repository ID
 	 * @param parentId parent folder ID
@@ -830,6 +851,29 @@ public interface ContentDaoService {
 	List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc);
 
 	/**
+	 * Rows the most recent {@link #getArchives} on THIS thread could not decode.
+	 *
+	 * <p>Same contract as {@link #lastUnreadableChildCount()}: zero is the ordinary answer, and
+	 * a caller that diffs the returned list against a snapshot must consult this first — a
+	 * dropped row is an archive that exists, and treating it as absent deletes it from the
+	 * external catalog.
+	 */
+	default int lastUnreadableArchiveCount() {
+		return 0;
+	}
+
+	/**
+	 * Rows the most recent {@code getLatestChanges} on THIS thread could not decode.
+	 *
+	 * <p>A change row that will not decode is a change that happened. A consumer that advances
+	 * a cursor to "the last token it decoded" must consult this first, or the skipped change is
+	 * never visited again.
+	 */
+	default int lastUnreadableChangeCount() {
+		return 0;
+	}
+
+	/**
 	 * Get archives created (deleted) by a specific user.
 	 *
 	 * @param repositoryId the repository ID
@@ -893,6 +937,86 @@ public interface ContentDaoService {
 	void restoreAttachment(String repositoryId, Archive archive);
 
 	void restoreDocumentWithArchive(String repositoryId, Archive archive);
+
+	/**
+	 * What a restore wrote back (W11, E1).
+	 *
+	 * @param contentDigest lowercase hex SHA-256 of the bytes as they were written back, taken in
+	 *        the same pass; NULL when the bytes went past but the digest cannot be vouched for
+	 *        (the stored length differed from what was counted) — "not known", never a guess
+	 */
+	record RestoredBytes(String attachmentId, String contentDigest, long length,
+			ContentAbsence absence) {
+
+		/**
+		 * Why a restore wrote no bytes back — R57.
+		 *
+		 * <p>{@link #NOTHING} used to answer three different situations with one value: the
+		 * archive row could not be read, the version never had content, and <b>the content was
+		 * MOVED to cold storage and this product has no way to read it back</b>. Only the last
+		 * of those is permanent, and it is the one a caller must not describe as "a restore is
+		 * in progress, retry shortly" — that restore has finished and waiting will not change
+		 * anything.
+		 */
+		public enum ContentAbsence {
+			/** Bytes were written back, or nothing has been determined. */
+			NONE,
+			/** The archive row was unreadable or absent. Says nothing about the content. */
+			NOT_DETERMINED,
+			/** The archived version carried no content of its own. */
+			ARCHIVE_HAD_NO_CONTENT,
+			/**
+			 * The content was moved to cold storage and the archive kept only its reference.
+			 * This product has no read-back path, so the row will stay body-less until
+			 * something outside it puts the bytes back.
+			 */
+			MOVED_TO_COLD
+		}
+
+		/** The pre-R57 shape, kept so existing construction does not change meaning. */
+		public RestoredBytes(String attachmentId, String contentDigest, long length) {
+			this(attachmentId, contentDigest, length, ContentAbsence.NONE);
+		}
+
+		/** Nothing was written back and nothing was determined about why. */
+		public static final RestoredBytes NOTHING =
+				new RestoredBytes(null, null, 0L, ContentAbsence.NOT_DETERMINED);
+
+		/** Nothing was written back, and this is why. */
+		public static RestoredBytes nothingBecause(ContentAbsence absence) {
+			return new RestoredBytes(null, null, 0L, absence);
+		}
+
+		public boolean wroteBytes() {
+			return attachmentId != null;
+		}
+	}
+
+	/**
+	 * Why an attachment row carries no content body, as the row itself records it — R57.
+	 *
+	 * <p>Read only when a caller is about to refuse, so nothing on the read path changes. The
+	 * restore writes this when it finishes without bytes; a row that says nothing answers null,
+	 * which is "not stated", never "there is no reason".
+	 *
+	 * @return one of {@link RestoredBytes.ContentAbsence}'s names, or null when the row does not
+	 *         say
+	 */
+	default String contentAbsenceReason(String repositoryId, String attachmentId) {
+		return null;
+	}
+
+	/**
+	 * {@link #restoreDocumentWithArchive}, reporting what was written back.
+	 *
+	 * @return the restored bytes' digest and length; NULL when the archive carried no binary
+	 *         (nothing was written back) or when this implementation cannot report it. A caller
+	 *         recording E1 treats null after a restore as "not known", not as "nothing"
+	 */
+	default RestoredBytes restoreDocumentWithArchiveRecording(String repositoryId, Archive archive) {
+		restoreDocumentWithArchive(repositoryId, archive);
+		return null;
+	}
 
 	/**
 	 * Restore a VersionSeries document by purging its tombstone and recreating it.

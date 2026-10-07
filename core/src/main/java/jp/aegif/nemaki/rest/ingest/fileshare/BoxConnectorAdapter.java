@@ -26,8 +26,13 @@ public class BoxConnectorAdapter {
     private static final Logger logger = LoggerFactory.getLogger(BoxConnectorAdapter.class);
     private static final String BOX_API = "https://api.box.com/2.0";
     private static final ObjectMapper MAPPER = ObjectMapperFactory.createDefaultObjectMapper();
+    /** Box's largest page of folder items. */
+    static final int PAGE_SIZE = 1000;
+    /** How many {@code /folders/{id}/items} requests one listing may make unless the caller says otherwise. */
+    public static final int DEFAULT_MAX_LIST_REQUESTS = 50;
 
     private final String accessToken;
+    private final String apiBase;
     private final HttpClient httpClient;
 
     public BoxConnectorAdapter(String accessToken) {
@@ -35,7 +40,13 @@ public class BoxConnectorAdapter {
     }
 
     public BoxConnectorAdapter(String accessToken, HttpClient httpClient) {
+        this(accessToken, BOX_API, httpClient);
+    }
+
+    /** Tests point the real adapter at a local stub of the Box API through {@code apiBase}. */
+    public BoxConnectorAdapter(String accessToken, String apiBase, HttpClient httpClient) {
         this.accessToken = accessToken;
+        this.apiBase = apiBase;
         this.httpClient = httpClient;
     }
 
@@ -43,45 +54,92 @@ public class BoxConnectorAdapter {
                           String modifiedAt, String parentId) {}
 
     /**
-     * List files in a folder.
+     * A folder listing, and whether it is the WHOLE folder.
      *
-     * @param folderId Box folder ID ("0" for root)
-     * @param limit    max items to return
-     * @return list of files (excludes sub-folders)
+     * @param files every file the listing reached, in the order Box returned them (by type and
+     *     name — NOT by modification time)
+     * @param complete true when the listing reached the end of the folder
+     * @param truncatedBecause why it stopped early; null when {@code complete}
      */
-    public List<BoxFile> listFiles(String folderId, int limit) throws Exception {
-        int pageSize = Math.min(limit, 1000); // Box max: 1000
+    public record FileListing(List<BoxFile> files, boolean complete, String truncatedBecause) {}
+
+    /**
+     * List EVERY file in a folder (sub-folders excluded), a page of {@value #PAGE_SIZE} at a
+     * time, up to {@code maxRequests} requests — by MARKER, not by offset.
+     *
+     * <p>This replaced a listing stopped at the caller's per-run limit (R107). Box returns folder
+     * items by type and name, not by modification time, so a listing cut at N items was the
+     * first N names — every file after them was never listed at all, on any poll, and the
+     * checkpoint the caller raised from the files it did see excluded any of them modified
+     * earlier for ever. The whole folder is read; the caller's budget is the caller's.
+     *
+     * <p>Marker pagination ({@code usemarker=true}), because offset pagination skips: an item
+     * deleted while the folder is being listed shifts every later item one place back, so the
+     * item that moved into the page already read is never returned — and, newer than the
+     * checkpoint, is excluded by it for ever (review, P1). A marker names a position, not a
+     * count.
+     *
+     * <p>A response without an {@code entries} array is a malformed answer and is refused, not
+     * read as an empty folder. The end is a missing, null or empty {@code next_marker} — the
+     * documented shape; whether Box ever omits the field on a page that is NOT the last is not
+     * something this reader can tell, and that reading is recorded beside R61's.
+     */
+    public FileListing listAllFiles(String folderId, int maxRequests) throws Exception {
         List<BoxFile> allFiles = new ArrayList<>();
-        int offset = 0;
-
-        for (int page = 0; page < 50; page++) { // Hard cap
-            String url = BOX_API + "/folders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId) + "/items?fields=id,name,type,size,modified_at,parent"
-                    + "&limit=" + pageSize + "&offset=" + offset;
-
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String marker = null;
+        for (int request = 0; request < maxRequests; request++) {
+            String url = apiBase + "/folders/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(folderId)
+                    + "/items?fields=id,name,type,size,modified_at,parent"
+                    + "&limit=" + PAGE_SIZE + "&usemarker=true"
+                    + (marker == null ? "" : "&marker=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(marker));
             HttpResponse<String> response = get(url);
             JsonNode root = MAPPER.readTree(response.body());
             JsonNode entries = root.get("entries");
-            if (entries == null || !entries.isArray() || entries.isEmpty()) break;
-
+            if (entries == null || !entries.isArray()) {
+                throw new RuntimeException("Box answered the folder listing without an entries array on request "
+                        + (request + 1) + ", so how many items the folder holds is unknown");
+            }
+            int newOnThisPage = 0;
             for (JsonNode entry : entries) {
+                // An item without an id cannot be told from any other — two of them would
+                // collapse into one and the second be dropped without a word (review, P1).
+                String id = entry.path("id").asText("");
+                if (id.isEmpty()) {
+                    throw new RuntimeException("Box answered the folder listing with an item that has no id on request "
+                            + (request + 1) + ", so the items cannot be told apart");
+                }
+                // An item this listing already holds is not listed twice: a page that repeats
+                // part of the previous one still makes progress by what it adds.
+                if (!seen.add(id)) continue;
+                newOnThisPage++;
                 if (!"file".equals(entry.path("type").asText())) continue;
                 allFiles.add(new BoxFile(
-                        entry.path("id").asText(),
+                        id,
                         entry.path("name").asText(),
                         entry.path("type").asText(),
                         entry.path("size").asLong(0),
                         entry.path("modified_at").asText(null),
                         entry.path("parent").path("id").asText(null)
                 ));
-                if (allFiles.size() >= limit) break;
             }
-            if (allFiles.size() >= limit) break;
-
-            int totalCount = root.path("total_count").asInt(0);
-            offset += pageSize; // Box API: advance by requested limit, not by entries.size()
-            if (offset >= totalCount) break;
+            String nextMarker = root.path("next_marker").asText("");
+            if (nextMarker.isEmpty()) {
+                return new FileListing(allFiles, true, null);
+            }
+            // A marker that moves but returns nothing this listing has not already seen is not
+            // progress: read as one, an API that repeats a page would spend the cap on repeats
+            // and — offering a marker at the end — be reported as cut, or worse, run out of
+            // cap on the last repeat and be reported whole (review, P1).
+            if (nextMarker.equals(marker) || newOnThisPage == 0) {
+                return new FileListing(allFiles, false, "Box offered marker " + nextMarker
+                        + " after a page that added nothing this listing had not seen, so the listing cannot move forward");
+            }
+            marker = nextMarker;
         }
-        return allFiles;
+        return new FileListing(allFiles, false, "the cap of " + maxRequests + " listing request(s) was reached with "
+                + allFiles.size() + " file(s) read and more items still in the folder (raise the profile's "
+                + "boxListMaxRequests parameter)");
     }
 
     /**
@@ -92,7 +150,7 @@ public class BoxConnectorAdapter {
      * @return list of matching files
      */
     public List<BoxFile> searchFiles(String query, int limit) throws Exception {
-        String url = BOX_API + "/search?query=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(query)
+        String url = apiBase + "/search?query=" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(query)
                 + "&type=file&fields=id,name,type,size,modified_at,parent&limit=" + limit;
 
         HttpResponse<String> response = get(url);
@@ -122,7 +180,7 @@ public class BoxConnectorAdapter {
      */
     public InputStream downloadFile(String fileId) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BOX_API + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "/content"))
+                .uri(URI.create(apiBase + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "/content"))
                 .header("Authorization", "Bearer " + accessToken)
                 .timeout(Duration.ofSeconds(60))
                 .GET()
@@ -138,7 +196,7 @@ public class BoxConnectorAdapter {
      * Get file metadata.
      */
     public BoxFile getFileInfo(String fileId) throws Exception {
-        HttpResponse<String> response = get(BOX_API + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?fields=id,name,type,size,modified_at,parent");
+        HttpResponse<String> response = get(apiBase + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?fields=id,name,type,size,modified_at,parent");
         JsonNode entry = MAPPER.readTree(response.body());
         return new BoxFile(
                 entry.path("id").asText(),

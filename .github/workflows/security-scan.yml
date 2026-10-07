@@ -7,30 +7,39 @@ name: Security Scan
 #   - daily at 02:00 UTC (catches newly disclosed CVEs against pinned versions)
 #
 # What it checks:
-#   1. npm audit (frontend) — fails on any high/critical vulnerability
+#   1. npm audit (frontend) — fails on a high/critical vulnerability in the
+#      production dependencies (--omit=dev)
 #   2. Maven dependency:tree drift — flags reintroduction of known-bad
 #      versions (junit:compile, xml-apis, logback < 1.5.19, netty < 4.1.136,
 #      httpclient < 4.5.14, etc.)
 #   3. Plaintext credential drift — fails if hardcoded admin/password
 #      patterns reappear in compose files / properties
 #   4. OSV dependency scan (osv-scanner) — cross-ecosystem CVE lookup over
-#      every pom.xml + package-lock.json against the OSV.dev database, so a
-#      newly disclosed CVE against a pinned version surfaces without waiting
-#      for a hand-written denylist entry (informational — does not block)
-#   5. Trivy container-image scan — builds the Solr image and fails on
-#      fixable HIGH/CRITICAL OS/library CVEs, closing the gap where the
-#      hand-maintained Maven denylist never saw the runtime base image
-#      (this is exactly how the Solr 9.10.0 -> 9.10.1 CVE-2025-66516 lag
-#      would have been caught)
+#      the pom.xml / package-lock.json / requirements.txt files it can parse,
+#      against the OSV.dev database, so a newly disclosed CVE against a pinned
+#      version surfaces without waiting for a hand-written denylist entry
+#      (informational — does not block). It cannot parse core/pom.xml or
+#      evidence-verifier-cli/pom.xml ("Attempted to scan lockfile but failed"),
+#      so the WAR's resolved Java dependencies are not in it; before a tag, the
+#      resolved SBOM is matched against OSV by hand (tools/sbom/osv-check.py —
+#      no workflow runs it; SECURITY-EXCEPTIONS.md).
+#   5. Trivy container-image scan — builds the Solr image and reports its
+#      HIGH/CRITICAL OS/library CVEs (informational: the job is
+#      continue-on-error and trivy runs without --exit-code, so a finding does
+#      not turn it red). It covers the runtime base image, which the
+#      hand-maintained Maven denylist never saw (the Solr 9.10.0 -> 9.10.1
+#      CVE-2025-66516 lag would have shown up in its report).
 #
 # The hand-written Maven denylist (job 2) stays as a fast, deterministic
-# floor; OSV + Trivy add dynamic, database-backed coverage on top.
+# floor; OSV + Trivy add dynamic, database-backed reports on top.
 #
-# This is an early-warning system: the drift/credential/Trivy checks fail
-# (red) on regressions; the OSV job is informational. Failures don't block
-# merges automatically, but the GitHub UI shows red checks so reviewers see
-# them. To make it blocking, mark the workflow required in branch
-# protection settings.
+# This is an early-warning system: the npm audit / drift / credential checks
+# fail (red) on regressions; the OSV and Trivy jobs only report. Whether a red
+# check blocks a merge is up to branch protection: on 2026-10-05 master
+# required npm audit (frontend), Maven dependency drift check, Config
+# credential drift, XML parser hardening gate, Security exception expiry and
+# Bundled jar staleness scan among its status checks (not the OSV or Trivy
+# jobs).
 
 on:
   push:
@@ -447,7 +456,10 @@ jobs:
     # FLIP CONDITION (to remove continue-on-error and make this a hard gate):
     # once a run is clean except for advisories that each have a dated entry in
     # osv-scanner.toml, set continue-on-error: false so new, un-accepted CVEs
-    # fail the build. The exception-expiry job already hard-fails expired ones.
+    # fail the build — and make the scan step keep osv-scanner's exit code
+    # (`set -o pipefail`): the step pipes into `tee` under `bash -e`, so today a
+    # finding's non-zero exit is dropped and the step stays green either way.
+    # The exception-expiry job already hard-fails expired ones.
     continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -462,7 +474,7 @@ jobs:
           got=$(sha256sum "$RUNNER_TEMP/osv-scanner" | awk '{print $1}')
           [ -n "$want" ] && [ "$want" = "$got" ] || { echo "osv-scanner checksum mismatch: got=$got want=$want"; exit 1; }
           chmod +x "$RUNNER_TEMP/osv-scanner"
-      - name: Scan every pom.xml + package-lock.json against OSV.dev
+      - name: Scan the manifests osv-scanner can parse (pom.xml, package-lock.json, requirements.txt) against OSV.dev
         # --config points OSV at the documented, time-boxed ignore list so
         # accepted no-fix advisories (e.g. the Solr GHSA) do not re-flag until
         # their ignoreUntil date, at which point exception-expiry fails.
@@ -486,8 +498,11 @@ jobs:
     # blocking on them would be non-actionable churn that re-reddens every time
     # the vuln DB updates. The actionable signal — "a newer Solr base image
     # exists" — is delivered by Dependabot (docker ecosystem, watching
-    # docker/solr/Dockerfile's FROM). Our OWN Java dependencies are hard-gated
-    # by maven-dep-check + OSV. This job publishes the full report (table +
+    # docker/solr/Dockerfile's FROM). Our OWN Java dependencies are gated by
+    # maven-dep-check (a hand-written denylist); the OSV job only reports and
+    # cannot parse core/pom.xml, so before a tag the resolved SBOM is matched
+    # against OSV by hand (tools/sbom/osv-check.py — no workflow runs it). This
+    # job publishes the full report (table +
     # SARIF artifact) for visibility. The core image is likewise scanned
     # informationally in release-images.yml.
     continue-on-error: true

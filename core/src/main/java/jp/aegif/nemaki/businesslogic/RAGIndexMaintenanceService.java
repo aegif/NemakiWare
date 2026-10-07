@@ -34,7 +34,16 @@ public interface RAGIndexMaintenanceService {
      */
     public static class RAGReindexStatus {
         private String repositoryId;
-        private String status; // "idle", "running", "completed", "error", "cancelled"
+        /**
+         * One of {@code idle}, {@code running}, {@code completed},
+         * {@code completed_with_errors}, {@code error}, {@code cancelled}.
+         *
+         * <p>{@code completed_with_errors} was added here first and the list was not updated,
+         * so {@code tools/acl-probe/rag_revocation_seed.py} went on waiting for
+         * {@code completed} and timed out after 900 seconds saying the reindex never finished.
+         * See the sibling in {@code SolrIndexMaintenanceService}.
+         */
+        private String status;
         private long totalDocuments;
         private long indexedCount;
         private long skippedCount;  // Documents skipped (unsupported MIME type, no content)

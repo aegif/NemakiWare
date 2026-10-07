@@ -60,8 +60,24 @@ public class EvidenceLedgerService {
         UNAVAILABLE,
         /** Every attempt lost the position to another writer. Nothing was recorded. */
         CONTENDED,
-        /** The store refused. Nothing was recorded. */
-        REFUSED
+        /**
+         * The append was refused BEFORE anything was written, and the chain is unchanged.
+         *
+         * <p>A fork at the tail, a row that would not decode, a tail that could not be read
+         * back: in each the decision is taken before {@code store.append} is called, so this
+         * one really does mean "nothing was recorded".
+         */
+        REFUSED,
+        /**
+         * The append was attempted and its outcome is unknown.
+         *
+         * <p>{@code store.append} threw. A write whose response was lost may well have
+         * landed, so this is NOT a statement that the chain is unchanged — and that is
+         * precisely why it is no longer reported as {@link #REFUSED}. The two were one
+         * constant, distinguished only by a paragraph of javadoc, which meant a consumer
+         * asking "is the ledger as I last saw it?" got "yes" for a write that may be in it.
+         */
+        INDETERMINATE
     }
 
     public record AppendResult(AppendOutcome outcome, long sequence, String entryHash,
@@ -95,6 +111,18 @@ public class EvidenceLedgerService {
                     prevHash = null;
                 } else {
                     List<EvidenceLedgerEntry> last = store.range(domain, tail, tail, 2);
+                    // The fork check below counts ROWS THAT DECODED. A tail holding one good
+                    // row and one the store could not read looks like a clean tail of one, so
+                    // the append links to an arm it chose without knowing there was a choice —
+                    // exactly what the refusal underneath exists to prevent, entered by a door
+                    // it does not watch.
+                    if (store.unreadableCount() > 0) {
+                        return new AppendResult(AppendOutcome.REFUSED, -1, null,
+                                store.unreadableCount() + " row(s) at or near sequence " + tail
+                                        + " could not be decoded, so whether the chain forks "
+                                        + "there is unknown. This is NOT a finding that it does "
+                                        + "not; appending now could link past an arm nobody saw");
+                    }
                     if (last == null || last.isEmpty()) {
                         return new AppendResult(AppendOutcome.REFUSED, -1, null,
                                 "the tail entry could not be read back, so the chain link "
@@ -112,7 +140,25 @@ public class EvidenceLedgerService {
                 }
                 EvidenceLedgerEntry entry = EvidenceLedgerEntry.of(domain, tail + 1, kind,
                         subjectId, payloadDigest, occurredAt, prevHash);
-                if (store.append(entry)) {
+                boolean written;
+                try {
+                    written = store.append(entry);
+                } catch (Exception writeFailure) {
+                    // The ONLY call whose outcome is genuinely unknown. The catch below used
+                    // to cover the whole body — the tail reads included — so a failure that
+                    // provably happened BEFORE any write was also reported as "we do not know
+                    // whether it landed". Safe direction, but not the split that was promised:
+                    // a caller asking "is the chain as I last saw it?" got "unknown" for a
+                    // read that never wrote anything.
+                    logger.warn("Evidence ledger write failed for {}: {}", domain,
+                            writeFailure.toString());
+                    return new AppendResult(AppendOutcome.INDETERMINATE, -1, null,
+                            "the append failed: " + writeFailure.getMessage() + ". Whether the"
+                                    + " entry reached the store is unknown — a write whose"
+                                    + " response was lost may have landed — so this is NOT a"
+                                    + " statement that the chain is unchanged");
+                }
+                if (written) {
                     return new AppendResult(AppendOutcome.APPENDED, entry.sequence(),
                             entry.entryHash(), null);
                 }
@@ -120,7 +166,8 @@ public class EvidenceLedgerService {
             } catch (Exception e) {
                 logger.warn("Evidence ledger append failed for {}: {}", domain, e.toString());
                 return new AppendResult(AppendOutcome.REFUSED, -1, null,
-                        "the append failed: " + e.getMessage());
+                        "the tail of the chain could not be read (" + e.getMessage()
+                                + "), so no entry was written. The chain is unchanged.");
             }
         }
         return new AppendResult(AppendOutcome.CONTENDED, -1, null,
@@ -161,6 +208,22 @@ public class EvidenceLedgerService {
         // a reader that overflow is reachable here.
         int expected = (int) (to - from + 1);
         List<EvidenceLedgerEntry> span = store.range(domain, from, to, expected + 1);
+        int undecodable = store.unreadableCount();
+        if (undecodable > 0) {
+            // A checkpoint is a commitment to "these sequences, and this root over them". Rows
+            // the store could not decode are not in `span`, so the coverage check below — which
+            // compares the endpoints and the COUNT — can be satisfied by a span that is missing
+            // an entry, and the root would then be over a set the checkpoint names but does not
+            // contain. Sealed, and append-only.
+            body.put("status", "error");
+            body.put("message", undecodable + " row(s) in " + from + ".." + to + " could not be "
+                    + "decoded, so what this span contains is unknown. Nothing was sealed: a "
+                    + "checkpoint commits to a set of sequences, and a root taken over a set "
+                    + "that is missing one of them would read as covering it for ever.");
+            body.put("requestedFrom", from);
+            body.put("requestedTo", to);
+            return body;
+        }
 
         // The span must BE the range this checkpoint claims. The verifier only checks
         // relationships WITHIN whatever list it was handed, so a short read — a view still
@@ -204,14 +267,6 @@ public class EvidenceLedgerService {
         return body;
     }
 
-    /**
-     * The audit path proving one entry was in the ledger as of a checkpoint.
-     *
-     * <p>The proof is against the checkpoint that COVERS the entry — a later checkpoint does
-     * not commit to this entry's leaf directly, it commits to the earlier checkpoint's hash.
-     * Walking that further is the checkpoint chain, which the caller can verify from the
-     * checkpoints alone.
-     */
     /**
      * Why {@code span} cannot be sealed as {@code [from, to]}, or null when it can.
      *
@@ -259,6 +314,16 @@ public class EvidenceLedgerService {
     }
 
     /**
+     * Rows the last read on this thread returned and could not decode.
+     *
+     * <p>Passes through from the store. A caller reading an empty list from
+     * {@link #entriesFor} as "the chain holds nothing about this subject" must consult it.
+     */
+    public int lastUnreadableCount() {
+        return store == null ? 0 : store.unreadableCount();
+    }
+
+    /**
      * The entries under one subject, for a caller that already depends on this service.
      *
      * <p>Exposed so a caller does not need a SECOND optional injection of the store to read
@@ -280,7 +345,14 @@ public class EvidenceLedgerService {
         return found == null ? List.of() : found;
     }
 
-    /** An inclusion proof for one entry, against the checkpoint that covers it. */
+    /**
+     * The audit path proving one entry was in the ledger as of a checkpoint.
+     *
+     * <p>The proof is against the checkpoint that COVERS the entry — a later checkpoint does
+     * not commit to this entry's leaf directly, it commits to the earlier checkpoint's hash.
+     * Walking that further is the checkpoint chain, which the caller can verify from the
+     * checkpoints alone.
+     */
     public Map<String, Object> inclusionProof(String domain, long sequence) {
         Map<String, Object> body = new LinkedHashMap<>();
         if (store == null || !store.isActive()) {

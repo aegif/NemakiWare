@@ -91,6 +91,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisContentAlreadyExists
 import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException;
 import com.ibm.cloud.sdk.core.service.exception.NotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 // CmisException import removed due to Jakarta EE compatibility issues
@@ -119,6 +120,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -288,6 +290,11 @@ public class ContentServiceImpl implements ContentService {
 			return null;
 		}
 		return getFolder(repositoryId, content.getParentId());
+	}
+
+	@Override
+	public int lastUnreadableChildCount() {
+		return contentDaoService.lastUnreadableChildCount();
 	}
 
 	/**
@@ -634,6 +641,15 @@ public class ContentServiceImpl implements ContentService {
 
 		// Return the existing sub-folder if present.
 		List<Content> children = getChildren(repositoryId, systemFolder.getId());
+		// Find-or-CREATE over a short listing creates a duplicate: the existing folder may BE
+		// the row that would not decode. This is the consolidation helper the sync and auth
+		// paths were pointed at — the guard has to live here or every caller inherits the hole.
+		if (lastUnreadableChildCount() > 0) {
+			throw new IllegalStateException("the .system folder's listing is incomplete ("
+					+ lastUnreadableChildCount() + " child row(s) could not be read), so whether"
+					+ " a '" + name + "' folder already exists is unknown; refusing to create a"
+					+ " possible duplicate");
+		}
 		if (CollectionUtils.isNotEmpty(children)) {
 			for (Content child : children) {
 				if (child instanceof Folder && java.util.Objects.equals(name, child.getName())) {
@@ -785,10 +801,21 @@ public class ContentServiceImpl implements ContentService {
 		}
 		for (String parentId : parents) {
 			// Re-fetch a full, revision-bearing document before persisting the update; the view
-			// value carries no revision.
-			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			// value carries no revision. FRESH, not cached: the reverse view is
+			// cross-replica truth, but the cache can hold a parent from before another
+			// replica added this membership — a stale hit here read as "does not contain
+			// it" and skipped the strip, the multi-replica twin of the null-skip below.
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemByIdFresh(repositoryId, parentId);
 			if (g == null) {
-				continue;
+				// The view SAID this group references the principal being deleted; a re-fetch
+				// that comes back empty is "could not confirm", not "no longer references".
+				// Skipping updated the OTHER parents and let the delete report success — the
+				// dangling id then sat in this parent's nested list, and re-creating the same
+				// group id later silently revived the nesting. Same argument as
+				// parentGroupIdsFrom's javadoc, one hop later.
+				throw new IllegalStateException("group '" + parentId + "' references group '"
+						+ groupId + "' but could not be re-fetched; aborting the delete"
+						+ " instead of leaving a dangling nested reference");
 			}
 			List<String> current = g.getGroups();
 			if (current == null || !current.contains(groupId)) {
@@ -862,9 +889,14 @@ public class ContentServiceImpl implements ContentService {
 		}
 		for (String parentId : parents) {
 			// the view value carries no revision; re-fetch a full, revision-bearing document
-			jp.aegif.nemaki.model.GroupItem g = getGroupItemById(repositoryId, parentId);
+			// (FRESH — same stale-cache argument as the group twin above)
+			jp.aegif.nemaki.model.GroupItem g = getGroupItemByIdFresh(repositoryId, parentId);
 			if (g == null) {
-				continue;
+				// Same as the group twin above: re-creating the same user id later would
+				// silently inherit this group's ACEs through the dangling membership.
+				throw new IllegalStateException("group '" + parentId + "' references user '"
+						+ userId + "' but could not be re-fetched; aborting the delete"
+						+ " instead of leaving a dangling membership");
 			}
 			List<String> current = g.getUsers();
 			if (current == null || !current.contains(userId)) {
@@ -1107,6 +1139,11 @@ public class ContentServiceImpl implements ContentService {
 	String createdDocumentId = null;
 	String createdAttachmentId = null;
 	boolean rollbackRequired = false;
+	// E1 (W1). Held across the phases below: the row is opened BEFORE the bytes and the
+	// statement is recorded after the document exists, because only then is there a version
+	// key for it to be about.
+	jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written writtenContent = null;
+	jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending contentWrite = null;
 	
 	try {
 		// PHASE 1: Prepare all components without CouchDB writes
@@ -1152,7 +1189,17 @@ public class ContentServiceImpl implements ContentService {
 		// PHASE 2: Atomic Attachment creation (CMIS 1.1 SPECIFICATION COMPLIANT)
 		if (csa == ContentStreamAllowed.REQUIRED || (csa == ContentStreamAllowed.ALLOWED && contentStream != null)) {
 			// Create Attachment atomically with immediate Document reference
-			createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+			// The row first. A crash between here and the statement below leaves bytes with no
+			// statement, and this row is what makes that gap listable (ADR decision 1).
+			// The version key is not known yet — the document does not exist — so the row is
+			// opened without one, which is legitimate for a CREATE: there is no previous
+			// version for a stale intent to be confused with.
+			contentWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, null, null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CREATE_DOCUMENT,
+							java.time.Instant.now().toString());
+			writtenContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			createdAttachmentId = writtenContent.attachmentId();
 			d.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Created AttachmentId atomically: {}", createdAttachmentId);
 
@@ -1226,6 +1273,8 @@ public class ContentServiceImpl implements ContentService {
 			}
 		}
 		
+		recordCreatedContentState(repositoryId, atomicResult, writtenContent, contentWrite);
+
 		log.debug("=== ATOMIC DOCUMENT CREATION SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
 		
@@ -1267,6 +1316,10 @@ public class ContentServiceImpl implements ContentService {
 	String createdAttachmentId = null;
 
 	try {
+		// E1 (W6).
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written copyContent = null;
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending copyWrite = null;
+
 		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
@@ -1282,7 +1335,13 @@ public class ContentServiceImpl implements ContentService {
 
 		// PHASE 2: Atomic Attachment copy (if source has attachment)
 		if (original.getAttachmentNodeId() != null) {
+			// E1 (W6). A copy makes its OWN statement; it does not inherit the source's entry.
+			copyWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, original.getId(), null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.COPY_FROM_SOURCE,
+							java.time.Instant.now().toString());
 			createdAttachmentId = copyAttachmentAtomic(callContext, repositoryId, original.getAttachmentNodeId());
+			copyContent = digestOfStoredAttachment(repositoryId, createdAttachmentId);
 			copy.setAttachmentNodeId(createdAttachmentId);
 			log.debug("Copied AttachmentId atomically: {}", createdAttachmentId);
 		}
@@ -1338,6 +1397,8 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("Solr indexing failed for copied document {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
 
+		recordCreatedContentState(repositoryId, atomicResult, copyContent, copyWrite);
+
 		log.debug("=== ATOMIC DOCUMENT FROM SOURCE SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
 
@@ -1374,13 +1435,21 @@ public class ContentServiceImpl implements ContentService {
 	Document atomicResult = null;
 	String createdDocumentId = null;
 	String createdAttachmentId = null;
+	// E1 (W2).
+	jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written newStreamContent = null;
+	jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending newStreamWrite = null;
 	
 	try {
 		// PHASE 1: Prepare document copy without CouchDB writes
 		Document copy = buildCopyDocument(callContext, repositoryId, original, null, null);
 
 		// PHASE 2: Atomic Attachment creation with new stream
-		createdAttachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
+		newStreamWrite = recordContentState == null ? null
+				: recordContentState.openBeforeWriting(repositoryId, original.getId(), null,
+						jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.NEW_VERSION_WITH_STREAM,
+						java.time.Instant.now().toString());
+		newStreamContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+		createdAttachmentId = newStreamContent.attachmentId();
 		copy.setAttachmentNodeId(createdAttachmentId);
 		log.debug("Created new AttachmentId atomically: {}", createdAttachmentId);
 
@@ -1420,6 +1489,8 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("Solr indexing failed for document with new stream {} (non-critical): {}", atomicResult.getId(), e.getMessage());
 		}
 
+		recordCreatedContentState(repositoryId, atomicResult, newStreamContent, newStreamWrite);
+
 		log.debug("=== ATOMIC DOCUMENT WITH NEW STREAM SUCCESS: {} ===", atomicResult.getId());
 		return atomicResult;
 		
@@ -1454,7 +1525,16 @@ public class ContentServiceImpl implements ContentService {
 		// then overwrote it on the next line. F3 separated these two calls for exactly this: the
 		// body-opening one is for callers that read the body.
 		AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, originalPwc.getAttachmentNodeId());
-		contentDaoService.updateAttachment(repositoryId, an, contentStream);
+		// E1 (W9). The PWC is the version being rewritten, so its id IS the version key.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pwcWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, originalPwc.getId(),
+								originalPwc.getId(),
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.REPLACE_PWC,
+								java.time.Instant.now().toString());
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcContent =
+				updateAttachmentRecording(repositoryId, an, contentStream);
+		recordUpdatedContentState(repositoryId, originalPwc, pwcContent, pwcWrite);
 
 		// Update rendition contentStream
 		if (isPreviewEnabled()) {
@@ -1554,16 +1634,27 @@ public class ContentServiceImpl implements ContentService {
 		// AttachmentDaoDelegate:587-595), so it takes getAttachmentRef. The body is opened once,
 		// afterwards, and only if a preview is actually going to be made — with previews off,
 		// nothing downloads the binary at all.
+		// E1 (W3). Both arms of this branch write the version's bytes, so both are recorded —
+		// and both open the row FIRST. The version key is known here: this rewrites the
+		// existing version in place rather than creating one.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending inPlaceWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, original.getId(),
+								original.getId(),
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.UPDATE_IN_PLACE,
+								java.time.Instant.now().toString());
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written inPlaceContent;
 		if (original.getAttachmentNodeId() != null) {
 			// Case 1: Document already has attachment - update it
 			AttachmentNode ref = contentDaoService.getAttachmentRef(repositoryId, original.getAttachmentNodeId());
-			contentDaoService.updateAttachment(repositoryId, ref, contentStream);
+			inPlaceContent = updateAttachmentRecording(repositoryId, ref, contentStream);
 		} else {
 			// Case 2: Document created without content - create new attachment
-			String attachmentId = createAttachmentAtomic(callContext, repositoryId, contentStream);
-			original.setAttachmentNodeId(attachmentId);
-			log.debug("Created new attachment for document without content: {}", attachmentId);
+			inPlaceContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			original.setAttachmentNodeId(inPlaceContent.attachmentId());
+			log.debug("Created new attachment for document without content: {}", inPlaceContent.attachmentId());
 		}
+		recordUpdatedContentState(repositoryId, original, inPlaceContent, inPlaceWrite);
 
 		// Update rendition contentStream if preview is enabled
 		if (isPreviewEnabled()) {
@@ -1629,9 +1720,20 @@ public class ContentServiceImpl implements ContentService {
 		Document latest = getDocument(repositoryId, objectId);
 		Document pwc = buildCopyDocument(callContext, repositoryId, latest, null, null);
 
-		// Create PWC attachment
-		String attachmentId = copyAttachment(callContext, repositoryId, latest.getAttachmentNodeId());
+		// E1 (W8). The working copy's content is its OWN fact: it gets its own statement
+		// rather than inheriting the version it was copied from.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pwcCopyWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, objectId, null,
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_OUT_PWC,
+								java.time.Instant.now().toString());
+
+		// Create PWC attachment. OrRefuse: a document whose attachment row is gone must not be
+		// checked out into a working copy that reports itself as having no content.
+		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcCopyContent =
+				digestOfStoredAttachment(repositoryId, attachmentId);
 
 		// Set other properties
 		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
@@ -1705,6 +1807,8 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
 		}
+
+		recordCreatedContentState(repositoryId, result, pwcCopyContent, pwcCopyWrite);
 
 		return result;
 	}
@@ -1803,12 +1907,29 @@ public class ContentServiceImpl implements ContentService {
 		// original document during push but not on the PWC.
 		mergeSecondaryTypesFromLatest(checkedIn, latest);
 
+		// E1 (W4). Declared here so the statement below can be recorded after the new version
+		// exists — only then is there a version key for it to be about.
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written checkInContent = null;
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending checkInWrite = null;
+
 		// When PWCUpdatable is true
 		if (contentStream == null) {
-			checkedIn.setAttachmentNodeId(copyAttachment(callContext, repositoryId, pwc.getAttachmentNodeId()));
+			// OrRefuse: this is the flow where the client edited the working copy in place, so
+			// the PWC's bytes ARE the new version's bytes. Copying "nothing" because the row is
+			// missing would make a version with no content the latest one.
+			checkedIn.setAttachmentNodeId(
+					copyAttachmentOrRefuse(callContext, repositoryId, pwc.getAttachmentNodeId()));
 			// When PWCUpdatable is false
 		} else {
-			checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
+			// E1 (W4). The row is opened before the bytes; the version key is not known yet
+			// (the new version is created below), so the row carries none — see
+			// RecordContentStateRecorder.recordAndClose.
+			checkInWrite = recordContentState == null ? null
+					: recordContentState.openBeforeWriting(repositoryId, id, null,
+							jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CHECK_IN,
+							java.time.Instant.now().toString());
+			checkInContent = createAttachmentRecording(callContext, repositoryId, contentStream);
+			checkedIn.setAttachmentNodeId(checkInContent.attachmentId());
 		}
 
 		// Set updated properties
@@ -1866,6 +1987,8 @@ public class ContentServiceImpl implements ContentService {
 			log.warn("checkIn: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
 		}
 
+		recordCreatedContentState(repositoryId, result, checkInContent, checkInWrite);
+
 		return result;
 	}
 
@@ -1886,7 +2009,15 @@ public class ContentServiceImpl implements ContentService {
 
 		Document checkedIn = buildCopyDocument(callContext, repositoryId, previousDoc, null, null);
 
-		checkedIn.setAttachmentNodeId(createAttachment(callContext, repositoryId, contentStream));
+		// E1 (W5). A new version, so the row carries no version key yet.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending noCheckoutWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, previousDoc.getId(), null,
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.UPDATE_WITHOUT_CHECKOUT,
+								java.time.Instant.now().toString());
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written noCheckoutContent =
+				createAttachmentRecording(callContext, repositoryId, contentStream);
+		checkedIn.setAttachmentNodeId(noCheckoutContent.attachmentId());
 
 		// Set updated properties
 		// updateProperties(callContext, properties, checkedIn);
@@ -1917,6 +2048,8 @@ public class ContentServiceImpl implements ContentService {
 		} catch (Exception e) {
 			log.warn("updateWithoutCheckInOut: Solr indexing failed for document " + result.getId() + ": " + e.getMessage());
 		}
+
+		recordCreatedContentState(repositoryId, result, noCheckoutContent, noCheckoutWrite);
 
 		return result;
 	}
@@ -2479,6 +2612,52 @@ public class ContentServiceImpl implements ContentService {
 	private String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
 		initDelegates();
 		return attachmentDelegate.copyAttachment(callContext, repositoryId, attachmentId);
+	}
+
+	/**
+	 * Copies an attachment, refusing when the source names one the store does not have.
+	 *
+	 * <p>{@code copyAttachment} answers null for two different things: the source genuinely has
+	 * no content, and the attachment document the source NAMES is gone. {@code checkOut} and
+	 * {@code checkIn} wrote that answer straight onto the copy, so a document with a dangling
+	 * reference was checked out — and then checked in — as a document with no content. Nobody
+	 * established that, and on check-in the version that did have content stops being the latest
+	 * one. {@code createDocumentFromSource} refuses in exactly this situation, one method away.
+	 *
+	 * <p>A blank source id still answers null, because a content-less document is a real thing
+	 * and copying one has to keep working. The refusal is only for "the source says it has
+	 * content and the store does not have it".
+	 *
+	 * <p>A read that FAILED does not arrive here as null in the deployed shape:
+	 * {@code AttachmentDaoDelegate.getAttachment} throws for that and says so in its message.
+	 * Two narrower windows are known and neither is reachable from here (review, 2026-09-19):
+	 * {@code CloudantClientWrapper.get} answers null instead of throwing WHILE THE REPOSITORY IS
+	 * PROVISIONING, and a failed write inside {@code copyAttachment} would be a null about the
+	 * DESTINATION rather than the source. If either ever reaches this method the message below
+	 * is wrong, so it is named here rather than left as "null is absence".
+	 */
+	private String copyAttachmentOrRefuse(CallContext callContext, String repositoryId,
+			String sourceAttachmentId) {
+		if (StringUtils.isBlank(sourceAttachmentId)) {
+			return null;
+		}
+		String copied = copyAttachment(callContext, repositoryId, sourceAttachmentId);
+		if (copied == null) {
+			// The same distinction the other refusal makes (R57): a restore of a cold-MOVEd
+			// version has already finished, so "retry shortly" describes an operation that
+			// ended. Read only here, on the path that is already refusing.
+			String reason = contentDaoService.contentAbsenceReason(repositoryId,
+					sourceAttachmentId);
+			// ONE place decides what each reason means. This copy had two arms where the
+			// other has three, so one row was told "nothing to wait for" by one refusal and
+			// "retry shortly" by the other (subagent, eighth review, P2).
+			throw new CmisStorageException("the attachment '" + sourceAttachmentId
+					+ "' this document names is not in '" + repositoryId + "', so its content "
+					+ "could not be copied. "
+					+ jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate
+							.whyNoBodyAndWhetherWaitingHelps(reason));
+		}
+		return copied;
 	}
 
 	/**
@@ -3402,6 +3581,28 @@ public class ContentServiceImpl implements ContentService {
 		}
 		visited.add(objectId);
 
+		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
+		// each child goes through permission check, ThreadLockService, and cache invalidation.
+
+		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
+		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
+		List<String> relationshipIds = relationshipIdsOf(sourceRelationships, targetRelationships);
+
+		if (!relationshipIds.isEmpty()) {
+			// No catch: these edges belong to the object about to be deleted. Proceeding
+			// past a failed edge delete removes the object and leaves relationships whose
+			// end no longer exists — the write-side twin of the short-listing orphans the
+			// read paths refuse. An aborted delete is rerunnable; an orphaned edge is not
+			// swept by anything.
+			log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
+			deleteRelationshipsBatch(repositoryId, relationshipIds);
+		}
+
+		// AFTER the edges. The DELETED change event and the archive used to be written first,
+		// so an aborted edge delete — the refusal above — left a change event saying the
+		// object was deleted, and an archive of it, for an object that still exists (9-6
+		// review, P1). The archive still comes before the object's own delete: it copies the
+		// content.
 		writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);
 
 		boolean archiveCreateEnabled = propertyManager.readBoolean(PropertyKey.ARCHIVE_CREATE_ENABLED);
@@ -3414,29 +3615,6 @@ public class ContentServiceImpl implements ContentService {
 			}
 		} else {
 			log.debug("Archive creation disabled - skipping archive for object: {}", objectId);
-		}
-
-		// ParentChild cascade is handled in ObjectServiceInternalImpl.deleteObjectInternal so that
-		// each child goes through permission check, ThreadLockService, and cache invalidation.
-
-		List<Relationship> sourceRelationships = contentDaoService.getRelationshipsBySource(repositoryId, objectId);
-		List<Relationship> targetRelationships = contentDaoService.getRelationshipsByTarget(repositoryId, objectId);
-
-		List<String> relationshipIds = new ArrayList<>();
-		for (Relationship rel : sourceRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-		for (Relationship rel : targetRelationships) {
-			relationshipIds.add(rel.getId());
-		}
-
-		if (!relationshipIds.isEmpty()) {
-			try {
-				log.debug("Deleting " + relationshipIds.size() + " relationships for object: " + objectId);
-				deleteRelationshipsBatch(repositoryId, relationshipIds);
-			} catch (Exception e) {
-				log.error("Error deleting relationships for object " + objectId + ": " + e.getMessage(), e);
-			}
 		}
 
 		try {
@@ -3494,10 +3672,46 @@ public class ContentServiceImpl implements ContentService {
 		log.debug("deleteRelationshipsBatch: Deleting " + relationshipIds.size() + " relationships in bulk");
 		int deletedCount = contentDaoService.deleteBulk(repositoryId, relationshipIds);
 		if (deletedCount < relationshipIds.size()) {
-			log.warn("deleteRelationshipsBatch: Only " + deletedCount + " of " + relationshipIds.size() + " relationships were deleted");
-		} else {
-			log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
+			// A WARN here let the object deletion proceed over edges that survived. The
+			// shortfall is then COUNTED, not assumed: an edge another delete removed first is
+			// not found by the bulk delete and not counted, and the goal — no edge left — is
+			// met for it all the same. Read as a survivor, it made a repeated or concurrent
+			// delete abort for ever and the object undeletable (9-6 review, P1). Only an edge
+			// that is still there aborts.
+			List<String> stillThere = new ArrayList<>();
+			for (String relationshipId : relationshipIds) {
+				if (contentDaoService.getRelationshipFresh(repositoryId, relationshipId) != null) {
+					stillThere.add(relationshipId);
+				}
+			}
+			if (!stillThere.isEmpty()) {
+				throw new IllegalStateException("only " + deletedCount + " of "
+						+ relationshipIds.size() + " relationships could be deleted and " + stillThere
+						+ " are still there; aborting the object delete instead of orphaning the survivors");
+			}
+			log.debug("deleteRelationshipsBatch: " + (relationshipIds.size() - deletedCount)
+					+ " relationships were already gone");
 		}
+		log.debug("deleteRelationshipsBatch: Successfully deleted " + deletedCount + " relationships");
+	}
+
+	/**
+	 * The ids of the edges at an object, each once.
+	 *
+	 * <p>A relationship whose source and target are the same object is in BOTH lists; counted
+	 * twice, the batch delete's "fewer deleted than asked" refusal fired on a correct delete
+	 * and the object could never be deleted (9-6 review, P1).
+	 */
+	static List<String> relationshipIdsOf(List<Relationship> sourceRelationships,
+			List<Relationship> targetRelationships) {
+		Set<String> ids = new LinkedHashSet<>();
+		for (Relationship rel : sourceRelationships) {
+			ids.add(rel.getId());
+		}
+		for (Relationship rel : targetRelationships) {
+			ids.add(rel.getId());
+		}
+		return new ArrayList<>(ids);
 	}
 
 	@Override
@@ -3519,9 +3733,15 @@ public class ContentServiceImpl implements ContentService {
 		}
 
 		// Delete attachment if exists
+		// E1 (deleteContentStream): the version is about to have no content. The row is opened
+		// before the attachment goes; the bytes themselves are copied to the archive by
+		// deleteAttachment (W10), which is where bytesNow points.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending removalRow = null;
 		if (document.getAttachmentNodeId() != null) {
 			String attachmentId = document.getAttachmentNodeId();
 			log.debug("Deleting attachment: " + attachmentId + " for document: " + docId);
+			removalRow = openTransition(repositoryId, docId,
+					jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.CONTENT_REMOVED);
 			deleteAttachment(callContext, repositoryId, attachmentId);
 		}
 
@@ -3535,6 +3755,9 @@ public class ContentServiceImpl implements ContentService {
 
 		// Update document in database
 		Document updated = contentDaoService.update(repositoryId, document);
+		closeTransition(removalRow,
+				jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.CONTENT_REMOVED,
+				jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.ARCHIVE_DB);
 
 		// CMIS 1.1 COMPLIANCE: Update objectId holder with result
 		// For non-versioned documents, return the same id
@@ -3580,10 +3803,15 @@ public class ContentServiceImpl implements ContentService {
 					versionList.add(document);
 				}
 			} catch (Exception e) {
+				// "Falling back to single version deletion" here kept allVersions=true, so
+				// the version-SERIES document was still deleted afterwards — over sibling
+				// versions this walk never saw. The version list's own refusal ("this list
+				// is read and acted on for every member") was inverted by this catch into
+				// exactly the orphaning it exists to stop.
 				log.error("getAllVersions failed for versionSeriesId {}: {}", versionSeriesId, e.getMessage(), e);
-				// Fall back to single version deletion
-				log.warn("Falling back to single version deletion for document: {}", objectId);
-				versionList.add(document);
+				throw new IllegalStateException("the version series '" + versionSeriesId
+						+ "' could not be enumerated; deleting all versions without the list"
+						+ " would orphan the versions it hides", e);
 			}
 		} else {
 			// Single version deletion - need to handle version promotion first
@@ -3602,7 +3830,13 @@ public class ContentServiceImpl implements ContentService {
 					}
 				}
 			} catch (Exception e) {
+				// An empty list here reads as "this is the only version", which ESCALATES a
+				// single-version delete into deleting the whole version series — one view
+				// failure turned "remove v1.3" into "remove the series record".
 				log.error("Failed to get all versions for single version deletion: {}", e.getMessage(), e);
+				throw new IllegalStateException("the version series '" + versionSeriesId
+						+ "' could not be enumerated; a single-version delete cannot decide"
+						+ " succession (or that it is the last version) without the list", e);
 			}
 
 			// Filter out PWC and the document being deleted
@@ -3698,7 +3932,14 @@ public class ContentServiceImpl implements ContentService {
 					log.warn("Failed to get attachment info before deletion: {}", e.getMessage());
 				}
 				// Delete an attachment (this also creates attachment archive if enabled)
+				// E1 (W10): the bytes are copied to the archive database as the version goes.
+				jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending archiveRow = openTransition(
+						repositoryId, version.getId(),
+						jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.ARCHIVE);
 				deleteAttachment(callContext, repositoryId, attachmentId);
+				closeTransition(archiveRow,
+						jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition.ARCHIVED,
+						jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow.ARCHIVE_DB);
 			}
 			// Delete rendition (no need for archive)
 			if (CollectionUtils.isNotEmpty(version.getRenditionIds())) {
@@ -3739,25 +3980,53 @@ public class ContentServiceImpl implements ContentService {
 
 		// Delete children
 		List<Content> children = getChildren(repositoryId, folderId);
+		// Read BEFORE the recursive deletes below: the counter is per-thread and per-read, so
+		// every nested getChildren overwrites it.
+		int unreadableChildren = lastUnreadableChildCount();
 		if (!CollectionUtils.isEmpty(children)) {
 			for (Content child : children) {
 				try {
 					if (child.isFolder()) {
-						deleteTree(callContext, repositoryId, child.getId(), allVersions, continueOnFailure, true);
+						// The nested result used to be DISCARDED, so a subtree that could not
+						// be fully deleted reported nothing to this level, and the loop below
+						// deleted this folder over the survivors.
+						failureIds.addAll(deleteTree(callContext, repositoryId, child.getId(),
+								allVersions, continueOnFailure, true));
 					} else if (child.isDocument()) {
 						deleteDocument(callContext, repositoryId, child.getId(), allVersions, true);
 					} else {
 						delete(callContext, repositoryId, child.getId(), true);
 					}
 				} catch (Exception e) {
+					// Recorded in BOTH modes. With continueOnFailure=false this used to log and
+					// fall through, so a failed non-folder child left no entry — and the guard
+					// below, which keys on failureIds, then deleted the folder over it. The
+					// CMIS meaning of continueOnFailure is "stop attempting more", not "forget
+					// what already failed".
+					failureIds.add(child.getId());
 					if (continueOnFailure) {
-						failureIds.add(child.getId());
 						continue;
-					} else {
-						log.error("", e);
 					}
+					log.error("", e);
+					break;
 				}
 			}
+		}
+
+		// The folder itself is deleted ONLY when everything under it is gone. Two ways for that
+		// to be false: a child failed to delete (failureIds), or the listing itself was SHORT —
+		// rows the repository could not decode are not in `children`, so they were neither
+		// deleted nor counted as failures, and removing their parent would orphan them: content
+		// that exists, is reachable by id, and hangs from a folder that no longer does. A
+		// deletion has no reconcile pass to catch that later.
+		if (unreadableChildren > 0 || !failureIds.isEmpty()) {
+			if (unreadableChildren > 0) {
+				log.warn("deleteTree(" + folderId + "): " + unreadableChildren + " child row(s) "
+						+ "of this folder could not be decoded. They were NOT deleted, so the "
+						+ "folder itself is kept — deleting it would orphan them.");
+			}
+			failureIds.add(folderId);
+			return failureIds;
 		}
 
 		// Delete the folder itself
@@ -3852,9 +4121,94 @@ public class ContentServiceImpl implements ContentService {
 		return null;
 	}
 
+	/**
+	 * The digest of an attachment that is already stored — for the COPY paths (W6, W8).
+	 *
+	 * <p>A copy has no received stream to hash on the way past: the bytes were already here.
+	 * So this reads them back, which for a copy is not the weaker claim the ADR warns about —
+	 * there is no "as received" to differ from. It IS an extra full read, which is why it is
+	 * only on the copy paths.
+	 *
+	 * @return null when the bytes could not be read to the end, in which case no statement is
+	 *         recorded and the journal row stays open
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			digestOfStoredAttachment(String repositoryId, String attachmentId) {
+		if (attachmentId == null) {
+			return null;
+		}
+		AttachmentNode stored;
+		try {
+			stored = contentDaoService.getAttachment(repositoryId, attachmentId);
+		} catch (RuntimeException e) {
+			log.warn("E1: the copied content {} could not be opened to digest it.", attachmentId, e);
+			return null;
+		}
+		if (stored == null || stored.getInputStream() == null) {
+			return null;
+		}
+		try (InputStream body = stored.getInputStream()) {
+			jp.aegif.nemaki.evidence.DigestingInputStream digesting =
+					jp.aegif.nemaki.evidence.DigestingInputStream.over(body);
+			if (digesting == null) {
+				return null;
+			}
+			// Drained through a fixed buffer. readAllBytes() held the whole body in memory and
+			// never terminated on a stream that made no progress — it turned an existing test
+			// into an OutOfMemoryError.
+			if (!digesting.drain()) {
+				return null;
+			}
+			String digest = digesting.digestIfTrustworthy(stored.getLength());
+			if (digest == null) {
+				return null;
+			}
+			return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
+					attachmentId, digest, digesting.bytesRead());
+		} catch (java.io.IOException | RuntimeException e) {
+			log.warn("E1: the copied content {} could not be read to the end.", attachmentId, e);
+			return null;
+		}
+	}
+
+	/**
+	 * An in-place attachment rewrite, carrying the digest E1 records.
+	 *
+	 * <p>The wrapper is built here rather than in the DAO because this is the only place that
+	 * knows the write is an E1 subject. The in-place path has no retry-rewind of its own (the
+	 * one that does is {@code createAttachment}, whose decision now looks through the wrapper),
+	 * so nothing else changes.
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			updateAttachmentRecording(String repositoryId, AttachmentNode node,
+					ContentStream contentStream) {
+		jp.aegif.nemaki.evidence.DigestingInputStream digesting =
+				contentStream == null ? null
+						: jp.aegif.nemaki.evidence.DigestingInputStream.over(contentStream.getStream());
+		ContentStream toWrite = contentStream;
+		if (digesting != null) {
+			toWrite = new ContentStreamImpl(contentStream.getFileName(),
+					contentStream.getBigLength(), contentStream.getMimeType(), digesting);
+		}
+		contentDaoService.updateAttachment(repositoryId, node, toWrite);
+		long length = contentStream == null ? -1 : contentStream.getLength();
+		String digest = digesting == null ? null : digesting.digestIfTrustworthy(length);
+		return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
+				node == null ? null : node.getId(), digest, length);
+	}
+
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	/**
+	 * The same write, carrying the digest E1 records. Existing callers keep their signature.
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			createAttachmentRecording(CallContext callContext, String repositoryId,
+					ContentStream contentStream) {
 		initDelegates();
-		return attachmentDelegate.createAttachment(callContext, repositoryId, contentStream);
+		return attachmentDelegate.createAttachmentRecording(callContext, repositoryId, contentStream);
 	}
 
 	/**
@@ -4186,6 +4540,19 @@ public class ContentServiceImpl implements ContentService {
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder.TargetFormat target,
 			jp.aegif.nemaki.businesslogic.rendition.pdfa.PdfAValidation pdfa) {
 		if (formatDuplicationRecorder == null) {
+			// Said out loud. Every other unwired-bean arm in this batch answers with a word --
+			// the SIP exporter ships status:"unavailable" plus a note, the fixity and anchor
+			// endpoints answer 503 -- and this one returned in silence, so a node with the
+			// recorder missing produced renditions with no trace and nothing anywhere saying
+			// why. An operator reading the release note ("the one path always records") would
+			// believe the trail exists.
+			//
+			// A rendition is still produced: refusing the conversion over a missing evidence
+			// bean would be out of proportion. What must not happen is the silence.
+			log.warn("No FormatDuplicationRecorder is wired on this node, so the rendition of "
+					+ (document != null ? document.getId() : "(unknown)") + " in " + repositoryId
+					+ " was produced with NO duplication entry. This is a gap in the record, "
+					+ "not a finding that the rendition is untrustworthy.");
 			return;
 		}
 		try {
@@ -4400,10 +4767,13 @@ public class ContentServiceImpl implements ContentService {
 	/**
 	 * Wired explicitly in {@code businesslogicContext.xml}, deliberately NOT by annotation.
 	 *
-	 * <p>A null recorder is SILENT by design — the rendition still succeeds, and only the record
-	 * of it is missing. That makes an injection that stopped firing indistinguishable from a
-	 * healthy deployment, which is precisely how this project shipped a broken wiring once
-	 * already.
+	 * <p>A null recorder does not stop the rendition — only the record of it is missing — and
+	 * {@code recordFormatDuplication} logs a WARN naming the document when that happens. An
+	 * earlier version of this comment said a null recorder was "SILENT by design"; the silence
+	 * was withdrawn (18 巡目), because it made an injection that stopped firing
+	 * indistinguishable from a healthy deployment — which is precisely how this project shipped
+	 * a broken wiring once already. The WARN is the fix for that, not a violation of this
+	 * comment: do not remove it to restore the old sentence.
 	 */
 	public void setFormatDuplicationRecorder(
 			jp.aegif.nemaki.evidence.FormatDuplicationRecorder formatDuplicationRecorder) {
@@ -4437,7 +4807,19 @@ public class ContentServiceImpl implements ContentService {
 			totalLength = existingLength + newLength;
 		}
 		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(totalLength), attachment.getMimeType(), sis);
-		contentDaoService.updateAttachment(repositoryId, attachment, cs);
+		// E1 (W7). ONE statement per call, and it says nothing about which call is the last:
+		// this product does not use isLastChunk, so it does not know. The digest covers the
+		// whole concatenation that went past on THIS call — existing bytes plus the appended
+		// ones — which is what the version's content is after it.
+		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending appendWrite =
+				recordContentState == null ? null
+						: recordContentState.openBeforeWriting(repositoryId, document.getId(),
+								document.getId(),
+								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.APPEND,
+								java.time.Instant.now().toString());
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written appendContent =
+				updateAttachmentRecording(repositoryId, attachment, cs);
+		recordUpdatedContentState(repositoryId, document, appendContent, appendWrite);
 
 		// Note: No separate metadata update needed here.
 		// CouchDB _attachments metadata automatically tracks the correct size after binary upload.
@@ -4627,6 +5009,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public List<Archive> getArchives(String repositoryId, Integer skip, Integer limit, Boolean desc) {
 		return archiveDelegate.getArchives(repositoryId, skip, limit, desc);
+	}
+
+	@Override
+	public int lastUnreadableArchiveCount() {
+		return contentDaoService.lastUnreadableArchiveCount();
 	}
 
 	@Override
@@ -4884,7 +5271,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 		if (archiveDelegate == null) {
 			archiveDelegate = new ArchiveServiceDelegate(contentDaoService, this, () -> solrUtil,
-					(callContext, nodeBase) -> helper.setSignature(callContext, nodeBase));
+					(callContext, nodeBase) -> helper.setSignature(callContext, nodeBase),
+					() -> recordContentState);
 		}
 		if (aclDelegate == null && nemakiCachePool != null && repositoryInfoMap != null && propertyManager != null) {
 			aclDelegate = new AclServiceDelegate(this, contentDaoService, nemakiCachePool,
@@ -5038,11 +5426,116 @@ public class ContentServiceImpl implements ContentService {
 	 * Create attachment with atomic operation pattern
 	 * Prevents _rev inconsistency by using immediate consistent read pattern
 	 */
+	@org.springframework.beans.factory.annotation.Autowired(required = false)
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder recordContentState;
+
+	/**
+	 * E1 for a write that REPLACED an existing version's bytes.
+	 *
+	 * <p>Separate from {@link #recordCreatedContentState} only in the commitment kind, and that
+	 * difference is the point: {@code UPDATED} says the version existed and its content was
+	 * changed, {@code CAPTURED} says these were its first bytes. A reader acts differently on
+	 * each, so one method taking a flag would be one place to get it wrong.
+	 */
+	private void recordUpdatedContentState(String repositoryId, Document updated,
+			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {
+		recordContentState(repositoryId, updated, written, pending,
+				jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.UPDATED);
+	}
+
+	/** E1 transitions (W10 / deleteContentStream): opens the row BEFORE the bytes move. */
+	private jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending openTransition(String repositoryId,
+			String versionObjectId, jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind kind) {
+		if (recordContentState == null || versionObjectId == null) {
+			return null;
+		}
+		return recordContentState.openBeforeWriting(repositoryId, versionObjectId, versionObjectId, kind,
+				java.time.Instant.now().toString());
+	}
+
+	/** Records the transition and closes the row. Never fails the operation it belongs to. */
+	private void closeTransition(jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.Transition transition,
+			jp.aegif.nemaki.evidence.RecordContentTransitionV1.BytesNow bytesNow) {
+		if (recordContentState == null || pending == null) {
+			return;
+		}
+		recordContentState.recordTransition(pending, transition, bytesNow);
+	}
+
+	/**
+	 * E1: record what this version's bytes were, once the version exists.
+	 *
+	 * <p>Never throws. An evidence outage that failed a {@code createDocument} would convert a
+	 * recording problem into a business failure, which the plan forbids (§8). What it must not
+	 * do instead is stay quiet: the recorder returns which of the five outcomes happened, and
+	 * a gap it could not even list is a different outcome from one it could.
+	 *
+	 * <p><b>No digest means no statement.</b> {@code DigestingInputStream} answers null when it
+	 * cannot vouch for the bytes — a short read, a rewind it could not snapshot. Recording a
+	 * digest that may cover the wrong bytes would put a falsehood in the chain, and every later
+	 * check of that version would fail against bytes that were never wrong.
+	 */
+	private void recordCreatedContentState(String repositoryId, Document created,
+			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {
+		recordContentState(repositoryId, created, written, pending,
+				jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED);
+	}
+
+	private void recordContentState(String repositoryId, Document created,
+			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind kind) {
+		if (recordContentState == null || created == null || written == null) {
+			return;
+		}
+		if (written.contentDigest() == null) {
+			log.warn("E1: the content of {} could not be digested on the write, so no statement "
+					+ "was recorded for it. The journal row stays open.", created.getId());
+			return;
+		}
+		try {
+			jp.aegif.nemaki.evidence.RecordContentStatementV1 statement =
+					new jp.aegif.nemaki.evidence.RecordContentStatementV1(
+							repositoryId, created.getId(), created.getId(),
+							written.attachmentId(), written.contentDigest(), written.length(),
+							kind, null, java.time.Instant.now().toString());
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
+					recordContentState.recordAndClose(pending, statement);
+			if (!result.inChain()) {
+				log.warn("E1: the content statement for {} is not in the chain ({}).",
+						created.getId(), result.outcome());
+			}
+		} catch (RuntimeException e) {
+			// Including the statement's own validation. A version key or a digest this class
+			// cannot produce is a reason to record nothing, not a reason to fail the create.
+			log.warn("E1: no content statement was recorded for {}.", created.getId(), e);
+		}
+	}
+
 	private String createAttachmentAtomic(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentAtomicRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	/**
+	 * The same write, with the digest E1 records.
+	 *
+	 * <p>Separate from {@link #createAttachmentAtomic} so every existing caller keeps the
+	 * signature it had, and delegating rather than duplicated so the verification below has one
+	 * definition.
+	 */
+	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
+			createAttachmentAtomicRecording(CallContext callContext, String repositoryId,
+					ContentStream contentStream) {
 		log.debug("Creating attachment atomically for repository: {}", repositoryId);
-		
+		initDelegates();
+
 		// Create attachment using existing method (already handles _rev properly)
-		String attachmentId = createAttachment(callContext, repositoryId, contentStream);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written =
+				attachmentDelegate.createAttachmentRecording(callContext, repositoryId, contentStream);
+		String attachmentId = written.attachmentId();
 		
 		// ATOMIC VERIFICATION: Ensure attachment exists and is accessible.
 		// Ref, not the full node: this asks whether the document is there, and getAttachment
@@ -5053,7 +5546,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		
 		log.debug("Atomic attachment creation verified: {}", attachmentId);
-		return attachmentId;
+		return written;
 	}
 	
 	
@@ -5104,8 +5597,10 @@ public class ContentServiceImpl implements ContentService {
 	private String copyAttachmentAtomic(CallContext callContext, String repositoryId, String originalAttachmentId) {
 		log.debug("Copying attachment atomically: {}", originalAttachmentId);
 		
-		// Copy attachment using existing method
-		String attachmentId = copyAttachment(callContext, repositoryId, originalAttachmentId);
+		// Copy attachment using existing method. Through the refusing one so the message an
+		// operator gets is the same wherever the store is missing the row — this path used to
+		// answer "attachment not accessible: null", which names nothing.
+		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, originalAttachmentId);
 		
 		// ATOMIC VERIFICATION: Ensure copied attachment exists and is accessible (metadata only)
 		AttachmentNode verification = getAttachmentRef(repositoryId, attachmentId);

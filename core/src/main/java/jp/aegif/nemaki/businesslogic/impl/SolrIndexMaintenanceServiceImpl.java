@@ -167,10 +167,13 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
 
                 // ── Refuse to destroy an index we cannot rebuild ────────────────────────────
                 // The enumeration below CANNOT tell "this folder has no children" from "the
-                // children could not be read": ContentDaoServiceImpl.getChildren catches and
-                // returns an empty list, and countDocumentsRecursive swallows too. Propagating
-                // the exception would not help either — a CouchDB view whose map function fails
-                // answers HTTP 200 with zero rows, so there is no exception to propagate. That
+                // children could not be read". ContentDaoServiceImpl.getChildren was changed on
+                // 2026-08-28 to REFUSE a view that did not answer rather than report an empty
+                // folder, and countDocumentsRecursive still swallows — but neither matters for
+                // the case that was actually reproduced: a CouchDB view whose map function
+                // fails answers HTTP 200 with ZERO ROWS, so there is no exception to propagate
+                // and an empty list is indistinguishable from an empty folder. The refusal
+                // narrows the window; this guard is still the only thing that closes it. That
                 // was reproduced: with the `children` view returning empty, a full reindex of a
                 // 164-object repository reported totalDocuments=1, indexedCount=1, errorCount=0,
                 // status=completed, and left one document in Solr. The data was intact in
@@ -251,8 +254,37 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setErrorCount(errorCount.get());
                 status.setSilentDropCount(silentDropCount.get());
                 status.setReindexedCount(reindexedSuccessCount.get());
-                status.setErrors(errors);
-                status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled" : "completed");
+                status.setErrors(withTruncationNoted(errors, errorCount.get()));
+                // A run that recorded failures is not a completed run. The recursive walk
+                // catches a folder it cannot enumerate, records it and carries on, and documents
+                // that failed to index are counted by subtraction in flushBatch — so without
+                // this a reindex that dropped whole sub-trees still ended saying "completed",
+                // rendered by the UI through the same green tag as a clean pass.
+                //
+                // NOT the post-reindex health check, which appends its message and leaves
+                // errorCount alone on purpose ("health check is informational"). Two reasons,
+                // and the first one written here was neither of them — it said the check
+                // compares CouchDB against a Solr that may not have committed, which is false:
+                // forceCommitAndWait runs on the line directly above the check.
+                //
+                //  - Its CouchDB side is collectDocumentIds, walking from the root folder — the
+                //    same KIND of walk the reindex just did. A walk that silently comes up
+                //    short shortens both sides, so the comparison is not independent evidence.
+                //  - The folder reindex runs the check over the WHOLE repository. Any
+                //    pre-existing drift anywhere would turn every single-folder reindex into
+                //    completed_with_errors.
+                //
+                // So this word means "documents failed to index". The health result is
+                // separately visible in `errors`, and the UI re-reads the live health card the
+                // moment the status leaves "running".
+                //
+                // This was tried, taken back out, and reinstated. The reason for taking it out
+                // — an errorCount nobody could account for, on a fixture whose `errors` list was
+                // recorded as EMPTY — was a misreading: measured, that run has errorCount=1 and
+                // TWO error messages, and the count is the fixture's own
+                // batchOutcome(1) against a batch of 2. Design §36.
+                status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled"
+                        : errorCount.get() > 0 ? "completed_with_errors" : "completed");
                 status.setEndTime(System.currentTimeMillis());
 
                 log.info("Full reindex completed for repository: " + repositoryId + 
@@ -344,8 +376,37 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 status.setErrorCount(errorCount.get());
                 status.setSilentDropCount(silentDropCount.get());
                 status.setReindexedCount(reindexedSuccessCount.get());
-                status.setErrors(errors);
-                status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled" : "completed");
+                status.setErrors(withTruncationNoted(errors, errorCount.get()));
+                // A run that recorded failures is not a completed run. The recursive walk
+                // catches a folder it cannot enumerate, records it and carries on, and documents
+                // that failed to index are counted by subtraction in flushBatch — so without
+                // this a reindex that dropped whole sub-trees still ended saying "completed",
+                // rendered by the UI through the same green tag as a clean pass.
+                //
+                // NOT the post-reindex health check, which appends its message and leaves
+                // errorCount alone on purpose ("health check is informational"). Two reasons,
+                // and the first one written here was neither of them — it said the check
+                // compares CouchDB against a Solr that may not have committed, which is false:
+                // forceCommitAndWait runs on the line directly above the check.
+                //
+                //  - Its CouchDB side is collectDocumentIds, walking from the root folder — the
+                //    same KIND of walk the reindex just did. A walk that silently comes up
+                //    short shortens both sides, so the comparison is not independent evidence.
+                //  - The folder reindex runs the check over the WHOLE repository. Any
+                //    pre-existing drift anywhere would turn every single-folder reindex into
+                //    completed_with_errors.
+                //
+                // So this word means "documents failed to index". The health result is
+                // separately visible in `errors`, and the UI re-reads the live health card the
+                // moment the status leaves "running".
+                //
+                // This was tried, taken back out, and reinstated. The reason for taking it out
+                // — an errorCount nobody could account for, on a fixture whose `errors` list was
+                // recorded as EMPTY — was a misreading: measured, that run has errorCount=1 and
+                // TWO error messages, and the count is the fixture's own
+                // batchOutcome(1) against a batch of 2. Design §36.
+                status.setStatus(cancelFlags.get(repositoryId).get() ? "cancelled"
+                        : errorCount.get() > 0 ? "completed_with_errors" : "completed");
                 status.setEndTime(System.currentTimeMillis());
 
                 log.info("Folder reindex completed for repository: " + repositoryId + 
@@ -370,8 +431,38 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         return true;
     }
     
+    /** How many error messages are kept. The count is not capped; the list is. */
+    private static final int MAX_ERROR_MESSAGES = 100;
+
     /**
-     * Run health check after reindex completion and log any discrepancies.
+     * Says out loud that the list is shorter than the count.
+     *
+     * <p>The cap was silent: a run with 5,000 failures showed "5000" beside a hundred messages
+     * and nothing explaining the difference, so a reader either thinks the count is wrong or
+     * that the hundred are all of them. The sibling in this same change — FixityScanReport's
+     * {@code findingsTruncated} — reached the opposite conclusion about the identical problem,
+     * and its reason applies here word for word: a reader could infer the cap by comparing two
+     * numbers, and nobody reads a report that way.
+     */
+    private static List<String> withTruncationNoted(List<String> errors, long errorCount) {
+        // errorCount > cap, not size >= cap. A run with EXACTLY 100 messages and 100 failures
+        // lost nothing, and saying "only the first 100 are kept" would be its own small
+        // overclaim — in the direction of doubt rather than confidence, but an overclaim.
+        // The sibling in this same change, FixityScanReport's findingsTruncated, chose a strict
+        // predicate for the same reason and wrote it down: exactly 500 findings with none
+        // dropped is not truncation.
+        if (errorCount <= MAX_ERROR_MESSAGES) {
+            return errors;
+        }
+        List<String> noted = new ArrayList<>(errors);
+        noted.add("... only the first " + MAX_ERROR_MESSAGES + " messages are kept; "
+                + (errorCount - MAX_ERROR_MESSAGES) + " further failure(s) are counted above "
+                + "but not described here.");
+        return noted;
+    }
+
+    /**
+     * Runs the health check after a reindex and logs any discrepancies.
      */
     private void runPostReindexHealthCheck(String repositoryId, ReindexStatus status, List<String> errors) {
         try {
@@ -381,10 +472,10 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             if (!health.isHealthy()) {
                 String healthMessage = "Post-reindex health check: " + health.getMessage();
                 log.warn(healthMessage);
-                if (errors.size() < 100) {
+                if (errors.size() < MAX_ERROR_MESSAGES) {
                     errors.add(healthMessage);
                 }
-                status.setErrors(errors);
+                status.setErrors(withTruncationNoted(errors, status.getErrorCount()));
                 
                 // Log specific discrepancies
                 if (health.getMissingInSolr() > 0) {
@@ -452,6 +543,20 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             long enumStart = System.nanoTime();
             List<Content> children = contentService.getChildren(repositoryId, folderId);
             status.addEnumerationMs((System.nanoTime() - enumStart) / 1_000_000L);
+            // A SHORT listing is a reindex failure, not a smaller folder. Rows the repository
+            // could not decode are absent from `children` without any exception, so they were
+            // walked past in silence: not indexed, not counted, and the run still ended
+            // "completed". The enumeration guard catches a wholesale wipe, not one document —
+            // and these documents stay missing from search until someone reindexes this folder
+            // for an unrelated reason.
+            int unreadableHere = contentService.lastUnreadableChildCount();
+            if (unreadableHere > 0) {
+                errorCount.addAndGet(unreadableHere);
+                if (errors.size() < MAX_ERROR_MESSAGES) {
+                    errors.add("Folder " + folderId + ": " + unreadableHere + " child row(s) "
+                            + "could not be decoded and were NOT indexed");
+                }
+            }
             
             // Collect documents for batch indexing
             List<Content> batchBuffer = new ArrayList<>();
@@ -497,7 +602,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
         } catch (Exception e) {
             log.error("Error reindexing folder: " + folderId, e);
             errorCount.incrementAndGet();
-            if (errors.size() < 100) {
+            if (errors.size() < MAX_ERROR_MESSAGES) {
                 errors.add("Error processing folder " + folderId + ": " + e.getMessage());
             }
         }
@@ -538,7 +643,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
             int failedCount = batch.size() - successCount - outcome.skippedStale;
             if (failedCount > 0) {
                 errorCount.addAndGet(failedCount);
-                if (errors.size() < 100) {
+                if (errors.size() < MAX_ERROR_MESSAGES) {
                     errors.add("Batch indexing: " + failedCount + " documents failed in batch of "
                             + batch.size()
                             + (outcome.fenceBlocked > 0
@@ -569,7 +674,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                 } catch (Exception ex) {
                     errorCount.incrementAndGet();
                     String errorMsg = "Failed to index " + content.getId() + ": " + ex.getMessage();
-                    if (errors.size() < 100) {
+                    if (errors.size() < MAX_ERROR_MESSAGES) {
                         errors.add(errorMsg);
                     }
                     log.warn(errorMsg);
@@ -703,7 +808,7 @@ public class SolrIndexMaintenanceServiceImpl implements SolrIndexMaintenanceServ
                             errorCount.incrementAndGet();
                             String errorMsg = "Failed to re-index silently dropped document " + content.getId() + 
                                 " (indexedCount corrected to " + correctedCount + "): " + ex.getMessage();
-                            if (errors.size() < 100) {
+                            if (errors.size() < MAX_ERROR_MESSAGES) {
                                 errors.add(errorMsg);
                             }
                             log.warn(errorMsg);

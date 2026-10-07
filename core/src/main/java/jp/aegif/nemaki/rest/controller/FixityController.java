@@ -80,6 +80,11 @@ public class FixityController {
             return forbidden;
         }
         Map<String, Object> body = new LinkedHashMap<>();
+        // Before the branch, not on each arm. The class javadoc promises "every response carries
+        // the verdict FIRST and the limits of what a result establishes", and the guards that
+        // return early — 403, 503, the two refusals below, the catch — carried no limits at all.
+        // Repeating the line on each arm is what left them out in the first place.
+        body.put("limits", LIMITS);
         if (fixityScanService == null || contentService == null) {
             body.put("status", "error");
             body.put("message", "the fixity service is not wired on this node");
@@ -87,6 +92,20 @@ public class FixityController {
         }
         try {
             Content content = contentService.getContent(repositoryId, objectId);
+            if (content == null) {
+                // The sibling endpoint got this a round ago and this one did not. verifyOne
+                // answers UNVERIFIABLE for a null content, which the wrapper then shipped as
+                // HTTP 200 / status:"success" / outcome:"UNVERIFIABLE" — so a mistyped id came
+                // back looking like a checked object whose bytes could not be confirmed, rather
+                // than like an id that names nothing. Those are different things to be told.
+                body.put("status", "error");
+                body.put("objectId", objectId);
+                body.put("message", "no object with that id was found in " + repositoryId
+                        + ". This is NOT a finding about any object's bytes.");
+                body.put("limits", "Nothing was verified: the id did not resolve, so no digest "
+                        + "was recorded, recomputed or compared.");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
             FixityVerifier.Result result = fixityScanService.verifyOne(repositoryId, content);
             body.put("status", "success");
             body.put("outcome", result.outcome().name());
@@ -96,7 +115,6 @@ public class FixityController {
             body.put("reason", result.reason());
             body.put("algorithm", FixityVerifier.ALGORITHM);
             body.put("subject", FixityVerifier.SUBJECT_STORED_REVERIFIED);
-            body.put("limits", LIMITS);
             return ResponseEntity.ok(body);
         } catch (Exception e) {
             // A read failure is not a verdict about the bytes. Saying so beats returning an
@@ -127,37 +145,171 @@ public class FixityController {
             return forbidden;
         }
         Map<String, Object> body = new LinkedHashMap<>();
+        // Before the branch, as in verifyOne above. The 403, the 503, the two refusals below and
+        // the catch arm all returned without it; the class javadoc promises otherwise.
+        body.put("limits", LIMITS);
         if (fixityScanService == null || contentService == null) {
             body.put("status", "error");
             body.put("message", "the fixity service is not wired on this node");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
         }
         try {
+            // IMMEDIATE CHILDREN ONLY. FixityScanService sets COMPLETE when the iterable it was
+            // handed runs out -- "the pass reached the end of its scope" -- and the scope is
+            // whatever this caller enumerated. So a folder with sub-folders answered
+            // verdict=COMPLETE for a scan that never looked inside them: the COMPLETE trap this
+            // repository has hit before (an index verdict that means "everything present is
+            // stamped", and a folder reindex that skips the folder itself).
+            //
+            // Recursing is a bigger change than a review can validate -- an unbounded walk on a
+            // deep tree, under a `limit` that would then mean something different. So the scope
+            // is NAMED on the response instead, beside the verdict, and the verdict is not
+            // allowed to travel alone.
+            // The folder has to be THERE before its emptiness means anything. getChildren
+            // answers [] for a folder that does not exist — a typo, a document id, an object
+            // deleted since — exactly as it answers for a folder with nothing in it, and the
+            // report built from [] is verdict=COMPLETE, scanned=0, mismatch=0. That verdict then
+            // goes into the append-only chain a dozen lines below, where it cannot be corrected:
+            // a permanent record that a folder nobody ever looked at came back clean.
+            //
+            // This is the same substitution the scope fix above was made for, one level earlier:
+            // there the scope of a real pass was overstated, here there is no pass at all.
+            Content folder = contentService.getContent(repositoryId, folderId);
+            if (folder == null) {
+                body.put("status", "error");
+                body.put("folderId", folderId);
+                body.put("message", "no object with this id is readable in this repository, so "
+                        + "nothing was scanned. This is NOT a finding that the folder is intact "
+                        + "or that it is empty — nothing was looked at.");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+            }
+            if (!Boolean.TRUE.equals(folder.isFolder())) {
+                body.put("status", "error");
+                body.put("folderId", folderId);
+                body.put("message", "this id names a " + folder.getType() + ", not a folder. A "
+                        + "scan of its children would be a scan of nothing, and would report "
+                        + "COMPLETE for it.");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+            }
             List<Content> children = new ArrayList<>();
             List<Content> found = contentService.getChildren(repositoryId, folderId);
             if (found != null) {
                 children.addAll(found);
             }
+            // A child the store returned and could not decode is a child that EXISTS and is not
+            // in this list. The scan's verdict is about the list it was handed, and COMPLETE
+            // then means "the end of a list that was short" — which goes into the append-only
+            // chain as a pass over this folder. The absent-folder guard above stops the empty
+            // case; this is the same substitution when the folder IS there and part of it could
+            // not be read.
+            int unreadableChildren = contentService.lastUnreadableChildCount();
             FixityScanReport report =
                     fixityScanService.scan(repositoryId, children, limit);
             Map<String, Object> out = new LinkedHashMap<>(report.asMap());
-            out.put("status", "success");
+            // The outer status FOLLOWS the verdict. FixityScanService deliberately does not
+            // throw -- "A pass that died half way through has counts that describe nothing in
+            // particular. FAILED, not PARTIAL" -- so a failed pass came back 200 success with
+            // its zeros. This method's OWN error arm already encodes the rule: it builds
+            // FixityScanReport.failed(...) and pairs it with status:"error" and a 500. The rule
+            // was applied to the failure this method produces and not to the failure the
+            // service hands back, which is the second producer in one method that AnchorController
+            // was corrected for a few hours earlier.
+            // The verdict must not read as a clean pass over the folder, and it must not say so
+            // only in the response: recordPass commits the verdict AND the scope together, so a
+            // scope that does not mention the gap makes the chain entry the overclaim. FAILED
+            // is too strong for an unreadable child — the documents that WERE read were really
+            // checked — so the counts stand and the scope names what they cover.
+            //
+            // "partial" only DOWNGRADES a success. Written as two statements it upgraded a
+            // FAILED pass instead: a pass that died AND lost children came back saying
+            // "partial", which reads as "mostly fine", beside an HTTP 500 computed from the
+            // verdict. One assignment, so the two facts cannot disagree.
+            boolean failed = report.verdict() == FixityScanReport.Verdict.FAILED;
+            if (unreadableChildren > 0) {
+                out.put("unreadableChildren", unreadableChildren);
+            }
+            out.put("status", failed ? "error" : unreadableChildren > 0 ? "partial" : "success");
             out.put("folderId", folderId);
+            // The UNCOUNTED arm is gone with the -1 it read. Nothing returns a negative now:
+            // the count is taken when a listing is read and travels with it, including out of
+            // the tree cache. Leaving the branch would be a lock on retracted behaviour — dead
+            // code that tells the next reader the value can still arrive.
+            out.put("scope", unreadableChildren > 0
+                    ? "IMMEDIATE_CHILDREN_ONLY_PARTIAL" : "IMMEDIATE_CHILDREN_ONLY");
+            out.put("scopeLimits", (unreadableChildren > 0
+                            ? unreadableChildren + " child object(s) of this folder could not be "
+                                    + "read and were NOT scanned — they are missing from every "
+                                    + "count below, and this is NOT a finding that they are "
+                                    + "intact. "
+                            : "")
+                    + "This pass looked at the DIRECT children of " + folderId
+                    + " and did not descend into sub-folders. A verdict of COMPLETE means the "
+                    + "pass reached the end of THAT list — it does not mean every document "
+                    + "under this folder was checked. Scan sub-folders separately. The list "
+                    + "itself is what the repository handed over: rows it could not decode are "
+                    + "counted above, but a listing served from a cache that another node has "
+                    + "since made stale is NOT detected here, so this is a statement about the "
+                    + "list, not about the folder as the database holds it now.");
             // The pass goes into the evidence chain (P1-3 §2). Fail-open, like capture and
             // unlike disposition: the scan has already run and its results are already in this
             // response, so refusing would throw away a completed pass to protect a record of
             // it. A gap is reported instead — never hidden, because a chain read as a complete
             // history of what was checked is worse than no chain.
             if (fixityLedgerRecorder != null) {
+                // "folder:" said the pass covered the folder. It covered the folder's DIRECT
+                // CHILDREN, and passDigest commits the verdict and the scope TOGETHER -- so the
+                // append-only, never-purged chain paired verdict=COMPLETE with a scope reading
+                // "this folder", permanently. That is the overclaim this endpoint's response was
+                // just corrected for, standing in the one place it cannot be corrected later.
+                //
+                // The response fix and the chain fix are two arms of one obligation, and the
+                // first version of this change reached only the response -- the same mechanic
+                // the audit that found the original defect had named.
+                //
+                // And the SCOPE carries the gap. passDigest commits the verdict and the scope
+                // together, in an entry that is never purged: with children the store could not
+                // read, "folder-children:{id}" claims a pass over children that were never
+                // looked at. The response was corrected for that a few lines up; the chain is
+                // the arm that cannot be corrected afterwards, and the first version of this
+                // change reached only the response — the same pairing this endpoint was already
+                // fixed for once.
+                //
+                // Third arm, found one round after the second. "partial" is a reserved word:
+                // FixityScanService says so where it chooses FAILED over it — "partial means
+                // 'we stopped on purpose'". A pass that DIED and had unreadable children was
+                // getting "folder-children-partial:{id}:unread=3" written into the chain, which
+                // says two false things at once: that the reduction was deliberate, and that
+                // the shortfall was exactly three. It was three PLUS however far the pass did
+                // not get, which nobody knows. And a chain reader sees only this string — the
+                // verdict is inside passDigest, a one-way hash.
+                //
+                // So the count keeps its exact form only where it IS exact, and a failed pass
+                // says it is failed and that the count is a floor.
+                boolean scanFailed = report.verdict() == FixityScanReport.Verdict.FAILED;
+                String chainScope;
+                if (scanFailed) {
+                    chainScope = unreadableChildren > 0
+                            ? "folder-children-incomplete:" + folderId + ":unreadAtLeast="
+                                    + unreadableChildren
+                            : "folder-children-incomplete:" + folderId;
+                } else if (unreadableChildren > 0) {
+                    chainScope = "folder-children-partial:" + folderId + ":unread="
+                            + unreadableChildren;
+                } else {
+                    chainScope = "folder-children:" + folderId;
+                }
                 FixityLedgerRecorder.Recorded recorded = fixityLedgerRecorder.recordPass(
-                        repositoryId, "folder:" + folderId, report,
-                        java.time.Instant.now().toString());
+                        repositoryId, chainScope, report, java.time.Instant.now().toString());
                 out.put("chained", recorded.inChain());
                 if (recorded.warning() != null) {
                     out.put("chainWarning", recorded.warning());
                 }
             }
-            return ResponseEntity.ok(out);
+            // And the HTTP code with it. 200 for a FAILED pass is the one an operator's
+            // tooling reads without opening the body.
+            return report.verdict() == FixityScanReport.Verdict.FAILED
+                    ? ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(out)
+                    : ResponseEntity.ok(out);
         } catch (Exception e) {
             logger.warn("Fixity folder scan failed for {}/{}: {}", repositoryId, folderId,
                     e.getMessage());
@@ -167,6 +319,12 @@ public class FixityController {
                     FixityScanReport.failed(repositoryId,
                             "the folder could not be enumerated: " + e.getMessage()).asMap());
             out.put("status", "error");
+            out.put("limits", LIMITS);
+            // What it failed ON. The success arm names the folder and its scope; the failure arm
+            // said only that something went wrong, so a caller scanning several folders could not
+            // tell which one it had lost.
+            out.put("folderId", folderId);
+            out.put("scope", "IMMEDIATE_CHILDREN_ONLY");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(out);
         }
     }
@@ -203,6 +361,10 @@ public class FixityController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");
         body.put("message", "Admin access required");
+        // The refusal carries them too. Both callers set them before their own branch, and this
+        // helper returns from INSIDE that prologue — so the one exit that bypassed the promise
+        // was the shared one.
+        body.put("limits", LIMITS);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 }

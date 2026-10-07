@@ -166,13 +166,27 @@ public class AclEpochFinalizationService {
 
     /**
      * Finalize the mutation identified by {@code hint} (a document snapshot — e.g. from the
-     * scanner's {@code _find}, which does NOT carry {@code _attachments}). The hint supplies
+     * scanner's {@code _find}). The hint supplies
      * only (a) the Phase-2 precondition that this is a committed Phase-1 document — {@code id}
      * and {@code _rev} are required BEFORE any epoch is allocated, so a rev-less hand-built
      * snapshot can never mint an epoch and PUT itself as a NEW document — and (b) the
      * mutation id this finalizer owns. Every actual read/write goes through a fresh
      * {@link #getDoc} (which carries the {@code _attachments} stubs) so finalize PRESERVES
-     * attachments and all other content fields. The CAS commits to FINALIZED only while the
+     * attachments and all other content fields.
+     *
+     * <p><b>Why the re-read, corrected.</b> This javadoc used to say the hint comes from a
+     * {@code _find} "which does NOT carry {@code _attachments}", i.e. that the re-read is what
+     * keeps a binary alive. That is false: a Mango {@code _find} row DOES carry the stubs, on
+     * CouchDB 3.3, 3.4 and 3.5 (measured — {@code StoreBehaviourFactsIT},
+     * {@code FIND_ROW_CARRIES_ATTACHMENT_STUBS}). NOT "every line the floor accepts": the floor has no ceiling and would start against 4.x, which nothing has measured — the same caveat the ingest side carries. The re-read is here because the hint is
+     * STALE: the CAS needs the live {@code _rev} and the live state, and a page fetched at the
+     * start of a scan says nothing about what the document is when its turn comes. Writing the
+     * hint back would not lose the binary — it would lose whatever another writer did in
+     * between, which is worse to find out about later. The stripped-hint case is still covered
+     * (a hand-built snapshot has no stubs), so the behaviour is unchanged; only the reason was
+     * wrong, and a wrong reason is what gets a correct guard deleted by the next reader.
+     *
+     * <p>The CAS commits to FINALIZED only while the
      * live document is still PENDING with the OWNED mutation id; it ABANDONS only on a
      * genuine newer mutation or a valid finalized state, and a corrupt live state is an
      * anomaly (thrown), never a silent supersede.

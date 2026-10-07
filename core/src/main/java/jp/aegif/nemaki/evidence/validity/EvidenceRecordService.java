@@ -37,9 +37,9 @@ import java.util.Map;
  *
  * <h2>Nothing new is timestamped</h2>
  *
- * <p>{@link ErsRecord} explains why the data object is a checkpoint's canonical bytes: the
- * checkpoint hash IS their SHA-256, and the RFC 3161 anchor over that checkpoint is a token
- * whose message imprint is exactly that value. So an evidence record can be assembled from what
+ * <p>{@link ErsRecord} explains why the data object hash is the anchor target's
+ * {@code merkleRoot}: the RFC 3161 anchor is a token whose message imprint is exactly that
+ * root's bytes, and a token covers one value. So an evidence record can be assembled from what
  * is already stored — no second TSA round trip, no second anchor, and no new claim.
  *
  * <p>Which also means this can produce nothing a deployment does not already have. A checkpoint
@@ -147,24 +147,56 @@ public class EvidenceRecordService {
                     + " could not be read (" + e.getMessage() + ")");
         }
         if (token == null) {
+            // "None was found" is only "there is none" if every row was read. The store drops
+            // rows it cannot decode, and counts what it dropped precisely so this sentence can
+            // be told apart from the one below it; AnchorService reads that count in both of
+            // its verbs and this caller did not. The difference travels further here than
+            // anywhere else: EarkSipExporter writes this string into nemaki-evidence.json,
+            // inside the package that leaves the organisation, where it cannot be corrected.
+            int unaccounted = anchorReceiptStore.unreadableCount();
+            if (unaccounted > 0) {
+                // Two sentences for two facts, and this is the consumer where the difference
+                // travels furthest: the string is written into nemaki-evidence.json, inside a
+                // package that leaves the organisation. "1 row could not be read, and no token
+                // was found among the rest" is DOUBLY wrong for a view that did not answer —
+                // no row is known to exist, and "the rest" is nothing.
+                return absent(anchorReceiptStore.lastQueryFailed()
+                        ? "the anchor receipts for checkpoint " + checkpoint.toSequence()
+                                + " could NOT BE QUERIED, so whether it holds an RFC 3161 token "
+                                + "is unknown. This is NOT a finding that it has none"
+                        : unaccounted + " anchor receipt row(s) for checkpoint "
+                                + checkpoint.toSequence() + " could not be read, and no RFC 3161 "
+                                + "token was found among the rest. This is NOT a finding that "
+                                + "the checkpoint has no token");
+            }
             return absent("checkpoint " + checkpoint.toSequence() + " has no CONFIRMED RFC 3161 "
                     + "token. An OpenTimestamps receipt cannot stand in for one: an evidence "
                     + "record's timestamp is an RFC 3161 token, and this is a statement about "
                     + "what has been anchored — not about the records the checkpoint covers");
         }
+        // THE MERKLE ROOT, because that is what this repository anchors: AnchorService calls
+        // receiptFrom(target, checkpoint.merkleRoot()) and the token's imprint is that root's
+        // bytes. An evidence record's first Archive Timestamp IS that token, so the only data
+        // object it can cover is the root.
+        //
+        // This asked for the CHECKPOINT HASH until 2026-09-22. The two are different by
+        // construction — one hashes the checkpoint's fields, the other is a field — so the
+        // comparison below never held and this deployment built NO evidence record at all,
+        // while writing "the token is about a different value" into a package that left the
+        // organisation. Two reviewers found it independently (residual R70).
         byte[] dataObjectHash;
         try {
-            dataObjectHash = HexFormat.of().parseHex(checkpoint.checkpointHash());
+            dataObjectHash = HexFormat.of().parseHex(checkpoint.merkleRoot());
         } catch (RuntimeException e) {
-            return absent("the checkpoint hash is not a hex digest, so it cannot be the message "
+            return absent("the Merkle root is not a hex digest, so it cannot be the message "
                     + "imprint of an RFC 3161 token");
         }
         // The receipt's FIELD first, because a mismatch there is the cheap diagnosis.
-        if (!checkpoint.checkpointHash().equalsIgnoreCase(token.anchoredDigest())) {
+        if (!checkpoint.merkleRoot().equalsIgnoreCase(token.anchoredDigest())) {
             return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
                     + " is recorded as being over " + token.anchoredDigest() + ", and this "
-                    + "checkpoint's hash is " + checkpoint.checkpointHash() + ". A record built "
-                    + "from it would be about a different value");
+                    + "checkpoint's Merkle root is " + checkpoint.merkleRoot() + ". A record "
+                    + "built from it would be about a different value");
         }
         // Then the TOKEN ITSELF. The field is this repository's own note about what it asked
         // for; the imprint is what the authority actually signed over, and they are two facts.
@@ -185,7 +217,7 @@ public class EvidenceRecordService {
         if (!java.util.Arrays.equals(imprint, dataObjectHash)) {
             return absent("the confirmed token for checkpoint " + checkpoint.toSequence()
                     + " was SIGNED over " + HexFormat.of().formatHex(imprint) + ", not over "
-                    + "this checkpoint's hash. The receipt says otherwise; the token is the one "
+                    + "this checkpoint's Merkle root. The receipt says otherwise; the token is the one "
                     + "that counts, and a record built from it would verify internally while "
                     + "being about a different value");
         }

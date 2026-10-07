@@ -1,0 +1,48 @@
+name: UI unit tests & locale keys
+
+# The UI's vitest suite and the locale-keys lint, in one job with no backend. The lint also runs
+# inside the Playwright shards (playwright.yml), but there it needs the whole stack to boot first;
+# here it reads the files on its own (playwright.lint.config.ts has no global setup).
+on:
+  push:
+    branches: [ main, master, develop, 'release/**' ]
+    paths:
+      - 'core/src/main/webapp/ui/**'
+      - '.github/workflows/ui-unit.yml'
+  pull_request:
+    branches: [ main, master, develop, 'release/**' ]
+    paths:
+      - 'core/src/main/webapp/ui/**'
+      - '.github/workflows/ui-unit.yml'
+  # A push to any other branch does not start it (as with playwright.yml); run it by hand there.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-unit:
+    name: vitest + locale-keys lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+    - name: Setup Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: core/src/main/webapp/ui/package-lock.json
+
+    - name: Install UI dependencies
+      working-directory: core/src/main/webapp/ui
+      run: npm ci
+
+    - name: Locale keys lint (reads files; no backend, no browser)
+      working-directory: core/src/main/webapp/ui
+      run: npx playwright test -c playwright.lint.config.ts
+
+    - name: vitest
+      working-directory: core/src/main/webapp/ui
+      run: npx vitest run

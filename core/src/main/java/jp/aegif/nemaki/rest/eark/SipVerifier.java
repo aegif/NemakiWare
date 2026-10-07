@@ -80,28 +80,72 @@ public final class SipVerifier {
         UNAVAILABLE
     }
 
+    /**
+     * What the whole set of checks amounts to. Three values, because two cannot carry it:
+     * "we found something wrong" and "we could not tell" are different answers and a reader
+     * acts differently on each.
+     */
+    public enum Verdict {
+        /** Every REQUIRED check ran and passed. */
+        VERIFIED,
+        /** A check ran and found the package inconsistent. */
+        FAILED,
+        /** Something required was absent, unreadable or unsupported. Not a finding either way. */
+        INDETERMINATE
+    }
+
+    /**
+     * The checks this verifier will not call a package verified without.
+     *
+     * <p>Both of the substantive checks are required: a payload whose digest matches says
+     * nothing about whether the audit path ties it to a checkpoint, and an audit path that
+     * resolves says nothing about whether the bytes are the ones it covers. Either alone is
+     * half a sentence.
+     */
+    private static final List<String> REQUIRED_CHECKS = List.of("payload digest", "audit path");
+
     /** Everything checked, plus what the set of it amounts to. */
     public record Result(List<Check> checks, String limits) {
 
-        /** True only when at least one check ran and none failed. */
+        /**
+         * The verdict for the set.
+         *
+         * <p>It used to be "at least one check passed and none failed", which promoted a
+         * package whose audit path was NOT_PRESENT to success on the strength of its payload
+         * digest alone. That is the failure this whole verifier exists to prevent, one level
+         * up: absence read as assurance.
+         */
+        public Verdict verdict() {
+            // Composed by ProfileVerdict so the rule has ONE definition. The profile vectors
+            // measure that method, and a second copy here would let the two drift — which is
+            // the defect R52 was, in a place where drifting means a package reads as verified
+            // in one layer and indeterminate in the next.
+            List<Outcome> all = checks.stream().map(Check::outcome).toList();
+            List<Outcome> required = REQUIRED_CHECKS.stream()
+                    .map(name -> checks.stream()
+                            .filter(c -> name.equals(c.name()))
+                            .map(Check::outcome)
+                            // A required check the package does not carry is NOT_PRESENT, not
+                            // absent from the list: an empty required list means "nothing was
+                            // required", which is a different and much weaker statement.
+                            .findFirst().orElse(Outcome.NOT_PRESENT))
+                    .toList();
+            return jp.aegif.nemaki.evidence.ProfileVerdict.of(all, required);
+        }
+
+        /**
+         * Kept for the callers that read a boolean, and true for exactly one verdict.
+         *
+         * <p>Not "not FAILED": that is how INDETERMINATE becomes success.
+         */
         public boolean allPassed() {
-            boolean any = false;
-            for (Check check : checks) {
-                if (check.outcome() == Outcome.FAILED) {
-                    return false;
-                }
-                if (check.outcome() == Outcome.PASSED) {
-                    any = true;
-                }
-            }
-            // An all-NOT_PRESENT package must not report success. "Nothing was wrong" and
-            // "nothing was checked" are the same sentence with opposite meanings.
-            return any;
+            return verdict() == Verdict.VERIFIED;
         }
 
         public Map<String, Object> asMap() {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("verified", allPassed());
+            body.put("verdict", verdict().name());
             List<Map<String, Object>> rows = new ArrayList<>();
             for (Check check : checks) {
                 Map<String, Object> row = new LinkedHashMap<>();
@@ -158,36 +202,133 @@ public final class SipVerifier {
      * <p>The strongest check available here, and the only one that needs nothing but SHA-256.
      */
     private static Check payloadDigestCheck(Map<String, byte[]> entries) {
-        String premis = textOf(entries, "premis.xml");
+        List<String> premisPaths = packageLevel(pathsEndingWith(entries, "premis.xml"));
+        byte[] premis = premisPaths.size() == 1 ? entries.get(premisPaths.get(0)) : null;
         if (premis == null) {
+            int matches = premisPaths.size();
+            if (matches > 1) {
+                // Ambiguity is UNAVAILABLE, not NOT_PRESENT: the package HAS fixity metadata
+                // and this verifier cannot tell which document is about the payload beside it.
+                // Picking one would be checking the bytes against a digest chosen by zip order.
+                return new Check("payload digest", Outcome.UNAVAILABLE,
+                        "the package carries " + matches + " PREMIS documents and this verifier "
+                                + "cannot tell which one describes the payload. Choosing by "
+                                + "path order would check the bytes against whichever happened "
+                                + "to be written first");
+            }
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "the package carries no PREMIS document");
         }
-        String recorded = between(premis, "<premis:messageDigest>", "</premis:messageDigest>");
+        // Read as XML, and with the same rules the independent verifier applies
+        // (evidence-verifier-core's PackageIntegrity.payloadFixity and Premis). An operator
+        // reaching THIS endpoint and a receiving organisation running the CLI must not get
+        // different answers about one file: this method used to take the first
+        // "<premis:messageDigest>" it could find as text and to assume SHA-256 when no
+        // algorithm was stated, so an adversarial PREMIS that the CLI answered UNAVAILABLE was
+        // answered PASSED here (subagent, fifth review, P2).
+        List<String> digests;
+        List<String> algorithms;
+        String contradiction;
+        try {
+            // Built by SecureXml, so the CI gate ("XML parser hardening", security-scan.yml)
+            // sees every parser construction in one class. This is the ONE factory in the
+            // product that admits an internal DOCTYPE: a package is untrusted input, but the
+            // profile does not forbid a DOCTYPE, and refusing one turned a legitimate third-party
+            // PREMIS into "could not read". External resolution off, XInclude off, secure
+            // processing on, INTERNAL entities expanded — feature for feature the twin of
+            // evidence-verifier-core's Premis.read; the reasons for each are on the factory.
+            javax.xml.parsers.DocumentBuilderFactory factory = jp.aegif.nemaki.util.xml.SecureXml
+                    .newDocumentBuilderFactoryAllowingInternalDoctype();
+            factory.setNamespaceAware(true);
+            // From BYTES, not from a String. Decoding as UTF-8 first threw away the
+            // document's own encoding declaration, so a UTF-16 PREMIS the independent
+            // verifier read fine was "could not be read as XML" here (subagent, tenth
+            // review, P2).
+            org.w3c.dom.Document document = factory.newDocumentBuilder().parse(
+                    new java.io.ByteArrayInputStream(premis));
+            digests = premisTexts(document.getDocumentElement(), "messageDigest");
+            algorithms = premisTexts(document.getDocumentElement(), "messageDigestAlgorithm");
+            contradiction = contradictionIn(document.getDocumentElement());
+        } catch (Exception notXml) {
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the package presents a PREMIS document this verifier could not read as "
+                            + "XML (" + notXml.getMessage() + "), so nothing about the bytes is "
+                            + "established either way.");
+        }
+        if (contradiction != null) {
+            // The twin of the same arm in PackageIntegrity.payloadFixity. ONE premis:object
+            // recording two DIFFERENT digests under ONE algorithm is PREMIS contradicting
+            // ITSELF, which needs no object-to-file linkage to see. Two digests under two
+            // ALGORITHMS is not that — premis:fixity is repeatable exactly so one file can
+            // carry an MD5 and a SHA-256, and counting them refused a conformant package
+            // (subagent, tenth review, P1).
+            return new Check("payload digest", Outcome.FAILED,
+                    "one premis:object records two different " + contradiction + " digests for "
+                            + "the file it describes, so the PREMIS contradicts itself about "
+                            + "that file.");
+        }
+        if (digests.size() > 1) {
+            // NOT a count comparison — the twin of PackageIntegrity.payloadFixity. CSIP and
+            // Archivematica write one premis:object per FILE, so an ordinary package records a
+            // digest for the METS as well and a count rule refuses it (subagent, eighth
+            // review, P1, measured). §9's sentence is about the LINKAGE, which this verifier
+            // does not read.
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the PREMIS records " + digests.size() + " message digests and this "
+                            + "verifier does not read the object-to-file linkage that says "
+                            + "which of them describes the payload.");
+        }
+        String recorded = digests.isEmpty() ? null : digests.get(0);
         if (recorded == null || recorded.isBlank()) {
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "PREMIS records no message digest for this object, so there is nothing to "
                             + "check the bytes against. That is a gap in what was captured, not "
                             + "a failure of this check.");
         }
-        String algorithm = between(premis, "<premis:messageDigestAlgorithm>",
-                "</premis:messageDigestAlgorithm>");
-        if (algorithm != null && !"SHA-256".equalsIgnoreCase(algorithm.trim())) {
+        if (algorithms.size() > 1) {
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the PREMIS records " + algorithms.size() + " digest algorithms for one "
+                            + "digest, so which function produced it is not stated.");
+        }
+        String algorithm = algorithms.isEmpty() ? null : algorithms.get(0);
+        if (algorithm == null || algorithm.isBlank()) {
+            // NOT an assumption of SHA-256. It happens to be right for packages this product
+            // writes, which is no reason to accept it from someone else.
+            return new Check("payload digest", Outcome.NOT_PRESENT,
+                    "PREMIS records a digest and no algorithm, so which function produced it "
+                            + "is not stated and nothing here can recompute it.");
+        }
+        if (!"SHA-256".equalsIgnoreCase(algorithm.trim())) {
             return new Check("payload digest", Outcome.UNAVAILABLE,
                     "the digest is recorded as " + algorithm + ", which this verifier does not "
                             + "compute. Nothing about the bytes is established either way.");
         }
         List<Map.Entry<String, byte[]>> payloads = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            // The payload lives under representations/<id>/data. Metadata and METS do not.
-            if (entry.getKey().contains("/representations/") && entry.getKey().contains("/data/")
-                    && !entry.getKey().endsWith("/")) {
+            // isPayloadPath, NOT a second copy of its test. The copy here omitted the leading
+            // slash isPayloadPath adds, so in a zip with no wrapping directory the same file
+            // was payload to the exclusion above and not payload to this loop — the package
+            // answered "carries no payload" while the CLI checked it (subagent, tenth review,
+            // P2).
+            if (isPayloadPath(entry.getKey()) && !entry.getKey().endsWith("/")) {
                 payloads.add(entry);
             }
         }
         if (payloads.isEmpty()) {
             return new Check("payload digest", Outcome.NOT_PRESENT,
                     "the package carries no payload file under a representation");
+        }
+        if (payloads.size() > 1) {
+            // Taking whichever of them matches would let a second, uncommitted file ride along
+            // inside a package this endpoint calls verified. UNAVAILABLE, not FAILED: without
+            // the PREMIS object-to-file linkage this verifier cannot say WHICH payload the one
+            // recorded digest describes, so it cannot say the relationship is broken either.
+            // The twin in PackageIntegrity answers the same way.
+            return new Check("payload digest", Outcome.UNAVAILABLE,
+                    "the package carries " + payloads.size() + " payload files and PREMIS "
+                            + "records one digest, and this verifier does not read the "
+                            + "object-to-file linkage that says which payload it describes. "
+                            + "Checked: " + payloads.stream().map(Map.Entry::getKey).toList());
         }
         for (Map.Entry<String, byte[]> payload : payloads) {
             String computed = sha256Hex(payload.getValue());
@@ -219,15 +360,95 @@ public final class SipVerifier {
             return new Check("audit path", Outcome.NOT_PRESENT,
                     "the package carries no evidence package");
         }
-        String leaf = jsonString(evidence, "leafHash");
-        String root = jsonString(evidence, "merkleRoot");
-        if (leaf == null || root == null) {
-            return new Check("audit path", Outcome.NOT_PRESENT,
-                    "the evidence package carries no inclusion proof. The chain only holds what "
-                            + "was written to it, with no back-fill, so this says nothing about "
-                            + "whether the record is genuine.");
+        Map<String, Object> document;
+        try {
+            document = readJsonObject(evidence);
+        } catch (Exception malformed) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package is not readable JSON (" + malformed.getMessage()
+                            + "). Nothing about the entry's inclusion is established either way.");
         }
-        List<Map<String, Object>> steps = auditSteps(evidence);
+        Object proofValue = document.get("inclusionProof");
+        if (!(proofValue instanceof Map)) {
+            return noProofCheck(document, proofValue);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proof = (Map<String, Object>) proofValue;
+        String leaf = asString(proof.get("leafHash"));
+        String root = asString(proof.get("merkleRoot"));
+        if (leaf == null || root == null) {
+            // The package usually says WHY there is no path, and it may write that reason
+            // INSIDE the proof object, beside it, or both — so the same rule reads both places
+            // (review, 2026-09-20).
+            Check reason = reasonFor(document, proof);
+            if (reason != null) {
+                return reason;
+            }
+            // Both fields are described, each in its own words. Naming only the first problem
+            // said "the rest is fine" about a field that might be unusable too — the same
+            // conflation one level down (review, 2026-09-20).
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package's inclusion proof cannot be read: "
+                            + fieldState(proof, "leafHash") + ", "
+                            + fieldState(proof, "merkleRoot")
+                            + ". Nothing about the entry's inclusion is established either way.");
+        }
+        if (!proof.containsKey("auditPath")) {
+            // An absent path walked as an empty one compares leaf(leafHash) with merkleRoot
+            // directly, so a package carrying a leaf and a root it computed FROM that leaf comes
+            // back PASSED without carrying a proof of anything. "There is no path" is not "the
+            // path is empty" (found by review, 2026-09-19).
+            return new Check("audit path", Outcome.NOT_PRESENT,
+                    "the evidence package names a leaf and a root but carries no auditPath, so "
+                            + "there is nothing to walk. A root that equals the leaf's own hash "
+                            + "says only that the two were written together.");
+        }
+        if (!(proof.get("auditPath") instanceof List)) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the auditPath could not be read: it is not a JSON array. Nothing about the "
+                            + "entry's inclusion is established either way.");
+        }
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (Object element : (List<?>) proof.get("auditPath")) {
+            if (!(element instanceof Map)) {
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the auditPath could not be read: a step is not an object. Nothing about "
+                                + "the entry's inclusion is established either way.");
+            }
+            Map<?, ?> step = (Map<?, ?>) element;
+            String sibling = asString(step.get("siblingHash"));
+            Object side = step.get("siblingIsLeft");
+            if (sibling == null || !(side instanceof Boolean)) {
+                // Dropping the step silently shortens the path, lands on a different root and
+                // reports FAILED — "the entry was not in that span" — about a package this
+                // verifier did not manage to read.
+                return new Check("audit path", Outcome.UNAVAILABLE,
+                        "the auditPath could not be read: a step "
+                                + (sibling == null ? "carries no readable siblingHash"
+                                        : "does not say which side its sibling is on")
+                                + ". Nothing about the entry's inclusion is established "
+                                + "either way.");
+            }
+            Map<String, Object> read = new LinkedHashMap<>();
+            read.put("siblingHash", sibling);
+            read.put("siblingIsLeft", side);
+            steps.add(read);
+        }
+        if (steps.isEmpty()) {
+            // An empty path makes the check arithmetic-free: it would compare leaf(leafHash)
+            // with merkleRoot, and BOTH are values the package supplies. A checkpoint that
+            // sealed a single entry genuinely produces this shape (MerkleTree.root of one leaf
+            // IS that leaf's hash), so the package is not wrong — but nothing inside it tells
+            // the two apart, and the first version reported the fabricable one as PASSED.
+            // Whoever holds the checkpoint can settle it in one look; this verifier cannot.
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the auditPath is empty. That is what a checkpoint which sealed a SINGLE "
+                            + "entry produces — and it is also what a package gets by writing a "
+                            + "leaf and the hash of that same leaf as the root. Both values come "
+                            + "from this package, so nothing here separates them. Settling it "
+                            + "needs the checkpoint's own span, which this package does not "
+                            + "carry.");
+        }
         // The leaf hash is applied FIRST. `leafHash` in the proof is the entry's own hash, and
         // the tree is built over hashLeaf(entryHash) — walking the path from the raw value
         // would report every genuine package as broken, which is the failure mode a verifier
@@ -315,13 +536,49 @@ public final class SipVerifier {
         }
     }
 
+    /** Content, not metadata: a file under a representation's own data directory. */
+    private static boolean isPayloadPath(String path) {
+        String slashed = "/" + path;
+        return slashed.contains("/representations/") && slashed.contains("/data/");
+    }
+
+    /**
+     * The one metadata file whose path ends with {@code suffix}, or null when there is not
+     * exactly one.
+     *
+     * <p><b>Null when there is more than one, too.</b> The first version returned whichever the
+     * zip iteration reached first, so a package carrying two PREMIS documents — a derived copy
+     * brings its own — was verified against an arbitrary one of them, and which one depended on
+     * the order the entries happened to be written in. That is a verifier choosing the evidence
+     * it likes; {@link #countMatching} lets the caller say so instead.
+     *
+     * <p>PAYLOAD excluded, as the independent verifier excludes it. Without that, a CSIP AIP
+     * keeping the original SIP as CONTENT was "2 PREMIS documents" here and one document there
+     * — the same file, two answers, which is the rule {@code Premis} was written to keep
+     * (subagent, ninth review, P2).
+     */
     private static String textOf(Map<String, byte[]> entries, String suffix) {
+        String found = null;
         for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
-            if (entry.getKey().endsWith(suffix)) {
-                return new String(entry.getValue(), StandardCharsets.UTF_8);
+            if (!isPayloadPath(entry.getKey()) && entry.getKey().endsWith(suffix)) {
+                if (found != null) {
+                    return null;
+                }
+                found = new String(entry.getValue(), StandardCharsets.UTF_8);
             }
         }
-        return null;
+        return found;
+    }
+
+    /** How many entries end with {@code suffix}, so absence and ambiguity are told apart. */
+    private static int countMatching(Map<String, byte[]> entries, String suffix) {
+        int n = 0;
+        for (String key : entries.keySet()) {
+            if (!isPayloadPath(key) && key.endsWith(suffix)) {
+                n++;
+            }
+        }
+        return n;
     }
 
     private static String between(String text, String open, String close) {
@@ -334,53 +591,333 @@ public final class SipVerifier {
     }
 
     /**
-     * One string field out of the JSON, without a JSON library.
+     * The PREMIS namespaces, so a prefix bound to something else is not read as PREMIS.
      *
-     * <p>Deliberately dependency-free: a verifier a third party is meant to reimplement should
-     * not need our object mapper, and the shapes read here are flat.
+     * <p>v2 as well as v3 — the twin of {@code Premis.NAMESPACES} in the independent verifier.
+     * Reading only v3 turned a PREMIS 2.x document into "no digest recorded", which the string
+     * matching this replaced did not do.
      */
-    static String jsonString(String json, String field) {
-        String needle = "\"" + field + "\"";
-        int at = json.indexOf(needle);
-        if (at < 0) {
-            return null;
-        }
-        int colon = json.indexOf(':', at + needle.length());
-        if (colon < 0) {
-            return null;
-        }
-        int quote = json.indexOf('"', colon + 1);
-        if (quote < 0) {
-            return null;
-        }
-        int end = json.indexOf('"', quote + 1);
-        return end < 0 ? null : json.substring(quote + 1, end);
+    private static final java.util.Set<String> PREMIS_NAMESPACES = java.util.Set.of(
+            "http://www.loc.gov/premis/v3", "info:lc/xmlns/premis-v2");
+
+    /**
+     * The text of every PREMIS element with this local name, in document order.
+     *
+     * <p>Local name, never prefix: a document may bind the PREMIS namespace to any prefix it
+     * likes, and matching the literal {@code "<premis:messageDigest>"} counted two digests as
+     * one. The twin of this method is {@code Premis} in {@code evidence-verifier-core}, which
+     * that module cannot share because it may not depend on this one.
+     */
+    private static List<String> premisTexts(org.w3c.dom.Element element, String localName) {
+        List<String> found = new ArrayList<>();
+        collectPremis(element, localName, found);
+        return found;
     }
 
-    /** The audit path steps, in order, read out of the flat JSON. */
-    static List<Map<String, Object>> auditSteps(String json) {
-        List<Map<String, Object>> steps = new ArrayList<>();
-        int at = json.indexOf("\"auditPath\"");
-        if (at < 0) {
-            return steps;
+    private static void collectPremis(org.w3c.dom.Element element, String localName,
+            List<String> found) {
+        if (element == null) {
+            return;
         }
-        int open = json.indexOf('[', at);
-        int close = json.indexOf(']', open);
-        if (open < 0 || close < 0) {
-            return steps;
+        String name = element.getLocalName() == null ? element.getNodeName()
+                : element.getLocalName();
+        String namespace = element.getNamespaceURI();
+        if (localName.equals(name)
+                && (namespace == null || PREMIS_NAMESPACES.contains(namespace))) {
+            found.add(element.getTextContent());
         }
-        String body = json.substring(open + 1, close);
-        for (String chunk : body.split("\\}")) {
-            String sibling = jsonString(chunk, "siblingHash");
-            if (sibling == null) {
-                continue;
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof org.w3c.dom.Element child) {
+                collectPremis(child, localName, found);
             }
-            Map<String, Object> step = new LinkedHashMap<>();
-            step.put("siblingHash", sibling);
-            step.put("siblingIsLeft", chunk.contains("\"siblingIsLeft\" : true")
-                    || chunk.contains("\"siblingIsLeft\":true"));
-            steps.add(step);
         }
-        return steps;
+    }
+
+    /**
+     * The algorithm one {@code premis:object} records two DIFFERENT digests under, or null.
+     *
+     * <p>The twin of {@code Premis.contradictionIn}. Two digests in ONE object under ONE
+     * algorithm is the document contradicting itself about one file; two digests under two
+     * algorithms is what {@code premis:fixity} is repeatable FOR, and two digests across two
+     * objects is what an ordinary CSIP package looks like. Telling those apart is the whole
+     * reason this groups rather than counts.
+     */
+    private static String contradictionIn(org.w3c.dom.Element root) {
+        for (org.w3c.dom.Element object : premisElements(root, "object")) {
+            List<org.w3c.dom.Element> groups = premisElements(object, "fixity");
+            if (groups.isEmpty()) {
+                groups = List.of(object);
+            }
+            Map<String, java.util.Set<String>> byAlgorithm = new LinkedHashMap<>();
+            for (org.w3c.dom.Element group : groups) {
+                List<String> algorithms = new ArrayList<>();
+                collectPremis(group, "messageDigestAlgorithm", algorithms);
+                List<String> digests = new ArrayList<>();
+                collectPremis(group, "messageDigest", digests);
+                String algorithm = algorithms.isEmpty() ? ""
+                        : algorithms.get(0).trim().toUpperCase(java.util.Locale.ROOT);
+                for (String digest : digests) {
+                    byAlgorithm.computeIfAbsent(algorithm, any -> new java.util.LinkedHashSet<>())
+                            .add(digest.trim().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            for (Map.Entry<String, java.util.Set<String>> entry : byAlgorithm.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    return entry.getKey().isEmpty() ? "an unstated algorithm" : entry.getKey();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.
+     *
+     * <p>The twin of {@code PackageIntegrity.pathsEndingWith}. Without the exclusion, a CSIP
+     * AIP keeping the original SIP as CONTENT was "2 PREMIS documents" here and one document
+     * there — the same file, two answers.
+     */
+    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {
+        List<String> paths = new ArrayList<>();
+        for (String key : entries.keySet()) {
+            if (!isPayloadPath(key) && key.endsWith(suffix)) {
+                paths.add(key);
+            }
+        }
+        return paths;
+    }
+
+    /**
+     * The package's own metadata, preferred over a representation's.
+     *
+     * <p>The twin of {@code PackageIntegrity.packageLevel}, and it was MISSING here: an
+     * ordinary CSIP AIP carrying {@code representations/rep1/metadata/preservation/premis.xml}
+     * beside the package's own was "2 PREMIS documents" at this endpoint and one on the CLI
+     * (subagent, tenth review, P2). Falls back to everything found, so a package that only has
+     * representation-level metadata is still read.
+     */
+    private static List<String> packageLevel(List<String> paths) {
+        List<String> top = new ArrayList<>();
+        for (String path : paths) {
+            if (!("/" + path).contains("/representations/")) {
+                top.add(path);
+            }
+        }
+        return top.isEmpty() ? paths : top;
+    }
+
+    /** Every descendant element with this local name, in a PREMIS namespace. */
+    private static List<org.w3c.dom.Element> premisElements(org.w3c.dom.Element element,
+            String localName) {
+        List<org.w3c.dom.Element> found = new ArrayList<>();
+        if (element == null) {
+            return found;
+        }
+        String name = element.getLocalName() == null ? element.getNodeName()
+                : element.getLocalName();
+        String namespace = element.getNamespaceURI();
+        if (localName.equals(name)
+                && (namespace == null || PREMIS_NAMESPACES.contains(namespace))) {
+            found.add(element);
+        }
+        org.w3c.dom.NodeList children = element.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof org.w3c.dom.Element child) {
+                found.addAll(premisElements(child, localName));
+            }
+        }
+        return found;
+    }
+
+    /**
+     * The evidence document, read with a JSON parser.
+     *
+     * <p>This used to be hand-rolled string scanning, on the argument that a verifier a third
+     * party is meant to reimplement should not need our object mapper. That argument was about
+     * the wrong dependency. The independence that matters is {@link MerkleTree}: the Merkle rule
+     * is RESTATED here so the verifier does not agree with the product by construction. Reading
+     * JSON is not part of the specification — a third party uses whatever parser they have.
+     *
+     * <p>What the hand-rolled version cost: a P1 in three consecutive review rounds, each a
+     * different way of answering "could not read that" with a value. The first key with a
+     * matching name anywhere in the document won, so a proof nested under {@code inclusionProof}
+     * could be shadowed by loose keys beside it; a non-string value returned the NEXT KEY'S
+     * NAME; {@code true} was matched by prefix; a {@code null} in the step array was absorbed
+     * into its neighbour; and escapes were not decoded, so a legitimate value came back
+     * truncated. None of those survive a parser, and the shape checks below are explicit.
+     *
+     * <p>A parser does NOT settle duplicate keys by itself: Jackson's default takes the LAST
+     * one, so {@code "siblingHash": null, "siblingHash": "<the real one>"} would be read
+     * differently here than by a first-wins reader — the same disagreement between readers that
+     * the hand-rolled version had, with the winner flipped (review, 2026-09-20). Strict
+     * duplicate detection makes it an error instead, the way {@code LineageSpoolCodec} already
+     * reads spool JSON. A leading BOM is dropped: Jackson skips it when reading bytes and not
+     * when reading a String, and a re-zipped package can acquire one.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> readJsonObject(String json) {
+        String text = json;
+        while (text.startsWith("\uFEFF")) {
+            text = text.substring(1);
+        }
+        Object parsed = tools.jackson.databind.json.JsonMapper.builder()
+                .enable(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                .build()
+                .readValue(text, Object.class);
+        if (!(parsed instanceof Map)) {
+            throw new IllegalArgumentException("the evidence package is not a JSON object");
+        }
+        return (Map<String, Object>) parsed;
+    }
+
+    /** The value when it is a string, null when it is absent, null, a number or an object. */
+    static String asString(Object value) {
+        return value instanceof String ? (String) value : null;
+    }
+
+    /** "leafHash is read" / "leafHash is not written" / "leafHash is not a string". */
+    private static String fieldState(Map<String, Object> proof, String field) {
+        if (asString(proof.get(field)) != null) {
+            return field + " is read";
+        }
+        return proof.containsKey(field) ? field + " is not a string"
+                : field + " is not written";
+    }
+
+    /**
+     * What to say when the package carries no usable {@code inclusionProof}.
+     *
+     * <p>Four different states used to come out as one sentence about the chain — including the
+     * two where the EXPORTER had written, in as many words, "This is NOT a statement that the
+     * record was never chained" (review, 2026-09-20). The package says which one it is; the
+     * verifier only had to read it.
+     */
+    private static Check noProofCheck(Map<String, Object> document, Object proofValue) {
+        // null, not an empty Map: "there is no proof object" and "there is one and it
+        // is empty" are different things, and `isEmpty()` could not tell them apart
+        // (review, 2026-09-20).
+        Check reason = reasonFor(document, null);
+        if (reason != null) {
+            return reason;
+        }
+        if (proofValue != null) {
+            return new Check("audit path", Outcome.UNAVAILABLE,
+                    "the evidence package's inclusionProof is not an object, so there is "
+                            + "nothing to read. Nothing about the entry's inclusion is "
+                            + "established either way.");
+        }
+        return new Check("audit path", Outcome.NOT_PRESENT,
+                "the evidence package carries no inclusion proof, and does not say why. The "
+                        + "chain only holds what was written to it, with no back-fill, so this "
+                        + "says nothing about whether the record is genuine.");
+    }
+
+    /**
+     * What the package says about why there is no usable proof, or null when it says nothing.
+     *
+     * <p>ONE rule, used wherever a proof is missing or half-written. It was two — the copy
+     * inside {@code auditPathCheck} treated every non-success status as unreadable, including
+     * {@code not-chained} — so a package written to the canon got a different answer from this
+     * verifier than the canon's own table says, depending on WHERE it put the reason
+     * (review, 2026-09-20).
+     *
+     * <p>{@code proof} is null when the package carries no proof OBJECT at all, which is a
+     * different thing from an empty one.
+     *
+     * <p>The reason is read from ONE place: the proof object when it carries a {@code status}
+     * or a {@code message}, otherwise the document. Not merged — pairing a status from one with
+     * a message from the other explains a state the package did not report.
+     *
+     * <p>"Says something" is decided by the key being PRESENT, not by its value being a readable
+     * string: a package whose {@code message} is an object for translations has still said
+     * something, and calling that "does not say why" asserts the opposite of what happened.
+     * When part of what it says cannot be read, EVERY answer here says so — the note used to
+     * hang off one arm of four, so three of them dropped the fact that something was there
+     * (both reviews, 2026-09-20).
+     */
+    private static Check reasonFor(Map<String, Object> document, Map<String, Object> proof) {
+        if (document.containsKey("inclusionProofFailed")) {
+            String couldNotBuild = asString(document.get("inclusionProofFailed"));
+            return reason(Outcome.UNAVAILABLE,
+                    couldNotBuild != null
+                            ? "the package says the audit path could not be built: "
+                                    + couldNotBuild
+                            : "the package says the audit path could not be built, and the "
+                                    + "reason it gives is not a readable string. Nothing about "
+                                    + "the entry's inclusion is established either way.",
+                    false);
+        }
+        // ONE source, not two fields resolved separately: taking the status from the proof and
+        // the message from the document pairs a state with an explanation of a different one
+        // (review, 2026-09-20). The proof's own words win when it has any.
+        Map<String, Object> source = proof != null
+                && (proof.containsKey("status") || proof.containsKey("message")) ? proof : document;
+        if (!source.containsKey("status") && !source.containsKey("message")) {
+            return null;
+        }
+        String status = asString(source.get("status"));
+        String message = asString(source.get("message"));
+        // "part of it could not be read" is not "it could not be read". Reporting the second
+        // when only one field is unreadable threw away the one that WAS read — and the token a
+        // reader acts on is usually the status (review, 2026-09-20).
+        boolean partlyUnreadable = (source.containsKey("status") && status == null)
+                || (source.containsKey("message") && message == null);
+        if (status == null && message == null) {
+            return reason(Outcome.UNAVAILABLE,
+                    "the evidence package carries no usable inclusion proof, and the reason it "
+                            + "gives is not a readable string. Nothing about the entry's "
+                            + "inclusion is established either way.",
+                    false);
+        }
+        if ("not-chained".equals(status)) {
+            return reason(Outcome.NOT_PRESENT,
+                    message != null ? message
+                            : "the package says no ledger entry names this object. The chain "
+                                    + "only holds what was written to it, with no back-fill, so "
+                                    + "this says nothing about whether the record is genuine.",
+                    partlyUnreadable);
+        }
+        if ("unavailable".equals(status) || "error".equals(status)) {
+            return reason(Outcome.UNAVAILABLE,
+                    "the package says its own evidence could not be read"
+                            + (message == null ? "" : ": " + message),
+                    partlyUnreadable);
+        }
+        if ("success".equals(status)) {
+            if (proof == null) {
+                // It says the proof succeeded and there is no proof object at all. That is the
+                // package contradicting itself, not a reason — and falling through here reached
+                // "carries no inclusion proof, and does NOT SAY WHY" about a package that had
+                // said something (review, 2026-09-20).
+                return reason(Outcome.UNAVAILABLE,
+                        "the package says its inclusion proof succeeded and carries no proof to "
+                                + "read. Nothing about the entry's inclusion is established "
+                                + "either way.",
+                        partlyUnreadable);
+            }
+            // A proof object IS there and is not usable; the sentence about its own fields says
+            // more than this one would. The note would be lost here, so it is carried into that
+            // sentence by the caller instead — see auditPathCheck.
+            return null;
+        }
+        // It says SOMETHING, and it is not one of the states this verifier knows. Calling that
+        // "no proof is present" would classify a sentence we did not understand — a third-party
+        // or older package saying "ledger temporarily unreachable" is not a package saying the
+        // record was never chained.
+        return reason(Outcome.UNAVAILABLE,
+                "the evidence package carries no usable inclusion proof and gives a reason this "
+                        + "verifier does not recognise"
+                        + (status == null ? "" : " (status " + status + ")")
+                        + (message == null ? "" : ": " + message)
+                        + ". Nothing about the entry's inclusion is established either way.",
+                partlyUnreadable);
+    }
+
+    /** One exit, so the "part of it is unreadable" note cannot be left off an arm. */
+    private static Check reason(Outcome outcome, String detail, boolean partlyUnreadable) {
+        return new Check("audit path", outcome, partlyUnreadable
+                ? detail + " Part of what the package says is not a readable string."
+                : detail);
     }
 }

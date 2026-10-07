@@ -130,15 +130,6 @@
 		</init-param>
 	</filter>
 	
-	<!-- DeleteType Filter - TEMPORARILY DISABLED to allow query action support in Browser Binding -->
-	<!-- CRITICAL FIX: This filter prevents cmisaction=query from working in TCK tests -->
-	<!--
-	<filter>
-		<filter-name>deleteTypeFilter</filter-name>
-		<filter-class>jp.aegif.nemaki.cmis.servlet.DeleteTypeFilter</filter-class>
-	</filter>
-	-->
-	
 	<!-- Security response headers for the React SPA (/ui/*): nosniff,
 	     X-Frame-Options, Referrer-Policy (enforcing) + Content-Security-Policy
 	     in Report-Only mode (non-blocking baseline; promote after review). -->
@@ -205,17 +196,6 @@
 		<url-pattern>/services/*</url-pattern>
 	</filter-mapping>
 
-	<!-- DeleteType filter mapping - TEMPORARILY DISABLED to allow query action support -->
-	<!-- CRITICAL FIX: This filter mapping prevents cmisaction=query from working in TCK tests -->
-	<!--
-	<filter-mapping>
-		<filter-name>deleteTypeFilter</filter-name>
-		<url-pattern>/browser/*</url-pattern>
-		<dispatcher>REQUEST</dispatcher>
-		<dispatcher>FORWARD</dispatcher>
-	</filter-mapping>
-	-->
-	
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>

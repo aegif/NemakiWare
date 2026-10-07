@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,6 +20,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/v1/admin/import-profiles")
 public class ImportProfileDefinitionController {
+
+    private static final Logger logger =
+            LoggerFactory.getLogger(ImportProfileDefinitionController.class);
 
     @Autowired
     private ImportProfileDefinitionService importProfileDefinitionService;
@@ -98,10 +103,26 @@ public class ImportProfileDefinitionController {
             List<String> warnings = getPhase2Warnings(def);
             if (!warnings.isEmpty()) response.put("warnings", warnings);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, false, e.getMessage());
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
         } catch (IllegalArgumentException | IllegalStateException e) {
             audit(AuditOperation.EXTERNAL_PROFILE_CREATED, ctx, def, false, e.getMessage());
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    /**
+     * A listing the service could not complete — a selector page it could not continue,
+     * a walk that did not answer — escaped every endpoint without an explicit catch as a
+     * Spring 500 ({@code GlobalExceptionHandler} does not cover this package). The typed
+     * refusals exist so the answer can be 503, "retry", not "our bug"; this is the floor.
+     * Endpoints that catch them themselves keep their own mapping.
+     */
+    @ExceptionHandler({ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException.class,
+            ConnectorDefinitionServiceImpl.ConnectorIndexNotReadyException.class})
+    public ResponseEntity<Map<String, Object>> definitionRowsCouldNotBeRead(RuntimeException e) {
+        return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 
     @GetMapping
@@ -164,9 +185,19 @@ public class ImportProfileDefinitionController {
         CallContext ctx = currentCallContext();
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
         ImportProfileDefinition def = importProfileDefinitionService.get(profileId);
-        if (def == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
-        // Cross-repository confinement: a profile in another repository is 404.
-        if (!belongsToAuthRepository(ctx, def)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        // The caller's own row FIRST, index-free: a profile that only has a legacy
+        // generated-id row is invisible to the selector and to the id-addressed fallback, so
+        // GET answered 503 for it while the ownership transfer (which resolves this way)
+        // answered 200. A review found the split.
+        ImportProfileDefinition[] mine = new ImportProfileDefinition[1];
+        ResponseEntity<Map<String, Object>> refused = resolveMine(ctx, profileId, def, r -> mine[0] = r);
+        if (refused != null) return refused;
+        def = mine[0];
+        if (def == null) {
+            // Absence established index-free by the walk above — no second walk.
+            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        }
+        // Confinement is already established: def is this repository's row.
 
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         if (!admin) {
@@ -199,10 +230,17 @@ public class ImportProfileDefinitionController {
         // authenticated repository. Absent → 404; other repository → 404 (no
         // cross-repository existence disclosure). This runs before any mutation
         // and covers both the admin and delegated paths below.
-        ImportProfileDefinition existingForRepo = importProfileDefinitionService.get(profileId);
-        if (existingForRepo == null || !belongsToAuthRepository(ctx, existingForRepo)) {
+        ImportProfileDefinition selectedForPut = importProfileDefinitionService.get(profileId);
+        ImportProfileDefinition[] minePut = new ImportProfileDefinition[1];
+        ResponseEntity<Map<String, Object>> refusedPut =
+                resolveMine(ctx, profileId, selectedForPut, r -> minePut[0] = r);
+        if (refusedPut != null) return refusedPut;
+        ImportProfileDefinition existingForRepo = minePut[0];
+        if (existingForRepo == null) {
+            // Absence established index-free — no second walk.
             return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         }
+        // Confinement is already established above.
         // A caller must not relocate a profile into another repository via the body.
         def.setRepositoryId(existingForRepo.getRepositoryId());
 
@@ -256,8 +294,10 @@ public class ImportProfileDefinitionController {
         //   flipping rateLimitRpm — doesn't accidentally erase the
         //   audit trail).
         boolean clearedAutoDisableMarker = false;
-        ImportProfileDefinition existingForMarker =
-                importProfileDefinitionService.get(profileId);
+        // The row already resolved for THIS repository: a second unconfined read would
+        // decide the marker from whichever twin the selector returned. A review found the
+        // same arbitrary-twin read here as in the delegation gate.
+        ImportProfileDefinition existingForMarker = existingForRepo;
         if (existingForMarker != null) {
             boolean reEnableFromAutoDisable = def.isEnabled()
                     && !existingForMarker.isEnabled()
@@ -276,7 +316,7 @@ public class ImportProfileDefinitionController {
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
         try {
             if (!admin) {
-                ResponseEntity<Map<String, Object>> deniedResp = enforceDelegationOnUpdate(ctx, def);
+                ResponseEntity<Map<String, Object>> deniedResp = enforceDelegationOnUpdate(ctx, def, existingForRepo);
                 if (deniedResp != null) {
                     String reason = extractDenialReason(deniedResp);
                     String message = extractMessage(deniedResp);
@@ -302,19 +342,58 @@ public class ImportProfileDefinitionController {
         } catch (IllegalArgumentException e) {
             audit(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def, false, e.getMessage());
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            // Transient and retryable: the profile's rows could not all be seen while an
+            // index rebuilds. Same mapping the connector controller gained in round 5; a 500
+            // here is what opens tickets for a condition a retry resolves.
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException e) {
+            // Standing, not transient: two rows define this profile and an update would
+            // choose between them. 409 — a retry does not resolve it, an administrator does.
+            audit(AuditOperation.EXTERNAL_PROFILE_UPDATED, ctx, def, false, e.getMessage());
+            return errorResponse(HttpStatus.CONFLICT, e.getMessage());
         }
     }
 
     @DeleteMapping("/{profileId}")
-    public ResponseEntity<Map<String, Object>> delete(@PathVariable String profileId) {
+    public ResponseEntity<Map<String, Object>> delete(@PathVariable String profileId,
+            @org.springframework.web.bind.annotation.RequestParam(value = "docId",
+                    required = false) String docId) {
         CallContext ctx = currentCallContext();
         if (ctx == null) return errorResponse(HttpStatus.UNAUTHORIZED, "No call context");
 
         boolean admin = ingestAuthorizationService.isAdmin(ctx);
-        ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
+        if (docId != null && !docId.isBlank()) {
+            // The row-addressed resolver runs FIRST and on its own. Everything below reads
+            // whichever twin the selector returned, and when that twin belongs to another
+            // repository the caller was refused 404 for a row of their OWN repository — the
+            // documented repair path made unusable by storage order. A review found it. The
+            // service validates the addressed row against the caller's repository itself.
+            return deleteOneRow(ctx, profileId, docId, admin);
+        }
+        // Cross-repository confinement: a profile in another repository is 404 — UNLESS the
+        // caller's own repository also has a row of this profileId. get() is a selector over
+        // profileId alone, so with the same id in two repositories it returns an arbitrary
+        // twin, and this check refused the owner of the OTHER row: the documented repair was
+        // unreachable through the API.
+        //
+        // The caller's OWN row is fetched index-free and everything below then reasons about
+        // it. The first fix for this was a separate branch that skipped those checks and was
+        // administrator-only — which made the delegation rule depend on which twin the
+        // selector happened to return. A review found that; one path is the answer.
+        // null, not the selector's row: this verb AUTHORISES from what it resolves and then
+        // removes every row of the repository, so it must see a pair. The selector cannot
+        // tell one row from two.
+        ImportProfileDefinition[] mineDel = new ImportProfileDefinition[1];
+        ResponseEntity<Map<String, Object>> refusedDel =
+                resolveMine(ctx, profileId, null, r -> mineDel[0] = r);
+        if (refusedDel != null) return refusedDel;
+        // No selector read above this line. One stood here, assigned and then overwritten
+        // unread — and get() does not wrap its Mango call, so a rebuilding index threw
+        // straight out as 500 in front of the very verb we made index-free. A review found
+        // the dead read still able to decide the answer.
+        ImportProfileDefinition existing = mineDel[0];
         if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
-        // Cross-repository confinement: a profile in another repository is 404.
-        if (!belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
         if (!admin) {
             if (!existing.isDelegated()) {
                 ResponseEntity<Map<String, Object>> resp = denied(HttpStatus.FORBIDDEN,
@@ -334,12 +413,40 @@ public class ImportProfileDefinitionController {
                 return resp;
             }
         }
-        // Stop IDLE thread before deletion (no-op if not running)
-        if (ingestSchedulerService != null) ingestSchedulerService.stopIdle(profileId);
-        importProfileDefinitionService.delete(profileId);
+
+        int elsewhere;
+        try {
+            elsewhere = importProfileDefinitionService.delete(profileId, authRepository(ctx));
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            // "Deleted" must mean deleted: a row that could not be read is a retry, not a
+            // success with a survivor. Nothing was written, but the attempt is auditable.
+            audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false, e.getMessage());
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfilePartiallyDeletedException partly) {
+            // Rows ARE gone and at least one is not: CouchDB has no transaction across
+            // documents. Letting it escape answered 500 with no audit entry for a deletion
+            // that had partly happened. Retryable — a retry removes what remains. Narrow on
+            // purpose: the first version caught every RuntimeException, so a store that
+            // refused the whole operation (authentication, permission) was also told to
+            // retry, for ever. A review caught the over-broad arm.
+            audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, false,
+                    partly.getMessage());
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, partly.getMessage());
+        }
+        // Stop the IDLE thread AFTER the deletion. It used to run first, and once the delete
+        // could refuse retryably that order stopped live IMAP capture for a profile that
+        // still existed — a 503 with mail capture silently disabled (stopIdle disconnects
+        // the adapter and nothing restarts it). A round-3 review caught the ordering.
+        stopSchedulerIfThisRepositoryLosesIt(profileId, authRepository(ctx), elsewhere);
         audit(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, existing, true, null);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "success");
+        if (elsewhere < 0) {
+            // A failed read is not an answered one: the caller was getting the same body as
+            // for a known survivor count. A review found the two indistinguishable.
+            response.put("warning", "the rows were removed, but whether any repository still"
+                    + " has this profile could not be established");
+        }
         return ResponseEntity.ok(response);
     }
 
@@ -385,7 +492,16 @@ public class ImportProfileDefinitionController {
         }
 
         ImportProfileDefinition existing = importProfileDefinitionService.get(profileId);
-        if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        // The same shared-profileId resolution as GET/PUT/DELETE.
+        ImportProfileDefinition[] mineOwn = new ImportProfileDefinition[1];
+        ResponseEntity<Map<String, Object>> refusedOwn =
+                resolveMine(ctx, profileId, existing, r -> mineOwn[0] = r);
+        if (refusedOwn != null) return refusedOwn;
+        existing = mineOwn[0];
+        if (existing == null) {
+            // Absence established index-free — no second walk.
+            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        }
         // Cross-repository confinement: a profile in another repository is 404.
         if (!belongsToAuthRepository(ctx, existing)) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
 
@@ -470,6 +586,28 @@ public class ImportProfileDefinitionController {
                 }
                 ConnectorDefinition c = connectorDefinitionService.get(cid);
                 if (c == null) {
+                    // The twin of the check in validateDelegatedConnectors: "unknown" is a
+                    // statement about the database, recorded in the audit trail, from a read
+                    // that answers null for a row it could not show as readily as for one
+                    // that is not there.
+                    boolean rowIsThere;
+                    try {
+                        rowIsThere = connectorDefinitionService.existsIndexFree(cid);
+                    } catch (RuntimeException couldNotAsk) {
+                        return denyTransfer(ctx, existing, newOwner, folderId,
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                DenialReason.SERVICES_UNAVAILABLE,
+                                "whether connector " + cid + " exists could not be"
+                                        + " established; retry shortly: "
+                                        + couldNotAsk.getMessage());
+                    }
+                    if (rowIsThere) {
+                        return denyTransfer(ctx, existing, newOwner, folderId,
+                                HttpStatus.SERVICE_UNAVAILABLE,
+                                DenialReason.SERVICES_UNAVAILABLE,
+                                "connector " + cid + " exists but could not be read;"
+                                        + " retry shortly");
+                    }
                     return denyTransfer(ctx, existing, newOwner, folderId,
                             HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
                             "Unknown connector: " + cid);
@@ -496,6 +634,10 @@ public class ImportProfileDefinitionController {
             return successResponse(existing);
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException e) {
+            return errorResponse(HttpStatus.CONFLICT, e.getMessage());
         }
     }
 
@@ -655,9 +797,21 @@ public class ImportProfileDefinitionController {
      *       user shouldn't be able to invoke.</li>
      * </ul>
      */
-    private ResponseEntity<Map<String, Object>> enforceDelegationOnUpdate(CallContext ctx, ImportProfileDefinition def) {
-        ImportProfileDefinition existing = importProfileDefinitionService.get(def.getProfileId());
-        if (existing == null) return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+    private ResponseEntity<Map<String, Object>> enforceDelegationOnUpdate(CallContext ctx,
+            ImportProfileDefinition def, ImportProfileDefinition alreadyResolved) {
+        // Through the same gate as the other verbs. This second read is where a delegated
+        // PUT still answered a bare 404 for a profile that IS there — and where it then
+        // decided delegation from whichever twin the selector returned, so a shared
+        // profileId could authorise or deny from ANOTHER repository's row. A review found
+        // both; the caller's own row is fetched index-free.
+        // The row the caller's verb already resolved for this repository. Reading it again
+        // meant a second index-free walk on every non-admin PUT while the selector could not
+        // show the row — the double walk that was just removed elsewhere, in another form.
+        ImportProfileDefinition existing = alreadyResolved;
+        if (existing == null) {
+            // Absence established index-free by the resolution above — no second walk.
+            return errorResponse(HttpStatus.NOT_FOUND, "Profile not found");
+        }
         if (!existing.isDelegated()) {
             return denied(HttpStatus.FORBIDDEN, DenialReason.ADMIN_OWNED_PROFILE, "Admin-managed profile");
         }
@@ -749,6 +903,25 @@ public class ImportProfileDefinitionController {
             }
             ConnectorDefinition c = connectorDefinitionService.get(cid);
             if (c == null) {
+                // "Unknown connector" is a statement about the database, written into the
+                // audit trail, from a read that answers null for a row it could not show as
+                // readily as for one that is not there. The sibling in this same batch
+                // (validateSchedulerParams) already splits the two; a review found this one
+                // left behind, and it runs on every non-admin create and update.
+                boolean rowIsThere;
+                try {
+                    rowIsThere = connectorDefinitionService.existsIndexFree(cid);
+                } catch (RuntimeException couldNotAsk) {
+                    return denied(HttpStatus.SERVICE_UNAVAILABLE,
+                            DenialReason.SERVICES_UNAVAILABLE,
+                            "whether connector " + cid + " exists could not be established;"
+                                    + " retry shortly: " + couldNotAsk.getMessage());
+                }
+                if (rowIsThere) {
+                    return denied(HttpStatus.SERVICE_UNAVAILABLE,
+                            DenialReason.SERVICES_UNAVAILABLE,
+                            "connector " + cid + " exists but could not be read; retry shortly");
+                }
                 return denied(HttpStatus.BAD_REQUEST, DenialReason.UNKNOWN_CONNECTOR,
                         "Unknown connector: " + cid);
             }
@@ -773,6 +946,234 @@ public class ImportProfileDefinitionController {
         if (httpRequest == null) return null;
         return (CallContext) httpRequest.getAttribute("CallContext");
     }
+
+    /**
+     * Stops the profile's IDLE thread when this deletion takes away the row that session
+     * was importing into.
+     *
+     * <p>The first version stopped only when NO repository still had the profileId. That
+     * protected another repository's live capture, but a review showed the other half: the
+     * IDLE map is keyed by profileId alone and a session captures one row's repositoryId
+     * for every message it imports. Delete repository A's row while B keeps the id, and a
+     * session started for A kept importing into A — a deletion that does not stop the
+     * capture it authorised. So the question is not "does anyone still have this id" but
+     * "was the live session sending mail HERE".
+     *
+     * <p>A session we cannot attribute (running, but no repository recorded) is stopped:
+     * losing capture is recoverable by restarting IDLE, a live connection to a mailbox that
+     * no repository still authorises is not (the imports themselves are refused by the
+     * message loop, which reloads the profile every time). A count of {@code -1} still cannot stop a session that belongs to someone
+     * else — that would act on a guess — but it no longer protects an unattributable one.
+     */
+    private void stopSchedulerIfThisRepositoryLosesIt(String profileId, String repositoryId,
+            int leftAnywhere) {
+        try {
+            if (ingestSchedulerService == null) return;
+            if (leftAnywhere == 0) {
+                ingestSchedulerService.stopIdle(profileId);
+                return;
+            }
+            boolean running = ingestSchedulerService.getIdleProfiles().contains(profileId);
+            if (!running) {
+                logger.info("import profile {} still has {} definition row(s) somewhere and no"
+                        + " IDLE session is running", profileId,
+                        leftAnywhere < 0 ? "an unknown number of" : String.valueOf(leftAnywhere));
+                return;
+            }
+            String servedRepository = ingestSchedulerService.getIdleRepository(profileId);
+            if (servedRepository == null || servedRepository.equals(repositoryId)) {
+                logger.info("import profile {} still exists elsewhere, but its IDLE session"
+                        + " imports into {}; stopping it", profileId,
+                        servedRepository == null ? "a repository that cannot be established"
+                                : servedRepository);
+                ingestSchedulerService.stopIdle(profileId);
+            } else {
+                logger.info("import profile {} still has {} definition row(s) somewhere and its"
+                        + " IDLE session imports into {}; leaving it alone", profileId,
+                        leftAnywhere < 0 ? "an unknown number of" : String.valueOf(leftAnywhere),
+                        servedRepository);
+            }
+        } catch (RuntimeException idleShutdownFailed) {
+            // The rows are ALREADY deleted. Letting this escape would drop the audit entry
+            // for a deletion that happened and answer 500 — the caller would read it as "not
+            // deleted" and the security trail would have no record.
+            logger.warn("Import profile {} was deleted, but stopping its IMAP IDLE thread"
+                    + " failed: {}", profileId, idleShutdownFailed.getMessage());
+        }
+    }
+
+    /**
+     * The row-addressed twin resolver, on its own path. It must not depend on which twin a
+     * selector returns: the caller's repository travels with the request and the service
+     * validates the ADDRESSED row against it.
+     */
+    private ResponseEntity<Map<String, Object>> deleteOneRow(CallContext ctx, String profileId,
+            String docId, boolean admin) {
+            // The divergent-twin resolver: the plain delete removes every row of the caller's repository for the
+            // profile, so the migration's "delete the row you do not want" needs an
+            // id-addressed operation. The profile SURVIVES this call (one twin goes), so
+            // the scheduler is not stopped and no deletion event is emitted; and the
+            // caller's repository travels with the request so the addressed row itself is
+            // authorised — the ownership check above ran on whichever twin the selector
+            // returned first.
+            //
+            // Administrators only. The delegated checks above (delegated flag, cmis:all on
+            // the target folder) also ran on the selector's twin, not on the addressed
+            // row — so a delegated user managing twin A could delete an admin-managed
+            // twin B. Resolving divergent rows is a migration follow-up, not a
+            // self-service operation; a round-2 review named the gap.
+            if (!admin) {
+                // Audited like every other denial on this controller. The attempt that this
+                // round's fix made impossible (one repository's administrator reaching
+                // another's row) is exactly the one a security trail has to carry; a review
+                // found this branch silent.
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), false,
+                        "row-addressed deletion is an administrator operation",
+                        DenialReason.ADMIN_OWNED_PROFILE, docId);
+                return errorResponse(HttpStatus.FORBIDDEN,
+                        "resolving divergent definition rows is an administrator operation");
+            }
+            int remaining;
+            try {
+                remaining = importProfileDefinitionService.delete(profileId, docId,
+                        authRepository(ctx));
+            } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+                // The count that decides "is this a pair?" could not read a row. That is
+                // "could not ask", and every other caller of the same count answers 503 with
+                // an audit entry; this path used to let it escape as an unclassified 500.
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), false, e.getMessage(), null, docId);
+                return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+            } catch (ImportProfileDefinitionServiceImpl.ProfileHasNoTwinException e) {
+                // The row is there and the address is right; there is simply no pair to
+                // resolve. 409, not the 404 below — that would say the row does not exist.
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), false, e.getMessage(), null, docId);
+                return errorResponse(HttpStatus.CONFLICT, e.getMessage());
+            } catch (IllegalArgumentException e) {
+                // Uniformly "not found", like every other cross-repository refusal here:
+                // a row in another repository must not be distinguishable from no row. The
+                // ATTEMPT is still audited — the trail must show who tried to remove which
+                // row, whatever the answer was.
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), false,
+                        "the addressed row is not a row of this profile in this repository",
+                        null, docId);
+                return errorResponse(HttpStatus.NOT_FOUND, "Profile row not found");
+            }
+            // The row IS destroyed and the surviving twin's content becomes the effective
+            // configuration — a change of settings with no trace, since this path emitted no
+            // audit entry at all. Every other state-changing verb on this controller audits;
+            // a review found this one silent. (The deletion EVENT and the scheduler stop stay
+            // out: the profile itself is still there. That part is deliberate and recorded.)
+            if (remaining < 0) {
+                // The count after the delete could not answer. That is not "a row survives",
+                // which is the branch this used to fall into — the batch's own defect, on
+                // the far side of a destructive write. The scheduler is NOT stopped: doing it
+                // for a profile that may still exist silently disables live mail capture,
+                // which is the worse of the two mistakes. Say what is unknown instead.
+                logger.error("row {} of import profile {} was deleted, but whether any"
+                        + " definition row remains could not be established", docId, profileId);
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), true, "the row was deleted; the survivors could"
+                                + " not be counted", null, docId,
+                        "unknown: the surviving rows could not be counted");
+                Map<String, Object> unknown = new LinkedHashMap<>();
+                unknown.put("status", "success");
+                unknown.put("deletedRow", docId);
+                unknown.put("warning", "the row was deleted, but whether the profile still"
+                        + " has a definition row could not be established");
+                return ResponseEntity.ok(unknown);
+            }
+            if (remaining == 0) {
+                // The count before the delete said "a pair", and none is left: another
+                // administrator removed the other row concurrently. The profile is GONE, and
+                // this path deliberately skips the scheduler stop and the deletion record
+                // because it assumes a survivor — so finish that work here rather than leave
+                // a deleted profile with a live IMAP thread and no deletion record.
+                logger.warn("import profile {} lost its last definition row to a concurrent"
+                        + " row-addressed delete; stopping its scheduler and recording the"
+                        + " deletion", profileId);
+                try {
+                    if (ingestSchedulerService != null) ingestSchedulerService.stopIdle(profileId);
+                } catch (RuntimeException idleShutdownFailed) {
+                    logger.warn("stopping the IMAP IDLE thread of {} failed: {}", profileId,
+                            idleShutdownFailed.getMessage());
+                }
+                // Not necessarily a race: a row that belongs to NO repository is exempt
+                // from the "this is the only row" refusal (nothing else reaches it), so an
+                // ordinary cleanup lands here too. The wording said "lost a race" for both.
+                auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                        authRepository(ctx), true, "no definition row remains after removing"
+                                + " this one; the profile is deleted", null, docId,
+                        "profile deleted: no definition row remains");
+                Map<String, Object> raced = new LinkedHashMap<>();
+                raced.put("status", "success");
+                raced.put("deletedRow", docId);
+                raced.put("warning", "no definition row remains; the profile is deleted");
+                return ResponseEntity.ok(raced);
+            }
+            auditRow(AuditOperation.EXTERNAL_PROFILE_DELETED, ctx, profileId,
+                    authRepository(ctx), true, "one row of a divergent pair was removed",
+                    null, docId);
+            Map<String, Object> resolved = new LinkedHashMap<>();
+            resolved.put("status", "success");
+            resolved.put("deletedRow", docId);
+            return ResponseEntity.ok(resolved);
+
+    }
+
+    /**
+     * The row this repository owns, when the selector handed back another repository's twin.
+     * {@code get} selects on profileId alone; with the same id in two repositories the caller
+     * was refused 404 for a profile they own — the DELETE path was fixed for this and the
+     * read verbs were left behind. Returns null when this repository really has none.
+     */
+    private ImportProfileDefinition mineInstead(CallContext ctx, ImportProfileDefinition selected,
+            String profileId) {
+        // The selector's row when it is this repository's, otherwise the index-free read.
+        //
+        // Making this unconditional was tried and withdrawn: it puts a full walk of the config
+        // database on every administrator request, and a review traced some thirty tests —
+        // including two classes outside this batch — to a red result, because their fixtures
+        // answer the selector and not the walk. (That count came from reading, not from
+        // running the variant; the batch itself has since been measured.) What it was reaching for is real but narrow: the selector cannot
+        // tell ONE row from a PAIR, and a delegated DELETE authorised from one twin removes
+        // every row of the repository, including the other. That path resolves index-free
+        // unconditionally (see delete); the reads and the writes are covered by the write
+        // side, which counts rows without the index and refuses a pair with 409.
+        if (selected != null && belongsToAuthRepository(ctx, selected)) {
+            return selected;
+        }
+        return importProfileDefinitionService.getForRepository(profileId, authRepository(ctx));
+    }
+
+    /**
+     * Resolves this repository's row and turns the two refusals into responses: a pair is
+     * 409 (resolve it first), an unreadable row is 503. Returns null when the row really is
+     * absent — established index-free, so the caller answers 404 WITHOUT a second walk. The
+     * first version asked {@code hiddenOrAbsent} after this, which walked the whole database
+     * again and could turn a settled absence into a 503; a review found the double walk.
+     */
+    private ResponseEntity<Map<String, Object>> resolveMine(CallContext ctx, String profileId,
+            ImportProfileDefinition selected, java.util.function.Consumer<ImportProfileDefinition> sink) {
+        try {
+            sink.accept(mineInstead(ctx, selected, profileId));
+        } catch (ImportProfileDefinitionServiceImpl.ProfileHasTwinRowsException pair) {
+            return errorResponse(HttpStatus.CONFLICT, pair.getMessage());
+        } catch (ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException e) {
+            return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        }
+        return null;
+    }
+
+    // hiddenOrAbsent(...) lived here: a second index-free walk that asked "does a row
+    // exist?" after a read had already answered. Every verb now resolves this repository's
+    // row once — that read refuses when it cannot see (503) and answers null only when the
+    // row is genuinely absent (404) — so the second walk was double cost and could turn a
+    // settled absence into a 503 when only it failed. A review found the pair.
+
 
     /** The repository the caller authenticated against (see AuthenticationFilter /v1/admin/* handling). */
     private String authRepository(CallContext ctx) {
@@ -818,6 +1219,39 @@ public class ImportProfileDefinitionController {
     private void audit(AuditOperation op, CallContext ctx, ImportProfileDefinition def,
                        boolean success, String errorMessage) {
         auditWithReason(op, ctx, def, success, errorMessage, null);
+    }
+
+    /**
+     * The audit of a ROW-addressed operation. Deliberately not {@link #auditWithReason}: that
+     * one describes a PROFILE (delegated, target folder, connector ids), and this call
+     * establishes none of them — it addresses one row of a divergent pair, and the row that
+     * SURVIVES may differ in every one of those fields. A review found a synthetic definition
+     * emitting {@code delegated=false} as though it were a fact, and the row id riding in the
+     * errorMessage, which the logger drops on success.
+     */
+    private void auditRow(AuditOperation op, CallContext ctx, String profileId,
+                          String repositoryId, boolean success, String message,
+                          DenialReason reason, String docId) {
+        auditRow(op, ctx, profileId, repositoryId, success, message, reason, docId, null);
+    }
+
+    private void auditRow(AuditOperation op, CallContext ctx, String profileId,
+                          String repositoryId, boolean success, String message,
+                          DenialReason reason, String docId, String outcome) {
+        if (ctx == null) return;
+        String actor = ctx.getUsername() != null ? ctx.getUsername() : "anonymous";
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("actorUserId", actor);
+        details.put("definitionRowId", docId);
+        // In DETAILS, not in the message: the message becomes errorMessage, and the logger
+        // drops that on a SUCCESS. The javadoc above records finding that trap once; the
+        // race repair then put "the profile is deleted" into the same dropped field, so the
+        // audit of a deletion was indistinguishable from resolving one row of a pair. A
+        // review caught the second occurrence.
+        if (outcome != null) details.put("outcome", outcome);
+        if (reason != null) details.put("denialReason", reason.name());
+        jp.aegif.nemaki.audit.AuditEmitSupport.safeEmit(auditLogger, op, repositoryId, actor,
+                profileId != null ? profileId : "", success, message, details);
     }
 
     /** Audit a denial with a stable {@link DenialReason} tag in the details map. */

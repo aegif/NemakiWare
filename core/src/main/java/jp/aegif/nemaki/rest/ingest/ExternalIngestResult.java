@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.rest.ingest;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -28,6 +30,50 @@ public record ExternalIngestResult(
         boolean createdObject) {
 
     /**
+     * What a result says in place of a message it was handed as {@code null}: a failure whose
+     * exception had no message, a warning added from a variable that held none.
+     */
+    public static final String NO_MESSAGE = "(no message was given)";
+
+    /**
+     * The lists are the result's own: copied when it is made, and not changeable through it.
+     *
+     * <p>A result used to keep the very list its maker had been adding to, and hand that list
+     * out as it was: a wrapper could filter the mail's warnings in place —
+     * {@code result.warnings().removeIf(…)} — and drop the warning that says an attachment is
+     * missing, with every lock that reads the import's source still green, since nothing it reads
+     * had changed (review, P1). Now a change made through a result fails when it runs, and a list
+     * its maker changes after the result was made does not change the result.
+     *
+     * <p>No element of either list is {@code null}: a {@code null} message becomes
+     * {@link #NO_MESSAGE}. Readers call string methods on the elements — the cloud-drive import
+     * reads the first error with {@code contains}, the Notion and IMAP pollers read each warning —
+     * and throw on a {@code null} one; the cloud-drive import met one as soon as the {@code error}
+     * factories stopped throwing on a {@code null} message (review, P2). {@link #withWarnings} and
+     * the {@code error} that carries warnings hand their list to this constructor: they copied it
+     * with {@code List.copyOf}, which throws on a {@code null} element, so a result carrying one
+     * could not be given the capture's warning; and both {@code error} factories put their message
+     * in a list that takes {@code null}: with {@code List.of}, a failure whose exception had no
+     * message threw instead of being reported as a failure (review, P2 ×2). An absent list stays
+     * absent here; {@link #withWarnings} and the {@code error} that carries warnings make an absent
+     * warning list empty, as they did before.
+     */
+    public ExternalIngestResult {
+        errors = ownCopy(errors);
+        warnings = ownCopy(warnings);
+    }
+
+    /** The list as the result keeps it: its own copy, no element {@code null}, not changeable. */
+    private static List<String> ownCopy(List<String> messages) {
+        if (messages == null) {
+            return null;
+        }
+        List<String> copy = new ArrayList<>(messages);
+        copy.replaceAll(message -> message == null ? NO_MESSAGE : message);
+        return Collections.unmodifiableList(copy);
+    }
+
+    /**
      * Legacy arity, defaulting {@code createdObject} to false.
      *
      * <p>False is the conservative answer: it means "do not claim custody began now" — a wrong
@@ -48,7 +94,7 @@ public record ExternalIngestResult(
     public ExternalIngestResult withWarnings(List<String> warnings) {
         return new ExternalIngestResult(requestId, objectId, versionLabel, isNewVersion, dryRun,
                 skipped, skipReason, lineageEventId, errors,
-                warnings == null ? List.of() : List.copyOf(warnings), createdObject);
+                warnings == null ? List.of() : warnings, createdObject);
     }
 
     public ExternalIngestResult(String requestId, String objectId, String versionLabel,
@@ -87,7 +133,7 @@ public record ExternalIngestResult(
 
     public static ExternalIngestResult error(String requestId, String errorMessage) {
         return new ExternalIngestResult(requestId, null, null, false,
-                false, false, null, null, List.of(errorMessage), List.of());
+                false, false, null, null, Collections.singletonList(errorMessage), List.of());
     }
 
     /**
@@ -105,7 +151,7 @@ public record ExternalIngestResult(
     public static ExternalIngestResult error(String requestId, String objectId,
                                              String errorMessage, List<String> warnings) {
         return new ExternalIngestResult(requestId, objectId, null, false,
-                false, false, null, null, List.of(errorMessage),
-                warnings == null ? List.of() : List.copyOf(warnings));
+                false, false, null, null, Collections.singletonList(errorMessage),
+                warnings == null ? List.of() : warnings);
     }
 }

@@ -16,6 +16,7 @@ apply or cannot be fixed*, not just that it is ignored.
 | ID | Component | Applicability / rationale | Mitigation in place | Owner | Expiry |
 |----|-----------|---------------------------|---------------------|-------|--------|
 | CVE-2025-66516 | Apache Solr / PDFBox (SolrCell `/update/extract`) | **Resolved (record kept for traceability).** The live indexing path extracts text application-side with Tika **3.2.3** (which fixes this CVE) and posts plain text to the normal `/update` handler; the Solr runtime image is now **10.0.0-slim** (carries the Solr-side fix forward); the leftover `/update/extract` handler was dropped when the `token` core's stock-example solrconfig was replaced with a minimal Solr-10 config. | Quadruple-covered: patched Tika app-side + Solr 10 image + handler removed + `127.0.0.1` binding. | @Ishii-Akinori | 2027-01-31 |
+| GHSA-hp3w-g68c-fv3c | sprintf-js 1.0.3 (npm; UI dependency tree only, via `swagger-ui-react` → `remarkable@2.0.1` → `argparse@1.0.10`) | **Not shipped, and no fix exists.** `argparse` is what `remarkable` uses for its command-line tool; the UI bundle carries neither `argparse` nor `sprintf-js` (checked 2026-10-07 on the 3.4.0 RC WAR's `ui/assets`: no `[sprintf]` error strings, no `ArgumentParser`; the one `vsprintf` in the bundle belongs to the unrelated `format` package). The advisory needs an attacker-controlled format string, and nothing in NemakiWare hands one to it. The advisory lists sprintf-js **through 1.1.3** with no fixed version, and `npm audit`'s only "fix" is `swagger-ui-react` 3.23.3, a major downgrade. | Not in the shipped bundle. CI `npm audit --omit=dev --audit-level=high` does not gate on a moderate finding; `tools/sbom/osv-check.py` reports it (exit 1) and the release record names it. Re-check when sprintf-js, argparse or remarkable publish a fix, when `swagger-ui-react` drops `remarkable`, **or when any other package comes to depend on sprintf-js or argparse@1** — the `osv-scanner.toml` ignore applies to the ID everywhere, not to this path, so CI would stay silent about a new, reachable path (`npm ls sprintf-js` lists every path). | @Ishii-Akinori | 2027-01-31 |
 
 > **GHSA-qhr7-h655-pw6r** (solr-core Basic-Auth setup tool) was **retired** on
 > the Solr 10 upgrade: the WAR no longer depends on `solr-core` at all (the
@@ -37,11 +38,17 @@ churn.
 
 Therefore the image Trivy scans (security-scan.yml `trivy-image`,
 release-images.yml) are **informational** (report + SARIF artifact, no hard
-gate). The two actionable channels remain gates:
+gate). The actionable signals are elsewhere:
 - **Base-image lag** → Dependabot (docker ecosystem) opens a PR to bump the
   `FROM` tag when a newer image exists (this is how the Solr 9.10.0→9.10.1
   CVE-2025-66516 lag is caught).
-- **Our own Java dependencies** → `maven-dep-check` + OSV hard-fail.
+- **Our own Java dependencies** → `maven-dep-check` (the hand-written denylist; a hard gate).
+  The OSV job is informational, and osv-scanner does not read `core/pom.xml` or
+  `evidence-verifier-cli/pom.xml` ("Attempted to scan lockfile but failed", PR #516
+  log, 2026-10-05) — so it never saw the WAR's resolved Java dependencies. Before a
+  release, match the resolved SBOM against OSV by hand (no workflow runs it):
+  `tools/sbom/make-sbom.sh`, then `tools/sbom/osv-check.py target/*-sbom.json`
+  (exit 1 = advisories, 2 = could not ask).
 
 Solr is additionally never exposed to untrusted clients (bound to `127.0.0.1`
 in dev, off-host internal network in prod), so its bundled-server CVEs

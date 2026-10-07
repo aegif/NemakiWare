@@ -155,6 +155,59 @@ class OpenTimestampsAnchorTargetTest {
                     new OpenTimestampsAnchorTarget("http://127.0.0.1:1").anchor(DIGEST);
             assertEquals(AnchorStatus.FAILED, receipt.status());
         }
+
+        /**
+         * A sidecar URL that carries an {@code @} is refused (R132): the sidecar is asked neither to
+         * stamp nor to upgrade, the stamp's reason is the refusal, and no log names the URL. The
+         * control beside it: the same sidecar, asked through a URL without one, answers.
+         */
+        @Test
+        @DisplayName("a sidecar URL with an @ is refused — neither stamp nor upgrade is sent, and it is named nowhere")
+        void aSidecarUrlWithAnAtIsRefusedAndNeverSent() throws Exception {
+            // Every path the target would ask answers, and the URL parses: without the refusal the
+            // stamp and the upgrade WOULD reach this stub, so an empty path list measures the
+            // refusal and not a parse failure (subagent, c44 — a raw % made the URL unparseable
+            // and "nothing was sent" held with the refusal gone).
+            String url = start(java.util.Map.of(
+                    "/stamp", "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
+                            + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}",
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\"" + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":false,\"digestMatches\":true,\"pending\":true}"));
+            String withAt = url.replace("http://", "http://ops:s3cr3t@");
+            AnchorReceipt pending = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                    java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false"));
+            java.util.concurrent.atomic.AtomicReference<AnchorReceipt> stamped =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            java.util.concurrent.atomic.AtomicReference<Object> upgraded =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+
+            String logged = Rfc3161AnchorTargetTest.logOf(OpenTimestampsAnchorTarget.class, () -> {
+                OpenTimestampsAnchorTarget target = new OpenTimestampsAnchorTarget(withAt);
+                stamped.set(target.anchor(DIGEST));
+                try {
+                    upgraded.set(target.upgrade(pending));
+                } catch (AnchorUpgradeException e) {
+                    upgraded.set(e);
+                }
+                return null;
+            });
+
+            assertEquals(AnchorStatus.FAILED, stamped.get().status());
+            assertEquals(Rfc3161AnchorTarget.USER_INFO_REFUSED, stamped.get().failureReason());
+            // Not the pending receipt handed back: that read as "asked, not yet" (c46).
+            assertTrue(upgraded.get() instanceof AnchorUpgradeException refused
+                    && Rfc3161AnchorTarget.USER_INFO_REFUSED.equals(refused.getMessage()),
+                    "an upgrade through a refused URL answered " + upgraded.get());
+            assertTrue(paths.isEmpty(), "the sidecar was asked through a URL that carries an @: " + paths);
+            assertTrue(logged.contains("anchoring refused") && logged.contains("upgrade refused"),
+                    "a refusal was not logged: " + logged);
+            assertFalse(logged.contains("s3cr3t") || logged.contains("ops:") || logged.contains("127.0.0.1"),
+                    "a log names the refused URL: " + logged);
+
+            AnchorReceipt answered = new OpenTimestampsAnchorTarget(url).anchor(DIGEST);
+            assertEquals(AnchorStatus.PENDING, answered.status(), answered.failureReason());
+            assertEquals(url, answered.attributes().get("sidecarUrl"));
+        }
     }
 
     @Nested
@@ -201,6 +254,34 @@ class OpenTimestampsAnchorTargetTest {
             assertEquals("false", result.attributes().get("chainVerifiedLocally"));
         }
 
+        /**
+         * A receipt stored before the URL was kept without its user:password still carries it,
+         * and the upgrade copies the pending receipt's attributes into the one it returns and
+         * stores again (Codex, c41, P1).
+         */
+        @Test
+        @DisplayName("an upgrade does not carry a stored receipt's sidecar password forward")
+        void anUpgradeDoesNotCarryAStoredPasswordForward() throws Exception {
+            String url = start(java.util.Map.of(
+                    "/upgrade", "{\"status\":\"PENDING\",\"changed\":false,\"proofBase64\":\""
+                            + PROOF_B64 + "\"}",
+                    "/info", "{\"complete\":true,\"digestMatches\":true,\"bitcoinBlockHeight\":921447}",
+                    "/verify", "{\"verified\":false,\"stderr\":\"Could not connect to local Bitcoin node\"}"));
+            AnchorReceipt stored = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                    java.time.Instant.now(), PROOF, "d", java.util.Map.of("upgraded", "false",
+                            "sidecarUrl", "http://ops:s3cr3t@ots.example.invalid:8082"));
+
+            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(stored);
+
+            assertEquals("true", result.attributes().get("proofComplete"),
+                    "the upgrade did not produce a new receipt, so this measures nothing");
+            String sidecar = result.attributes().get("sidecarUrl");
+            assertFalse(sidecar.contains("s3cr3t") || sidecar.contains("ops:"),
+                    "the upgraded receipt carries the stored password forward: " + sidecar);
+            assertTrue(sidecar.startsWith("(not shown"), "the stored URL was dropped rather than "
+                    + "marked, so the receipt no longer says where it came from: " + sidecar);
+        }
+
         @Test
         @DisplayName("a proof for a DIFFERENT digest is refused, however complete it is")
         void proofForAnotherDigestIsRefused() throws Exception {
@@ -213,10 +294,47 @@ class OpenTimestampsAnchorTargetTest {
                             + "\"error\":\"this proof is for a different digest\"}"));
             AnchorReceipt pending = pendingReceipt(url);
 
-            AnchorReceipt result = new OpenTimestampsAnchorTarget(url).upgrade(pending);
+            // Not promoted, and not handed back as "not yet" either: this proof will not settle
+            // for this digest, and an unchanged receipt read as "asked, nothing had settled" (c46).
+            AnchorUpgradeException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                    AnchorUpgradeException.class, () -> new OpenTimestampsAnchorTarget(url).upgrade(pending));
+            assertTrue(refused.getMessage().contains("does not belong"), refused.getMessage());
+        }
 
-            assertSame(pending, result);
-            assertEquals(AnchorStatus.PENDING, result.status());
+        /**
+         * A sidecar that cannot be asked is not a calendar that answered "not yet" (c46). The
+         * receipt came back unchanged for both, and the upgrade pass told the operator "nothing had
+         * settled yet — not a failure, do not re-anchor" while the sidecar was down.
+         */
+        @Test
+        @DisplayName("a sidecar that cannot be asked is not 'not yet' — and the reason names no address")
+        void aSidecarThatCannotBeAskedIsNotNotYet() throws Exception {
+            String url = start(java.util.Map.of());
+
+            AnchorUpgradeException failed = org.junit.jupiter.api.Assertions.assertThrows(
+                    AnchorUpgradeException.class, () -> new OpenTimestampsAnchorTarget(url).upgrade(pendingReceipt(url)));
+
+            assertTrue(failed.getMessage().contains("could not be asked"), failed.getMessage());
+            assertFalse(failed.getMessage().contains("127.0.0.1"), "the reason names the sidecar: " + failed.getMessage());
+            assertEquals(java.util.List.of("/upgrade"), paths, "the upgrade never reached the sidecar, so "
+                    + "this measured a precondition and not an ask that failed");
+        }
+
+        @Test
+        @DisplayName("an unconfigured rung, or a receipt with no proof, is not asked — and does not say 'not yet'")
+        void aRungThatDoesNotAskDoesNotSayNotYet() throws Exception {
+            String url = start(java.util.Map.of());
+            AnchorReceipt withoutProof = AnchorReceipt.pending(AnchorKind.OPENTIMESTAMPS, DIGEST,
+                    java.time.Instant.now(), null, "d", java.util.Map.of());
+
+            AnchorUpgradeException unconfigured = org.junit.jupiter.api.Assertions.assertThrows(
+                    AnchorUpgradeException.class, () -> new OpenTimestampsAnchorTarget(null).upgrade(pendingReceipt(url)));
+            AnchorUpgradeException noProof = org.junit.jupiter.api.Assertions.assertThrows(
+                    AnchorUpgradeException.class, () -> new OpenTimestampsAnchorTarget(url).upgrade(withoutProof));
+
+            assertTrue(unconfigured.getMessage().contains("not configured"), unconfigured.getMessage());
+            assertTrue(noProof.getMessage().contains("no proof"), noProof.getMessage());
+            assertTrue(paths.isEmpty(), "a rung that had nothing to ask asked anyway: " + paths);
         }
 
         @Test

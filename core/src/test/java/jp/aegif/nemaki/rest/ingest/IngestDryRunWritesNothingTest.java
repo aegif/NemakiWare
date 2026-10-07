@@ -105,6 +105,7 @@ class IngestDryRunWritesNothingTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -112,6 +113,7 @@ class IngestDryRunWritesNothingTest {
         connector.setSourceArchetype(archetype);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(children);
     }
 

@@ -617,4 +617,77 @@ class EvidenceLedgerServiceTest {
 
         assertTrue(limits.contains("outside this database"), limits);
     }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a checkpoint row does not answer a question it cannot ask")
+    void aCheckpointDoesNotClaimToKnowWhetherItWasAnchored() {
+        // toDocument() hard-coded `anchored: false`, and that map is BOTH the persisted row and
+        // the REST payload. One POST /checkpoint-and-anchor against a working TSA therefore
+        // returned checkpoint.anchored=false beside anchor.confirmedRungs=["RFC3161_TSA"] --
+        // a negative finding asserted without consulting the receipt store, which this object
+        // cannot reach. It is also the single flag AnchorService refuses to emit, because
+        // "anchored" flattens three rungs that mean different things.
+        java.util.Map<String, Object> doc = EvidenceCheckpoint
+                .of("bedroom", 0, 4, "a".repeat(64), null, "2026-08-27T00:00:00Z")
+                .toDocument();
+
+        org.junit.jupiter.api.Assertions.assertFalse(doc.containsKey("anchored"),
+                "a checkpoint row answers whether it was anchored, which it has no way to know: "
+                        + doc);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(doc.get("note")).contains("does not say whether it was anchored"),
+                "the row drops the claim without saying where the answer lives: " + doc);
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a tail with an undecodable row is not appended past")
+    void anUndecodableTailRowStopsTheAppend() {
+        // The fork check counts rows THAT DECODED. A tail holding one good row and one the
+        // store could not read looks like a clean tail of one, so the append links to an arm it
+        // chose without knowing there was a choice — which is what the refusal beside it exists
+        // to prevent, entered through a door it did not watch.
+        EvidenceLedgerStore store = org.mockito.Mockito.mock(EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.highestSequence(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(4L);
+        org.mockito.Mockito.when(store.range(org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyLong(),
+                        org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(java.util.List.of(EvidenceLedgerEntry.of("bedroom", 4,
+                        EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, "obj-1", "mh1:x",
+                        "2026-08-28T00:00:00Z", null)));
+        org.mockito.Mockito.when(store.unreadableCount()).thenReturn(1);
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+
+        EvidenceLedgerService.AppendResult result = service.append("bedroom",
+                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, "obj-2", "mh1:y",
+                "2026-08-28T00:01:00Z");
+
+        org.junit.jupiter.api.Assertions.assertFalse(result.recorded(), result.reason());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(result.reason()).contains("NOT a finding"),
+                "the refusal does not say what it is not: " + result.reason());
+    }
+
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("a clean tail is still appended to — the control")
+    void aCleanTailIsStillAppendedTo() {
+        // Without this, refusing on every append would satisfy the test above and the chain
+        // could never grow.
+        EvidenceLedgerStore store = org.mockito.Mockito.mock(EvidenceLedgerStore.class);
+        org.mockito.Mockito.when(store.isActive()).thenReturn(true);
+        org.mockito.Mockito.when(store.highestSequence(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(-1L);
+        org.mockito.Mockito.when(store.unreadableCount()).thenReturn(0);
+        org.mockito.Mockito.when(store.append(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+        EvidenceLedgerService service = new EvidenceLedgerService();
+        service.setStore(store);
+
+        org.junit.jupiter.api.Assertions.assertTrue(service.append("bedroom",
+                EvidenceLedgerEntry.SubjectKind.FIXITY_RESULT, "obj-2", "mh1:y",
+                "2026-08-28T00:01:00Z").recorded());
+    }
 }

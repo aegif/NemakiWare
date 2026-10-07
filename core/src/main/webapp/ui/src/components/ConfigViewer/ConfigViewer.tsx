@@ -5,6 +5,7 @@ import { CMISService } from '../../services/cmis';
 import { getPasswordPolicy, updatePasswordPolicy } from '../../services/passwordPolicy';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 const { Text } = Typography;
 
@@ -64,7 +65,7 @@ export const ConfigViewer: React.FC<ConfigViewerProps> = ({ repositoryId }) => {
       setPolicyMinLength(result.minLength);
       message.success(t('passwordPolicy.updateSuccess'));
     } catch (error: any) {
-      message.error(error.message || t('passwordPolicy.updateError'));
+      message.error(withDetail(t('passwordPolicy.updateError'), error));
     } finally {
       setPolicySaving(false);
     }
@@ -179,7 +180,7 @@ export const ConfigViewer: React.FC<ConfigViewerProps> = ({ repositoryId }) => {
           </Button>
           <Text type="secondary">
             {policyMinLength > 0
-              ? t('passwordPolicy.currentSetting', { min: policyMinLength })
+              ? t('passwordPolicy.currentSetting', { min: policyMinLength, count: policyMinLength })
               : t('passwordPolicy.currentSettingNone')}
           </Text>
         </Space>

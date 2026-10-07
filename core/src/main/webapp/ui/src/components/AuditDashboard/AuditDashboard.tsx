@@ -27,6 +27,7 @@ import {
   FileTextOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   AuditMetricsService,
@@ -85,7 +86,7 @@ export const AuditDashboard: React.FC = () => {
       const data = await service.getMetrics();
       setMetrics(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('auditDashboard.fetchError', 'Failed to fetch metrics'));
+      setError(err instanceof Error ? err.message : t('auditDashboard.fetchError'));
     } finally {
       setLoading(false);
     }
@@ -101,10 +102,10 @@ export const AuditDashboard: React.FC = () => {
     setResetting(true);
     try {
       await service.resetMetrics();
-      message.success(t('auditDashboard.resetSuccess', 'Metrics reset successfully'));
+      message.success(t('auditDashboard.resetSuccess'));
       await fetchMetrics();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('auditDashboard.resetError', 'Failed to reset metrics'));
+      message.error(withDetail(t('auditDashboard.resetError'), err));
     } finally {
       setResetting(false);
     }
@@ -117,7 +118,7 @@ export const AuditDashboard: React.FC = () => {
       setEntries(data.entries || []);
       setEntriesLoaded(true);
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('auditDashboard.loadError', 'Failed to load audit log entries'));
+      message.error(withDetail(t('auditDashboard.loadError'), err));
     } finally {
       setEntriesLoading(false);
     }
@@ -135,7 +136,7 @@ export const AuditDashboard: React.FC = () => {
 
   const columns: ColumnsType<AuditEntry> = useMemo(() => [
     {
-      title: t('auditDashboard.timestamp', 'Timestamp'),
+      title: t('auditDashboard.timestamp'),
       dataIndex: 'timestamp',
       key: 'timestamp',
       width: 180,
@@ -144,7 +145,7 @@ export const AuditDashboard: React.FC = () => {
       defaultSortOrder: 'descend' as const,
     },
     {
-      title: t('auditDashboard.operation', 'Operation'),
+      title: t('auditDashboard.operation'),
       dataIndex: 'operation',
       key: 'operation',
       width: 180,
@@ -153,13 +154,13 @@ export const AuditDashboard: React.FC = () => {
       onFilter: (value: React.Key | boolean, record: AuditEntry) => record.operation === value,
     },
     {
-      title: t('auditDashboard.user', 'User'),
+      title: t('auditDashboard.user'),
       dataIndex: 'userId',
       key: 'userId',
       width: 120,
     },
     {
-      title: t('auditDashboard.target', 'Target'),
+      title: t('auditDashboard.target'),
       dataIndex: 'objectName',
       key: 'objectName',
       width: 200,
@@ -167,23 +168,23 @@ export const AuditDashboard: React.FC = () => {
       render: (val: string) => val ? <RowActionTooltip title={val}>{val}</RowActionTooltip> : '-',
     },
     {
-      title: t('auditDashboard.result', 'Result'),
+      title: t('auditDashboard.result'),
       dataIndex: 'result',
       key: 'result',
       width: 100,
       render: (val: string) => {
-        if (val === 'SUCCESS') return <Tag color="success">SUCCESS</Tag>;
-        if (val === 'FAILURE') return <Tag color="error">FAILURE</Tag>;
+        if (val === 'SUCCESS') return <Tag color="success">{t('auditDashboard.resultSuccess')}</Tag>;
+        if (val === 'FAILURE') return <Tag color="error">{t('auditDashboard.resultFailure')}</Tag>;
         return <Tag>{val || '-'}</Tag>;
       },
       filters: [
-        { text: 'SUCCESS', value: 'SUCCESS' },
-        { text: 'FAILURE', value: 'FAILURE' },
+        { text: t('auditDashboard.resultSuccess'), value: 'SUCCESS' },
+        { text: t('auditDashboard.resultFailure'), value: 'FAILURE' },
       ],
       onFilter: (value: React.Key | boolean, record: AuditEntry) => record.result === value,
     },
     {
-      title: t('auditDashboard.duration', 'Duration'),
+      title: t('auditDashboard.duration'),
       dataIndex: 'durationMs',
       key: 'durationMs',
       width: 100,
@@ -191,14 +192,14 @@ export const AuditDashboard: React.FC = () => {
       sorter: (a: AuditEntry, b: AuditEntry) => (a.durationMs ?? 0) - (b.durationMs ?? 0),
     },
     {
-      title: t('auditDashboard.clientIp', 'Client IP'),
+      title: t('auditDashboard.clientIp'),
       dataIndex: 'clientIp',
       key: 'clientIp',
       width: 130,
       render: (val: string) => val || '-',
     },
     {
-      title: t('auditDashboard.errorMessage', 'Error'),
+      title: t('auditDashboard.errorMessage'),
       dataIndex: 'errorMessage',
       key: 'errorMessage',
       width: 200,
@@ -216,12 +217,12 @@ export const AuditDashboard: React.FC = () => {
     return (
       <div style={{ padding: '24px' }}>
         <Alert
-          message={t('auditDashboard.error', 'Error')}
+          message={t('auditDashboard.error')}
           description={error}
           type={isAuthError ? 'warning' : 'error'}
           action={
             <Button size="small" onClick={fetchMetrics}>
-              {t('auditDashboard.retry', 'Retry')}
+              {t('auditDashboard.retry')}
             </Button>
           }
         />
@@ -239,35 +240,35 @@ export const AuditDashboard: React.FC = () => {
         title={
           <Space>
             <BarChartOutlined />
-            <span>{t('auditDashboard.title', 'Audit Log Dashboard')}</span>
+            <span>{t('auditDashboard.title')}</span>
           </Space>
         }
         extra={
           <Space>
             <Tag color={metrics.enabled ? 'green' : 'red'}>
-              {metrics.enabled ? t('auditDashboard.enabled', 'Enabled') : t('auditDashboard.disabled', 'Disabled')}
+              {metrics.enabled ? t('auditDashboard.enabled') : t('auditDashboard.disabled')}
             </Tag>
-            <Tag>{t('auditDashboard.level', 'Level')}: {metrics.readAuditLevel}</Tag>
+            <Tag>{t('auditDashboard.level')}: {metrics.readAuditLevel}</Tag>
             <Button
               icon={<ReloadOutlined />}
               onClick={fetchMetrics}
               loading={loading}
             >
-              {t('auditDashboard.refresh', 'Refresh')}
+              {t('auditDashboard.refresh')}
             </Button>
             <Popconfirm
-              title={t('auditDashboard.resetConfirmTitle', 'Reset Metrics')}
-              description={t('auditDashboard.resetConfirmDesc', 'Are you sure you want to reset all metrics counters?')}
+              title={t('auditDashboard.resetConfirmTitle')}
+              description={t('auditDashboard.resetConfirmDesc')}
               onConfirm={handleReset}
-              okText={t('common.yes', 'Yes')}
-              cancelText={t('common.no', 'No')}
+              okText={t('common.yes')}
+              cancelText={t('common.no')}
             >
               <Button
                 icon={<DeleteOutlined />}
                 loading={resetting}
                 danger
               >
-                {t('auditDashboard.reset', 'Reset')}
+                {t('auditDashboard.reset')}
               </Button>
             </Popconfirm>
           </Space>
@@ -277,14 +278,14 @@ export const AuditDashboard: React.FC = () => {
         <Row gutter={16} style={{ marginBottom: 24 }}>
           <Col span={6}>
             <Statistic
-              title={t('auditDashboard.totalEvents', 'Total Events')}
+              title={t('auditDashboard.totalEvents')}
               value={metrics.metrics['audit.events.total'] || 0}
               prefix={<BarChartOutlined />}
             />
           </Col>
           <Col span={6}>
             <Statistic
-              title={t('auditDashboard.logged', 'Logged')}
+              title={t('auditDashboard.logged')}
               value={metrics.metrics['audit.events.logged'] || 0}
               valueStyle={{ color: '#3f8600' }}
               prefix={<CheckCircleOutlined />}
@@ -292,7 +293,7 @@ export const AuditDashboard: React.FC = () => {
           </Col>
           <Col span={6}>
             <Statistic
-              title={t('auditDashboard.skipped', 'Skipped')}
+              title={t('auditDashboard.skipped')}
               value={metrics.metrics['audit.events.skipped'] || 0}
               valueStyle={{ color: '#faad14' }}
               prefix={<StopOutlined />}
@@ -300,7 +301,7 @@ export const AuditDashboard: React.FC = () => {
           </Col>
           <Col span={6}>
             <Statistic
-              title={t('auditDashboard.failed', 'Failed')}
+              title={t('auditDashboard.failed')}
               value={metrics.metrics['audit.events.failed'] || 0}
               valueStyle={{ color: '#cf1322' }}
               prefix={<CloseCircleOutlined />}
@@ -314,7 +315,7 @@ export const AuditDashboard: React.FC = () => {
             <Col span={8}>
               <Card size="small">
                 <Statistic
-                  title={t('auditDashboard.successRate', 'Success Rate')}
+                  title={t('auditDashboard.successRate')}
                   value={metrics.rates['success.rate']}
                   valueStyle={{ color: '#3f8600' }}
                 />
@@ -323,7 +324,7 @@ export const AuditDashboard: React.FC = () => {
             <Col span={8}>
               <Card size="small">
                 <Statistic
-                  title={t('auditDashboard.skipRate', 'Skip Rate')}
+                  title={t('auditDashboard.skipRate')}
                   value={metrics.rates['skip.rate']}
                   valueStyle={{ color: '#faad14' }}
                 />
@@ -332,7 +333,7 @@ export const AuditDashboard: React.FC = () => {
             <Col span={8}>
               <Card size="small">
                 <Statistic
-                  title={t('auditDashboard.failureRate', 'Failure Rate')}
+                  title={t('auditDashboard.failureRate')}
                   value={metrics.rates['failure.rate']}
                   valueStyle={{ color: '#cf1322' }}
                 />
@@ -343,12 +344,12 @@ export const AuditDashboard: React.FC = () => {
 
         {/* Configuration Info */}
         <Alert
-          message={t('auditDashboard.config', 'Audit Log Configuration')}
+          message={t('auditDashboard.config')}
           description={
             <div>
-              <p><strong>{t('auditDashboard.status', 'Status')}:</strong> {metrics.enabled ? t('auditDashboard.enabled', 'Enabled') : t('auditDashboard.disabled', 'Disabled')}</p>
-              <p><strong>{t('auditDashboard.readAuditLevel', 'Read Audit Level')}:</strong> {metrics.readAuditLevel}</p>
-              <p><strong>{t('auditDashboard.lastUpdated', 'Last Updated')}:</strong> {new Date(metrics.timestamp).toLocaleString()}</p>
+              <p><strong>{t('auditDashboard.status')}:</strong> {metrics.enabled ? t('auditDashboard.enabled') : t('auditDashboard.disabled')}</p>
+              <p><strong>{t('auditDashboard.readAuditLevel')}:</strong> {metrics.readAuditLevel}</p>
+              <p><strong>{t('auditDashboard.lastUpdated')}:</strong> {new Date(metrics.timestamp).toLocaleString()}</p>
             </div>
           }
           type="info"
@@ -361,7 +362,7 @@ export const AuditDashboard: React.FC = () => {
         title={
           <Space>
             <FileTextOutlined />
-            <span>{t('auditDashboard.recentEntries', 'Recent Audit Entries')}</span>
+            <span>{t('auditDashboard.recentEntries')}</span>
           </Space>
         }
         extra={
@@ -382,7 +383,7 @@ export const AuditDashboard: React.FC = () => {
               onClick={fetchEntries}
               loading={entriesLoading}
             >
-              {t('auditDashboard.loadEntries', 'Load Logs')}
+              {t('auditDashboard.loadEntries')}
             </Button>
           </Space>
         }
@@ -390,8 +391,8 @@ export const AuditDashboard: React.FC = () => {
       >
         {!entriesLoaded ? (
           <Alert
-            message={t('auditDashboard.noEntries', 'No audit log entries')}
-            description={t('auditDashboard.loadEntries', 'Load Logs')}
+            message={t('auditDashboard.noEntries')}
+            description={t('auditDashboard.loadEntries')}
             type="info"
             showIcon
           />
@@ -403,7 +404,7 @@ export const AuditDashboard: React.FC = () => {
             size="small"
             scroll={{ x: 1200 }}
             pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total}` }}
-            locale={{ emptyText: t('auditDashboard.noEntries', 'No audit log entries') }}
+            locale={{ emptyText: t('auditDashboard.noEntries') }}
           />
         )}
       </Card>

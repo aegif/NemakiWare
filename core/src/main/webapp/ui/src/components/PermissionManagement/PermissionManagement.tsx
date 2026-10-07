@@ -297,6 +297,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { CMISService } from '../../services/cmis';
 import { CMISObject, ACL, Permission, User, Group } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 
 interface PermissionManagementProps {
   repositoryId: string;
@@ -364,7 +365,7 @@ export const PermissionManagement: React.FC<PermissionManagementProps> = ({ repo
       if (groupResult) setGroups(groupResult.groups);
     } catch (error) {
       // Failed to load permission data
-      const errorMessage = error instanceof Error ? error.message : t('permissionManagement.messages.loadError');
+      const errorMessage = withDetail(t('permissionManagement.messages.loadError'), error);
       message.error(errorMessage);
     } finally {
       setLoading(false);

@@ -43,8 +43,63 @@ public class ExternalIngestRequest {
     @JsonIgnore
     private InputStream contentStream;
 
+    /**
+     * A fingerprint of the profile row the delegated gate AUTHORISED, when this request came
+     * through that gate.
+     *
+     * <p>The gate checks {@code cmis:all} on the target folder of the row it read; the import
+     * then resolves the profile again and uses whatever it finds. A {@code PUT} landing
+     * between the two moves the target folder, and the updater need not be this caller — so
+     * the caller could execute against a folder it was never authorised for. Carrying what
+     * was authorised lets the import refuse when the row is no longer that one.
+     *
+     * <p>{@link JsonIgnore} on purpose: a client must not be able to set this. Null means no
+     * stamp reached this request — which is NOT the same as "an administrator's own import".
+     * The scheduler, the webhook and IDLE build their own requests, so they are unstamped too;
+     * what protects them is the authorisation re-asked at the write, not this field. (This
+     * note claimed the admin reading, and a review found the copy on the service corrected
+     * while this one was left.)
+     */
+    @JsonIgnore
+    private String authorizedProfileFingerprint;
+
+    /**
+     * The concrete folder id the delegated gate checked {@code cmis:all} on.
+     *
+     * <p>The fingerprint above carries the profile's {@code targetFolderPath} as text, and a
+     * path is not a folder: an administrator may save a delegated profile with a path only,
+     * and the import re-resolves it. Move the authorised folder away and put another one at
+     * the same path and the row — and its fingerprint — never change. What was authorised was
+     * an object, so that is what is carried. {@link JsonIgnore} for the same reason as above.
+     */
+    @JsonIgnore
+    private String authorizedTargetFolderId;
+
     public ExternalIngestRequest() {
         this.requestId = UUID.randomUUID().toString();
+    }
+
+    @JsonIgnore
+    public String getAuthorizedTargetFolderId() { return authorizedTargetFolderId; }
+
+    @JsonIgnore
+    public void setAuthorizedTargetFolderId(String authorizedTargetFolderId) {
+        this.authorizedTargetFolderId = authorizedTargetFolderId;
+    }
+
+    /** Copies both authorisation stamps onto a request derived from this one. */
+    public void copyAuthorizationStampsTo(ExternalIngestRequest derived) {
+        if (derived == null) return;
+        derived.setAuthorizedProfileFingerprint(this.authorizedProfileFingerprint);
+        derived.setAuthorizedTargetFolderId(this.authorizedTargetFolderId);
+    }
+
+    @JsonIgnore
+    public String getAuthorizedProfileFingerprint() { return authorizedProfileFingerprint; }
+
+    @JsonIgnore
+    public void setAuthorizedProfileFingerprint(String authorizedProfileFingerprint) {
+        this.authorizedProfileFingerprint = authorizedProfileFingerprint;
     }
 
     // --- Getters / Setters ---

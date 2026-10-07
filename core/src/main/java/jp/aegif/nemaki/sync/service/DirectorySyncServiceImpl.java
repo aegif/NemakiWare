@@ -254,8 +254,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (userId != null && userId.startsWith(userPrefix) && !ldapUserIds.contains(userId)) {
                     try {
                         if (!dryRun) {
-                            removeUserFromAllGroups(repositoryId, userId);
-                            contentService.delete(new SystemCallContext(repositoryId), repositoryId, existingUser.getId(), false);
+                            // The canonical delete, not a private copy of it: deleteUser
+                            // strips the memberships through the reverse-lookup view, which
+                            // refuses rather than shortening, and re-fetches each parent
+                            // FRESH before rewriting it. The copy below scanned every group
+                            // instead and skipped what it could not read.
+                            contentService.deleteUser(repositoryId, userId);
                             log.info("AUDIT: User deleted via directory sync (orphan): " + userId);
                         }
                         result.incrementUsersRemoved();
@@ -269,24 +273,6 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         }
     }
 
-    private void removeUserFromAllGroups(String repositoryId, String userId) {
-        List<GroupItem> allGroups = contentService.getGroupItems(repositoryId);
-        if (allGroups == null) {
-            return;
-        }
-        for (GroupItem group : allGroups) {
-            List<String> users = group.getUsers();
-            if (users != null && users.contains(userId)) {
-                List<String> updatedUsers = new ArrayList<>(users);
-                updatedUsers.remove(userId);
-                group.setUsers(updatedUsers);
-                group.setModifier("system");
-                group.setModified(new GregorianCalendar());
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
-                log.debug("Removed user " + userId + " from group " + group.getGroupId());
-            }
-        }
-    }
 
     private boolean hasUserChanges(UserItem existingUser, LdapUser ldapUser) {
         String existingName = existingUser.getName();
@@ -474,6 +460,15 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
         // Check for existing users folder
         List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+        // Find-or-CREATE over a short listing creates a duplicate: the existing folder may BE
+        // the row that would not decode. Same shape Patch_SystemFolderSetup was corrected for.
+        // Throwing fails this sync run; the next one retries against a repaired listing.
+        if (contentService.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("the .system folder's listing is incomplete ("
+                    + contentService.lastUnreadableChildCount() + " child row(s) could not be "
+                    + "read), so whether a 'users' folder already exists is unknown; refusing "
+                    + "to create a possible duplicate");
+        }
         if (children != null) {
             for (Content child : children) {
                 if ("users".equals(child.getName()) && child instanceof Folder) {
@@ -556,7 +551,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (!ldapGroupMap.containsKey(existingGroup.getGroupId())) {
                     try {
                         if (!dryRun) {
-                            contentService.delete(new SystemCallContext(repositoryId), repositoryId, existingGroup.getId(), false);
+                            // deleteGroup, not a bare delete: the group side had NO nested
+                            // reference stripping at all, so an orphan group removed by
+                            // directory sync left its id in every parent group's nested
+                            // list — and re-creating the same group id later silently
+                            // revived the nesting.
+                            contentService.deleteGroup(repositoryId, existingGroup.getGroupId());
                             log.info("AUDIT: Group deleted via directory sync (orphan): " + existingGroup.getGroupId());
                         }
                         result.incrementGroupsDeleted();
@@ -689,6 +689,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
         // Check for existing groups folder
         List<Content> children = contentService.getChildren(repositoryId, systemFolder.getId());
+        if (contentService.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("the .system folder's listing is incomplete ("
+                    + contentService.lastUnreadableChildCount() + " child row(s) could not be "
+                    + "read), so whether a 'groups' folder already exists is unknown; refusing "
+                    + "to create a possible duplicate");
+        }
         if (children != null) {
             for (Content child : children) {
                 if ("groups".equals(child.getName()) && child instanceof Folder) {

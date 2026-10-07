@@ -234,6 +234,22 @@ public class PropertyManagerConfigTest {
     }
 
     @Test
+    public void testAdminManagedKey_anchorScheduleSavedValueOverridesSystemProperty() {
+        // 3.4.0 (design anchor-scheduler.md §4.1, owner decision 2026-09-28): the schedule saved
+        // from the settings screen wins over a -D, like the SSO keys — so a saved "disabled" is
+        // not overridden by a start-up "enabled".
+        String key = "anchor.schedule.enabled";
+        stubDao.putConfig("nemaki_conf", configWith(key, "false"));
+        System.setProperty(key, "true");
+        try {
+            assertEquals("false", pm.readValue(key),
+                    "anchor.schedule.* is admin-managed: the saved value overrides the -D system property");
+        } finally {
+            System.clearProperty(key);
+        }
+    }
+
+    @Test
     public void testAdminManagedKey_blankCouchdbFallsThroughToSystemProperty() {
         String key = "cloud.auth.google.clientId";
         stubDao.putConfig("nemaki_conf", configWith(key, ""));   // blank = not set
@@ -274,5 +290,43 @@ public class PropertyManagerConfigTest {
 
         assertEquals("sysprop-val", pm.readValue(key),
                 "non-admin-managed key: system property still takes precedence");
+    }
+
+    // ------------------------------------------------------------------------
+    // A store that THREW is not "no stored value": both dynamic reads in readValue fall
+    // through to the bootstrap sources. The wraps existed without a lock — removing either
+    // try/catch left every test here green, because the stub only ever answers. A Phase 2
+    // review measured it.
+    // ------------------------------------------------------------------------
+
+    private static class ThrowingContentDaoService extends StubContentDaoService {
+        @Override
+        public Configuration getConfiguration(String repositoryId) {
+            throw new IllegalStateException("the configuration database did not answer");
+        }
+    }
+
+    @Test
+    public void testAdminManagedKey_storeThatThrowsFallsThroughToSystemProperty() {
+        // The FIRST dynamic read (admin-managed prefixes, before -D / ENV).
+        pm.setContentDaoService(new ThrowingContentDaoService());
+        String key = "cloud.auth.google.clientId";
+        System.setProperty(key, "deploy-D-id");
+
+        String value = assertDoesNotThrow(() -> pm.readValue(key),
+                "a store that threw stopped -D from answering an admin-managed key");
+        assertEquals("deploy-D-id", value);
+    }
+
+    @Test
+    public void testOrdinaryKey_storeThatThrowsFallsThroughToPropertiesFile() {
+        // The SECOND dynamic read (every key, after -D / ENV, before the properties file).
+        pm.setContentDaoService(new ThrowingContentDaoService());
+        String key = TEST_KEY_PREFIX + "fileOnly";
+        stubProps.putValue(key, "file-val");
+
+        String value = assertDoesNotThrow(() -> pm.readValue(key),
+                "a store that threw lost a value the properties file could answer");
+        assertEquals("file-val", value);
     }
 }

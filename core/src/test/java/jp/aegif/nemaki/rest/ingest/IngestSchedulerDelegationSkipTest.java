@@ -86,7 +86,7 @@ class IngestSchedulerDelegationSkipTest {
 
     @Test
     void delegatedProfile_isSkipped_connectorLookupNeverHappens() {
-        when(profileService.listByRepository(REPO)).thenReturn(List.of(delegatedSchedulerProfile()));
+        when(profileService.listScheduledIndexFree()).thenReturn(List.of(delegatedSchedulerProfile()));
 
         scheduler.pollScheduledProfiles();
 
@@ -102,7 +102,7 @@ class IngestSchedulerDelegationSkipTest {
         // Same broken record returned on every poll. Without the
         // warnedDelegatedSchedulerProfiles set, every poll cycle would
         // emit a fresh WARN — polluting the log indefinitely.
-        when(profileService.listByRepository(REPO)).thenReturn(List.of(delegatedSchedulerProfile()));
+        when(profileService.listScheduledIndexFree()).thenReturn(List.of(delegatedSchedulerProfile()));
 
         // Use a logback appender to count WARN lines for the scheduler class.
         ch.qos.logback.classic.Logger lc =
@@ -131,7 +131,7 @@ class IngestSchedulerDelegationSkipTest {
 
     @Test
     void adminProfileWithSchedulerEnabled_isNotSkipped_progressesToConnectorLookup() {
-        when(profileService.listByRepository(REPO)).thenReturn(List.of(adminSchedulerProfile()));
+        when(profileService.listScheduledIndexFree()).thenReturn(List.of(adminSchedulerProfile()));
         // resolveConnectorForProfile would try to fetch the connector. Returning null
         // shortcircuits before executeFetch but proves the skip path didn't fire.
         lenient().when(connectorService.get(any())).thenReturn(null);
@@ -145,7 +145,7 @@ class IngestSchedulerDelegationSkipTest {
 
     @Test
     void mixedList_skipsOnlyDelegated_continuesToProcessOthers() {
-        when(profileService.listByRepository(REPO)).thenReturn(List.of(
+        when(profileService.listScheduledIndexFree()).thenReturn(List.of(
                 delegatedSchedulerProfile(),
                 adminSchedulerProfile()));
         lenient().when(connectorService.get(any())).thenReturn(null);
@@ -164,7 +164,7 @@ class IngestSchedulerDelegationSkipTest {
         // earlier filter, NOT generate a delegation WARN.
         ImportProfileDefinition disabled = delegatedSchedulerProfile();
         disabled.setEnabled(false);
-        when(profileService.listByRepository(REPO)).thenReturn(List.of(disabled));
+        when(profileService.listScheduledIndexFree()).thenReturn(List.of(disabled));
 
         ch.qos.logback.classic.Logger lc =
                 (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(IngestSchedulerService.class);

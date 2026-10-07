@@ -19,6 +19,7 @@ import {
 import { RowActionTooltip } from '../common/RowActionTooltip';
 import { PlusOutlined, DeleteOutlined, CopyOutlined, ReloadOutlined, FolderOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { ObjectPicker } from '../ObjectPicker/ObjectPicker';
 import { getCmisAuthHeaders } from '../../services/auth/CmisAuthHeaderProvider';
@@ -171,7 +172,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         }
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.loadError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch (e) {
@@ -232,7 +233,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.createError'))
+          withDetail(t('rssManagement.createError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -251,11 +252,11 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.disableError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
-      message.error(t('rssManagement.loadError'));
+      message.error(t('rssManagement.disableError'));
     }
   };
 
@@ -271,11 +272,11 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.loadError'))
+          withDetail(t('rssManagement.refreshError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
-      message.error(t('rssManagement.loadError'));
+      message.error(t('rssManagement.refreshError'));
     }
   };
 
@@ -291,7 +292,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
         loadTokens();
       } else {
         message.error(
-          getResourceBaseErrorMessage(data as Record<string, unknown>, t('rssManagement.deleteError'))
+          withDetail(t('rssManagement.deleteError'), getResourceBaseErrorMessage(data as Record<string, unknown>, ''))
         );
       }
     } catch {
@@ -388,12 +389,12 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
                     <div key={fid} style={{ marginBottom: 8 }}>
                       <div><strong>{folderLabel}</strong></div>
                       <div style={{ fontSize: 11 }}>
-                        RSS: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'rss') }} style={{ fontSize: 11 }}>
+                        {t('rssManagement.rssLabel')} <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'rss') }} style={{ fontSize: 11 }}>
                           {buildFeedUrl(fid, record.token!, 'rss').substring(0, 50)}...
                         </Text>
                       </div>
                       <div style={{ fontSize: 11 }}>
-                        Atom: <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'atom') }} style={{ fontSize: 11 }}>
+                        {t('rssManagement.atomLabel')} <Text copyable={{ text: buildFeedUrl(fid, record.token!, 'atom') }} style={{ fontSize: 11 }}>
                           {buildFeedUrl(fid, record.token!, 'atom').substring(0, 50)}...
                         </Text>
                       </div>
@@ -590,7 +591,7 @@ export const RssTokenManagement: React.FC<RssTokenManagementProps> = ({ reposito
             {t('rssManagement.copyToken')}
           </Button>,
           <Button key="ok" type="primary" onClick={() => { setNewToken(null); setNewTokenFolders([]); }}>
-            OK
+            {t('common.ok')}
           </Button>,
         ]}
       >

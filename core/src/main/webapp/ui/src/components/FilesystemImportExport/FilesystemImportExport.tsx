@@ -30,6 +30,7 @@ import {
   WarningOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { CMISService } from '../../services/cmis';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
@@ -118,10 +119,10 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
       } else if (result.status === 'partial') {
         message.warning(t('filesystemImportExport.import.partial'));
       } else {
-        message.error(result.message || t('filesystemImportExport.import.error'));
+        message.error(withDetail(t('filesystemImportExport.import.error'), result.message));
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('filesystemImportExport.import.error')}: ${errorMessage}`);
       setImportResult({ status: 'error', message: errorMessage });
     } finally {
@@ -154,10 +155,10 @@ export const FilesystemImportExport: React.FC<FilesystemImportExportProps> = ({ 
       } else if (result.status === 'partial') {
         message.warning(t('filesystemImportExport.export.partial'));
       } else {
-        message.error(result.message || t('filesystemImportExport.export.error'));
+        message.error(withDetail(t('filesystemImportExport.export.error'), result.message));
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = error instanceof Error ? error.message : t('common.unknownError');
       message.error(`${t('filesystemImportExport.export.error')}: ${errorMessage}`);
       setExportResult({ status: 'error', message: errorMessage });
     } finally {

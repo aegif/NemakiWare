@@ -1,8 +1,8 @@
 package jp.aegif.nemaki.rest.ingest;
 
 import tools.jackson.databind.ObjectMapper;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 /**

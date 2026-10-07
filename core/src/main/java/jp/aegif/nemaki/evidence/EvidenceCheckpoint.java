@@ -101,10 +101,20 @@ public record EvidenceCheckpoint(
         doc.put("checkpointHash", checkpointHash);
         // Said on the row itself, because a checkpoint is exactly the artefact that gets
         // exported and quoted, and its limit has to travel with it.
-        doc.put("anchored", false);
-        doc.put("note", "Not independently anchored. While this checkpoint lives only in this "
-                + "database, an administrator can rewrite the entries and this row together. "
-                + "Independence requires an external anchor (P2).");
+        //
+        // The KEY `anchored: false` used to be here, hard-coded. This object does not consult
+        // the receipt store and cannot: a single POST /checkpoint-and-anchor against a working
+        // TSA returned a body carrying `checkpoint.anchored: false` beside
+        // `anchor.confirmedRungs: ["RFC3161_TSA"]`. That is a negative FINDING asserted without
+        // asking anything -- and AnchorService says in as many words that the rungs travel as
+        // a list, never as a single flag, because "anchored" collapses three different claims
+        // into one word. So the key is gone and the note it carried stays, rewritten to say
+        // what this row does and does not know about itself.
+        doc.put("note", "This row does not say whether it was anchored: a checkpoint cannot see "
+                + "its own receipts. Ask GET /v1/admin/anchor/status, which reports the rungs "
+                + "individually. While a checkpoint lives only in this database, an "
+                + "administrator can rewrite the entries and this row together; independence "
+                + "requires an external anchor (P2).");
         return doc;
     }
 

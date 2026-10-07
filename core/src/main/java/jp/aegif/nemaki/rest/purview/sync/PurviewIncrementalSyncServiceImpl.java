@@ -262,6 +262,18 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         boolean skipFirst = startToken != null;
         int fetchLimit = skipFirst ? CHANGE_LOG_PAGE_SIZE + 1 : CHANGE_LOG_PAGE_SIZE;
         List<Change> rawChanges = contentDaoService.getLatestChanges(repositoryId, startToken, fetchLimit);
+        // A change row that will not decode is a change that HAPPENED, at a token BETWEEN the
+        // ones that did decode. resolveNextCursor advances to the last decoded token, so
+        // proceeding here would carry the cursor past the broken row and that change would
+        // never be visited again — a deleted object would sit in the external catalog until a
+        // full sync. Throwing lands in syncChangeStream's catch: dead letter saved, cursor
+        // kept, retried next cycle.
+        if (contentDaoService.lastUnreadableChangeCount() > 0) {
+            throw new IllegalStateException("the change log lost "
+                    + contentDaoService.lastUnreadableChangeCount() + " row(s) to decode"
+                    + " failures after token '" + (startToken == null ? "" : startToken)
+                    + "'; advancing the cursor would skip those changes for ever");
+        }
         return normalizeChanges(startToken, rawChanges);
     }
 
@@ -299,7 +311,9 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
 
         // When a folder is renamed/moved, its descendants' folderPath values become stale.
         // Enqueue all descendants of changed folders so their paths are recalculated.
-        List<String> descendantIds = collectDescendantIdsForChangedFolders(repositoryId, contents);
+        Set<String> expansionRefused = new LinkedHashSet<>();
+        List<String> descendantIds =
+                collectDescendantIdsForChangedFolders(repositoryId, contents, expansionRefused);
         if (!descendantIds.isEmpty()) {
             contents.putAll(getContentsInBatches(repositoryId, descendantIds));
             Set<String> existing = new LinkedHashSet<>(objectIds);
@@ -321,10 +335,24 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
 
         Map<String, Change> changeByObjectId = buildChangeByObjectId(changes);
         List<String> failures = new ArrayList<>();
+        // The refused expansions are FAILURES of this run: the job state must read
+        // COMPLETED_WITH_ERRORS, not COMPLETED, over a subtree whose catalog paths are stale.
+        // The first version of this recorded a dead letter and nothing else — and the publish
+        // loop below then upserted the folder itself (the folder decodes fine; its CHILDREN's
+        // rows are what would not) and erased the just-saved dead letter on success.
+        for (String refusedFolderId : expansionRefused) {
+            failures.add(refusedFolderId + ": descendant expansion incomplete — unreadable "
+                    + "child rows or the expansion cap, so part of this subtree's catalog "
+                    + "paths stay stale until the cause is removed and a full sync re-walks "
+                    + "it");
+        }
         for (Content content : contentsToPublish) {
             try {
                 documentPublishService.upsertContents(repositoryId, List.of(content));
-                deadLetterStateService.deleteDeadLetterState(repositoryId, STREAM_KIND, content.getId());
+                if (!expansionRefused.contains(content.getId())) {
+                    deadLetterStateService.deleteDeadLetterState(repositoryId, STREAM_KIND,
+                            content.getId());
+                }
             } catch (RuntimeException e) {
                 String errorSummary = buildErrorSummary(e);
                 failures.add(content.getId() + ": " + errorSummary);
@@ -361,7 +389,8 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
      * renamed or moved, all descendants have their folderPath recalculated.
      * Expansion is bounded by MAX_DESCENDANT_COUNT (total collected items).
      */
-    private List<String> collectDescendantIdsForChangedFolders(String repositoryId, Map<String, Content> contents) {
+    private List<String> collectDescendantIdsForChangedFolders(String repositoryId,
+            Map<String, Content> contents, Set<String> expansionRefused) {
         List<String> changedFolderIds = new ArrayList<>();
         for (Content content : contents.values()) {
             if (content != null && content.isFolder()) {
@@ -382,6 +411,45 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             if (children == null) {
                 continue;
             }
+            // A short listing here leaves the omitted descendants' folderPath stale in the
+            // external catalog. The first version of this guard THREW — which parked the
+            // cursor and blocked every later change behind one permanently-undecodable row,
+            // with no poison-pill escape. Instead: this folder is reported as a FAILURE of the
+            // run (job state COMPLETED_WITH_ERRORS, with the reason in the summary), a dead
+            // letter is recorded, none of its subtree is enqueued (publishing the readable
+            // subset would present a partial expansion as complete), and the rest of the batch
+            // proceeds.
+            //
+            // Honest limits, learned by review: the dead letter marks the folder, but the
+            // retry service re-UPSERTS objects — it does not re-run this expansion — so a
+            // retry that succeeds clears the marker WITHOUT repairing the subtree's paths.
+            // The publish loop is told not to clear it in this run; what makes the subtree
+            // right again is repairing the rows and a full sync. The failure summary says so.
+            if (contentDaoService.lastUnreadableChildCount() > 0) {
+                Content brokenFolder = contents.get(folderId);
+                if (brokenFolder == null) {
+                    // The queue holds descendants of changed folders too, and those are not in
+                    // the change set's map. Without this, exactly the deeper folders — the
+                    // ones a reviewer would assume are covered — fell out of the dead letter.
+                    brokenFolder = contentDaoService.getContent(repositoryId, folderId);
+                }
+                String reason = contentDaoService.lastUnreadableChildCount() + " child row(s) of "
+                        + folderId + " could not be read, so its descendants' catalog paths "
+                        + "cannot be recalculated; the subtree is NOT enqueued and stays stale "
+                        + "until this row is repaired";
+                log.warn("Purview descendant expansion: " + reason);
+                expansionRefused.add(folderId);
+                if (brokenFolder != null) {
+                    deadLetterStateService.saveDeadLetterState(buildDeadLetterState(
+                            repositoryId, brokenFolder, null,
+                            java.time.Instant.now().toString(), reason));
+                } else {
+                    log.warn("Purview descendant expansion: folder " + folderId + " could not"
+                            + " itself be read, so no dead letter could be recorded for it —"
+                            + " its subtree stays stale with only this log line saying so");
+                }
+                continue;
+            }
             for (Content child : children) {
                 if (child == null || child.getId() == null || child.getId().isBlank()) {
                     continue;
@@ -395,8 +463,30 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
                     }
                 }
                 if (descendantIds.size() >= MAX_DESCENDANT_COUNT) {
+                    // The cap arm now follows the same rule this method states for decode
+                    // failures ten lines up: a truncated expansion must not present itself as
+                    // a complete one. It used to warn and break — job COMPLETED, no failure,
+                    // no dead letter — so a rename over >5,000 descendants left the remainder
+                    // stale in the catalog with nothing telling anyone a full sync was owed.
                     log.warn("Purview folder descendant expansion reached limit ("
                             + MAX_DESCENDANT_COUNT + ") for repository " + repositoryId);
+                    expansionRefused.add(folderId);
+                    // The durable marker too, like the decode arm — the failure summary is
+                    // per-run and scrolls away; the dead letter is what an operator finds
+                    // later. (The first version of this arm promised it in a comment and
+                    // saved nothing.)
+                    Content cappedFolder = contents.get(folderId);
+                    if (cappedFolder == null) {
+                        cappedFolder = contentDaoService.getContent(repositoryId, folderId);
+                    }
+                    if (cappedFolder != null) {
+                        deadLetterStateService.saveDeadLetterState(buildDeadLetterState(
+                                repositoryId, cappedFolder, null,
+                                java.time.Instant.now().toString(),
+                                "descendant expansion hit the " + MAX_DESCENDANT_COUNT
+                                        + " cap; part of this subtree's catalog paths stay"
+                                        + " stale until a full sync re-walks it"));
+                    }
                     break;
                 }
             }
@@ -533,11 +623,28 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
             String now,
             int deadLetterCount) {
         if (streamSyncResult.failed()) {
-            return buildFailureCursorState(
+            // The failed result's snapshot, not the stored cursor. For the two exception arms
+            // they are the same value (the arms pass the sanitised stored cursor through), but
+            // the incomplete-walk arm carries the WIDENED baseline — previous ∪ published — and
+            // dropping it here reopened the created-then-vanished hole the widening closes:
+            // everything in it is already externally present, so persisting it never advances
+            // the cursor over unseen rows.
+            PurviewCursorState failureState = buildFailureCursorState(
                     currentCursorState,
                     now,
                     streamSyncResult.errorSummary(),
                     deadLetterCount);
+            return new PurviewCursorState(
+                    failureState.getRepositoryId(),
+                    failureState.getStreamKind(),
+                    streamSyncResult.snapshot(),
+                    failureState.getCursorKind(),
+                    failureState.getLastRunAt(),
+                    failureState.getLastSuccessAt(),
+                    failureState.getLastErrorAt(),
+                    failureState.getLastErrorMessage(),
+                    failureState.getConsecutiveFailureCount(),
+                    failureState.getDeadLetterCount());
         }
         return buildSuccessCursorState(
                 currentCursorState,
@@ -616,6 +723,24 @@ public class PurviewIncrementalSyncServiceImpl implements PurviewIncrementalSync
         try {
             PurviewCloudMetadataSyncResult syncResult = cloudMetadataPublishService
                     .syncRepositoryCloudMetadataIfChanged(repositoryId, currentCursorState.getCursor());
+            if (syncResult.isWalkIncomplete()) {
+                // The twin of the retry-side fix: the sync's incomplete arm is a PARTIAL
+                // success (published what it saw, reconciled nothing), and this scheduled
+                // path was still reading it as success — deleting the stream's dead letter
+                // and reporting COMPLETED. The letter stays; the failure records why; the
+                // cursor stays at the previous snapshot the result already carries.
+                deadLetterStateService.saveDeadLetterState(buildRepositoryStreamDeadLetterState(
+                        repositoryId,
+                        CLOUD_METADATA_STREAM_KIND,
+                        repositoryId,
+                        jp.aegif.nemaki.rest.purview.publish.CloudMetadataSnapshotFormat
+                                .normalize(currentCursorState.getCursor()),
+                        now,
+                        "the cloud-metadata walk could not read every child row; published the"
+                                + " visible changes only, reconciled nothing"));
+                return StreamSyncResult.failure(syncResult.getSnapshot(),
+                        "cloud-metadata walk incomplete: unreadable child rows");
+            }
             deadLetterStateService.deleteDeadLetterState(repositoryId, CLOUD_METADATA_STREAM_KIND, repositoryId);
             return StreamSyncResult.success(syncResult.getSnapshot(), syncResult.getProcessedCount());
         } catch (RuntimeException e) {

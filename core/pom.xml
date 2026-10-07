@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.core</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>3.3.1</version>
+	<version>3.4.0</version>
 	<name>core</name>
 	<description>NemakiWare Core Server</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -13,7 +13,7 @@
 	<parent>
 		<groupId>jp.aegif.nemakiware</groupId>
 		<artifactId>nemakiware</artifactId>
-		<version>3.3.1</version>
+		<version>3.4.0</version>
 	</parent>
 
 	<properties>
@@ -22,20 +22,29 @@
 		<maven.compiler.target>21</maven.compiler.target>
 		<nemakiware.version>${project.version}</nemakiware.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<org.springframework.version>7.0.8</org.springframework.version>
+		<org.springframework.version>7.0.9</org.springframework.version>
 		<org.apache.chemistry.opencmis.version>2.0.0-RC2-nemakiware</org.apache.chemistry.opencmis.version>
 		<!-- One version per CXF / HttpComponents 5 family; the enforcer refuses any other. -->
 		<org.apache.cxf.version>4.2.3</org.apache.cxf.version>
 		<!-- BouncyCastle arrives transitively through Tika (bcjmail -> bcpkix), but 3.4 uses
 		     org.bouncycastle.tsp directly for RFC 3161 anchoring, so it must be declared: a Tika
-		     bump could otherwise remove it silently. Tika brought prov at 1.81 while pkix/util
-		     came at 1.81.1 — the same family skew that cost a Tomcat startup with HttpComponents.
-		     BC publishes patch releases PER ARTIFACT, so 1.81.1 exists for prov/pkix/util but
-		     NOT for bcjmail; bcjmail is therefore excluded from the pin and from the enforcer
-		     rule below rather than forced to a version that was never released. -->
-		<org.bouncycastle.version>1.81.1</org.bouncycastle.version>
-		<httpcomponents.client5.version>5.5.1</httpcomponents.client5.version>
-		<httpcomponents.core5.version>5.3.6</httpcomponents.core5.version>
+		     bump could otherwise remove it silently. Tika once brought prov at 1.81 while
+		     pkix/util came at 1.81.1 — the same family skew that cost a Tomcat startup with
+		     HttpComponents.
+
+		     BC publishes patch releases PER ARTIFACT, so a chosen version may not exist for
+		     every module: at 1.81.1 bcjmail had no such release and was excluded from the pin
+		     and from the enforcer rule. **Check before bumping** — at 1.84 all four existed
+		     (prov / pkix / util / jmail, verified against Central), and at 1.85 all four exist
+		     as well (verified the same way, 2026-09-19), so the exclusion stays gone and the
+		     rule covers every module. If a later version is missing one, exclude that module
+		     again rather than pinning it to something never released.
+
+		     1.85 is the fix for the Name Constraints bypass (trailing dot) that Dependabot
+		     rates critical, and for the lazy-ASN.1 nesting-depth reset it rates high. -->
+		<org.bouncycastle.version>1.85</org.bouncycastle.version>
+		<httpcomponents.client5.version>5.6.3</httpcomponents.client5.version>
+		<httpcomponents.core5.version>5.4.3</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
 		<opencmis.github.packages.repository.id>github-opencmis</opencmis.github.packages.repository.id>
 		<jersey.version>4.0.0</jersey.version>
@@ -86,14 +95,36 @@
 				<artifactId>bcpkix-jdk18on</artifactId>
 				<version>${org.bouncycastle.version}</version>
 			</dependency>
+			<!-- bcjmail too, now that 1.84 is published for it. Tika still delivers 1.81, and
+			     WITHOUT this line the enforcer refuses the build — which is the rule working:
+			     the previous exclusion was a workaround for a version BC had not released, and
+			     removing the exclusion without pinning would have left Tika's 1.81 in the WAR
+			     beside a 1.84 family. -->
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcjmail-jdk18on</artifactId>
+				<version>${org.bouncycastle.version}</version>
+			</dependency>
 
 			<!-- Override transitive netty from odata-server-core (4.1.97).
 			     4.1.124.Final fixes CVE-2025-55163 (HTTP/2 MadeYouReset DoS)
-			     in addition to CVE-2025-24970 / CVE-2025-58056. -->
+			     in addition to CVE-2025-24970 / CVE-2025-58056. 4.2.17.Final fixes
+			     GHSA-c4c3-7fpv-j4q5 / GHSA-fccg-mwvh-qqg4 (netty-handler, fragmented
+			     TLS ClientHello) and GHSA-8c42-7qj2-3j46 (netty-codec-http, CORS Vary). -->
 			<dependency>
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>
-				<version>4.2.16.Final</version>
+				<version>4.2.18.Final</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<!-- OpenTelemetry comes in through the Kiota Azure authentication of the Graph
+			     SDK. 1.36.0 (and the 1.60.1 Kiota 1.9.2 declares) is flagged by OSV
+			     (GHSA-rcgg-9c38-7xpx, unbounded W3C Baggage allocation); fixed in 1.62.0. -->
+			<dependency>
+				<groupId>io.opentelemetry</groupId>
+				<artifactId>opentelemetry-bom</artifactId>
+				<version>1.66.0</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -106,7 +137,7 @@
 			<dependency>
 				<groupId>tools.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>3.2.1</version>
+				<version>3.2.3</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -119,7 +150,7 @@
 			<dependency>
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
-				<version>2.22.1</version>
+				<version>2.22.3</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -177,14 +208,67 @@
 				<artifactId>commons-compress</artifactId>
 				<version>1.28.0</version>
 			</dependency>
+			<!-- Override transitive Tika / POI pins that OSV flags (2026-10-05, RC SBOM):
+			     junrar 7.5.5 (tika-parser-pkg-module) — GHSA-j273-m5qq-6825 /
+			     GHSA-hf5p-q87m-crj7 / GHSA-89m4-43j5-vhhx, fixed in 7.6.1;
+			     jsoup 1.21.2 (tika-parser-code-module) — GHSA-pmhh-3w7g-xqp8,
+			     fixed in 1.23.1; log4j-api 2.24.3 (POI) — GHSA-qv9r-c865-cp47,
+			     fixed in 2.25.5 / 2.26.1. -->
+			<dependency>
+				<groupId>com.github.junrar</groupId>
+				<artifactId>junrar</artifactId>
+				<version>7.6.1</version>
+			</dependency>
+			<dependency>
+				<groupId>org.jsoup</groupId>
+				<artifactId>jsoup</artifactId>
+				<version>1.23.2</version>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.logging.log4j</groupId>
+				<artifactId>log4j-api</artifactId>
+				<version>2.26.1</version>
+			</dependency>
 			<!-- Align transitive skews with the versions the rest of the tree
-			     already uses. spring-tx leaks in at 7.0.4 while every other
-			     Spring module is ${org.springframework.version} (7.0.8); Spring
-			     modules must share a version. cxf-rt-ws-policy leaks in at 4.1.3
+			     already uses. spring-tx leaked in at 7.0.4 (spring-ldap-core 4.0.2;
+			     4.1.0 declares 7.0.8) while every other Spring module is
+			     ${org.springframework.version} (7.0.9); Spring modules must share a
+			     version. cxf-rt-ws-policy leaks in at 4.1.3
 			     while the rest of CXF is ${org.apache.cxf.version}. -->
 			<dependency>
 				<groupId>org.springframework</groupId>
 				<artifactId>spring-tx</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<!-- spring-ldap-core 4.1.0 declares spring-core / spring-beans /
+			     spring-context / spring-tx 7.0.8. For core / beans / context the
+			     direct declarations in <dependencies> win the resolution (those nodes
+			     are "omitted for conflict"), but the enforce-spring-single-version rule
+			     reads the whole collected graph and bans an omitted 7.0.8 node all the
+			     same — it did, the moment the framework went to 7.0.9
+			     (GHSA-pc63-qcmh-9cmg, 2026-10-07). Managed here, they are "version
+			     managed" in that graph too. spring-tx is different: nothing declares it
+			     directly, so the entry above is the ONLY thing that pins it — remove it
+			     and spring-tx resolves to whatever spring-ldap declares and ships in the
+			     WAR (the enforcer would stop that build).
+			     THE COST: with all four modules spring-ldap declares managed, the
+			     enforcer no longer sees the Spring version spring-ldap was built
+			     against. When bumping spring-ldap-core, read its pom: if it declares
+			     a newer Spring line (7.1.x), raise ${org.springframework.version} with
+			     it rather than running a spring-ldap built for 7.1 on 7.0. -->
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-core</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-beans</artifactId>
+				<version>${org.springframework.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework</groupId>
+				<artifactId>spring-context</artifactId>
 				<version>${org.springframework.version}</version>
 			</dependency>
 			<dependency>
@@ -239,7 +323,7 @@
 		<dependency>
 			<groupId>org.verapdf</groupId>
 			<artifactId>validation-model</artifactId>
-			<version>1.28.2</version>
+			<version>1.30.2</version>
 		</dependency>
 
 		<!-- nemakiware-action dependency commented out - module is suspended and not needed -->
@@ -283,7 +367,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.common</groupId>
 			<artifactId>nemakiware-common</artifactId>
-			<version>3.3.1</version>
+			<version>3.4.0</version>
 		</dependency>
 		<dependency>
 			<groupId>jp.aegif.nemaki.cloudantinit</groupId>
@@ -298,6 +382,15 @@
 			<version>6.1.2</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- The Platform launcher, so a lock can ask JUnit itself which tests a class runs
+		     (ReleaseReadinessIsMeasuredTest#testMethodsOf) instead of re-deriving Jupiter's
+		     discovery rules by reflection — four rounds of review found a gap in each attempt. -->
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-launcher</artifactId>
+			<version>6.1.2</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- Rhino, test only: LineageJournalViewCoverageTest executes the CouchDB map functions
 		     against synthetic v1/v2 documents. Pattern-matching the view source for both type
 		     literals would pass on a view whose emit is still guarded by a v1-only field — the
@@ -305,7 +398,7 @@
 		<dependency>
 			<groupId>org.mozilla</groupId>
 			<artifactId>rhino</artifactId>
-			<version>1.7.15</version>
+			<version>1.7.15.1</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -402,12 +495,12 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<!-- WebAuthn (Passkey) support -->
 		<dependency>
@@ -429,7 +522,7 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jdk8</artifactId>
-			<version>2.22.1</version>
+			<version>2.22.3</version>
 		</dependency>
 		<!-- SECURITY UPDATE: Jackson 2.21.5 fixes CVE batch incl. GHSA-72hv-8253-57qq (async parser DoS) and the 2.21.x databind advisories flagged by Dependabot (2026-07) -->
 		<!-- NOTE: jackson-annotations 2.20+ uses major.minor versioning only (no patch version) -->
@@ -504,6 +597,24 @@
 			<groupId>org.apache.chemistry.opencmis</groupId>
 			<artifactId>chemistry-opencmis-client-bindings</artifactId>
 			<version>${org.apache.chemistry.opencmis.version}</version>
+			<exclusions>
+				<!-- client-bindings declares httpclient5 5.5.1. Resolution already prefers our
+				     newer pin, but the enforcer's family rule walks the whole dependency GRAPH
+				     — omitted nodes included — so an unexcluded 5.5.1 node fails the build even
+				     though no 5.5.1 jar reaches the WAR. Left as-is, the rule would forbid ever
+				     moving past whatever version client-bindings happens to declare, which is
+				     not what it is for: it exists to catch a MIXED family in the WAR.
+
+				     Note what this does not settle. client-bindings was built against 5.5.1 and
+				     now runs against 5.6.3. That is the shape CLAUDE.md warns about — compiles,
+				     resolves, passes unit tests, fails at Tomcat startup — and the enforcer
+				     cannot see it, because after this exclusion there is no skew to see. It has
+				     to be verified by starting the application. -->
+				<exclusion>
+					<groupId>org.apache.httpcomponents.client5</groupId>
+					<artifactId>httpclient5</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.chemistry.opencmis</groupId>
@@ -778,7 +889,8 @@
 		<!-- Jakarta EE compatible HTTP Client for Solr -->
 		<!-- HTTP Client 5.x dependencies moved down to avoid duplication -->
 		<!-- HttpComponents 5 moves as ONE family. OpenCMIS 2.0.0-RC1's default HTTP
-		     invoker brings httpclient5 5.5.1, whose parent requires httpcore5 5.3.6;
+		     invoker brings httpclient5, whose parent pins the httpcore5 it expects
+		     (5.6.3 -> 5.4.3, checked against the parent pom rather than assumed);
 		     leaving httpcore5 at 5.2.4 made the whole application fail to start with
 		     NoSuchMethodError on DefaultHttpRequestWriterFactory(Http1Config) — added in
 		     httpcore5 5.3. The enforcer below now refuses a mixed family outright. -->
@@ -1216,11 +1328,24 @@
 			</exclusions>
 		</dependency>
 
-		<!-- Microsoft Graph SDK (for OneDrive + directory sync) -->
+		<!-- Microsoft Graph SDK (for OneDrive + directory sync). 6.70.0 brings
+		     microsoft-graph-core 3.6.6 and Kiota 1.9.2: 6.5.0 resolved
+		     microsoft-kiota-abstractions 1.0.5, which OSV flags (GHSA-7j59-v9qr-6fq9,
+		     cookie / Proxy-Authorization headers kept across a cross-host redirect;
+		     fixed in 1.9.1). -->
 		<dependency>
 			<groupId>com.microsoft.graph</groupId>
 			<artifactId>microsoft-graph</artifactId>
-			<version>6.5.0</version>
+			<version>6.70.0</version>
+			<exclusions>
+				<!-- Kiota 1.9.2's Azure authentication declares the legacy StAX API jar at
+				     compile scope. Java 9+ ships javax.xml.stream in java.xml, as with the
+				     xml-apis jar removed on 2026-05-09 (the note after the Jackson 2 declarations above). -->
+				<exclusion>
+					<groupId>javax.xml.stream</groupId>
+					<artifactId>stax-api</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<!-- SECURITY FIX: 1.18.0 fixes CVE-2024-35255 (EoP, affected <1.12.2) + latest MSAL4J -->
 		<dependency>
@@ -1325,7 +1450,10 @@
 			     was only caught by eye. NOTE: dependencyConvergence CANNOT catch that
 			     class of skew — each module converges on its own single (wrong) version —
 			     so this bans the whole group and allows back only the pinned version;
-			     any sibling at any other version fails the build, transitives included. -->
+			     any sibling at any other version fails the build, transitives included —
+			     except the modules managed in dependencyManagement, whose versions as
+			     declared in a dependency's pom are no longer seen (spring-tx / core /
+			     beans / context, all declared by spring-ldap-core: see the note there). -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
@@ -1364,18 +1492,18 @@
 									</includes>
 									<message>All org.apache.cxf modules must be exactly ${org.apache.cxf.version} — bump the property, not individual dependencies.</message>
 								</bannedDependencies>
-								<!-- Fourth family. Tika delivered prov/jmail 1.81 and pkix/util 1.81.1
-								     to the same WAR; 3.4 calls org.bouncycastle.tsp directly, so a
-								     cross-version tsp/prov pair is exactly the shape that compiles,
-								     resolves, passes unit tests and then fails at runtime. -->
+								<!-- Fourth family. Tika once delivered prov/jmail 1.81 and pkix/util
+								     1.81.1 to the same WAR; 3.4 calls org.bouncycastle.tsp directly,
+								     so a cross-version tsp/prov pair is exactly the shape that
+								     compiles, resolves, passes unit tests and then fails at runtime.
+								     Every module is covered — see the property's comment for what to
+								     do if a future version is not published for all of them. -->
 								<bannedDependencies>
 									<excludes>
 										<exclude>org.bouncycastle:*</exclude>
 									</excludes>
 									<includes>
 										<include>org.bouncycastle:*:${org.bouncycastle.version}</include>
-										<!-- bcjmail has no 1.81.1 release (BC patches per artifact). -->
-										<include>org.bouncycastle:bcjmail-jdk18on</include>
 									</includes>
 									<message>All org.bouncycastle modules must be exactly ${org.bouncycastle.version} — bump the property, not individual dependencies.</message>
 								</bannedDependencies>

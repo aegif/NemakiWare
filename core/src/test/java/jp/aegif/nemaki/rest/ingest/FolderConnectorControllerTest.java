@@ -77,6 +77,29 @@ class FolderConnectorControllerTest {
         return f;
     }
 
+    @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.DisplayName("the folder's connector list answers 503, not 500, when "
+            + "the profile listing could not be completed")
+    void theListAnswers503WhenTheListingCannotBeCompleted() throws Exception {
+        // The typed refusal escaped this endpoint — no catch, and GlobalExceptionHandler does
+        // not cover this package — as a Spring 500. Through MockMvc because the handler is an
+        // @ExceptionHandler, which a direct call never reaches.
+        adminCtx();
+        folder();
+        when(profileService.listByRepository(REPO)).thenThrow(
+                new ImportProfileDefinitionServiceImpl.ProfileIndexNotReadyException(
+                        "a full selector page of 'nemaki_conf' carried no new continuation bookmark"));
+        org.springframework.test.web.servlet.MockMvc mockMvc =
+                org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+
+        assertDoesNotThrow(() -> mockMvc.perform(
+                        org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                                .get("/v1/repo/" + REPO + "/folders/" + FOLDER + "/connectors"))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                                .status().isServiceUnavailable()),
+                "a listing that could not be completed escaped the folder connector list as a 500");
+    }
+
     private ImportProfileDefinition profile() {
         ImportProfileDefinition p = new ImportProfileDefinition();
         p.setProfileId(PROFILE);
@@ -118,7 +141,8 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.listByRepository(REPO)).thenReturn(List.of(profile()));
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
         ResponseEntity<Map<String, Object>> r = controller.list(REPO, FOLDER);
         assertEquals(HttpStatus.OK, r.getStatusCode());
@@ -151,7 +175,13 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(5, 3, 1, List.of()));
 
@@ -167,7 +197,13 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
 
@@ -183,7 +219,13 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(2, 1, List.of("channel not found")));
 
@@ -195,7 +237,13 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(1, 0, List.of(errorMessage)));
         return (boolean) controller.run(REPO, FOLDER, PROFILE).getBody().get("authError");
@@ -261,7 +309,13 @@ class FolderConnectorControllerTest {
         when(authService.isAdmin(ctx)).thenReturn(false);
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(authService.canUseConnectorForDelegatedProfile(any(), any(), any(), any()))
                 .thenReturn(false);
 
@@ -275,7 +329,13 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
         when(schedulerService.executeFetch(any(), any(), any(), any()))
                 .thenReturn(new FetchResult(0, 0, List.of("No token for Slack connector")));
 
@@ -303,9 +363,15 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         c.setCredentialRef("INGEST_SLACK_TOKEN");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of());
@@ -318,8 +384,14 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         // connector() leaves credentialRef null
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(connector());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(connector(), null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
@@ -332,10 +404,16 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Documented credentialRef convention: ingest.* namespace.
         c.setCredentialRef("ingest.slack.sales.token");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "new-token"));
@@ -349,12 +427,18 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Allowlist: only ingest.* keys may be written. A non-ingest key (here
         // a core infra key) must be refused so the endpoint can't be
         // repurposed as a general config writer.
         c.setCredentialRef("couchdb.password");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
@@ -367,11 +451,17 @@ class FolderConnectorControllerTest {
         adminCtx();
         folder();
         when(profileService.get(PROFILE)).thenReturn(profile());
+        // Both paths of this controller resolve the row of the CALLING repository without an
+        // index (the selector answers on profileId alone, so with the same id in two
+        // repositories it hands back an arbitrary twin). A fixture that answers only the
+        // selector leaves the controller at 404.
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
         ConnectorDefinition c = connector();
         // Not infra, but still outside the ingest.* namespace → rejected
         // (allowlist, not denylist).
         c.setCredentialRef("myapp.api.secret");
-        when(schedulerService.resolveConnectorForProfile(any())).thenReturn(c);
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(c, null));
 
         ResponseEntity<Map<String, Object>> r =
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
@@ -405,5 +495,83 @@ class FolderConnectorControllerTest {
                 controller.setCredential(REPO, FOLDER, PROFILE, Map.of("token", "x"));
         assertEquals(HttpStatus.NOT_FOUND, r.getStatusCode());
         verifyNoInteractions(integrationSettingsService);
+    }
+
+    @Test
+    void run_connectorCouldNotBeRead_is503NotBadRequest() {
+        // "No connector resolved for profile" (400) was the answer for all five reasons,
+        // three of which say nothing about the connector. A review found the family across
+        // five callers; these two verbs are the ones this controller owns.
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "a connector that could not be read was reported as a bad request");
+    }
+
+    @Test
+    void run_connectorEstablishedAbsent_is404_andHidden_is503() {
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.ABSENT_OR_HIDDEN));
+
+        when(connectorService.existsIndexFree(any())).thenReturn(true);
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "a row the index cannot show was reported as absent");
+
+        when(connectorService.existsIndexFree(any())).thenReturn(false);
+        assertEquals(HttpStatus.NOT_FOUND,
+                controller.run(REPO, FOLDER, PROFILE).getStatusCode(),
+                "an absence the walk established was not reported as one");
+    }
+
+    @Test
+    void list_namesTheProfilesWhoseConnectorCouldNotBeResolved() {
+        // Dropping them made an empty list, and the endpoint's own javadoc turns an empty
+        // list into an instruction to the UI ("do not show the run button") — while run() for
+        // the same profile answers 503. One controller said both.
+        adminCtx();
+        folder();
+        when(profileService.listByRepository(REPO))
+                .thenReturn(java.util.List.of(profile()));
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.NOT_READ));
+
+        Map<String, Object> body = controller.list(REPO, FOLDER).getBody();
+
+        assertNotNull(body);
+        assertTrue(((java.util.List<?>) body.get("connectors")).isEmpty());
+        assertNotNull(body.get("connectorsUnresolved"),
+                "a profile whose connector could not be read vanished from the folder: " + body);
+        assertTrue(body.get("connectorsUnresolved").toString().contains(PROFILE));
+    }
+
+    @Test
+    void aRefusedListingIs503OnRun() {
+        // The default arm answered 400 "No connector resolved" for a listing that never ran (R29).
+        adminCtx();
+        folder();
+        when(profileService.get(PROFILE)).thenReturn(profile());
+        when(profileService.getForRepository(PROFILE, REPO)).thenReturn(profile());
+        when(schedulerService.resolveConnectorFor(any())).thenReturn(
+                new IngestSchedulerService.ConnectorForProfile(
+                        null, IngestSchedulerService.Unresolved.LISTING_REFUSED));
+
+        ResponseEntity<Map<String, Object>> r = controller.run(REPO, FOLDER, PROFILE);
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, r.getStatusCode(),
+                "a listing that never ran was reported as the profile's fault: " + r.getBody());
     }
 }

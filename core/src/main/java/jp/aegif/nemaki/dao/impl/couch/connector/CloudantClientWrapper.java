@@ -788,8 +788,15 @@ public class CloudantClientWrapper {
 			log.debug("Attachment not found: " + docId + "/" + attachmentName);
 			return null;
 		} catch (Exception e) {
-			log.warn("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage(), e);
-			return null;
+			// AttachmentDaoDelegate.getAttachmentActualSize was made to refuse rather than
+			// answer "no measurable size" — but it only sees this method's return value, and
+			// a null here walked straight past that refusal into the caller's fallback to the
+			// document's OWN recorded length, which is the number the fixity check exists to
+			// corroborate. The DAO was closed and the wrapper under it was not.
+			log.error("Error getting attachment size for " + docId + "/" + attachmentName + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"the stored size of " + docId + "/" + attachmentName + " could not be"
+							+ " measured; this is NOT a finding that it has none", e);
 		}
 	}
 
@@ -886,9 +893,12 @@ public class CloudantClientWrapper {
 	 * Check if we're in startup phase where delete errors should be ignored
 	 */
 	private boolean isStartupPhase() {
-		// Simple heuristic: if we're in a startup-related thread, allow failures
-		String threadName = Thread.currentThread().getName();
-		return threadName.contains("main") || threadName.contains("startup") || threadName.contains("init");
+		// Declared, not guessed. The old form asked whether the current thread's NAME
+		// contained "main", "startup" or "init" — names no part of this system controls, so
+		// a container's "main-worker-3" received the provisioning grace (a failure answered
+		// as "no data") while provisioning on a differently named executor received none.
+		// StartupPhase is set around the provisioning run itself and defaults to false.
+		return jp.aegif.nemaki.init.StartupPhase.isProvisioning();
 	}
 
 	/**
@@ -1131,6 +1141,8 @@ public class CloudantClientWrapper {
 	 * @return Map of document ID to Document, excluding null/not-found documents
 	 */
 	public Map<String, Document> getBulkDocuments(List<String> ids) {
+		// Ids CouchDB explicitly answered as absent (not_found / deleted rows).
+		java.util.Set<String> absentIds = new java.util.HashSet<>();
 		Map<String, Document> result = new HashMap<>();
 		if (ids == null || ids.isEmpty()) {
 			return result;
@@ -1155,14 +1167,44 @@ public class CloudantClientWrapper {
 
 				AllDocsResult allDocsResult = client.postAllDocs(options).execute().getResult();
 
-				// Process results
-				if (allDocsResult != null && allDocsResult.getRows() != null) {
-					for (DocsResultRow row : allDocsResult.getRows()) {
-						if (row.getDoc() != null && row.getId() != null) {
-							result.put(row.getId(), row.getDoc());
+				// Process results. The map this returns is read as "these are the ones that
+				// exist" — the incremental sync publishes what is in it and advances its
+				// cursor over what is not. So only the answers CouchDB gives as absence may
+				// shorten it; everything else refuses.
+				if (allDocsResult == null || allDocsResult.getRows() == null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"the bulk read of database '" + databaseName + "' answered without"
+									+ " rows; that is not the same as the documents being absent");
+				}
+				for (DocsResultRow row : allDocsResult.getRows()) {
+					String rowError = row.getError();
+					boolean deleted = row.getValue() != null
+							&& Boolean.TRUE.equals(row.getValue().isDeleted());
+					if ("not_found".equals(rowError) || "deleted".equals(rowError) || deleted) {
+						// CouchDB's own answer for "this id is not there". Genuine absence —
+						// recorded so the completeness check after the loop can tell it from
+						// an id that produced no row at all.
+						if (row.getKey() != null) {
+							absentIds.add(row.getKey());
 						}
-						// Skip rows with errors or deleted documents
+						if (row.getId() != null) {
+							absentIds.add(row.getId());
+						}
+						continue;
 					}
+					if (rowError != null && !rowError.isBlank()) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+								"the bulk read of '" + row.getKey() + "' in database '"
+										+ databaseName + "' failed with '" + rowError
+										+ "'; that is not the same as the document being absent");
+					}
+					if (row.getDoc() == null || row.getId() == null) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+								"a bulk-read row for '" + row.getKey() + "' in database '"
+										+ databaseName + "' carries neither a document nor an"
+										+ " error; refusing to answer the batch short");
+					}
+					result.put(row.getId(), row.getDoc());
 				}
 
 				if (log.isDebugEnabled() && batchCount > 1) {
@@ -1170,10 +1212,34 @@ public class CloudantClientWrapper {
 							" retrieved " + (result.size() - fromIndex) + " documents");
 				}
 
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+				throw e;
 			} catch (Exception e) {
+				// "Continue with next batch" made a failed batch indistinguishable from a
+				// batch of absent ids: the caller received a short map and read the missing
+				// entries as documents that do not exist.
 				log.error("Error in bulk get documents batch " + (i + 1) + "/" + batchCount +
 						" from database '" + databaseName + "': " + e.getMessage(), e);
-				// Continue with next batch instead of failing entirely
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"bulk read batch " + (i + 1) + "/" + batchCount + " of database '"
+								+ databaseName + "' failed; a short map would be read as the"
+								+ " missing documents being absent", e);
+			}
+		}
+
+		// The rows that CAME BACK are checked above; a requested id with NO row at all is
+		// the other way the map can be short, and it looks identical to absence from here.
+		// CouchDB answers every requested key (with a not_found error row when the document
+		// is gone), so a key that produced neither a document nor an error row means the
+		// answer was truncated somewhere — not that the document does not exist.
+		java.util.Set<String> answered = new java.util.HashSet<>(result.keySet());
+		answered.addAll(absentIds);
+		for (String requestedId : ids) {
+			if (requestedId != null && !answered.contains(requestedId)) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"the bulk read of database '" + databaseName + "' returned no row at"
+								+ " all for '" + requestedId + "'; that is not the same as the"
+								+ " document being absent");
 			}
 		}
 
@@ -1292,7 +1358,13 @@ public class CloudantClientWrapper {
 			
 			List<T> objects = new ArrayList<T>();
 			ObjectMapper mapper = getObjectMapper();
-			
+			// Rows the fallback could not turn into a document used to be logged and dropped,
+			// so this method answered a SHORT list that reads exactly like a complete one.
+			// The keyed callers are the worst case: getPropertyDefinitionCoreByPropertyId
+			// asks "is this property already defined?", an empty list says no, and the patch
+			// creates a second core for a property that is already there.
+			int unreadableRows = 0;
+
 			for (ViewResultRow row : result.getRows()) {
 				{
 					Map<String, Object> docMap = documentMapFromRow(row);
@@ -1324,18 +1396,43 @@ public class CloudantClientWrapper {
 						
 						objects.add(obj);
 					} else {
+						unreadableRows++;
 						log.warn("No document available for view row " + row.getId()
-								+ " in " + viewPath + ", skipping object creation");
+								+ " in " + viewPath);
 					}
 				}
 			}
-			
+
+			if (unreadableRows > 0) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						unreadableRows + " row(s) of " + viewPath + " could not be read as a"
+								+ " document; the remaining " + objects.size() + " are NOT the"
+								+ " complete answer to key '" + key + "'");
+			}
+
 			log.debug("Retrieved " + objects.size() + " objects from view " + viewPath + " with key: " + key);
 			return objects;
-			
+
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException e) {
+			throw e;
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
-			return null;
+			// The TYPED sibling of the gate added to the ViewResult overload — and the one
+			// that was missed. getPropertyDefinitionCoreByPropertyId reads this method's
+			// null/empty answer as "that property is not defined" and the patch creates a
+			// second core for it, which is the duplicate route the property-definition work
+			// exists to close. Outside provisioning, a design document that is not deployed
+			// is a failure, not an absence.
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not"
+						+ " found during startup - returning null. This is normal before"
+						+ " design documents are created.");
+				return null;
+			}
+			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
+					+ " deployed; a caller would otherwise read that as 'no such row'");
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot answer for key '" + key + "'", e);
 		} catch (Exception e) {
 			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key + ": " + e.getMessage(), e);
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
@@ -1418,8 +1515,23 @@ public class CloudantClientWrapper {
 			return result;
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found - returning null. This is normal during initial startup.");
-			return null;
+			// The raw overload gates this on the declared provisioning window and this one
+			// did not, so OUTSIDE startup a missing design document came back as null — and
+			// getPropertyDefinitionCoreByPropertyId reads a null/empty answer as "that
+			// property is not defined", which is the duplicate-core route the whole property
+			// definition work exists to close. During provisioning the view legitimately
+			// does not exist yet, so that case keeps its null.
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found"
+						+ " during startup - returning null. This is normal before design"
+						+ " documents are created.");
+				return null;
+			}
+			log.error("Design document '" + designDoc + "' or view '" + viewName + "' is not"
+					+ " deployed; a caller would otherwise read that as 'no such row'");
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot answer for key '" + key + "'", e);
 		} catch (Exception e) {
 			log.error("Error querying view " + designDoc + "/" + viewName + " with key: " + key + ": " + e.getMessage(), e);
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
@@ -1545,7 +1657,10 @@ public class CloudantClientWrapper {
 	 * @param skip        Number of rows to skip (0 for none)
 	 * @param limit       Maximum rows to return (0 for unlimited)
 	 * @param descending  If true, reverse the view key order
-	 * @return PagedViewResult with items and totalRows, or null on error
+	 * @return PagedViewResult with items and totalRows. NOT null on error — a page that
+	 *         could not be read throws, so "this page is empty" and "this page could not be
+	 *         fetched" stay apart. The javadoc kept saying "null on error" after the
+	 *         behaviour changed, which is how a caller would go on writing the old fallback.
 	 */
 	public <T> PagedViewResult<T> queryViewPaged(String designDoc, String viewName,
 			Class<T> clazz, long skip, long limit, boolean descending) {
@@ -1574,11 +1689,24 @@ public class CloudantClientWrapper {
 			ObjectMapper mapper = getObjectMapper();
 
 			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() != null) {
+				// A row without its document (or without properties) is a row the caller
+				// cannot see — the page silently shortened, which for the trash listings
+				// reads as "these archives do not exist".
+				if (row.getDoc() == null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"a row of " + designDoc + "/" + viewName + " carries no document;"
+									+ " refusing to serve the page short");
+				}
+				{
 					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
 					Map<String, Object> docMap = doc.getProperties();
 
-					if (docMap != null) {
+					if (docMap == null) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+								"a row of " + designDoc + "/" + viewName + " has no readable"
+										+ " properties; refusing to serve the page short");
+					}
+					{
 						if (!docMap.containsKey("_id") && doc.getId() != null) {
 							docMap.put("_id", doc.getId());
 						}
@@ -1609,11 +1737,28 @@ public class CloudantClientWrapper {
 			return new PagedViewResult<>(objects, totalRows);
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found");
-			return new PagedViewResult<>(new ArrayList<>(), 0);
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not"
+						+ " found during startup - returning an empty page");
+				return new PagedViewResult<>(new ArrayList<>(), 0);
+			}
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot answer", e);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// A deliberate refusal (documentless row, unreadable properties) on its way out.
+			// Without this arm the catch-all below logged it at ERROR as an unexpected
+			// failure and wrapped it one layer deeper — same shape the two count methods
+			// were given rethrow arms for in round 5; a sibling sweep found these two paged
+			// twins still wrapping.
+			throw refusal;
 		} catch (Exception e) {
+			// An empty page + totalRows 0 presented a FAILED read as an empty trash, and the
+			// fail-closed listing one layer up never saw it. (This catch also wraps the
+			// per-row readValue loop, so one undecodable archive used to empty the page.)
 			log.error("Error in queryViewPaged " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
-			return new PagedViewResult<>(new ArrayList<>(), 0);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB paged view query failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 
@@ -1682,11 +1827,22 @@ public class CloudantClientWrapper {
 			ObjectMapper mapper = getObjectMapper();
 
 			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() != null) {
+				// Same rule as the unkeyed twin above: a documentless row must refuse.
+				if (row.getDoc() == null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"a row of " + designDoc + "/" + viewName + " carries no document;"
+									+ " refusing to serve the page short");
+				}
+				{
 					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
 					Map<String, Object> docMap = doc.getProperties();
 
-					if (docMap != null) {
+					if (docMap == null) {
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+								"a row of " + designDoc + "/" + viewName + " has no readable"
+										+ " properties; refusing to serve the page short");
+					}
+					{
 						if (!docMap.containsKey("_id") && doc.getId() != null) {
 							docMap.put("_id", doc.getId());
 						}
@@ -1717,12 +1873,28 @@ public class CloudantClientWrapper {
 			return new PagedViewResult<>(objects, totalRows);
 
 		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
-			log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found");
-			return new PagedViewResult<>(new ArrayList<>(), 0);
+			if (isStartupPhase()) {
+				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not"
+						+ " found during startup - returning an empty page");
+				return new PagedViewResult<>(new ArrayList<>(), 0);
+			}
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot answer", e);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// Same rethrow rule as the unkeyed twin above.
+			throw refusal;
 		} catch (Exception e) {
+			// Same as the unkeyed twin above.
 			log.error("Error in queryViewPagedWithKey " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
-			return new PagedViewResult<>(new ArrayList<>(), 0);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB paged view query failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
+	}
+
+	/** A value's type and content, for a refusal message. Never the value alone. */
+	private static String describeForLog(Object value) {
+		return value == null ? "null" : (value.getClass().getSimpleName() + " " + value);
 	}
 
 	/**
@@ -1731,7 +1903,9 @@ public class CloudantClientWrapper {
 	 *
 	 * @param designDoc Design document name
 	 * @param viewName  View name
-	 * @return total number of rows in the view, or 0 on error
+	 * @return total number of rows in the view. NOT 0 on error — a failed count throws, so
+	 *         that "the view holds nothing" and "we could not count it" stay apart; the
+	 *         javadoc said 0 for a round after the behaviour changed
 	 */
 	public long queryViewCount(String designDoc, String viewName) {
 		try {
@@ -1744,10 +1918,46 @@ public class CloudantClientWrapper {
 				.build();
 
 			ViewResult result = client.postView(options).execute().getResult();
-			return (result.getTotalRows() != null) ? result.getTotalRows() : 0;
+			if (result.getTotalRows() == null) {
+				// A 2xx that carries no total_rows has not counted anything, and 0 says the
+				// view is empty. This is not hypothetical here: a REDUCE response omits
+				// total_rows, and the patch gate read that 0 as "the views are not
+				// answering" and refused 312 times against a healthy database. It was fixed
+				// by pointing that one caller at a map-only view; every other caller of this
+				// method still had the silent 0 underneath it.
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"the count of " + designDoc + "/" + viewName + " in '" + databaseName
+								+ "' came back without total_rows, so nothing was counted."
+								+ " A view with a reduce function answers this way and must"
+								+ " be counted through its reduction instead");
+			}
+			return result.getTotalRows();
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			// Same policy as queryView above: an undeployed view cannot answer, and 0 reads
+			// as "there is nothing". Startup keeps the grace because provisioning runs
+			// before the design documents exist.
+			if (isStartupPhase()) {
+				log.warn("View " + designDoc + "/" + viewName + " not found during startup -"
+						+ " returning 0 for count");
+				return 0;
+			}
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot be counted", e);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// A refusal raised INSIDE the try above, on its way out. Without this arm the
+			// catch-all below logged it at ERROR as an unexpected failure and re-wrapped it
+			// one layer deeper, so a deliberate "this response counted nothing" arrived
+			// looking like a crash. queryView's sibling arm has done this for a while and
+			// the two count methods were written without it.
+			throw refusal;
 		} catch (Exception e) {
+			// 0 was returned here for ANY failure — the fail-closed counts one layer up
+			// (ArchiveDaoDelegate) never fired because this swallow answered first. A count
+			// that could not be taken is not zero.
 			log.error("Error getting view count for " + designDoc + "/" + viewName + ": " + e.getMessage(), e);
-			return 0;
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB view count failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 
@@ -1783,31 +1993,64 @@ public class CloudantClientWrapper {
 
 			ViewResult result = client.postView(builder.build()).execute().getResult();
 
+			// Three outcomes, and only ONE of them is zero. No rows array at all is a
+			// response that did not answer; an EMPTY rows array is a reduction over no
+			// matching group, which genuinely is zero; a row whose value is not a number is
+			// a reduction this code cannot read. Two of those used to return 0, which the
+			// archive counts report as "the trash is empty".
+			if (result.getRows() == null) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"the count of " + designDoc + "/" + viewName + " in '" + databaseName
+								+ "' came back with no rows array, so nothing was counted");
+			}
 			if (key != null) {
 				// With key filter + group_level=1, expect at most one row with the count
-				if (result.getRows() != null && !result.getRows().isEmpty()) {
-					Object value = result.getRows().get(0).getValue();
-					if (value instanceof Number) {
-						return ((Number) value).longValue();
-					}
+				if (result.getRows().isEmpty()) {
+					return 0;
 				}
-				return 0;
+				Object value = result.getRows().get(0).getValue();
+				if (!(value instanceof Number)) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"the count of " + designDoc + "/" + viewName + " for key '" + key
+									+ "' came back as " + describeForLog(value)
+									+ " rather than a number, so it could not be read");
+				}
+				return ((Number) value).longValue();
 			} else {
 				// No key filter: sum all group counts
 				long total = 0;
-				if (result.getRows() != null) {
-					for (ViewResultRow row : result.getRows()) {
-						Object value = row.getValue();
-						if (value instanceof Number) {
-							total += ((Number) value).longValue();
-						}
+				for (ViewResultRow row : result.getRows()) {
+					Object value = row.getValue();
+					if (!(value instanceof Number)) {
+						// Skipping it made the sum SMALLER than the truth while still
+						// looking like a count.
+						throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+								"a group of " + designDoc + "/" + viewName + " counted to "
+										+ describeForLog(value) + " rather than a number, so"
+										+ " the total cannot be established");
 					}
+					total += ((Number) value).longValue();
 				}
 				return total;
 			}
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException refusal) {
+			// The keyed twin of the arm in queryViewCount: a refusal raised inside the try is
+			// on its way out, not an unexpected failure to log and re-wrap.
+			throw refusal;
+		} catch (com.ibm.cloud.sdk.core.service.exception.NotFoundException e) {
+			if (isStartupPhase()) {
+				log.warn("View " + designDoc + "/" + viewName + " not found during startup -"
+						+ " returning 0 for count");
+				return 0;
+			}
+			throw new ViewNotDeployedException(
+					"View " + designDoc + "/" + viewName + " is not deployed in database '"
+							+ databaseName + "', so it cannot be counted", e);
 		} catch (Exception e) {
+			// Same as the unkeyed count: a failed count is not zero.
 			log.error("Error getting view count by key for " + designDoc + "/" + viewName + " (key=" + key + "): " + e.getMessage(), e);
-			return 0;
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"CouchDB view count failed: " + designDoc + "/" + viewName + " - " + e.getMessage(), e);
 		}
 	}
 
@@ -2531,9 +2774,19 @@ public class CloudantClientWrapper {
 				return mapper.convertValue(docMap, clazz);
 			}
 			return null;
-		} catch (Exception e) {
-			log.warn("Error getting document with ID: " + id + " as class: " + clazz.getName() + " - returning null. This is normal during initial startup: " + e.getMessage());
+		} catch (NotFoundException e) {
+			// The one legitimate null: the document is not there.
+			log.debug("Document not found with ID: " + id + " as class: " + clazz.getName());
 			return null;
+		} catch (Exception e) {
+			// The untyped get() was fixed a round earlier (NotFound → null, everything else
+			// throws); this typed overload kept flattening failures into null — which is
+			// how "the RSS token could not be read" still reached the admin as "Token not
+			// found", and getDocument-family reads still served failures as absence.
+			log.error("Error getting document with ID: " + id + " as class: " + clazz.getName() + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Failed to read document '" + id + "' from database '" + databaseName
+							+ "'; this is NOT a finding that it does not exist", e);
 		}
 	}
 
@@ -2944,11 +3197,21 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error getting document with ID: " + id + " (revision: " + revision + ") as class: " + clazz.getName() + " - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// The two-argument get() above was already made to refuse here; this one — the
+			// same read, one overload over — kept answering null for every failure. Its
+			// callers are the Purview journal stores, the projection cursor and the leader
+			// election, and each of them reads null as "that document does not exist yet":
+			// a failed read elects a SECOND leader, or rewinds the cursor to the beginning
+			// and republishes from zero. NotFound above stays null, because that one really
+			// is absence.
+			log.error("Error getting document with ID: " + id + " (revision: " + revision
+					+ ") as class: " + clazz.getName() + ": " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"the document '" + id + "' could not be read; this is NOT a finding that"
+							+ " it does not exist", e);
 		}
 	}
-	
+
 	/**
 	 * Get document with revision (returns raw Document)
 	 */
@@ -2972,8 +3235,12 @@ public class CloudantClientWrapper {
 			log.debug("Document not found with ID: " + id + " (revision: " + revision + ")");
 			return null;
 		} catch (Exception e) {
-			log.warn("Error retrieving document with ID '" + id + "' (revision: " + revision + "') from database '" + databaseName + "' - returning null. This is normal during initial startup: " + e.getMessage());
-			return null;
+			// Same rule as the typed overload above: null means absence, never failure.
+			log.error("Error retrieving document with ID '" + id + "' (revision: " + revision + "') from database '" + databaseName + "': " + e.getMessage(), e);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"Failed to read document '" + id + "' (revision " + revision + ") from"
+							+ " database '" + databaseName + "'; this is NOT a finding that it"
+							+ " does not exist", e);
 		}
 	}
 

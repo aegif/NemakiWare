@@ -56,7 +56,17 @@ public class AttachmentServiceDelegate {
 		this.nemakiCachePool = nemakiCachePool;
 	}
 
+	/**
+	 * The existing signature, for callers that only need the id.
+	 *
+	 * <p>Delegates rather than duplicating: a second body would be a second definition of what
+	 * an attachment write does, and the two would drift.
+	 */
 	public String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
+		return createAttachmentRecording(callContext, repositoryId, contentStream).attachmentId();
+	}
+
+	public Written createAttachmentRecording(CallContext callContext, String repositoryId, ContentStream contentStream) {
 		AttachmentNode a = new AttachmentNode();
 
 		String mimeType = contentStream.getMimeType();
@@ -101,7 +111,38 @@ public class AttachmentServiceDelegate {
 		a.setName(fileName);
 
 		helper.setSignature(callContext, a);
-		return contentDaoService.createAttachment(repositoryId, a, contentStream);
+
+		// E1: the digest of the bytes as they go past, on the one pass that carries them
+		// (docs/design/adr-e1-durable-commitment.md, decision 2). Wrapping happens HERE and not
+		// earlier because the length logic above may itself read and rewind the stream.
+		jp.aegif.nemaki.evidence.DigestingInputStream digesting =
+				jp.aegif.nemaki.evidence.DigestingInputStream.over(contentStream.getStream());
+		ContentStream toWrite = contentStream;
+		if (digesting != null) {
+			// The ORIGINAL declared length is carried through, not the computed one: the DAO
+			// reads it, and substituting a value it did not have before would change what gets
+			// stored for a stream whose length was unknown.
+			org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl wrapped =
+					new org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl(
+							contentStream.getFileName(), contentStream.getBigLength(),
+							contentStream.getMimeType(), digesting);
+			toWrite = wrapped;
+		}
+		String attachmentId = contentDaoService.createAttachment(repositoryId, a, toWrite);
+		// Null when the stream could not be vouched for — a short read, a rewind whose digest
+		// could not be snapshotted. The caller records NO statement in that case rather than a
+		// digest that may cover the wrong bytes.
+		String digest = digesting == null ? null : digesting.digestIfTrustworthy(streamLength);
+		return new Written(attachmentId, digest, streamLength);
+	}
+
+	/**
+	 * What one attachment write produced.
+	 *
+	 * @param contentDigest null when the write could not be digested; NOT an empty string and
+	 *        not the digest of nothing, both of which look exactly like an answer
+	 */
+	public record Written(String attachmentId, String contentDigest, long length) {
 	}
 
 	public String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {
@@ -113,10 +154,70 @@ public class AttachmentServiceDelegate {
 
 		AttachmentNode original = contentDaoService.getAttachment(repositoryId, attachmentId);
 
+		// Read once more before answering "there is nothing here", for either shape of nothing.
+		//
+		// Restoring from the archive puts the DOCUMENT back first (ArchiveDaoDelegate:853) and
+		// only then the attachment — its row at :772, its body at :792. A check-out landing in
+		// that window reads no row at all for a moment, and a row with no body for another.
+		// Both are a legitimate operation in progress. One retry narrows the window; it does
+		// not close it (the body PUT takes as long as the attachment is big), which is why the
+		// refusal says to retry rather than pretending this cannot happen. Same shape as
+		// ContentServiceImpl.getAttachmentRef's "minimal retry for async scenarios".
+		if (original == null || !hasBody(original)) {
+			try {
+				Thread.sleep(25);
+			} catch (InterruptedException interrupted) {
+				// Restore the flag and answer from what the FIRST read already told us: a
+				// blocking read on an interrupted thread can fail with a different sentence
+				// than the one this method means to say.
+				Thread.currentThread().interrupt();
+			}
+			// Checked again here, not only in the catch: the interrupt can arrive AFTER the
+			// sleep returns and before the read starts, and a blocking read on an interrupted
+			// thread fails with a different sentence than the one this method means to say
+			// (review, 2026-09-20).
+			if (Thread.currentThread().isInterrupted()) {
+				// Its OWN sentence. Answering with the two-read message would say "asked twice,
+				// twice there was nothing" about a read that was never made — the branch's
+				// subject, in miniature (review, 2026-09-20).
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+						"the attachment '" + attachmentId + "' in '" + repositoryId + "' was "
+								+ (original == null ? "not found" : "found without a content body")
+								+ " on the first read, and this thread was interrupted before it "
+								+ "could be read again. This is NOT a finding that the document "
+								+ "has no content, and NOT a finding that the attachment is "
+								+ "gone — the second read did not happen.");
+			}
+			original = contentDaoService.getAttachment(repositoryId, attachmentId);
+		}
+
 		// CRITICAL FIX (2025-12-16): Handle null attachment (corrupted or deleted)
 		if (original == null) {
 			log.warn("copyAttachment: Could not retrieve attachment with ID '{}', returning null", attachmentId);
 			return null;
+		}
+
+		// The row is there and its body is not. getAttachment leaves the stream null for exactly
+		// one thing — the CouchDB document carries no `content` attachment — and createAttachment
+		// SKIPS stage 2 for a null stream and returns the new id as a success
+		// (AttachmentDaoDelegate: "STAGE 2 SKIPPED: No binary content to attach"). So copying it
+		// produced a second empty row, and the caller, holding a non-null id, recorded a
+		// successful copy of content that was never there. Found by review, 2026-09-19; same
+		// class as R54, one level further in. A zero-byte upload is NOT this case: CouchDB
+		// answers it with an empty stream, not with none.
+		//
+		// It is read ONCE MORE before refusing, because this state also occurs in the middle of
+		// a legitimate operation: restoring from the archive creates the attachment row
+		// (ArchiveDaoDelegate:772) and PUTs the body in a SEPARATE write (:792), with the
+		// restored document already reachable. A check-out landing between the two reads a row
+		// with no body, and a moment later the same read succeeds. The same shape as
+		// ContentServiceImpl.getAttachmentRef's "minimal retry for async scenarios". One retry
+		// narrows that window; it does not close it, so the refusal says to retry (review,
+		// 2026-09-19).
+		if (!hasBody(original)) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisStorageException(
+					bodyMissing(repositoryId, attachmentId,
+							contentDaoService.contentAbsenceReason(repositoryId, attachmentId)));
 		}
 
 		String mimeType = original.getMimeType();
@@ -144,6 +245,67 @@ public class AttachmentServiceDelegate {
 		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
 
 		return newAttachmentId;
+	}
+
+	/**
+	 * The refusal, told the truth when the row says why — R57.
+	 *
+	 * <p>"Retry shortly" is right for one cause and wrong for another. Restoring a version whose
+	 * content was MOVED to cold storage finishes WITHOUT bytes: the row is back, the body never
+	 * comes, and this product has no read-back path from cold. Telling that caller to wait
+	 * describes an operation that has already ended, and every later checkOut / checkIn / copy
+	 * repeats it forever. {@code contentAbsenceReason} is read only here, on the path that is
+	 * already refusing.
+	 *
+	 * @param reason what the row records, or null when it records nothing — which is "not
+	 *        stated", so the message then says both possibilities rather than choosing one
+	 */
+	static String bodyMissing(String repositoryId, String attachmentId, String reason) {
+		return "the attachment '" + attachmentId + "' in '" + repositoryId + "' has a row "
+				+ "but no content body, so there is nothing to copy. "
+				+ whyNoBodyAndWhetherWaitingHelps(reason);
+	}
+
+	/**
+	 * What a body-less row means, and whether waiting helps — ONE place.
+	 *
+	 * <p>{@code ContentServiceImpl.copyAttachmentOrRefuse} refuses on the same fact and had its
+	 * own copy of this with two arms where this had three, so one row was told "nothing to wait
+	 * for" by one refusal and "retry shortly" by the other (subagent, eighth review, P2).
+	 *
+	 * @param reason what the row records, or null when it records nothing — which is "not
+	 *        stated", so the message then says both possibilities rather than choosing one
+	 */
+	public static String whyNoBodyAndWhetherWaitingHelps(String reason) {
+		String head = "This is NOT a finding that the document has no content. ";
+		if (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence.MOVED_TO_COLD
+				.name().equals(reason)) {
+			return head + "The row records that its content was MOVED to cold storage and the "
+					+ "restore brought back its metadata only. This product has no path that "
+					+ "reads cold storage back, so WAITING WILL NOT CHANGE THIS: the bytes have "
+					+ "to be put back from outside before this document can be copied.";
+		}
+		if (jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes.ContentAbsence
+				.ARCHIVE_HAD_NO_CONTENT.name().equals(reason)) {
+			return head + "The row records that the archived version carried no content of its "
+					+ "own, so there is nothing to wait for.";
+		}
+		return head + "The row does not record why. If a restore from the archive is in progress "
+				+ "for this document, retry shortly — but a restore of a version whose content "
+				+ "was moved to cold storage finishes WITHOUT bytes, and that one does not "
+				+ "resolve by waiting.";
+	}
+
+	/**
+	 * Does this node carry bytes?
+	 *
+	 * <p>One place decides it, because the wrong answer is a plausible one: keying on the
+	 * recorded LENGTH instead would refuse a zero-byte attachment as if its body were missing.
+	 * CouchDB answers a zero-byte attachment with an EMPTY stream, not with none — a null
+	 * stream means the document carries no {@code content} attachment at all.
+	 */
+	private static boolean hasBody(AttachmentNode node) {
+		return node != null && node.getInputStream() != null;
 	}
 
 	/*

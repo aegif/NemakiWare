@@ -2,11 +2,19 @@
 #
 # Referenced explicitly via `osv-scanner --config=osv-scanner.toml` in
 # .github/workflows/security-scan.yml. Every entry MUST mirror a row in
-# SECURITY-EXCEPTIONS.md and carry an `ignoreUntil`; once the OSV job is
-# gated (continue-on-error removed), an expired ignore lets the vuln fail CI,
-# forcing re-review.
+# SECURITY-EXCEPTIONS.md and carry an `ignoreUntil`. The required "Security
+# exception expiry" job reads `ignoreUntil` and turns red once it has passed,
+# forcing re-review. What it would take for the OSV job itself to fail on a
+# finding is in its FLIP CONDITION (security-scan.yml).
 
-# (No active OSV ignores.)
+[[IgnoredVulns]]
+# sprintf-js 1.0.3 — UI dependency tree only (swagger-ui-react > remarkable > argparse,
+# remarkable's command-line tool). Not in the shipped UI bundle; no fixed version exists.
+# Mirrors the GHSA-hp3w-g68c-fv3c row in SECURITY-EXCEPTIONS.md.
+id = "GHSA-hp3w-g68c-fv3c"
+ignoreUntil = 2027-01-31
+reason = "sprintf-js 1.0.3 is reached only through remarkable's CLI (argparse); not in the UI bundle; no fixed version. See SECURITY-EXCEPTIONS.md."
+
 #
 # GHSA-qhr7-h655-pw6r (solr-core Basic-Auth setup tool) was removed on the
 # Solr 10 upgrade: the WAR no longer depends on solr-core at all (the custom

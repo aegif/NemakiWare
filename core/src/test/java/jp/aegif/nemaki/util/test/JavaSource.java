@@ -62,19 +62,37 @@ public final class JavaSource {
      * literals. String literals are KEPT in the result: some of these assertions are about a
      * query string, so removing them would remove the subject.
      *
-     * @throws AssertionError if the fragment is absent or the braces do not balance — either
-     *     means the test is no longer looking at what it thinks it is, which must be loud.
+     * @throws HarnessBroken if the fragment is absent or the braces do not balance — either
+     *     means the test is no longer looking at what it thinks it is. It is deliberately not
+     *     an AssertionError: the control runner reads an AssertionError as "the lock fired",
+     *     and this is the opposite of that.
      */
     public static String methodBody(String source, String signatureFragment) {
         int start = source.indexOf(signatureFragment);
         if (start < 0) {
-            throw new AssertionError("method not found, so nothing was checked: " + signatureFragment);
+            throw new HarnessBroken("method not found, so nothing was checked: " + signatureFragment);
         }
         int open = source.indexOf('{', start);
         if (open < 0) {
-            throw new AssertionError("no body for: " + signatureFragment);
+            throw new HarnessBroken("no body for: " + signatureFragment);
         }
+        return source.substring(start, matchingClose(source, open));
+    }
 
+    /**
+     * The index just past the '{@code }}' closing the block opened at or after {@code from}.
+     *
+     * <p>Extracted from {@link #methodBody} because a source-level test had hand-rolled a
+     * second brace counter that ignored string literals and comments — so a '{@code {}' inside
+     * a literal added anywhere in the file it reads would have shifted the region it thought
+     * it was checking, silently, rather than tripping {@link HarnessBroken}. One scanner, so
+     * the careful one is the only one.
+     */
+    public static int matchingClose(String source, int from) {
+        int open = source.indexOf('{', from);
+        if (open < 0) {
+            throw new HarnessBroken("no block opens at or after offset " + from);
+        }
         int depth = 0;
         boolean inString = false;
         boolean inChar = false;
@@ -123,11 +141,11 @@ public final class JavaSource {
             } else if (c == '}') {
                 depth--;
                 if (depth == 0) {
-                    return source.substring(start, i + 1);
+                    return i + 1;
                 }
             }
         }
-        throw new AssertionError("unbalanced braces after: " + signatureFragment);
+        throw new HarnessBroken("unbalanced braces from offset " + from);
     }
 
     /**

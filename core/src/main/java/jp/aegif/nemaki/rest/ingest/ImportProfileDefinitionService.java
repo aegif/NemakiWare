@@ -11,18 +11,235 @@ public interface ImportProfileDefinitionService {
     List<ImportProfileDefinition> list();
     List<ImportProfileDefinition> listByRepository(String repositoryId);
     ImportProfileDefinition update(ImportProfileDefinition def);
-    void delete(String profileId);
+    /**
+     * Removes every row of {@code profileId} in {@code repositoryId} and returns how many
+     * rows of that profileId remain in ANY repository. The scheduler is keyed by profileId
+     * alone, so stopping it after a repository-confined delete would cut another
+     * repository's live capture; the caller stops it only when this answers 0. -1 means the
+     * count could not answer, which is not "none remain".
+     */
+    int delete(String profileId, String repositoryId);
     boolean exists(String profileId);
 
     /**
-     * Finds the first enabled profile for the given repository that allows the specified archetype.
-     * Used for auto-resolution when the caller does not explicitly specify a profileId.
-     *
-     * @return matching profile, or null if none found
-     */
-    /**
-     * Finds the first enabled profile for the given repository that allows the specified
-     * archetype AND the specified connector.
+     * The ONE enabled profile of this repository that allows the archetype and the connector,
+     * or null when there is none. Several matches are refused, not resolved by order: the
+     * preference passes (explicit defaultConnectorId, then defaultProfile, then any
+     * compatible one) each require exactly one match.
      */
     ImportProfileDefinition findDefaultForRepository(String repositoryId, SourceArchetype archetype, String connectorId);
+
+    /**
+     * Removes the row addressed by {@code docId} and returns how many rows of this profileId
+     * remain in ANY repository. The count is global on purpose: the caller decides from it
+     * whether to stop a scheduler that is keyed by profileId alone. 0 means another caller
+     * removed the other twin concurrently, so the profile is gone through a path that assumes
+     * a survivor and the caller has to finish that work. -1 means the count could not answer;
+     * that is "unknown", never "a row survives".
+     *
+     * <p>The check BEFORE the delete is repository-confined instead: this operation resolves
+     * a divergent pair within one repository, and it refuses (409) when the addressed row is
+     * that repository's only one.
+     */
+    int delete(String profileId, String docId, String repositoryId);
+
+
+
+    /**
+     * Does a row of {@code repositoryId} define {@code profileId}, answered from
+     * {@code _all_docs} only — so it holds while the Mango index that {@link #get(String)}
+     * depends on is rebuilding. The controllers consult it before answering 404: a profile
+     * the selector cannot show is "retry", never "not found". A row that cannot be read
+     * throws {@code ProfileIndexNotReadyException} rather than answering either way.
+     *
+     * <p>Deliberately CONFINED to {@code repositoryId}: a row hidden in another repository
+     * must not turn this repository's 404 into a 503, which would disclose that the other
+     * row exists. {@code false} therefore means "not in this repository", not "nowhere".
+     * (The wording said "any row" while the implementation was already confined.)
+     */
+    boolean existsIndexFree(String profileId, String repositoryId);
+
+    /**
+     * The row of {@code profileId} that belongs to {@code repositoryId}, read without the
+     * Mango index. {@link #get} selects on profileId alone, so with the same id in two
+     * repositories it hands back an arbitrary twin and the caller's own row becomes
+     * unreachable. Null when this repository has none; refuses (index-not-ready) when a row
+     * could not be classified, and refuses with {@code ProfileHasTwinRowsException} when this
+     * repository has MORE THAN ONE row of the id — the caller must not be handed one of a
+     * pair to authorise from. Both are unchecked; a caller that lets the pair refusal escape
+     * answers 500 for a state an administrator has to resolve. (The second was undocumented
+     * although callers already catch it.)
+     */
+    ImportProfileDefinition getForRepository(String profileId, String repositoryId);
+
+    /**
+     * The unique owned row of {@code profileId}, read without the Mango index. IMAP IDLE is
+     * keyed by profileId alone and has no repository on the start verb, so a selector miss
+     * used to answer "not found" and never reached {@link #getForRepository}. Unowned rows
+     * are ignored (they are not a wildcard). More than one owned row refuses; an unreadable
+     * row refuses rather than answering.
+     */
+    ImportProfileDefinition getOwnedRowIndexFree(String profileId);
+
+    /**
+     * Every enabled, scheduler-enabled profile of every repository, read from
+     * {@code _all_docs} — one walk, no Mango index.
+     *
+     * <p>The scheduler used to enumerate through a selector, so while that index rebuilt the
+     * poll saw an empty list and skipped every scheduled capture, indistinguishable from a
+     * genuinely empty schedule. Nothing recorded that it had happened.
+     *
+     * <p>Throws {@code ProfileIndexNotReadyException} when the walk cannot be completed: the
+     * caller must not read that as "nothing is scheduled". A row that exists but cannot be
+     * interpreted is logged and skipped — no retry repairs it, and refusing the whole poll
+     * would let one broken row stop every capture.
+     */
+    List<ImportProfileDefinition> listScheduledIndexFree();
+
+    /**
+     * As {@link #listScheduledIndexFree}, carrying the rows the walk could not read.
+     *
+     * <p>The list-only form drops them, on the ground that the poll has no caller to answer
+     * and that one broken row must not stop every capture. That ground does not hold for the
+     * two endpoints that now read through it: {@code POST /trigger/{id}} answers
+     * "Profile not found or not scheduler-enabled" — two statements, neither established —
+     * for a profile whose row this walk refused, and {@code GET /status} answers a count that
+     * is short by one with nothing saying so. A review found the asymmetry against the owned
+     * listing, which has carried its unreadable rows since the webhook receiver needed them.
+     */
+    OwnedProfiles listScheduledIndexFreeWithUnreadable();
+
+    /**
+     * A row of the owned listing that could not be interpreted as a profile, with the
+     * addressing fields a caller needs to tell whether the row was addressed to it. The webhook
+     * receiver asks {@link #addressedTo(String, SourceArchetype)}: a row that was addressed
+     * to its connector and cannot be read is a recipient it cannot establish, not "no
+     * recipient".
+     *
+     * <p>The two questions the receiver asks of a readable row — does it name the connector,
+     * does it admit the connector's archetype — are asked of the row's fields one QUESTION at
+     * a time: the two connector fields are read together (they answer one question between
+     * them) and the archetype list is read apart from them, each reading going through the
+     * production mapper (the reader of the readable path) on those fields alone, so a field
+     * the mapper refuses leaves only ITS question open. A row whose connector
+     * fields cannot be read but whose archetype list plainly excludes the connector's
+     * archetype is not addressed to it, and neither is a row whose archetype list cannot be
+     * read but whose connector fields name someone else: in both, a readable row with the
+     * same fields would have been filtered out on the readable field. The first version
+     * folded both fields into one flag and refused on either; a review found the over-throw.
+     * The next hand-rolled the reading and disagreed with the mapper on what it can read (a
+     * number where a string is expected, a null element in a list); a review found that too.
+     *
+     * @param allowedArchetypes the row's {@code allowedArchetypes} as the production mapper
+     *                          reads that field on its own — the list a readable row would
+     *                          carry — or null when the field is absent or the mapper refuses
+     *                          it (a name it does not know, a value that is not a list).
+     *                          Absent and refused both admit every archetype, which is the
+     *                          fail-closed reading of a restriction that cannot be
+     *                          established, so the two need no telling apart
+     * @param addresseeUnknown true when the production mapper refuses {@code defaultConnectorId}
+     *                         or {@code allowedConnectorIds} read on their own (a value it
+     *                         cannot coerce to a string, a list it cannot read): whom the row
+     *                         names cannot be established, so it names every connector. The
+     *                         archetype list does not feed this flag — see
+     *                         {@code allowedArchetypes}
+     * @param reason why the row could not be read (the deserialisation failure, or that the
+     *               row has no profileId)
+     */
+    record UninterpretableRow(String docId, String profileId, String defaultConnectorId,
+            List<String> allowedConnectorIds, List<SourceArchetype> allowedArchetypes,
+            boolean addresseeUnknown, String reason) {
+        /**
+         * Whether the row names this connector — as far as its connector fields say, read the
+         * way the readable path reads them, and "yes" for every connector when the mapper
+         * refuses those fields: a row whose addressee cannot be established is not a row that
+         * addresses nobody.
+         */
+        public boolean namesConnector(String connectorId) {
+            if (connectorId == null) {
+                return false;
+            }
+            if (addresseeUnknown) {
+                return true;
+            }
+            return connectorId.equals(defaultConnectorId)
+                    || (allowedConnectorIds != null && allowedConnectorIds.contains(connectorId));
+        }
+
+        /**
+         * Whether the row's {@code allowedArchetypes} admit this archetype — asked of
+         * {@link ImportProfileDefinition#isArchetypeAllowed} itself, on a definition carrying
+         * only that list, so a broken row is read by the same code as a readable one: an
+         * absent, refused, or empty list admits every archetype, and a connector with no
+         * archetype is admitted by no restricting list. A list the mapper refused (a name this
+         * node does not know) is null here: it cannot be established to exclude anything,
+         * whatever its author meant. The connector fields play no part here.
+         */
+        public boolean admitsArchetype(SourceArchetype archetype) {
+            ImportProfileDefinition reading = new ImportProfileDefinition();
+            reading.setAllowedArchetypes(allowedArchetypes);
+            return reading.isArchetypeAllowed(archetype);
+        }
+
+        /**
+         * Whether the row was addressed to this connector: it names it AND admits its
+         * archetype — the receiver's conjunction for a readable row, asked of the fields this
+         * row could carry.
+         * A readable row with the same fields would have been filtered out on whichever
+         * question answers "no"; refusing on it would stop a dispatch that row could never
+         * have received. A review found the receiver refusing on the name alone; the next
+         * found it refusing on either field's unreadable shape.
+         */
+        public boolean addressedTo(String connectorId, SourceArchetype archetype) {
+            return namesConnector(connectorId) && admitsArchetype(archetype);
+        }
+    }
+
+    /**
+     * The owned listing: the rows the walk could read, and the rows it could not. A caller
+     * that would answer "none" from {@code profiles()} alone has to look at
+     * {@code uninterpretable()} first.
+     */
+    record OwnedProfiles(List<ImportProfileDefinition> profiles,
+            List<UninterpretableRow> uninterpretable) {
+    }
+
+    /**
+     * Every OWNED profile row of every repository — enabled or not — read from
+     * {@code _all_docs}: the same walk and the same per-row policy as
+     * {@link #listScheduledIndexFree()}, without the scheduler filter.
+     *
+     * <p>Written for the webhook receiver, which used to pick its recipients out of
+     * {@link #list()} — a selector. When the index did not show a row the receiver saw no
+     * profile, answered {@code no_profile} with a 200, and the event was gone (a listing
+     * that could not be completed was a 500); and the selector's single page dropped every
+     * row past the 200th the same way. Whether a rebuilding index shows an existing row as
+     * absent has NOT been measured on a real CouchDB; the page cap needed no rebuild.
+     *
+     * <p>Rows that name no repository are not returned: they are not a wildcard, and the
+     * import resolves no row for them in any repository. A row that cannot be interpreted is
+     * logged and reported in {@code uninterpretable()} with its addressing fields, read
+     * through the production mapper one question at a time — not dropped: the receiver refuses (503) when
+     * such a row was addressed to its connector ({@link UninterpretableRow#addressedTo}: names
+     * it, and admits its archetype as far as the list can be read), and ignores it otherwise,
+     * so one broken row stops the webhooks of the connector it was addressed to and no other
+     * — except a row whose connector fields themselves cannot be read, which names every
+     * connector ({@link UninterpretableRow#addresseeUnknown()}): the trade is one such row
+     * stopping every webhook until it is repaired, against an event to it being consumed as
+     * "no profile". Rows whose {@code enabled} the mapper reads as {@code false} (the literal,
+     * the string, an explicit null) are not reported: they could not have been recipients.
+     * Throws {@code ProfileIndexNotReadyException} when the walk cannot be completed — the
+     * caller must not read that as an empty list.
+     */
+    OwnedProfiles listOwnedIndexFree();
+
+    /**
+     * Rewrites every legacy import-profile row saved under a CouchDB-generated id to its
+     * deterministic id ({@code import_profile_definition:<profileId>}) — the import-profile
+     * half of the §62 closure. Same window, same database, same startup patch entrance as
+     * the connectors: the default cloud-import profile is created per repository by a patch
+     * whose existence check is a Mango selector. Reads through {@code _all_docs} and
+     * id-addressed gets only; idempotent; safe on every startup.
+     */
+    ConnectorDefinitionService.LegacyIdMigrationResult migrateLegacyGeneratedIds();
 }

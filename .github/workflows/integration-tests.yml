@@ -10,6 +10,42 @@ on:
       - 'core/src/test/java/**'
       - 'core/pom.xml'
       - 'core/src/main/webapp/WEB-INF/**'
+      # The unit job carries a lock that reads the manual-run SCREENS. Without this a
+      # UI-only revert does not start this workflow at all, so the lock is on the list
+      # and the list never runs for the change it guards.
+      - 'core/src/main/webapp/ui/src/**'
+      # Every document under docs/. The forbidden-claim lint reads every .md and .json under
+      # docs/, so a claim in any of them has to start this workflow (review, P2).
+      - 'docs/**'
+      # The unit job counts the controls and checks the canon's number against them.
+      # Without these, retiring a control or editing that number does not start this
+      # workflow, so the check exists and never gates (Codex review, P2).
+      - 'tools/negative-controls/**'
+      - 'docs/design/fail-closed-reads.md'
+      # The evidence profile spec and the vectors both languages read. A change to
+      # either is a change to what every external verifier must do.
+      - 'docs/design/evidence-profile-v1.md'
+      # NOTE: everyDocumentALockReadsStartsTheWorkflow derives paths from core's tests only;
+      # documents the verifier modules' locks read (this schema) are listed by hand.
+      - 'docs/evidence-profile/v1/**'
+      # The progress documents. A lock reads their counts against the canon and the
+      # runner, and reads the Phase 0 gate against the profile spec. Editing a number
+      # in either of these is exactly the change that has to start this workflow.
+      - 'docs/design/v3.4.0-evidence-and-residuals-plan.md'
+      - 'docs/design/v3.4-release-readiness.md'
+      # E1's scope lock reads the Phase 0 inventory's write-path table.
+      - 'docs/design/evidence-phase0-inventory.md'
+      # The OPERATOR-facing documents. Three locks in this batch read files under
+      # docs/operations/, and the forbidden-claim lint reads docs/operations/ and
+      # docs/compliance/ as two of its four shipped roots — none of which were in
+      # this list, so a PR deleting the ABSENT row or the 「更新しない」 sentence
+      # touched only paths that never start this workflow and went green
+      # (subagent review, P2).
+      - 'docs/operations/**'
+      - 'docs/compliance/**'
+      # The independent verifier module, which has its own test step.
+      - 'evidence-verifier-core/**'
+      - 'evidence-verifier-cli/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -19,6 +55,13 @@ on:
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
       - 'scripts/ci-seed-odata-docs.sh'
+      # Reader-facing text outside docs/ that the forbidden-claim lint reads, and the release
+      # notes two locks read. Only docs/ paths were ever checked, so these never had to start
+      # this workflow (subagent review, P2).
+      - 'README.md'
+      - 'RELEASE_NOTES.md'
+      - 'deploy/**'
+      - 'docker/**'
   pull_request:
     branches: [ master, main, develop ]
     paths:
@@ -27,6 +70,42 @@ on:
       - 'core/src/test/java/**'
       - 'core/pom.xml'
       - 'core/src/main/webapp/WEB-INF/**'
+      # The unit job carries a lock that reads the manual-run SCREENS. Without this a
+      # UI-only revert does not start this workflow at all, so the lock is on the list
+      # and the list never runs for the change it guards.
+      - 'core/src/main/webapp/ui/src/**'
+      # Every document under docs/. The forbidden-claim lint reads every .md and .json under
+      # docs/, so a claim in any of them has to start this workflow (review, P2).
+      - 'docs/**'
+      # The unit job counts the controls and checks the canon's number against them.
+      # Without these, retiring a control or editing that number does not start this
+      # workflow, so the check exists and never gates (Codex review, P2).
+      - 'tools/negative-controls/**'
+      - 'docs/design/fail-closed-reads.md'
+      # The evidence profile spec and the vectors both languages read. A change to
+      # either is a change to what every external verifier must do.
+      - 'docs/design/evidence-profile-v1.md'
+      # NOTE: everyDocumentALockReadsStartsTheWorkflow derives paths from core's tests only;
+      # documents the verifier modules' locks read (this schema) are listed by hand.
+      - 'docs/evidence-profile/v1/**'
+      # The progress documents. A lock reads their counts against the canon and the
+      # runner, and reads the Phase 0 gate against the profile spec. Editing a number
+      # in either of these is exactly the change that has to start this workflow.
+      - 'docs/design/v3.4.0-evidence-and-residuals-plan.md'
+      - 'docs/design/v3.4-release-readiness.md'
+      # E1's scope lock reads the Phase 0 inventory's write-path table.
+      - 'docs/design/evidence-phase0-inventory.md'
+      # The OPERATOR-facing documents. Three locks in this batch read files under
+      # docs/operations/, and the forbidden-claim lint reads docs/operations/ and
+      # docs/compliance/ as two of its four shipped roots — none of which were in
+      # this list, so a PR deleting the ABSENT row or the 「更新しない」 sentence
+      # touched only paths that never start this workflow and went green
+      # (subagent review, P2).
+      - 'docs/operations/**'
+      - 'docs/compliance/**'
+      # The independent verifier module, which has its own test step.
+      - 'evidence-verifier-core/**'
+      - 'evidence-verifier-cli/**'
       - 'common/**'
       - 'cloudant-init/**'
       - 'solr/**'
@@ -36,6 +115,11 @@ on:
       - '.github/workflows/integration-tests.yml'
       - 'scripts/ci-complete-setup.sh'
       - 'scripts/ci-seed-odata-docs.sh'
+      # The same reader-facing text outside docs/ as the push trigger.
+      - 'README.md'
+      - 'RELEASE_NOTES.md'
+      - 'deploy/**'
+      - 'docker/**'
 
 permissions:
   contents: read
@@ -69,11 +153,87 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+      # A shell step, not a Java test. Every Java version of this check has been
+      # self-referential: remove a class from the list below and the test that would have
+      # complained is the one that no longer runs. This step runs whatever the list says.
+      # It does NOT protect against deleting the step itself — that is visible in the diff
+      # and is where review has to do the work.
+      - name: The list below covers this batch's locks
+        run: |
+          set -eu
+          # Scoped to THIS job by name, not by position. `head -1` took the file's first
+          # -Dtest= and called it "the unit list"; a job inserted above would have replaced the
+          # thing being checked while the message kept saying unit (review). The sed range ends
+          # at the next two-space key, which is where the next job starts.
+          # Anchored to the start of a line so this step's own pattern — which contains the
+          # same text — is not what gets read. Measured: the first draft matched itself.
+          LIST=$(sed -n '/^  unit-tests:/,/^  [a-z]/p' .github/workflows/integration-tests.yml \
+                 | grep -oE "^ +-Dtest='[^']*'" | head -1)
+          if [ -z "$LIST" ]; then
+            echo "::error::no -Dtest list found inside the unit-tests job"; exit 1
+          fi
+          # Exact CSV membership, not a substring: *"$lock"* was satisfied by
+          # CanonicalImportServiceTestDisabled, and by Surefire's own !Name exclusion syntax
+          # (the name is in the list and the class does not run). Review found both.
+          NAMES=$(printf '%s' "$LIST" | sed "s/^ *-Dtest='//; s/'$//")
+          # Held in one variable so the closing message can COUNT it. The message said "all
+          # five" while the list had grown to seven — a hand-written number beside a
+          # hand-written list, which is the same shape that went stale in the readiness
+          # document and in the control ledger.
+          LOCKS="EverySupportedCouchDbIsMeasuredTest
+                 APartialRunIsNotRecordedAsCompleteTest
+                 NotionPartialReadsAreNotCompleteTest
+                 NoJavadocIsOrphanedTest
+                 CanonicalImportServiceTest
+                 TheSipLayoutIsWhereCommonsIpPutsItTest
+                 EvidenceProfileV1VectorsTest
+                 ReleaseReadinessIsMeasuredTest
+                 E1LeavesNoSilentGapTest
+                 ObservedIsNotCapturedTest
+                 NotAskedIsNotAskedAndAnsweredNothingTest
+                 NoForbiddenClaimShipsTest
+                 EveryStageIsListedTest
+                 ItReportsItDoesNotRenewTest
+                 WhichProfilesCanPassIsMeasuredTest
+                 TheRequirementMatrixIsHonestTest
+                 TheBundleIsFixedBeforeTheWriteTest
+                 TheStatementViewIsInTheOnePutTest
+                 TheAssemblerReadsOncePerPackageTest
+                 AssuranceIsCheckedBeforeAnythingIsWrittenTest"
+          for lock in $LOCKS; do
+            if ! printf '%s' "$NAMES" | tr ',' '\n' | grep -qx "$lock"; then
+              echo "::error::$lock is not named in the unit -Dtest list, so nothing in it runs here"
+              exit 1
+            fi
+            # Named is not the same as present. A renamed or deleted class leaves the name in
+            # the list and Surefire does not fail unless NONE of the named classes resolve.
+            FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
+            if [ -z "$FILE" ]; then
+              echo "::error::$lock is named in the list but no such test class exists"
+              exit 1
+            fi
+            # A third way to be named and not run, and the shortest way to silence a lock that
+            # has gone red: @Disabled on the class. Surefire reports zero tests and stays green.
+            if grep -qE '^@Disabled' "$FILE"; then
+              echo "::error::$lock is named in the list but the class is @Disabled"
+              exit 1
+            fi
+          done
+          echo "the unit list names all $(printf '%s\n' $LOCKS | wc -l | tr -d ' ') locks, and each one exists"
+
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,WhichProfilesCanPassIsMeasuredTest,TheRequirementMatrixIsHonestTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
+      # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
+      # It carries the claim that a third party can check a package without the product, so a
+      # green build that never ran it would be asserting exactly nothing about that claim.
+      - name: Run the independent verifier's tests
+        run: |
+          mvn install -q -f evidence-verifier-core/pom.xml -DskipTests
+          mvn test -f evidence-verifier-core/pom.xml
+          mvn test -f evidence-verifier-cli/pom.xml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with: { name: unit-test-reports, path: core/target/surefire-reports/, retention-days: 7 }
@@ -270,6 +430,81 @@ jobs:
           cd docker
           docker compose -f docker-compose-simple.yml down
           docker system prune -f
+
+  # ── Store-behaviour premises, one job per supported CouchDB line (R7 / A-7) ──
+  # The product's floor accepts every line in StoreBehaviourFacts.SUPPORTED_LINES,
+  # so a single run measures one of them and leaves the rest as prose. This job
+  # asks a BARE couchdb container (no NemakiWare, no Setup Wizard — the IT needs
+  # neither) whether each premise the code relies on is true there.
+  # required=true, so an unreachable store FAILS instead of assuming past the
+  # measurement. EverySupportedCouchDbIsMeasuredTest pins this matrix to the table.
+  store-behaviour-facts:
+    name: Store-behaviour premises (CouchDB ${{ matrix.couchdb }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # A-7: pinned to StoreBehaviourFacts.SUPPORTED_LINES — change both or neither.
+        couchdb: ['3.3.3', '3.4.3', '3.5.2']
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    services:
+      couchdb:
+        image: couchdb:${{ matrix.couchdb }}
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        ports:
+          - 15984:5984
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Wait for CouchDB ${{ matrix.couchdb }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://admin:password@localhost:15984/ >/dev/null 2>&1; then
+              echo "CouchDB answered:"
+              curl -fsS http://admin:password@localhost:15984/
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "CouchDB ${{ matrix.couchdb }} never answered on 15984" >&2
+          exit 1
+
+      - name: Build the modules the test tree needs
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+
+      - name: Measure the premises against CouchDB ${{ matrix.couchdb }}
+        run: |
+          mvn test \
+            -Dtest='StoreBehaviourFactsIT' \
+            -Dnemaki.test.couchdb.required=true \
+            -Dnemaki.test.couchdb.url=http://localhost:15984 \
+            -Dnemaki.test.couchdb.user=admin \
+            -Dnemaki.test.couchdb.password=password \
+            -f core/pom.xml -Pdevelopment,opencmis-github-packages \
+            -Dmaven.test.failure.ignore=false
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: store-behaviour-facts-${{ matrix.couchdb }}
+          path: core/target/surefire-reports/
+          retention-days: 14
 
   # ── Search-index ACL reconciliation IT (require running CouchDB/Solr) ─────
   # Exercises the durable reconciliation queue's concurrency / durability

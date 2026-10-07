@@ -109,6 +109,61 @@ public class PurviewDeadLetterRetryServiceImplTest {
     }
 
     @Test
+    public void aDocumentEntityDeadLetterIsRetriedInsteadOfCountedAsAFailureForEver() {
+        // These letters had NO arm: the dispatch threw "Unsupported", so every retry run
+        // counted each one as a fresh failure and bumped its failureCount, and the letter
+        // outlived the recovery — the cloud baseline republishes the document on its own next
+        // round, leaving a permanent residue that makes the real failures unreadable.
+        when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(
+                new PurviewDeadLetterState(
+                        "bedroom",
+                        "document-entity",
+                        "nemaki://bedroom/objects/object-101",
+                        "nemaki_document",
+                        "nemaki://bedroom/objects/object-101",
+                        "2026-03-20T10:00:00Z",
+                        "2026-03-20T10:01:00Z",
+                        3,
+                        "",
+                        "entity publish failed")));
+
+        PurviewJobState result = service.startRetryFailed("bedroom", "admin");
+
+        assertEquals("COMPLETED", result.getStatus());
+        assertEquals(0, result.getFailedCount());
+        verify(documentPublishService).upsertContents("bedroom", List.of(document));
+        verify(deadLetterStateService).deleteDeadLetterState("bedroom", "document-entity",
+                "nemaki://bedroom/objects/object-101");
+    }
+
+    @Test
+    public void aDocumentEntityThatStillFailsKeepsItsDeadLetter() {
+        when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(
+                new PurviewDeadLetterState(
+                        "bedroom",
+                        "document-entity",
+                        "nemaki://bedroom/objects/object-101",
+                        "nemaki_document",
+                        "nemaki://bedroom/objects/object-101",
+                        "2026-03-20T10:00:00Z",
+                        "2026-03-20T10:01:00Z",
+                        3,
+                        "",
+                        "entity publish failed")));
+        // The publish "succeeds" as a mixed count while the ENTITY still fails — the exact
+        // shape the failure counter exists for.
+        org.mockito.Mockito.doReturn(1).when(documentPublishService)
+                .lastEntityPublishFailureCount();
+
+        PurviewJobState result = service.startRetryFailed("bedroom", "admin");
+
+        assertEquals(1, result.getFailedCount());
+        verify(deadLetterStateService, org.mockito.Mockito.never())
+                .deleteDeadLetterState("bedroom", "document-entity",
+                        "nemaki://bedroom/objects/object-101");
+    }
+
+    @Test
     public void testStartRetryFailedRetriesCloudMetadataDeadLetterAndUpdatesSnapshotCursor() {
         when(deadLetterStateService.listDeadLetterStates("bedroom")).thenReturn(List.of(new PurviewDeadLetterState(
                 "bedroom",

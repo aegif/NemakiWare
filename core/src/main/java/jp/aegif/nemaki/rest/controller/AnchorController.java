@@ -20,9 +20,16 @@ import jp.aegif.nemaki.evidence.EvidenceCheckpoint;
 import jp.aegif.nemaki.evidence.EvidenceLedgerService;
 import jp.aegif.nemaki.evidence.EvidenceLedgerStore;
 import jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore;
+import jp.aegif.nemaki.evidence.anchor.AnchorRunService;
+import jp.aegif.nemaki.evidence.anchor.AnchorScheduleSettings;
+import jp.aegif.nemaki.evidence.anchor.AnchorScheduler;
 import jp.aegif.nemaki.evidence.anchor.AnchorService;
 import jp.aegif.nemaki.evidence.validity.LongTermValidityService;
 import jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorStatus;
+import jp.aegif.nemaki.rest.purview.anchor.AnchorTarget;
+import jp.aegif.nemaki.rest.purview.anchor.OpenTimestampsAnchorTarget;
+import jp.aegif.nemaki.rest.purview.anchor.Rfc3161AnchorTarget;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +41,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,14 +53,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Driving the trust ladder by hand (P2-0).
  *
- * <p>Design: {@code docs/design/p2-0-anchor-targets.md}. There is no scheduler yet, deliberately:
- * anchoring frequency is the window in which the ledger can still be rewritten, and choosing it
- * for an operator would be choosing their risk. These endpoints let one be driven from cron, a
- * runbook, or a person, and the roadmap decides the default alongside the checkpoint schedule.
+ * <p>Design: {@code docs/design/p2-0-anchor-targets.md}. Anchoring frequency is the window in
+ * which the ledger can still be rewritten, and choosing it for an operator would be choosing their
+ * risk — so nothing runs on its own by default. These endpoints let one be driven from cron, a
+ * runbook, or a person; since 3.4.0 an operator can also turn on {@code AnchorScheduler} per
+ * repository ({@code GET/PUT /schedule} below, design {@code docs/design/anchor-scheduler.md}),
+ * which runs the same code these endpoints run ({@code AnchorRunService}). It is off until
+ * someone sets it.
  *
  * <h2>Two verbs, and the second is not optional</h2>
  *
@@ -83,6 +96,15 @@ public class AnchorController {
     @Autowired(required = false)
     private jp.aegif.nemaki.evidence.EvidenceLedgerRecorder ledgerRecorder;
 
+    @Autowired(required = false)
+    private jp.aegif.nemaki.evidence.FormatDuplicationRecorder duplicationRecorder;
+
+    @Autowired(required = false)
+    private AnchorScheduler anchorScheduler;
+
+    @Autowired(required = false)
+    private IntegrationSettingsService integrationSettingsService;
+
     private HttpServletRequest httpRequest;
 
     @Autowired
@@ -108,52 +130,14 @@ public class AnchorController {
         if (anchorService == null || ledgerService == null) {
             return unavailable("the anchor service is not wired on this node");
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        Map<String, Object> closed;
-        try {
-            closed = ledgerService.closeCheckpoint(repositoryId, Instant.now().toString());
-        } catch (RuntimeException e) {
-            logger.warn("Could not close a checkpoint for {}: {}", repositoryId, e.getMessage());
-            body.put("status", "error");
-            body.put("message", "the checkpoint could not be closed: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
-        }
-        body.put("checkpoint", closed);
-        // closeCheckpoint reports expected failures in its RETURNED map, not by throwing. The
-        // outer status used to say "success" over an inner "error" — and then anchored the
-        // PREVIOUS checkpoint, so an operator saw 200 for a seal that did not happen (review).
-        if ("error".equals(closed.get("status"))) {
-            body.put("status", "error");
-            body.put("message", "the checkpoint was not sealed, so nothing was anchored: "
-                    + closed.get("message"));
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
-        }
-        if ("noop".equals(closed.get("status"))) {
-            // Nothing new to seal, and nothing sent. Retrying a failed rung from here was tried
-            // and taken back out: this endpoint is the one a cron drives, and a retry on a
-            // one-minute timer contacts an unconfigured rung for ever and buys a TSA token
-            // every minute. The way back for a checkpoint whose anchor failed is
-            // /retry-unsettled below, which an operator calls on purpose.
-            body.put("status", "noop");
-            body.put("message", "no entries since the last checkpoint, so nothing was sealed "
-                    + "and nothing was anchored. This is NOT a failure. A checkpoint whose "
-                    + "anchor failed earlier is retried by POST /retry-unsettled, not here.");
-            return ResponseEntity.ok(body);
-        }
-        body.put("status", "success");
-
-        EvidenceCheckpoint checkpoint = ledgerStore == null ? null
-                : ledgerStore.latestCheckpoint(repositoryId);
-        if (checkpoint == null) {
-            // Nothing was closed — an empty ledger, most likely. Say so rather than reporting an
-            // anchor outcome over a checkpoint that does not exist.
-            body.put("anchored", false);
-            body.put("message", "no checkpoint exists for this repository, so nothing was "
-                    + "anchored. This is NOT a statement that anchoring failed.");
-            return ResponseEntity.ok(body);
-        }
-        body.put("anchor", anchorService.anchor(checkpoint).asMap());
-        return ResponseEntity.ok(body);
+        // The body moved to AnchorRunService unchanged, so the scheduler runs the same code; the
+        // status mapping stays here (design anchor-scheduler.md §2).
+        AnchorRunService.Run run = runService().checkpointAndAnchor(repositoryId, Instant.now());
+        return ResponseEntity.status(switch (run.kind()) {
+            case SUCCESS, NOOP -> HttpStatus.OK;
+            case NOT_SEALED, REFUSED -> HttpStatus.CONFLICT;
+            case FAILED, UNAVAILABLE -> HttpStatus.INTERNAL_SERVER_ERROR;
+        }).body(run.body());
     }
 
     /**
@@ -164,10 +148,15 @@ public class AnchorController {
      * carry a retry, {@code upgrade-pending} only looks at PENDING rows, and every later run
      * has nothing new to seal — the rung would stay FAILED for ever.
      *
-     * <p><b>Deliberately not on a timer.</b> Each call can mint a commitment and, on rung 3,
-     * buy a timestamp token. {@link AnchorService#retryUnsettled} skips whatever already holds
-     * a CONFIRMED or PENDING receipt and whatever is not configured, but it has no backoff:
-     * a rung that keeps failing is contacted once per call, so the caller sets the pace.
+     * <p><b>Also on a timer, since the anchor scheduler (3.4.0).</b> {@code AnchorScheduler}'s
+     * {@code maybeRetry} walks the same path on its period for the repositories it is enabled
+     * for; this endpoint is the manual way — a repository the scheduler does not cover, or an
+     * operator who does not want to wait a tick. (This paragraph said "deliberately not on a
+     * timer" for a round after the scheduler existed; 9-6 review, P3.) Each call can mint a
+     * commitment and, on rung 3, buy a timestamp token. {@link AnchorService#retryUnsettled}
+     * skips whatever already holds a CONFIRMED or PENDING receipt and whatever is not
+     * configured, but it has no backoff of its own: a rung that keeps failing is contacted once
+     * per call, so the caller — or the scheduler's period — sets the pace.
      */
     @PostMapping("/retry-unsettled")
     public ResponseEntity<Map<String, Object>> retryUnsettled(
@@ -180,35 +169,12 @@ public class AnchorController {
         if (anchorService == null || ledgerStore == null) {
             return unavailable("the anchor service is not wired on this node");
         }
-        Map<String, Object> body = new LinkedHashMap<>();
-        EvidenceCheckpoint latest;
-        try {
-            latest = ledgerStore.latestCheckpoint(repositoryId);
-        } catch (RuntimeException e) {
-            body.put("status", "error");
-            body.put("message", "the latest checkpoint could not be read: " + e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
-        }
-        if (latest == null) {
-            body.put("status", "noop");
-            body.put("message", "this repository has no checkpoint yet, so there is nothing to "
-                    + "anchor. This is NOT a statement that anchoring failed.");
-            return ResponseEntity.ok(body);
-        }
-        AnchorService.Outcome outcome = anchorService.retryUnsettled(latest);
-        body.put("status", outcome.refusedReason() == null ? "success" : "error");
-        body.put("anchor", outcome.asMap());
-        // Said out loud, because an empty receipt list has two very different causes and the
-        // list alone cannot tell them apart.
-        body.put("message", outcome.refusedReason() != null
-                ? "nothing was retried: " + outcome.refusedReason()
-                : outcome.receipts().isEmpty()
-                        ? "no rung needed retrying: every configured rung already holds a "
-                                + "CONFIRMED or PENDING receipt for this checkpoint, or no rung "
-                                + "is configured. This is NOT a failure."
-                        : "the rungs that held nothing were contacted again");
-        return ResponseEntity.status(outcome.refusedReason() == null
-                ? HttpStatus.OK : HttpStatus.CONFLICT).body(body);
+        AnchorRunService.Run run = runService().retryUnsettled(repositoryId);
+        return ResponseEntity.status(switch (run.kind()) {
+            case SUCCESS, NOOP -> HttpStatus.OK;
+            case REFUSED, NOT_SEALED -> HttpStatus.CONFLICT;
+            case FAILED, UNAVAILABLE -> HttpStatus.INTERNAL_SERVER_ERROR;
+        }).body(run.body());
     }
 
     /** Re-checks commitments made earlier. Safe to call as often as an operator likes. */
@@ -224,23 +190,20 @@ public class AnchorController {
         if (anchorService == null) {
             return unavailable("the anchor service is not wired on this node");
         }
-        List<AnchorReceipt> upgraded = anchorService.upgradePending(repositoryId, limit);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", "success");
-        body.put("upgradedCount", upgraded.size());
-        // An empty result is the ORDINARY answer during the hours a Bitcoin block takes. Saying
-        // so keeps an operator from reading zero as a fault and re-stamping, which would leave
-        // a second commitment nobody needs.
-        body.put("note", upgraded.isEmpty()
-                ? "nothing had settled yet. That is the ordinary answer while a commitment is "
-                        + "waiting on confirmation (hours), not a failure — do not re-anchor."
-                : "these commitments settled and their proofs were stored");
-        List<String> rungs = new ArrayList<>(upgraded.size());
-        for (AnchorReceipt receipt : upgraded) {
-            rungs.add(receipt.kind().name());
-        }
-        body.put("upgradedRungs", rungs);
-        return ResponseEntity.ok(body);
+        AnchorRunService.Run run = runService().upgradePending(repositoryId, limit);
+        // REFUSED (a rung that refuses its configuration was not asked — c44) is a conflict
+        // with the configuration, like the other two verbs' refusals, not a 200.
+        return ResponseEntity.status(switch (run.kind()) {
+            case SUCCESS, NOOP -> HttpStatus.OK;
+            case REFUSED, NOT_SEALED -> HttpStatus.CONFLICT;
+            case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+            case FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
+        }).body(run.body());
+    }
+
+    /** Built per call from this controller's collaborators — the same code the scheduler runs. */
+    private AnchorRunService runService() {
+        return new AnchorRunService(anchorService, ledgerService, ledgerStore);
     }
 
     /** What a checkpoint's anchoring currently amounts to. */
@@ -257,20 +220,71 @@ public class AnchorController {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "success");
-        EvidenceCheckpoint latest = ledgerStore.latestCheckpoint(repositoryId);
+        // BEFORE the branch. It was repeated on each of the three arms below, which is how the
+        // 403 and the 503 came to have none: a line copied per arm is a line the next arm
+        // forgets. Set once here it covers every exit this method can take.
+        body.put("limits", STATUS_LIMITS);
+        EvidenceCheckpoint latest;
+        try {
+            latest = ledgerStore.latestCheckpoint(repositoryId);
+        } catch (RuntimeException e) {
+            // The store was changed to refuse a read it could not make; this method never
+            // wrapped it, so the refusal became a 500 whose body carries neither `limits` nor
+            // the reason — on the one endpoint whose whole job is to say what is and is not
+            // anchored. Its sibling /retry-unsettled has wrapped the same call all along.
+            body.put("status", "error");
+            body.put("message", "the latest checkpoint could not be read: " + e.getMessage()
+                    + ". This is NOT a statement that there is none.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
         if (latest == null) {
             body.put("checkpoint", null);
             body.put("message", "this repository has no checkpoint yet, so there is nothing "
                     + "anchored and nothing to anchor against");
+            // Emitted here too. Omitting it was the silent absence this same method forbids
+            // further down: a caller reading `unanchoredEntries` gets no key at all and has to
+            // know that means something different from zero.
+            long highestWithoutCheckpoint;
+            try {
+                highestWithoutCheckpoint = ledgerStore.highestSequence(repositoryId);
+            } catch (RuntimeException e) {
+                body.put("status", "error");
+                body.put("message", "the ledger head could not be read: " + e.getMessage()
+                        + ". This is NOT a statement that the chain is empty.");
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+            }
+            body.put("unanchoredEntries", Math.max(0, highestWithoutCheckpoint + 1));
+            body.put("unanchoredEntriesRung", null);
+            body.put("unanchoredEntriesNote", "no checkpoint has been sealed, so nothing is "
+                    + "anchored and every entry is held only by this database");
+            // The other arm carries it and this one did not, so a caller comparing two responses
+            // saw the key appear and disappear. With no checkpoint, EVERY entry is after the
+            // latest one — there isn't a latest one.
+            body.put("entriesAfterLatestCheckpoint", Math.max(0, highestWithoutCheckpoint + 1));
             return ResponseEntity.ok(body);
         }
         body.put("checkpoint", Map.of("toSequence", latest.toSequence(),
                 "merkleRoot", latest.merkleRoot(), "createdAt", latest.createdAt()));
-        long highest = ledgerStore.highestSequence(repositoryId);
+        long highest;
+        try {
+            highest = ledgerStore.highestSequence(repositoryId);
+        } catch (RuntimeException e) {
+            body.put("status", "error");
+            body.put("message", "the ledger head could not be read: " + e.getMessage()
+                    + ". This is NOT a statement that the chain is empty.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
         body.put("ledgerHighestSequence", highest);
-        // The gap IS the exposure: entries after the last anchored checkpoint are held only by
-        // this database, so an operator should be able to see it without computing it.
-        body.put("unanchoredEntries", Math.max(0, highest - latest.toSequence()));
+        // NOT "unanchoredEntries". `latest` is the last SEALED checkpoint, which says nothing
+        // about whether anything anchored it: on a deployment with no rung configured, or whose
+        // only rung FAILED, this arithmetic answered 0 while every entry was unanchored. That is
+        // the single number an operator uses to size the window in which the ledger is still
+        // quietly rewritable (p2-0 §0), and it read "no exposure" at total exposure.
+        //
+        // The honest number needs the newest checkpoint holding a CONFIRMED receipt, and the
+        // receipt store may not be answerable — so it is computed below, after the store has
+        // been consulted, and is ABSENT with a reason rather than 0 when it cannot be had.
+        body.put("entriesAfterLatestCheckpoint", Math.max(0, highest - latest.toSequence()));
         if (ledgerRecorder != null) {
             // Captures that completed but never reached the chain. Counted in memory, so it is
             // per-replica and per-restart — said in the field name, because a number that looks
@@ -278,6 +292,14 @@ public class AnchorController {
             // deployment. Without this the count had no reader outside its own test, while the
             // design document claimed an operator could see it.
             body.put("chainGapsOnThisReplicaSinceStartup", ledgerRecorder.gapsSinceStartup());
+        }
+        if (duplicationRecorder != null) {
+            // The SAME number for the other fail-open producer. Capture counted its gaps
+            // and surfaced them here; a format duplication that failed to reach the chain
+            // was logged and nowhere else, and its caller returns a Rendition with no room
+            // for a warning. Three fail-open recorders, three destinations for the gap.
+            body.put("duplicationChainGapsOnThisReplicaSinceStartup",
+                    duplicationRecorder.gapsSinceStartup());
         }
         List<Map<String, Object>> receipts = new ArrayList<>();
         if (receiptStore == null || !receiptStore.isActive()) {
@@ -288,31 +310,429 @@ public class AnchorController {
             body.put("receiptsUnavailable", receiptStore == null
                     ? "the anchor receipt store is not wired on this node"
                     : "the anchor receipt store could not be reached");
-            body.put("limits", STATUS_LIMITS);
+            // Not 0, and not omitted silently. "We could not ask" must not read as "nothing is
+            // exposed" -- the same rule the receipts list above already follows.
+            body.put("unanchoredEntries", null);
+            body.put("unanchoredEntriesUnavailable", "the anchor receipt store could not be "
+                    + "asked, so how far back a CONFIRMED anchor reaches is unknown. This is "
+                    + "NOT a finding that no entry is exposed");
             return ResponseEntity.ok(body);
         }
         // No null guard here: the branch above returns whenever the store is missing or
         // unreachable. A second check would suggest to a reader that there is another way
         // through, and the one that matters has already been made.
-        for (AnchorReceipt receipt
-                : receiptStore.forCheckpoint(repositoryId, latest.toSequence())) {
+        // Read ONCE. The strongest-rung pass below used to call forCheckpoint again, right
+        // after this loop -- two answers to one question, from a store that can change between
+        // them, and a second round trip for data already in hand.
+        List<AnchorReceipt> settled;
+        try {
+            settled = receiptStore.forCheckpoint(repositoryId, latest.toSequence());
+        } catch (RuntimeException e) {
+            // isActive() above does NOT cover this: it asks whether a client object exists, and
+            // the store's own comment says so — "a reachable database with an unusable view
+            // passes every guard above this line". Two of this method's four throwing reads
+            // were wrapped in the last pass and these two were not.
+            body.put("status", "error");
+            body.put("message", "the anchor receipts for this checkpoint could not be read ("
+                    + e.getMessage() + "). This is NOT a finding that nothing is anchored.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+        for (AnchorReceipt receipt : settled) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("rung", receipt.kind().name());
             row.put("status", receipt.status().name());
             row.put("claimLimits", AnchorService.claimLimitsFor(receipt));
             row.put("anchoredAt", receipt.anchoredAt() == null ? null : receipt.anchoredAt().toString());
+            // Without it a FAILED row read the same whether the rung was asked and failed or
+            // refused its configuration and was never asked (c45, P1). A mark and not the stored
+            // reason: that is free text from whatever build wrote the receipt, and one written
+            // before c42 can hold a destination's user:password (c46, P1). The mark carries only
+            // this product's own refusal, which names no destination.
+            row.put("notAsked", receipt.status() == AnchorStatus.FAILED
+                    && Rfc3161AnchorTarget.USER_INFO_REFUSED.equals(receipt.failureReason())
+                    ? Rfc3161AnchorTarget.USER_INFO_REFUSED : null);
             receipts.add(row);
         }
         body.put("receipts", receipts);
-        body.put("limits", STATUS_LIMITS);
+        // A row the store could not decode is dropped before this loop sees it, and this list
+        // then presents itself as the complete set of receipts for the checkpoint. The store
+        // counts what it dropped for exactly this reason, AnchorService consults that count in
+        // both of its verbs, and this — the endpoint an operator actually reads — did not. The
+        // arm sixteen lines above already refuses to let "we could not ask" read as "nothing is
+        // exposed"; this is the same rule applied to a read that PARTLY succeeded.
+        int undecodable = receiptStore.unreadableCount();
+        if (undecodable > 0) {
+            // The machine-readable count is withheld when the query failed: the 1 is a
+            // sentinel meaning "at least something", and a dashboard summing it would count a
+            // receipt nobody established. The prose beside it says which case this is.
+            if (!receiptStore.lastQueryFailed()) {
+                body.put("receiptsUnreadable", undecodable);
+            }
+            body.put("receiptsUnavailable", (receiptStore.lastQueryFailed()
+                    ? "the anchor receipts for this checkpoint could NOT BE QUERIED — how many "
+                            + "exist is unknown, and this is not a finding that any does"
+                    : undecodable + " anchor receipt row(s) for this "
+                    + "checkpoint could not be read and are NOT in the list above. This is NOT a "
+                    + "finding that they are absent") + ", and a rung whose receipt was dropped here "
+                    + "looks unanchored below.");
+        }
+        // Measured from a CONFIRMED receipt, not from the seal. PENDING and FAILED do not
+        // count: a receipt that has not settled anchors nothing yet, and p2-0 §4 forbids
+        // collapsing the rungs into the single word "anchored" -- so the rung that supplies
+        // the number is named beside it.
+        // Across ALL checkpoints, not just the latest. An older checkpoint whose receipt is
+        // CONFIRMED still covers its own span, so measuring only the latest reported every
+        // entry as exposed whenever the newest seal had not settled -- e.g. checkpoint 5
+        // confirmed, checkpoint 10 sealed and pending, head 12: the exposure is 6..12, and this
+        // answered 13. Wrong in the SAFE direction, but wrong against the field's own
+        // definition ("entries not covered by a CONFIRMED anchor receipt"), and it never
+        // shrinks when an older anchor settles -- which reads as anchoring not working.
+        //
+        // An earlier version of this comment argued the opposite and called the conservative
+        // number deliberate. It was deliberate; it was also not what the field says it counts.
+        Covered covered;
+        try {
+            covered = coveredByAnyConfirmed(repositoryId, settled, latest);
+        } catch (RuntimeException e) {
+            // The fourth throwing read: coveredByAnyConfirmed goes back to the store for older
+            // checkpoints when the latest has nothing confirmed. Same store, same view, same
+            // refusal — and the number it feeds is `unanchoredEntries`, which an operator sizes
+            // the rewritable window by. A bare 500 there says nothing about what is exposed.
+            body.put("status", "error");
+            body.put("message", "the confirmed anchor receipts could not be read ("
+                    + e.getMessage() + "), so how far back an anchor reaches is unknown. This "
+                    + "is NOT a finding that no entry is exposed.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+        AnchorReceipt confirmed = covered.receipt();
+        if (confirmed == null) {
+            // highest + 1, because sequences are 0-BASED: the first checkpoint starts at
+            // from = 0 and highestSequence answers -1 for an empty domain, so a ledger whose
+            // highest sequence is 9 holds TEN entries. Reporting `highest` undercounted the
+            // exposure by one -- in the understating direction, on the one number an operator
+            // uses to size it -- and emitted -1 for an empty ledger, where the sibling branch
+            // below has carried Math.max(0, ...) all along.
+            body.put("unanchoredEntries", Math.max(0, highest + 1));
+            body.put("unanchoredEntriesRung", null);
+            body.put("unanchoredEntriesNote", "no CONFIRMED anchor receipt was found for this "
+                    + "checkpoint, so EVERY entry is held only by this database — including the "
+                    + "ones the checkpoint seals");
+        } else {
+            body.put("unanchoredEntries", Math.max(0, highest - covered.throughSequence()));
+            body.put("unanchoredEntriesRung", confirmed.kind().name());
+            body.put("unanchoredEntriesThroughSequence", covered.throughSequence());
+            body.put("unanchoredEntriesNote", AnchorService.claimLimitsFor(confirmed));
+            // The cap, said out loud. The scan reads at most CONFIRMED_SCAN_LIMIT receipts in
+            // ASCENDING order, so on a repository with more than that the furthest confirmed
+            // checkpoint FOUND is not the furthest one there is, and this number stays too high
+            // — permanently, and growing. It errs safe, but an operator watching a figure that
+            // never falls concludes anchoring is not working. claimLimitsFor says what the rung
+            // means in time; it says nothing about how far the scan looked.
+            body.put("unanchoredEntriesScannedReceipts", CONFIRMED_SCAN_LIMIT);
+            body.put("unanchoredEntriesScanNote", "at most " + CONFIRMED_SCAN_LIMIT
+                    + " confirmed receipts were read, oldest first. If this repository holds "
+                    + "more, a newer confirmed checkpoint may exist that was not read, and this "
+                    + "count is then too HIGH rather than too low.");
+        }
         return ResponseEntity.ok(body);
     }
 
-    private static final String STATUS_LIMITS = "Entries after the last anchored checkpoint are "
-            + "held only by this "
-            + "database. A confirmed anchor makes rewriting DETECTABLE from that point "
-            + "back; it does not prevent it, and it says nothing about whether what was "
-            + "recorded was complete or true.";
+    /** How far a CONFIRMED anchor reaches, and which receipt says so. */
+    private record Covered(AnchorReceipt receipt, long throughSequence) {}
+
+    /**
+     * The furthest-reaching CONFIRMED anchor, over every checkpoint — not only the newest.
+     *
+     * <p>The latest checkpoint's own receipts are already in hand, so they are used directly and
+     * win ties: they cover the most. Only when none of them has settled does this ask the store
+     * for confirmed receipts on older checkpoints, which is the case the number was getting
+     * wrong.
+     */
+    private Covered coveredByAnyConfirmed(String repositoryId, List<AnchorReceipt> settled,
+            EvidenceCheckpoint latest) {
+        AnchorReceipt onLatest = strongestConfirmed(settled);
+        if (onLatest != null) {
+            return new Covered(onLatest, latest.toSequence());
+        }
+        // Furthest first, then STRONGEST among the receipts on that same checkpoint. Picking by
+        // toSequence alone let the first row on the furthest checkpoint win, so with two rungs
+        // confirmed there it could name ATLAS_CATALOG -- the very outcome the rule above exists
+        // to prevent, surviving in the fallback arm because the strongest-rung rule was applied
+        // only to the primary one.
+        long through = -1;
+        List<AnchorReceipt> onFurthest = new ArrayList<>();
+        List<AnchorReceiptStore.PendingReceipt> confirmedRows =
+                receiptStore.confirmed(repositoryId, CONFIRMED_SCAN_LIMIT);
+        // The fifth read of this store in this file, and the one that was left folding
+        // "could not ask" into "found none": rows() returns [] for an unanswered view (the
+        // store flags it), and the caller's confirmed==null branch then states "no CONFIRMED
+        // anchor receipt was found ... EVERY entry is held only by this database" — a verdict,
+        // from a question that never got through. Thrown here so it lands in the caller's
+        // existing catch, which already words the refusal correctly.
+        if (receiptStore.lastQueryFailed()) {
+            throw new IllegalStateException("the confirmed anchor receipts could not be "
+                    + "queried, so which checkpoints hold a confirmed anchor is unknown");
+        }
+        for (AnchorReceiptStore.PendingReceipt row : confirmedRows) {
+            if (row.toSequence() > through) {
+                through = row.toSequence();
+                onFurthest.clear();
+            }
+            if (row.toSequence() == through) {
+                onFurthest.add(row.receipt());
+            }
+        }
+        return new Covered(strongestConfirmed(onFurthest), through);
+    }
+
+    /**
+     * How far back this looks for an older confirmed anchor.
+     *
+     * <p>Bounded because the query is unbounded otherwise and this runs on a status endpoint.
+     * If a repository has more confirmed checkpoints than this, the number is reported against
+     * the furthest one FOUND, which overstates the exposure — the safe direction, and the note
+     * beside it names the checkpoint so a reader can tell.
+     */
+    private static final int CONFIRMED_SCAN_LIMIT = 200;
+
+    /**
+     * The CONFIRMED receipt whose claim is STRONGEST, or null when none has settled.
+     *
+     * <p>Not "newest", which is what this was called and could not deliver: the store's view is
+     * keyed by {@code (domain, toSequence)} with no time ordering, so the first CONFIRMED row it
+     * yields is arbitrary. With two rungs settled it could name {@code ATLAS_CATALOG} — whose
+     * own enum comment says it "must not be presented as a time proof at all" — as the rung
+     * backing {@code unanchoredEntries}.
+     *
+     * <p>Strength is the property that actually matters here: the number says how much is NOT
+     * covered, so the rung quoted beside it should be the best cover there is.
+     *
+     * <p>Takes the rows already read by the caller rather than querying again. The first
+     * version called {@code forCheckpoint} a second time, immediately after the loop that built
+     * {@code receipts} — two answers to one question, from a store that can change between
+     * them. ({@link #coveredByAnyConfirmed} does go back to the store, but only for the older
+     * checkpoints these rows cannot speak for.)
+     *
+     * <p>Ties go to the first seen: with two rungs of equal strength the number is the same
+     * either way, and inventing a tiebreak would be a rule nobody asked for.
+     */
+    private AnchorReceipt strongestConfirmed(List<AnchorReceipt> settled) {
+        AnchorReceipt best = null;
+        for (AnchorReceipt receipt : settled) {
+            if (receipt.status() != jp.aegif.nemaki.rest.purview.anchor.AnchorStatus.CONFIRMED) {
+                continue;
+            }
+            // Replaced only when STRICTLY stronger, so a tie really does go to the first
+            // seen. `strongerOf(a, a)` returns the second argument, so the earlier form
+            // replaced `best` on a tie -- last-seen-wins, which is as arbitrary as the
+            // first-seen-wins it was written to remove, and the comment above claimed the
+            // opposite of what the code did.
+            if (best == null
+                    || (best.timeSemantics() != receipt.timeSemantics()
+                        && jp.aegif.nemaki.rest.purview.anchor.AnchorKind.TimeSemantics
+                            .strongerOf(best.timeSemantics(), receipt.timeSemantics())
+                        == receipt.timeSemantics())) {
+                best = receipt;
+            }
+        }
+        return best;
+    }
+
+    /** The same sentence the moved bodies carry — one text, one place (AnchorRunService). */
+    private static final String STATUS_LIMITS = AnchorRunService.LIMITS;
+
+    /**
+     * The per-repository schedule: what is set, what runs, and what the last tick did
+     * (design anchor-scheduler.md §5). Read-only; a node that is not the leader says so.
+     */
+    @GetMapping("/schedule")
+    public ResponseEntity<Map<String, Object>> schedule(@RequestParam String repositoryId) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (anchorScheduler == null) {
+            return unavailable("the anchor scheduler is not wired on this node");
+        }
+        ResponseEntity<Map<String, Object>> unknown = unknownDomain(repositoryId);
+        if (unknown != null) {
+            return unknown;
+        }
+        return ResponseEntity.ok(scheduleBody(repositoryId));
+    }
+
+    /**
+     * Saves {@code anchor.schedule.*} for one repository; the next tick reads it.
+     *
+     * <p>Only those keys. The destinations ({@code anchor.rfc3161.*},
+     * {@code anchor.opentimestamps.sidecar.url}) are refused by name: they are start-up system
+     * properties, and the POSTs to them carry no SSRF check, so a screen must not be able to point
+     * them elsewhere (design §4.2). The whole body is checked with the same rules the scheduler
+     * applies before anything is written; one bad value writes nothing.
+     */
+    @PutMapping("/schedule")
+    public ResponseEntity<Map<String, Object>> updateSchedule(@RequestParam String repositoryId,
+            @RequestBody(required = false) Map<String, Object> request) {
+        ResponseEntity<Map<String, Object>> forbidden = requireAdmin();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (anchorScheduler == null || integrationSettingsService == null) {
+            return unavailable("the anchor scheduler settings are not wired on this node");
+        }
+        ResponseEntity<Map<String, Object>> unknown = unknownDomain(repositoryId);
+        if (unknown != null) {
+            return unknown;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("limits", STATUS_LIMITS);
+        if (request == null || request.isEmpty()) {
+            body.put("status", "error");
+            body.put("message", "the body names no setting; send the anchor.schedule.* keys to change");
+            return ResponseEntity.badRequest().body(body);
+        }
+        Map<String, String> updates = new LinkedHashMap<>();
+        List<String> refusedKeys = new ArrayList<>();
+        for (Map.Entry<String, Object> e : request.entrySet()) {
+            Object v = e.getValue();
+            if (!AnchorScheduleSettings.KEYS.contains(e.getKey())
+                    || !(v == null || v instanceof String || v instanceof Number || v instanceof Boolean)) {
+                refusedKeys.add(e.getKey());
+                continue;
+            }
+            updates.put(e.getKey(), v == null ? "" : String.valueOf(v).trim());
+        }
+        if (!refusedKeys.isEmpty()) {
+            body.put("status", "error");
+            body.put("message", "only these keys can be set here: " + AnchorScheduleSettings.KEYS
+                    + ". Where anchors are sent (anchor.rfc3161.*, anchor.opentimestamps.sidecar.url) "
+                    + "is a start-up system property and is not changed from a screen");
+            body.put("refusedKeys", refusedKeys);
+            return ResponseEntity.badRequest().body(body);
+        }
+        Map<String, String> current;
+        try {
+            current = anchorScheduler.settings(repositoryId);
+        } catch (RuntimeException e) {
+            // Validation merges the body into what is set now; without that, a body that looks
+            // valid alone could complete an invalid whole. Refused rather than guessed.
+            logger.warn("Could not read the anchor schedule of {} before saving: {}", repositoryId, e.toString());
+            body.put("status", "error");
+            body.put("message", "the current settings could not be read, so the change could not be "
+                    + "checked against them; nothing was saved");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+        }
+        Map<String, String> merged = new LinkedHashMap<>(current == null ? Map.of() : current);
+        for (Map.Entry<String, String> e : updates.entrySet()) {
+            // A cleared value is judged as "not set" — the conservative reading: a fallback the
+            // clear would expose is not assumed to make the result valid.
+            merged.put(e.getKey(), e.getValue().isEmpty() ? null : e.getValue());
+        }
+        AnchorScheduleSettings.Parsed parsed = AnchorScheduleSettings.parse(merged);
+        if (!parsed.valid()) {
+            body.put("status", "error");
+            body.put("message", "nothing was saved: " + parsed.errors().size() + " setting(s) are not valid");
+            body.put("errors", parsed.errors());
+            return ResponseEntity.badRequest().body(body);
+        }
+        try {
+            integrationSettingsService.writeRepositorySettings(repositoryId, updates);
+        } catch (RuntimeException e) {
+            // The #1410 rule: the store's words go to the log under an id, not to the client.
+            String incidentId = UUID.randomUUID().toString();
+            logger.error("Could not save the anchor schedule of {} [incident {}]: {}", repositoryId,
+                    incidentId, e.getMessage(), e);
+            body.put("status", "error");
+            body.put("message", "the settings could not be saved; the details were logged under incidentId. "
+                    + "Some keys may have been written before the failure — read the schedule back");
+            body.put("incidentId", incidentId);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        }
+        logger.info("Anchor schedule of {} updated: {}", repositoryId, updates.keySet());
+        return ResponseEntity.ok(scheduleBody(repositoryId));
+    }
+
+    private Map<String, Object> scheduleBody(String repositoryId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "success");
+        body.put("limits", STATUS_LIMITS);
+        body.put("scheduleLimits", SCHEDULE_LIMITS);
+        body.put("repositoryId", repositoryId);
+        Map<String, String> raw;
+        String unreadable = null;
+        try {
+            raw = anchorScheduler.settings(repositoryId);
+            if (raw == null) {
+                unreadable = "the configuration is not wired on this node";
+            }
+        } catch (RuntimeException e) {
+            logger.warn("Could not read the anchor schedule of {}: {}", repositoryId, e.toString());
+            raw = null;
+            unreadable = "the saved settings could not be read. This is NOT a statement that none are set";
+        }
+        if (raw == null) {
+            // Not defaults: "could not read" must not arrive looking like "disabled".
+            body.put("settings", null);
+            body.put("settingsUnavailable", unreadable);
+        } else {
+            body.put("settings", raw);
+            AnchorScheduleSettings.Parsed parsed = AnchorScheduleSettings.parse(raw);
+            body.put("effective", parsed.effective().asMap());
+            body.put("errors", parsed.errors());
+        }
+        List<Map<String, Object>> rungs = new ArrayList<>();
+        Map<String, Object> destinations = new LinkedHashMap<>();
+        destinations.put("tsaUrl", null);
+        destinations.put("policyOid", null);
+        destinations.put("trustAnchorConfigured", false);
+        destinations.put("otsSidecarUrl", null);
+        if (anchorService != null) {
+            for (AnchorTarget target : anchorService.targets()) {
+                Map<String, Object> rung = new LinkedHashMap<>();
+                rung.put("kind", target.kind().name());
+                rung.put("configured", target.isConfigured());
+                rungs.add(rung);
+                if (target instanceof Rfc3161AnchorTarget tsa) {
+                    destinations.put("tsaUrl", withoutUserInfo(tsa.tsaUrl()));
+                    destinations.put("policyOid", tsa.requestedPolicyOid());
+                    // Whether one is configured — never the certificate itself.
+                    destinations.put("trustAnchorConfigured", tsa.hasTrustAnchor());
+                } else if (target instanceof OpenTimestampsAnchorTarget ots) {
+                    destinations.put("otsSidecarUrl", withoutUserInfo(ots.sidecarUrl()));
+                }
+            }
+        }
+        body.put("rungs", rungs);
+        body.put("destinations", destinations);
+        body.put("runtime", anchorScheduler.runtime(repositoryId));
+        body.put("unanchored", anchorScheduler.observation(repositoryId));
+        return body;
+    }
+
+    /** 400 unless the id is a repository or a ledger domain this node's scheduler visits. */
+    private ResponseEntity<Map<String, Object>> unknownDomain(String repositoryId) {
+        if (repositoryId != null && anchorScheduler.domains().contains(repositoryId)) {
+            return null;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "error");
+        body.put("message", "no repository or ledger domain '" + repositoryId + "' here; the schedule "
+                + "can be set for " + anchorScheduler.domains());
+        body.put("limits", STATUS_LIMITS);
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /** A URL for display: not shown at all when it carries an {@code @} — such a destination is refused (R132). */
+    static String withoutUserInfo(String url) {
+        return Rfc3161AnchorTarget.withoutUserInfo(url);
+    }
+
+    private static final String SCHEDULE_LIMITS = "The interval is when a seal is TRIED, not a bound on "
+            + "how long entries stay unanchored: a refused anchor, a store that does not answer, or a node "
+            + "that is not the leader all leave the window open, and runtime says which. With leader "
+            + "election off every replica acts as the leader and sends — set "
+            + "lineage.leader-election.enabled=true on a multi-replica deployment. Where anchors are sent "
+            + "is a start-up system property and is shown here, not changed.";
 
     /**
      * What is going stale, and which renewal it needs (P2-3).
@@ -342,13 +762,25 @@ public class AnchorController {
             body.put("message", "asOf must be an ISO date (yyyy-MM-dd); got '" + asOf + "'");
             return ResponseEntity.badRequest().body(body);
         }
-        return ResponseEntity.ok(validityService.assess(repositoryId, when));
+        // status FIRST, then the assessment. Its three error arms above all carry one, and so
+        // does every other endpoint in this class — the success arm was the only body in the
+        // controller with no `status` at all, so a client that switches on it saw the key vanish
+        // exactly when the call worked.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "success");
+        body.put("limits", STATUS_LIMITS);
+        body.putAll(validityService.assess(repositoryId, when));
+        return ResponseEntity.ok(body);
     }
 
     private ResponseEntity<Map<String, Object>> unavailable(String message) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");
         body.put("message", message);
+        // The caveat travels with the refusal too. Both shared helpers returned without it while
+        // every arm that called them had just set it, so the exits that bypassed the promise
+        // were the two shared ones — the same shape as FixityController.requireAdmin.
+        body.put("limits", STATUS_LIMITS);
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
@@ -365,6 +797,7 @@ public class AnchorController {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", "error");
         body.put("message", "Admin access required");
+        body.put("limits", STATUS_LIMITS);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 }

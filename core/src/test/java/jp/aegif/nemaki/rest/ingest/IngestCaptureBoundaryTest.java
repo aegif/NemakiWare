@@ -122,6 +122,7 @@ class IngestCaptureBoundaryTest {
         profile.setTargetFolderId("folder-1");
         profile.setRepositoryId("bedroom");
         when(profileService.get("p1")).thenReturn(profile);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(profile);
 
         ConnectorDefinition connector = new ConnectorDefinition();
         connector.setConnectorId("c1");
@@ -129,6 +130,7 @@ class IngestCaptureBoundaryTest {
         connector.setSourceArchetype(SourceArchetype.FILE_SHARE);
         connector.setSourceSystem("acme");
         when(connectorService.get("c1")).thenReturn(connector);
+        when(connectorService.countIndexFree("c1")).thenReturn(1);
         when(contentDaoService.getChildren("bedroom", "folder-1")).thenReturn(children);
 
         // createDocument records its own position in the same sequence as the intent write.
@@ -224,6 +226,10 @@ class IngestCaptureBoundaryTest {
         // pin nothing (the first draft of this test did exactly that).
         ImportProfileDefinition delegated = profileService.get("p1");
         delegated.setDelegated(true);
+        // A delegated import re-asks cmis:all against the folder it actually writes into —
+        // the authorisation that the gate, the scheduler, the webhook and IDLE each perform
+        // earlier is re-checked HERE, so a fixture that leaves it unstubbed refuses.
+        service.setIngestAuthorizationService(alwaysAuthorized());
         delegated.setCreatedByUserId("otsuka");
         delegated.setScheduleConfiguredByUserId("ishii");
         CallContext synthetic =
@@ -484,6 +490,7 @@ class IngestCaptureBoundaryTest {
         versionUp.setDedupePolicy("update_existing");
         versionUp.setUpdatePolicy("always_version_up");
         when(profileService.get("p1")).thenReturn(versionUp);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(versionUp);
 
         org.mockito.Mockito.doAnswer(inv -> {
             store.events.add("checkOut");
@@ -514,6 +521,7 @@ class IngestCaptureBoundaryTest {
         versionUp.setDedupePolicy("update_existing");
         versionUp.setUpdatePolicy("always_version_up");
         when(profileService.get("p1")).thenReturn(versionUp);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(versionUp);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -540,6 +548,7 @@ class IngestCaptureBoundaryTest {
         replacing.setRepositoryId("bedroom");
         replacing.setDedupePolicy("replace");
         when(profileService.get("p1")).thenReturn(replacing);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(replacing);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -568,6 +577,7 @@ class IngestCaptureBoundaryTest {
         metadataOnly.setDedupePolicy("update_existing");
         metadataOnly.setUpdatePolicy("update_metadata_only");
         when(profileService.get("p1")).thenReturn(metadataOnly);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(metadataOnly);
         store.openSucceeds = false;
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
@@ -590,6 +600,7 @@ class IngestCaptureBoundaryTest {
         replacing.setRepositoryId("bedroom");
         replacing.setDedupePolicy("replace");
         when(profileService.get("p1")).thenReturn(replacing);
+        when(profileService.getForRepository("p1", "bedroom")).thenReturn(replacing);
 
         ExternalIngestResult result = service.execute(ctx(), request("src-1"));
 
@@ -703,5 +714,25 @@ class IngestCaptureBoundaryTest {
         assertTrue(result.isSuccess(), "errors=" + result.errors());
         assertTrue(result.warnings() == null || result.warnings().isEmpty(),
                 "an unconfigured ledger produced a warning: " + result.warnings());
+    }
+
+    /** A wired authorization service that grants cmis:all — the delegated re-check needs one. */
+    private static IngestAuthorizationService alwaysAuthorized() {
+        IngestAuthorizationService auth = org.mockito.Mockito.mock(IngestAuthorizationService.class);
+        org.mockito.Mockito.when(auth.isAuthenticatedRepository(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.when(auth.canManageProfileForFolder(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        // The write point re-asks the CONNECTOR delegation too: revoking it during a fetch
+        // used to leave the subsequent write unexamined.
+        org.mockito.Mockito.when(auth.canUseConnectorForDelegatedProfile(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        return auth;
     }
 }

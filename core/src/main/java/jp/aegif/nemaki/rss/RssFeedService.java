@@ -59,6 +59,9 @@ public class RssFeedService {
     private int defaultLimit = DEFAULT_LIMIT;
     private int maxLimit = MAX_LIMIT;
     private int defaultMaxDepth = DEFAULT_MAX_DEPTH;
+
+    /** Hard ceiling for subscriber-supplied maxDepth: one request must not walk the world. */
+    private static final int MAX_DEPTH_LIMIT = 16;
     
     public RssFeedService() {
         this.feedGenerator = new RssFeedGenerator();
@@ -207,8 +210,13 @@ public class RssFeedService {
                                                    boolean includeChildren, Integer maxDepth,
                                                    Integer limit, Set<String> events, RssToken token) {
         
-        int effectiveLimit = limit != null ? Math.min(limit, maxLimit) : defaultLimit;
-        int effectiveMaxDepth = maxDepth != null ? maxDepth : defaultMaxDepth;
+        // Clamped BOTH ways. Only the upper bound was checked, so ?limit=-1 flowed as a
+        // non-positive limit into the change query ("no limit" one layer down) and the
+        // symptom was an EMPTY feed hiding an unbounded fetch. maxDepth had no bound at
+        // all, letting one request walk the entire folder tree.
+        int effectiveLimit = (limit != null && limit > 0) ? Math.min(limit, maxLimit) : defaultLimit;
+        int effectiveMaxDepth = (maxDepth != null && maxDepth >= 0)
+                ? Math.min(maxDepth, MAX_DEPTH_LIMIT) : defaultMaxDepth;
         
         Set<String> effectiveEvents = events;
         if (effectiveEvents == null && token != null && token.getEvents() != null) {
@@ -227,7 +235,8 @@ public class RssFeedService {
     private List<RssFeedItem> getDocumentFeedItems(String repositoryId, String documentId,
                                                      Integer limit, Set<String> events, RssToken token) {
         
-        int effectiveLimit = limit != null ? Math.min(limit, maxLimit) : defaultLimit;
+        // Same lower bound as the folder feed: a non-positive limit must not reach the DAO.
+        int effectiveLimit = (limit != null && limit > 0) ? Math.min(limit, maxLimit) : defaultLimit;
         
         Set<String> effectiveEvents = events;
         if (effectiveEvents == null && token != null && token.getEvents() != null) {
@@ -259,6 +268,16 @@ public class RssFeedService {
         }
         
         List<Change> allChanges = contentDaoService.getLatestChanges(repositoryId, null, limit * 2);
+        // A feed has no cursor to rewind: a subscriber reads the top-N window, and a change
+        // row the store could not decode is simply not in it — the subscriber misses the
+        // event (a DELETE, say) with no signal, permanently. Refusing turns that into a
+        // fetch error the reader retries; RssFeedResource maps this to HTTP 500.
+        if (contentDaoService.lastUnreadableChangeCount() > 0) {
+            throw new IllegalStateException("the change feed for '" + repositoryId
+                    + "' lost " + contentDaoService.lastUnreadableChangeCount()
+                    + " undecodable row(s); serving the feed short would hide events from"
+                    + " subscribers with no way to ever deliver them");
+        }
         
         List<Change> filteredChanges = new ArrayList<>();
         for (Change change : allChanges) {
@@ -310,6 +329,13 @@ public class RssFeedService {
         }
         
         List<Change> allChanges = contentDaoService.getLatestChanges(repositoryId, null, limit * 2);
+        // Same rule as the folder feed above: no cursor, no redelivery, so no short windows.
+        if (contentDaoService.lastUnreadableChangeCount() > 0) {
+            throw new IllegalStateException("the change feed for '" + repositoryId
+                    + "' lost " + contentDaoService.lastUnreadableChangeCount()
+                    + " undecodable row(s); serving the feed short would hide events from"
+                    + " subscribers with no way to ever deliver them");
+        }
         
         List<Change> filteredChanges = new ArrayList<>();
         for (Change change : allChanges) {
@@ -347,8 +373,18 @@ public class RssFeedService {
         }
         
         List<Content> children = contentService.getChildren(repositoryId, folderId);
+        // The folder set built here decides which changes the feed SHOWS. A listing that is
+        // short (or absent) drops whole subtrees from the filter, and every event under them
+        // silently leaves the feed — same no-redelivery consequence as the change window.
         if (children == null) {
-            return;
+            throw new IllegalStateException("the children of '" + folderId + "' in '"
+                    + repositoryId + "' could not be enumerated; the feed's folder filter"
+                    + " cannot be built from that");
+        }
+        if (contentService.lastUnreadableChildCount() > 0) {
+            throw new IllegalStateException("a child row of '" + folderId + "' in '"
+                    + repositoryId + "' could not be read; the feed's folder filter would"
+                    + " silently drop that subtree");
         }
         
         for (Content child : children) {

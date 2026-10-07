@@ -48,41 +48,57 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { TypeDefinition } from '../../types/cmis';
 import { useTranslation } from 'react-i18next';
+import { ownEntry } from '../../i18n/ownEntry';
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
 const { Text } = Typography;
 
 // CMIS Base Types
+// Each option names its label key literally, so tests/i18n/locale-keys.spec.ts can check it.
 const BASE_TYPES = [
-  { value: 'cmis:document', label: 'ドキュメント (cmis:document)' },
-  { value: 'cmis:folder', label: 'フォルダ (cmis:folder)' },
-  { value: 'cmis:relationship', label: 'リレーションシップ (cmis:relationship)' },
-  { value: 'cmis:policy', label: 'ポリシー (cmis:policy)' },
-  { value: 'cmis:item', label: 'アイテム (cmis:item)' },
-  { value: 'cmis:secondary', label: 'セカンダリ (cmis:secondary)' }
+  { value: 'cmis:document', labelKey: 'typeManagement.baseTypes.document' },
+  { value: 'cmis:folder', labelKey: 'typeManagement.baseTypes.folder' },
+  { value: 'cmis:relationship', labelKey: 'typeManagement.baseTypes.relationship' },
+  { value: 'cmis:policy', labelKey: 'typeManagement.baseTypes.policy' },
+  { value: 'cmis:item', labelKey: 'typeManagement.baseTypes.item' },
+  { value: 'cmis:secondary', labelKey: 'typeManagement.baseTypes.secondary' }
 ];
 
-// Property Types
+// Property type labels. A loaded type definition can carry any CMIS property type (id, html and
+// uri too, which the form does not offer), so the collapsed view looks its label up here and
+// shows a type this table does not know as itself.
+const PROPERTY_TYPE_LABEL_KEYS: Record<string, string> = {
+  string: 'typeManagement.propertyTypes.string',
+  integer: 'typeManagement.propertyTypes.integer',
+  decimal: 'typeManagement.propertyTypes.decimal',
+  boolean: 'typeManagement.propertyTypes.boolean',
+  datetime: 'typeManagement.propertyTypes.datetime',
+  id: 'typeManagement.propertyTypes.id',
+  html: 'typeManagement.propertyTypes.html',
+  uri: 'typeManagement.propertyTypes.uri',
+};
+
+// Property Types the form offers
 const PROPERTY_TYPES = [
-  { value: 'string', label: '文字列 (string)' },
-  { value: 'integer', label: '整数 (integer)' },
-  { value: 'decimal', label: '小数 (decimal)' },
-  { value: 'boolean', label: '真偽値 (boolean)' },
-  { value: 'datetime', label: '日時 (datetime)' }
+  { value: 'string' },
+  { value: 'integer' },
+  { value: 'decimal' },
+  { value: 'boolean' },
+  { value: 'datetime' }
 ];
 
 // Cardinality Options
 const CARDINALITY_OPTIONS = [
-  { value: 'single', label: '単一値 (single)' },
-  { value: 'multi', label: '複数値 (multi)' }
+  { value: 'single', labelKey: 'typeManagement.cardinalityOptions.single' },
+  { value: 'multi', labelKey: 'typeManagement.cardinalityOptions.multi' }
 ];
 
 // Updatability Options
 const UPDATABILITY_OPTIONS = [
-  { value: 'readwrite', label: '読み書き可能 (readwrite)' },
-  { value: 'readonly', label: '読み取り専用 (readonly)' },
-  { value: 'oncreate', label: '作成時のみ (oncreate)' }
+  { value: 'readwrite', labelKey: 'typeManagement.updatabilityOptions.readwrite' },
+  { value: 'readonly', labelKey: 'typeManagement.updatabilityOptions.readonly' },
+  { value: 'oncreate', labelKey: 'typeManagement.updatabilityOptions.oncreate' }
 ];
 
 interface PropertyFormData {
@@ -353,7 +369,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
                   <Select
                     value={property.propertyType}
                     onChange={(value) => onUpdate(index, 'propertyType', value)}
-                    options={PROPERTY_TYPES.map(pt => ({ value: pt.value, label: t(`typeManagement.propertyTypes.${pt.value}`) }))}
+                    options={PROPERTY_TYPES.map(pt => ({ value: pt.value, label: t(PROPERTY_TYPE_LABEL_KEYS[pt.value]) }))}
                   />
                 </Form.Item>
               </Col>
@@ -364,7 +380,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
                   <Select
                     value={property.cardinality}
                     onChange={(value) => onUpdate(index, 'cardinality', value)}
-                    options={CARDINALITY_OPTIONS.map(co => ({ value: co.value, label: t(`typeManagement.cardinalityOptions.${co.value}`) }))}
+                    options={CARDINALITY_OPTIONS.map(co => ({ value: co.value, label: t(co.labelKey) }))}
                   />
                 </Form.Item>
               </Col>
@@ -373,7 +389,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
                   <Select
                     value={property.updatability}
                     onChange={(value) => onUpdate(index, 'updatability', value)}
-                    options={UPDATABILITY_OPTIONS.map(uo => ({ value: uo.value, label: t(`typeManagement.updatabilityOptions.${uo.value}`) }))}
+                    options={UPDATABILITY_OPTIONS.map(uo => ({ value: uo.value, label: t(uo.labelKey) }))}
                   />
                 </Form.Item>
               </Col>
@@ -420,7 +436,7 @@ const SortablePropertyCard: React.FC<SortablePropertyCardProps> = ({
               <Text type="secondary">{t('typeManagement.guiEditor.collapsedIdLabel')}</Text> {property.id || '-'}
             </Col>
             <Col span={6}>
-              <Text type="secondary">{t('typeManagement.guiEditor.collapsedTypeLabel')}</Text> {t(`typeManagement.propertyTypes.${property.propertyType}`)}
+              <Text type="secondary">{t('typeManagement.guiEditor.collapsedTypeLabel')}</Text> {ownEntry(PROPERTY_TYPE_LABEL_KEYS, property.propertyType) ? t(PROPERTY_TYPE_LABEL_KEYS[property.propertyType]) : property.propertyType}
             </Col>
             <Col span={6}>
               <Text type="secondary">{t('typeManagement.guiEditor.collapsedCardinalityLabel')}</Text> {property.cardinality === 'multi' ? t('typeManagement.guiEditor.collapsedCardinalityMulti') : t('typeManagement.guiEditor.collapsedCardinalitySingle')}
@@ -859,7 +875,7 @@ export const TypeGUIEditor: React.FC<TypeGUIEditorProps> = ({
                 rules={[{ required: true, message: t('typeManagement.guiEditor.baseTypeRequired') }]}
               >
                 <Select
-                  options={BASE_TYPES.map(bt => ({ value: bt.value, label: t(`typeManagement.baseTypes.${bt.value.split(':')[1]}`) + ` (${bt.value})` }))}
+                  options={BASE_TYPES.map(bt => ({ value: bt.value, label: t(bt.labelKey) + ` (${bt.value})` }))}
                   onChange={(value) => setFormData({ ...formData, baseId: value })}
                 />
               </Form.Item>

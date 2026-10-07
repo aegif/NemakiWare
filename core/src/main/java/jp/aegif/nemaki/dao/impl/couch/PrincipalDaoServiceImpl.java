@@ -31,6 +31,7 @@ import jp.aegif.nemaki.model.Group;
 import jp.aegif.nemaki.model.User;
 import jp.aegif.nemaki.model.couch.CouchGroup;
 import jp.aegif.nemaki.model.couch.CouchNodeBase;
+import jp.aegif.nemaki.dao.impl.couch.connector.ViewNotDeployedException;
 import jp.aegif.nemaki.model.couch.CouchUser;
 
 import org.apache.commons.collections4.CollectionUtils;
@@ -82,8 +83,16 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private List<CouchUser> queryUserById(String repositoryId, String userId) {
-		return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", userId,
-				CouchUser.class);
+		try {
+			return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "userItemsById", userId,
+					CouchUser.class);
+		} catch (ViewNotDeployedException couldNotBeServed) {
+			// null, which the tri-state reads as UNAVAILABLE. Not swallowing: this is the ONE
+			// shape whose whole point is that the query could not be served, and the caller
+			// above turns it into a refusal that NAMES the principal. Everything else keeps
+			// propagating. See lookupUserById.
+			return null;
+		}
 	}
 
 	/**
@@ -92,8 +101,13 @@ public class PrincipalDaoServiceImpl implements
 	 * design document / view / database) and an EMPTY list when it was served and matched nothing.
 	 * {@code CollectionUtils.isEmpty} collapses the two; this method does not.
 	 *
-	 * <p>No new try/catch is needed or wanted here: a TRANSIENT fault is already rethrown by
-	 * {@code queryView} as a {@code CmisRuntimeException} and must keep propagating.
+	 * <p>The "could not be served" half arrives two ways now. {@code queryView} still ANSWERS
+	 * null for some shapes, and since the missing-view case was hardened it THROWS
+	 * {@code ViewNotDeployedException} for that one — so {@code queryUserById} catches exactly
+	 * that type and turns it back into null. A TRANSIENT fault is still rethrown as a plain
+	 * {@code CmisRuntimeException} and must keep propagating; only the named type is absorbed.
+	 * Without this the ACL path failed with a message about a design document instead of the
+	 * typed refusal that names the principal ({@code PrincipalLookupTriStateIT} measures both).
 	 */
 	@Override
 	public jp.aegif.nemaki.acl.PrincipalLookup lookupUserById(String repositoryId, String userId) {
@@ -170,8 +184,13 @@ public class PrincipalDaoServiceImpl implements
 	}
 
 	private List<CouchGroup> queryGroupById(String repositoryId, String groupId) {
-		return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", groupId,
-				CouchGroup.class);
+		try {
+			return connectorPool.getClient(repositoryId).queryView(DESIGN_DOCUMENT, "groupItemsById", groupId,
+					CouchGroup.class);
+		} catch (ViewNotDeployedException couldNotBeServed) {
+			// The user lookup's twin, for the same reason.
+			return null;
+		}
 	}
 
 	/** Increment 5T. See {@link #lookupUserById} for why null and empty must not be collapsed. */

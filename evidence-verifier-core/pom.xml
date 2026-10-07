@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>jp.aegif.nemakiware</groupId>
+        <artifactId>nemakiware</artifactId>
+        <version>3.4.0</version>
+    </parent>
+    <artifactId>evidence-verifier-core</artifactId>
+    <packaging>jar</packaging>
+    <name>evidence-verifier-core</name>
+
+    <!--
+      Plan section 10: this module must not depend on core, Spring, CouchDB, CMIS or a WAR.
+
+      The point is not tidiness. A verifier that shares code with the writer verifies that the
+      writer agrees with itself; the whole claim is that a third party can check a package
+      WITHOUT the product. So the dependency list below is deliberately almost empty, and
+      TheVerifierStandsAloneTest reads THIS FILE to keep it that way — a test that only checked
+      the classpath would pass on a machine where the offending jar happened to be absent.
+
+      JUnit is test scope: a test dependency cannot reach a released artifact.
+    -->
+    <dependencies>
+        <!--
+          BouncyCastle, and ONLY for RFC 3161 (P3).
+
+          Plan section 10 forbids core, Spring, CouchDB, CMIS and a WAR. It does not forbid a
+          cryptography library, and the alternative is worse: the JDK has no public API that
+          verifies an RFC 3161 token, so P3 without this means hand-writing DER parsing, CMS
+          signature verification and PKIX path building. Hand-written signature verification is
+          not defensible in a component whose whole job is to be trusted by someone else.
+
+          What it costs, stated plainly: a receiving organisation now has to trust this library
+          alongside the verifier. That is one well-known dependency instead of several hundred
+          lines of security-critical code written here, and the trade is made deliberately.
+        -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.85</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!--
+      Pinned to the version already in the reactor, so this module builds with what the others
+      resolved. It is a TEST dependency either way: nothing a released verifier ships depends
+      on it.
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>6.1.2</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

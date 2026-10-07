@@ -4,75 +4,136 @@
   "title": "NemakiWare Authenticity Evidence Report",
   "description": "One document's authenticity evidence, for an auditor. MOCK (v0, 2026-08-18) — not implemented yet; this file exists to be reviewed before P1-4 is built. Three design rules govern every field: (1) every assertion carries the procedure by which a third party can re-check it, (2) the report is required to state what it does NOT prove — `notProven` and `verification` are therefore required, not optional, and (3) NO human-readable prose is stored as a bare string. System-generated wording uses $defs/localizedText (a message key plus one entry per supported locale), so the same evidence renders in Japanese or English without regenerating it. Locales follow the product UI: ja (fallback) and en.",
   "type": "object",
-  "required": ["reportVersion", "generatedAt", "locale", "messageCatalogVersion", "generator", "subject", "assertionScope", "evidence", "notProven", "verification"],
+  "required": [
+    "reportVersion",
+    "generatedAt",
+    "locale",
+    "messageCatalogVersion",
+    "generator",
+    "subject",
+    "assertionScope",
+    "evidence",
+    "notProven",
+    "verification"
+  ],
   "additionalProperties": false,
-
   "$defs": {
     "localizedText": {
       "type": "object",
       "description": "System-generated prose. `key` identifies the message so wording can be corrected in one place and re-rendered; the per-locale strings are carried inline so the report stays self-contained for an auditor who reads the JSON directly. Every supported locale is REQUIRED — a missing translation must fail generation, not silently fall back and produce a half-Japanese English report.",
-      "required": ["key", "ja", "en"],
+      "required": [
+        "key",
+        "ja",
+        "en"
+      ],
       "additionalProperties": false,
       "properties": {
-        "key": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]*(\\.[a-zA-Z0-9]+)+$" },
-        "ja": { "type": "string", "minLength": 1 },
-        "en": { "type": "string", "minLength": 1 },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*(\\.[a-zA-Z0-9]+)+$"
+        },
+        "ja": {
+          "type": "string",
+          "minLength": 1
+        },
+        "en": {
+          "type": "string",
+          "minLength": 1
+        },
         "params": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Values interpolated into the message. Kept separate so a verifier can read the facts without parsing prose."
         }
       }
     },
     "operatorText": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Text supplied by the operating organization (e.g. an authoritative-record rule). NOT localizable by this product — it is reproduced verbatim in whatever language the organization wrote it. Renderers must not present it as if it were translated."
     }
   },
-
   "properties": {
     "reportVersion": {
       "const": "0-mock",
       "description": "Schema version. A verifier MUST refuse a version it does not know rather than ignore unknown fields."
     },
-    "generatedAt": { "type": "string", "format": "date-time" },
-
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
     "locale": {
       "type": "string",
-      "enum": ["ja", "en"],
+      "enum": [
+        "ja",
+        "en"
+      ],
       "description": "The locale this report was rendered FOR. The JSON still carries every locale (see $defs/localizedText); this records which one the accompanying human-readable page used, so a submitted PDF can be tied back to its JSON."
     },
     "messageCatalogVersion": {
       "type": "string",
       "description": "Version of the message catalogue used for the localized strings. Wording of a legal-facing document changes over time; without this, two reports of the same evidence can differ in text with no way to explain why."
     },
-
     "generator": {
       "type": "object",
-      "required": ["product", "productVersion", "repositoryId", "instanceId"],
+      "required": [
+        "product",
+        "productVersion",
+        "repositoryId",
+        "instanceId"
+      ],
       "additionalProperties": false,
       "properties": {
-        "product": { "const": "NemakiWare" },
-        "productVersion": { "type": "string" },
-        "repositoryId": { "type": "string" },
+        "product": {
+          "const": "NemakiWare"
+        },
+        "productVersion": {
+          "type": "string"
+        },
+        "repositoryId": {
+          "type": "string"
+        },
         "instanceId": {
           "type": "string",
           "description": "Which instance produced this. Matters for multi-replica: progress state is JVM-local (see docs/operations runbook O2)."
         }
       }
     },
-
     "subject": {
       "type": "object",
       "description": "What this report is about. A report is always about ONE version of ONE object — 'the document' is ambiguous once versioning exists.",
-      "required": ["objectId", "versionSeriesId", "versionLabel", "name", "objectTypeId"],
+      "required": [
+        "objectId",
+        "versionSeriesId",
+        "versionLabel",
+        "name",
+        "objectTypeId"
+      ],
       "properties": {
-        "objectId": { "type": "string" },
-        "versionSeriesId": { "type": "string" },
-        "versionLabel": { "type": "string" },
-        "name": { "type": "string" },
-        "objectTypeId": { "type": "string" },
+        "objectId": {
+          "type": "string"
+        },
+        "versionSeriesId": {
+          "type": "string"
+        },
+        "versionLabel": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "objectTypeId": {
+          "type": "string"
+        },
         "isAuthoritativeCopy": {
-          "type": ["boolean", "null"],
+          "type": [
+            "boolean",
+            "null"
+          ],
           "description": "InterPARES A.7. null = the deployment has not defined an authoritative-record rule, which is itself reportable (do not silently claim true)."
         },
         "authoritativeCopyRule": {
@@ -81,11 +142,14 @@
         }
       }
     },
-
     "assertionScope": {
       "type": "object",
       "description": "The boundary of the claim. This is the first thing an auditor should read.",
-      "required": ["custodyBeginsAt", "custodyBeginsBecause", "coversPeriod"],
+      "required": [
+        "custodyBeginsAt",
+        "custodyBeginsBecause",
+        "coversPeriod"
+      ],
       "properties": {
         "custodyBeginsAt": {
           "type": "string",
@@ -94,70 +158,157 @@
         },
         "custodyBeginsBecause": {
           "type": "string",
-          "enum": ["INGESTED_FROM_EXTERNAL_SOURCE", "CREATED_IN_REPOSITORY", "IMPORTED_FROM_PACKAGE", "RESTORED_FROM_ARCHIVE"]
+          "enum": [
+            "INGESTED_FROM_EXTERNAL_SOURCE",
+            "CREATED_IN_REPOSITORY",
+            "IMPORTED_FROM_PACKAGE",
+            "RESTORED_FROM_ARCHIVE"
+          ]
         },
         "coversPeriod": {
           "type": "object",
-          "required": ["from", "to"],
+          "required": [
+            "from",
+            "to"
+          ],
           "properties": {
-            "from": { "type": "string", "format": "date-time" },
-            "to": { "type": "string", "format": "date-time" }
+            "from": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "to": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         },
         "sourceSystem": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "Present when custody began by ingest. The source's own record-keeping is OUTSIDE this report — see notProven.",
           "properties": {
-            "system": { "type": "string" },
-            "sourceObjectId": { "type": "string" },
-            "capturedAt": { "type": "string", "format": "date-time" },
-            "capturedBy": { "type": "string" },
-            "captureWindow": { "type": ["string", "null"] },
+            "system": {
+              "type": "string"
+            },
+            "sourceObjectId": {
+              "type": "string"
+            },
+            "capturedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "capturedBy": {
+              "type": "string"
+            },
+            "captureWindow": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "transportAuthentication": {
-              "type": ["string", "null"],
-              "enum": ["HMAC_WEBHOOK", "OAUTH2_POLL", "API_TOKEN_POLL", null],
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "HMAC_WEBHOOK",
+                "OAUTH2_POLL",
+                "API_TOKEN_POLL",
+                null
+              ],
               "description": "How the TRANSPORT was authenticated. This is not evidence about the content's authenticity inside the source system."
             }
           }
         }
       }
     },
-
     "evidence": {
       "type": "object",
-      "required": ["contentIntegrity", "chainOfCustody", "externalAnchors", "trustLevel"],
+      "required": [
+        "contentIntegrity",
+        "chainOfCustody",
+        "externalAnchors",
+        "trustLevel"
+      ],
       "properties": {
-
         "trustLevel": {
           "type": "object",
-          "description": "Which rung of the trust ladder this report actually rests on. Computed from externalAnchors, never asserted by hand.",
-          "required": ["level", "label", "verificationPerformed"],
+          "description": "Which rung of the trust ladder this report actually rests on. Computed from externalAnchors, never asserted by hand. No independentOfOperator field exists: five review rounds established that no computable test distinguishes a third-party anchor from one the operator runs, so this report records what was CHECKED and leaves the judgement to the reader. additionalProperties is false so that a plain JSON Schema validator refuses it too -- the bespoke checker banned it and this file, which the README calls the place the constraint lives, did not.",
+          "required": [
+            "level",
+            "label",
+            "verificationPerformed"
+          ],
           "properties": {
-            "level": { "type": "integer", "minimum": 0, "maximum": 3 },
-            "label": { "$ref": "#/$defs/localizedText" },
+            "level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3
+            },
+            "label": {
+              "$ref": "#/$defs/localizedText"
+            },
             "verificationPerformed": {
               "type": "string",
-              "enum": ["NONE", "STRUCTURAL_ONLY", "CRYPTOGRAPHIC_LOCAL", "CHAIN_VERIFIED"],
+              "enum": [
+                "NONE",
+                "STRUCTURAL_ONLY",
+                "CRYPTOGRAPHIC_LOCAL",
+                "CHAIN_VERIFIED"
+              ],
               "description": "What was actually checked, never what it implies. The product deliberately does NOT compute whether an anchor is independent of the operator: five review rounds established that every computable test was satisfiable by an operator running their own infrastructure (see authenticity-roadmap.md 9-5). A reader decides independence from the recorded facts and the verification procedures below; this report never asserts it."
             }
-          }
+          },
+          "additionalProperties": false
         },
-
         "contentIntegrity": {
           "type": "object",
-          "required": ["algorithm", "digest", "sizeBytes", "recordedAt", "fixityHistory"],
+          "required": [
+            "algorithm",
+            "digest",
+            "sizeBytes",
+            "recordedAt",
+            "fixityHistory"
+          ],
           "properties": {
-            "algorithm": { "type": "string", "enum": ["SHA-256", "SHA-512"] },
-            "digest": { "type": "string", "pattern": "^[0-9a-f]{64,128}$" },
-            "sizeBytes": { "type": "integer", "minimum": 0 },
-            "recordedAt": { "type": "string", "format": "date-time" },
+            "algorithm": {
+              "type": "string",
+              "enum": [
+                "SHA-256",
+                "SHA-512"
+              ]
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64,128}$"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "recordedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
             "metadataDigest": {
-              "type": ["object", "null"],
+              "type": [
+                "object",
+                "null"
+              ],
               "description": "Digest over the canonicalized property set. Content alone is not the record — InterPARES A.1 attributes must be covered too.",
               "properties": {
-                "algorithm": { "type": "string" },
-                "digest": { "type": "string" },
-                "canonicalization": { "type": "string" }
+                "algorithm": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": "string"
+                },
+                "canonicalization": {
+                  "type": "string"
+                }
               }
             },
             "fixityHistory": {
@@ -165,58 +316,152 @@
               "description": "Every check, not just the last one. An empty array means never checked since ingest — which the renderer must show as a warning, not as 'ok'.",
               "items": {
                 "type": "object",
-                "required": ["checkedAt", "outcome"],
+                "required": [
+                  "checkedAt",
+                  "outcome"
+                ],
                 "properties": {
-                  "checkedAt": { "type": "string", "format": "date-time" },
+                  "checkedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
                   "outcome": {
                     "type": "string",
-                    "enum": ["MATCH", "MISMATCH", "UNREADABLE"],
+                    "enum": [
+                      "MATCH",
+                      "MISMATCH",
+                      "UNREADABLE"
+                    ],
                     "description": "UNREADABLE is deliberately distinct from MISMATCH: 'we could not read it' and 'it changed' are different findings for an auditor."
                   },
-                  "storageTier": { "type": "string", "enum": ["LIVE", "ARCHIVED_LOCAL", "ARCHIVED_COLD"] },
-                  "detail": { "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }] }
+                  "storageTier": {
+                    "type": "string",
+                    "enum": [
+                      "LIVE",
+                      "ARCHIVED_LOCAL",
+                      "ARCHIVED_COLD"
+                    ]
+                  },
+                  "detail": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/localizedText"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
                 }
               }
             }
           }
         },
-
         "chainOfCustody": {
           "type": "object",
           "description": "The lineage journal excerpt for this object, plus the hash-chain position that makes the excerpt tamper-evident.",
-          "required": ["chainVerified", "events"],
+          "required": [
+            "chainVerified",
+            "events"
+          ],
           "properties": {
-            "chainVerified": { "type": "boolean" },
-            "chainVerificationDetail": { "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }] },
+            "chainVerified": {
+              "type": "boolean"
+            },
+            "chainVerificationDetail": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/localizedText"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "barrierDigest": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "description": "Digest of the processing barrier this object's events sit under."
             },
-            "sequencePosition": { "type": ["integer", "null"] },
+            "sequencePosition": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "events": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["eventId", "occurredAt", "type", "agent", "outcome"],
+                "required": [
+                  "eventId",
+                  "occurredAt",
+                  "type",
+                  "agent",
+                  "outcome"
+                ],
                 "properties": {
-                  "eventId": { "type": "string" },
-                  "occurredAt": { "type": "string", "format": "date-time" },
+                  "eventId": {
+                    "type": "string"
+                  },
+                  "occurredAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
                   "type": {
                     "type": "string",
                     "description": "PREMIS-crosswalked event type. Language-neutral: the PREMIS controlled vocabulary term itself (e.g. 'ingestion'), NOT prose. Renderers localize it via the message catalogue under key premisEvent.<term>."
                   },
                   "agent": {
                     "type": "object",
-                    "required": ["id", "kind"],
+                    "required": [
+                      "id",
+                      "kind"
+                    ],
                     "properties": {
-                      "id": { "type": "string" },
-                      "kind": { "type": "string", "enum": ["USER", "SERVICE", "SCHEDULER", "EXTERNAL_CONNECTOR"] }
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "USER",
+                          "SERVICE",
+                          "SCHEDULER",
+                          "EXTERNAL_CONNECTOR"
+                        ]
+                      }
                     }
                   },
-                  "outcome": { "type": "string", "enum": ["SUCCESS", "FAILURE", "PARTIAL"] },
-                  "outcomeDetail": { "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }] },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "SUCCESS",
+                      "FAILURE",
+                      "PARTIAL"
+                    ]
+                  },
+                  "outcomeDetail": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/localizedText"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "effectOnRecord": {
-                    "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }],
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/localizedText"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
                     "description": "InterPARES B.2.c: what the operation did to form/content/accessibility. Required for reproduction events."
                   }
                 }
@@ -225,135 +470,324 @@
             "journalRetention": {
               "type": "object",
               "description": "Journal entries can be purged by policy. If the covered period starts later than custody did, say so — an auditor must not read a short chain as a complete one.",
-              "required": ["retentionDays", "oldestRetainedEvent", "purgedEventsExist"],
+              "required": [
+                "retentionDays",
+                "oldestRetainedEvent",
+                "purgedEventsExist"
+              ],
               "properties": {
-                "retentionDays": { "type": ["integer", "null"] },
-                "oldestRetainedEvent": { "type": ["string", "null"], "format": "date-time" },
-                "purgedEventsExist": { "type": "boolean" }
+                "retentionDays": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "oldestRetainedEvent": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "purgedEventsExist": {
+                  "type": "boolean"
+                }
               }
             }
           }
         },
-
         "externalAnchors": {
           "type": "array",
           "description": "Zero or more. An empty array is legitimate and means trustLevel 0.",
           "items": {
             "type": "object",
-            "required": ["kind", "status", "anchoredDigest"],
+            "required": [
+              "kind",
+              "status",
+              "anchoredDigest"
+            ],
             "properties": {
-              "kind": { "type": "string", "enum": ["ATLAS_CATALOG", "OPENTIMESTAMPS", "RFC3161_TSA"] },
-              "status": { "type": "string", "enum": ["CONFIRMED", "PENDING", "FAILED", "NOT_CONFIGURED"] },
-              "anchoredDigest": { "type": "string" },
-              "anchoredAt": { "type": ["string", "null"], "format": "date-time" },
-
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ATLAS_CATALOG",
+                  "OPENTIMESTAMPS",
+                  "RFC3161_TSA"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "CONFIRMED",
+                  "PENDING",
+                  "FAILED",
+                  "NOT_CONFIGURED"
+                ]
+              },
+              "anchoredDigest": {
+                "type": "string"
+              },
+              "anchoredAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
               "timeSemantics": {
                 "type": "string",
-                "enum": ["UPPER_BOUND_ONLY", "BIDIRECTIONAL_WITHIN_ACCURACY", "NOT_A_TIME_PROOF"],
+                "enum": [
+                  "UPPER_BOUND_ONLY",
+                  "BIDIRECTIONAL_WITHIN_ACCURACY",
+                  "NOT_A_TIME_PROOF"
+                ],
                 "description": "OpenTimestamps proves only 'existed no later than' (UPPER_BOUND_ONLY). An RFC 3161 token proves a point in time within its stated accuracy. A catalog anchor inside the same organization is NOT_A_TIME_PROOF. Rendering these with the same wording breaks the claim."
               },
               "independenceCaveat": {
-                "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }],
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/localizedText"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
                 "description": "Required non-null for ATLAS_CATALOG: the catalog is administered by the same organization, so it does not establish independence."
               },
-
               "opentimestamps": {
-                "type": ["object", "null"],
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "properties": {
-                  "calendars": { "type": "array", "items": { "type": "string" } },
-                  "upgraded": { "type": "boolean", "description": "false = still PendingAttestation; the proof is not yet independently verifiable." },
-                  "bitcoinBlockHeight": { "type": ["integer", "null"] },
-                  "otsFileDigest": { "type": ["string", "null"] },
-                  "noncePolicy": { "const": "SHA256(digest || 16 random bytes)" }
+                  "calendars": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "upgraded": {
+                    "type": "boolean",
+                    "description": "false = still PendingAttestation; the proof is not yet independently verifiable."
+                  },
+                  "bitcoinBlockHeight": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "otsFileDigest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "noncePolicy": {
+                    "const": "SHA256(digest || 16 random bytes)"
+                  }
                 }
               },
-
               "rfc3161": {
-                "type": ["object", "null"],
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "description": "Everything needed to verify the token years later. Collect at issuance — revocation data cannot be reconstructed afterwards.",
                 "properties": {
-                  "tsaName": { "type": "string" },
-                  "accreditation": {
-                    "type": ["string", "null"],
-                    "enum": ["JP_MIC_ACCREDITED", "EU_QUALIFIED", "NONE", null]
+                  "tsaName": {
+                    "type": "string"
                   },
-                  "policyOid": { "type": "string" },
-                  "serialNumber": { "type": "string" },
-                  "genTime": { "type": "string", "format": "date-time" },
-                  "accuracySeconds": { "type": ["number", "null"] },
-                  "tokenDigest": { "type": "string" },
-                  "certificateChainIncluded": { "type": "boolean" },
+                  "accreditation": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "JP_MIC_ACCREDITED",
+                      "EU_QUALIFIED",
+                      "NONE",
+                      null
+                    ]
+                  },
+                  "policyOid": {
+                    "type": "string"
+                  },
+                  "serialNumber": {
+                    "type": "string"
+                  },
+                  "genTime": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "accuracySeconds": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "tokenDigest": {
+                    "type": "string"
+                  },
+                  "certificateChainIncluded": {
+                    "type": "boolean"
+                  },
                   "revocationDataCapturedAt": {
-                    "type": ["string", "null"],
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "format": "date-time",
                     "description": "null means CRL/OCSP was never captured — long-term verification may be impossible. Report it, do not hide it."
                   }
                 }
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "ATLAS_CATALOG"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "independenceCaveat"
+                  ],
+                  "properties": {
+                    "independenceCaveat": {
+                      "$ref": "#/$defs/localizedText"
+                    }
+                  }
+                }
+              }
+            ]
           }
         },
-
         "accessAudit": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "description": "InterPARES A.2 requires that access controls be not merely defined but monitored.",
           "properties": {
-            "aclSnapshotDigest": { "type": "string" },
-            "aclEpoch": { "type": ["integer", "null"] },
-            "modifyingInteractions": { "type": "integer" },
+            "aclSnapshotDigest": {
+              "type": "string"
+            },
+            "aclEpoch": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "modifyingInteractions": {
+              "type": "integer"
+            },
             "auditCoverage": {
               "type": "string",
-              "enum": ["ALL_MODIFYING_INTERACTIONS", "PARTIAL", "NOT_ENABLED"]
+              "enum": [
+                "ALL_MODIFYING_INTERACTIONS",
+                "PARTIAL",
+                "NOT_ENABLED"
+              ]
             }
           }
         },
-
         "versionLineage": {
-          "type": ["array", "null"],
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": "object",
-            "required": ["versionLabel", "objectId", "createdAt"],
+            "required": [
+              "versionLabel",
+              "objectId",
+              "createdAt"
+            ],
             "properties": {
-              "versionLabel": { "type": "string" },
-              "objectId": { "type": "string" },
-              "createdAt": { "type": "string", "format": "date-time" },
-              "contentDigest": { "type": ["string", "null"] }
+              "versionLabel": {
+                "type": "string"
+              },
+              "objectId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "contentDigest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         }
       }
     },
-
     "notProven": {
       "type": "array",
       "minItems": 1,
       "description": "REQUIRED and never empty. A report that claims everything proves nothing to an auditor. Entries are generated from the actual configuration, not boilerplate.",
       "items": {
         "type": "object",
-        "required": ["claim", "why"],
+        "required": [
+          "claim",
+          "why"
+        ],
         "properties": {
-          "claim": { "$ref": "#/$defs/localizedText", "description": "The thing a reader might wrongly assume is proven." },
-          "why": { "$ref": "#/$defs/localizedText", "description": "Why this report cannot establish it." },
-          "whatWouldEstablishIt": { "oneOf": [{ "$ref": "#/$defs/localizedText" }, { "type": "null" }] }
+          "claim": {
+            "$ref": "#/$defs/localizedText",
+            "description": "The thing a reader might wrongly assume is proven."
+          },
+          "why": {
+            "$ref": "#/$defs/localizedText",
+            "description": "Why this report cannot establish it."
+          },
+          "whatWouldEstablishIt": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/localizedText"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
         }
       }
     },
-
     "verification": {
       "type": "array",
       "minItems": 1,
       "description": "REQUIRED. One entry per assertion in `evidence`, giving a procedure a third party can run WITHOUT trusting this deployment where that is possible.",
       "items": {
         "type": "object",
-        "required": ["assertion", "procedure", "requiresTrustInDeployment"],
+        "required": [
+          "assertion",
+          "procedure",
+          "requiresTrustInDeployment"
+        ],
         "properties": {
-          "assertion": { "$ref": "#/$defs/localizedText" },
-          "procedure": { "$ref": "#/$defs/localizedText" },
+          "assertion": {
+            "$ref": "#/$defs/localizedText"
+          },
+          "procedure": {
+            "$ref": "#/$defs/localizedText"
+          },
           "requiresTrustInDeployment": {
             "type": "boolean",
             "description": "true = the check can only be run against this system, so it does not defend against an operator who controls it. Auditors need to see which checks are self-attested."
           },
-          "tool": { "type": ["string", "null"] }
+          "tool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
         }
       }
     }

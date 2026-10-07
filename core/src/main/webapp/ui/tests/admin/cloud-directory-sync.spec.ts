@@ -110,7 +110,7 @@ test.describe('Cloud Directory Sync', () => {
 
     // On the page - buttons MUST exist
     const deltaSyncButton = page.locator('button').filter({
-      hasText: /Delta同期|Delta Sync/i
+      hasText: /差分同期|Delta Sync/i
     });
     const fullReconcButton = page.locator('button').filter({
       hasText: /完全同期|Full Reconciliation/i

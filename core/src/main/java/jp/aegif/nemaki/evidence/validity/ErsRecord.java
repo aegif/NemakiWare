@@ -60,24 +60,33 @@ import java.util.Set;
  * <p>The module is {@code DEFINITIONS IMPLICIT TAGS}, so the tagged fields are implicit —
  * checked against the RFC text, not assumed.
  *
- * <h2>The data object is the checkpoint's canonical bytes</h2>
+ * <h2>{@code h} is the anchor target's MERKLE ROOT</h2>
  *
- * <p>Not "the checkpoint hash". The distinction decides whether a standard verifier can read
- * this at all, and the first version got it wrong. RFC 4998 §4.3 has a verifier compute
- * {@code h = H(d)} and then look for {@code h} in the first hash list. Putting the checkpoint
- * hash {@code C} in that list while ALSO calling {@code C} the data object means a verifier
- * searches for {@code H(C)}, finds {@code C}, and rejects — before it ever looks at the token.
+ * <p>Not the checkpoint hash, and not the checkpoint's canonical bytes. The constraint is that
+ * this record reuses a token this repository ALREADY has, and a token covers exactly one value:
+ * whatever was anchored. {@code Rfc3161AnchorTarget} anchors the {@code merkleRoot} — decoded,
+ * because a root is already a SHA-256 digest — so the only value the first Archive Timestamp
+ * can be about is that root's bytes. Anything else produces a record that looks right and no
+ * standard tool accepts.
  *
- * <p>What is true is simpler: {@code C} is already {@code H(canonical checkpoint bytes)}, and
- * this repository's RFC 3161 anchor is a token whose message imprint is exactly {@code C}. So
- * the data object is those canonical bytes, {@code h = C}, and the record needs <b>no reduced
- * hash tree at all</b> — which RFC 4998 §4.2 explicitly allows: "An Archive Timestamp may
- * consist ... only of a timestamp with no hash value lists." §4.3 then degenerates to "the root
- * hash value must correspond to hashedMessage", and the root IS {@code h}.
+ * <p>Two earlier readings were wrong here, and both shipped before they were caught. The first
+ * put the checkpoint hash {@code C} in a hash list while ALSO calling {@code C} the data
+ * object, so a verifier searched for {@code H(C)}, found {@code C}, and rejected. The second
+ * said the data object was the checkpoint's canonical bytes and {@code h = C} — true about
+ * hashing, false about anchoring: no token in this system ever covers {@code C} (residual R70,
+ * 2026-09-22).
  *
- * <p>That form is conformant AND reuses the anchor this product already has. The alternative —
- * a one-node tree holding {@code H(C)} — would need a NEW token over {@code H(H(C))}, because
- * §4.3 step 3 hashes the list even when it has one member.
+ * <p>With {@code h} = the root, the record needs <b>no reduced hash tree at all</b> — which
+ * RFC 4998 §4.2 explicitly allows: "An Archive Timestamp may consist ... only of a timestamp
+ * with no hash value lists." §4.3 then degenerates to "the root hash value must correspond to
+ * hashedMessage", and that root IS {@code h}.
+ *
+ * <p>What this form gives up, stated because it is not obvious: the data object {@code d} whose
+ * hash {@code h} is — the concatenation the Merkle tree reduces — is not carried in any package.
+ * A receiver cannot perform §4.3 step 1 for itself. It checks that the record covers the root
+ * the package states. The alternative — a one-node tree holding {@code H(root)} — would need a
+ * NEW token over {@code H(H(root))}, because §4.3 step 3 hashes the list even when it has one
+ * member, and P2-3 §9 forbids a second TSA round trip.
  *
  * <h2>Renewals follow §5.2 and §5.3, which are not the same operation</h2>
  *
@@ -110,11 +119,17 @@ public final class ErsRecord {
      * <p>Travels with the record wherever it is reported.
      */
     public static final String LIMITS =
-            "The data object of this evidence record is the canonical serialisation of one "
-                    + "CHECKPOINT of this repository's evidence ledger — not a document. It "
-                    + "establishes that that value existed by the time in its timestamp token, "
-                    + "and nothing else. Which records were under that checkpoint is shown by "
-                    + "this product's own inclusion proof, which travels separately and which a "
+            "The data object hash of this evidence record is the MERKLE ROOT of one CHECKPOINT "
+                    + "of this repository's evidence ledger — not a document, and not the "
+                    + "checkpoint hash. The record's first Archive Timestamp IS the RFC 3161 "
+                    + "token this repository already held, and that token was taken over the "
+                    + "root's bytes; nothing else could be what it covers. It establishes that "
+                    + "that root existed by the time in the token, and nothing else. The "
+                    + "root's PREIMAGE — the concatenation the Merkle tree reduces — is not "
+                    + "carried in the package, so a receiver checks that the record covers the "
+                    + "root this package states, not that the root was correctly derived from "
+                    + "anything. Which records were under that checkpoint is shown by this "
+                    + "product's own inclusion proof, which travels separately and which a "
                     + "standard RFC 4998 verifier does NOT check. This product also does not "
                     + "verify the timestamp authority's certificate chain or its revocation "
                     + "status: it holds no trust anchors, so the token's signature is carried "
@@ -201,15 +216,20 @@ public final class ErsRecord {
         byte[] ha = digest(algorithmOid, encodeSequence(chains));
         byte[] hPrime = digest(algorithmOid,
                 sortedConcat(List.of(dataObjectHashUnderNewAlgorithm, ha)));
-        return new HashTreeRenewalInputs(hPrime, digest(algorithmOid, hPrime), ha);
+        // The new Archive Timestamp's first list holds h' ALONE, and a one-element list is its
+        // own node hash (§4.2, "more than one document"). So the token covers h' itself. This
+        // returned H(h'), which no conformant verifier expects — and this repository's two
+        // verifiers agreed with it because they hashed a one-element list too (subagent, sixth
+        // review, P1).
+        return new HashTreeRenewalInputs(hPrime, nodeHash(algorithmOid, List.of(hPrime)), ha);
     }
 
     /**
      * What a §5.3 renewal needs.
      *
      * @param hPrime the value that goes in the new Archive Timestamp's first hash list
-     * @param imprint what the new token must cover — {@code H(h')}, because §4.3 step 3 hashes
-     *        the list even when it holds one member
+     * @param imprint what the new token must cover — {@code h'} itself, because §4.2 hashes a
+     *        list only when it holds MORE THAN ONE value
      * @param previousSequenceHash {@code ha}, kept so a caller can show its working
      */
     public record HashTreeRenewalInputs(byte[] hPrime, byte[] imprint,
@@ -450,6 +470,28 @@ public final class ErsRecord {
     }
 
     // ---- shared hashing, so the encoder and the verifier cannot drift ----
+
+    /**
+     * A hash list's node hash — §4.2.
+     *
+     * <p>"For each data group containing <b>more than one document</b>, its respective document
+     * hashes are binary sorted in ascending order, concatenated, and hashed." A list of ONE is
+     * therefore its own node hash. BouncyCastle's {@code ERSUtil.computeNodeHash} returns
+     * {@code values[0]} for such a list; this repository hashed unconditionally, in both
+     * readers, so any record a standard tool built with a reduced tree reduced to a value no
+     * token covers (subagent, sixth review, P1 — measured against BouncyCastle's bytecode).
+     *
+     * <p>The correction also withdraws a reason: §8 of the design document rejected a one-node
+     * tree holding the root because it "would need a NEW token over H(H(root))". It would not —
+     * a one-node tree reduces to the root, which the existing token already covers. The chosen
+     * form (no tree at all) is still simpler and still conformant; only the argument was wrong.
+     */
+    static byte[] nodeHash(String digestAlgorithmOid, List<byte[]> values) {
+        if (values.size() == 1) {
+            return values.get(0).clone();
+        }
+        return digest(digestAlgorithmOid, sortedConcat(values));
+    }
 
     /** RFC 4998 §4.2/§4.3: binary ascending sort, then concatenate. No prefixes, no lengths. */
     static byte[] sortedConcat(List<byte[]> values) {

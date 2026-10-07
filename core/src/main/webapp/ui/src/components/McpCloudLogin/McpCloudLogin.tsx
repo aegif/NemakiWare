@@ -27,6 +27,7 @@ import {
   LoginOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
+import { withDetail } from '../../i18n/withDetail';
 import { useAuth } from '../../contexts/AuthContext';
 import { fetchCloudAuthConfig } from '../../services/cloud-auth';
 import { parseJsonResponseBody } from '../../services/http/jsonFetch';
@@ -130,12 +131,12 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
       } else {
         setStatus('error');
         setErrorMessage(
-          getResourceBaseErrorMessage(result, t('mcpCloudLogin.errors.completionFailed'))
+          withDetail(t('mcpCloudLogin.errors.completionFailed'), getResourceBaseErrorMessage(result, ''))
         );
       }
     } catch (error: any) {
       setStatus('error');
-      setErrorMessage(error.message || t('mcpCloudLogin.errors.networkError'));
+      setErrorMessage(withDetail(t('mcpCloudLogin.errors.networkError'), error));
     } finally {
       setIsSubmitting(false);
     }
@@ -185,7 +186,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
                     // For externally opened windows, we show a message
                     window.close();
                     // If window didn't close, show message
-                    message.info(t('mcpCloudLogin.success.closeManually', 'このタブを手動で閉じてください'));
+                    message.info(t('mcpCloudLogin.success.closeManually'));
                   }}
                 >
                   {t('mcpCloudLogin.success.closeWindow')}
@@ -300,11 +301,11 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
             <Paragraph>{t('mcpCloudLogin.authenticatePrompt')}</Paragraph>
 
             <Alert
-              message={t('mcpCloudLogin.loginInstructions', '通常のNemakiWareログインを使用してください')}
+              message={t('mcpCloudLogin.loginInstructions')}
               description={
                 <div>
-                  <p>{t('mcpCloudLogin.loginSteps', '1. 下のボタンで新しいタブでログインページを開きます')}</p>
-                  <p>{t('mcpCloudLogin.loginSteps2', '2. ログイン後、このページに戻って「完了」をクリックしてください')}</p>
+                  <p>{t('mcpCloudLogin.loginSteps')}</p>
+                  <p>{t('mcpCloudLogin.loginSteps2')}</p>
                 </div>
               }
               type="info"
@@ -322,7 +323,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
                   window.open('/core/ui/#/', '_blank', 'noopener,noreferrer');
                 }}
               >
-                {t('mcpCloudLogin.openLoginPage', 'ログインページを新しいタブで開く')}
+                {t('mcpCloudLogin.openLoginPage')}
               </Button>
 
               <Button
@@ -334,7 +335,7 @@ export const McpCloudLogin: React.FC<McpCloudLoginProps> = ({
                   window.location.reload();
                 }}
               >
-                {t('mcpCloudLogin.checkLogin', 'ログイン確認・完了')}
+                {t('mcpCloudLogin.checkLogin')}
               </Button>
             </Space>
           </Space>

@@ -16,7 +16,7 @@ import { AuthService } from './auth';
 
 export interface ReindexStatus {
   repositoryId: string;
-  status: 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+  status: 'idle' | 'running' | 'completed' | 'completed_with_errors' | 'error' | 'cancelled';
   totalDocuments: number;
   indexedCount: number;
   errorCount: number;

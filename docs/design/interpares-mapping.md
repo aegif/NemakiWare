@@ -5,8 +5,9 @@
 実際に走らせて確かめられる**検証手順**か、コードを読んで確認しただけの**設計上の期待**か。
 後者を前者に見せない。
 
-- **対象**: 現在の master (v3.3.1 + **未リリースの 3.4 作業を含む**) + 3.4 の計画。
+- **対象**: 現在の master (**v3.4.0**) + それ以降の計画。
   各行の「現状」は master を指す。**v3.3.1 では入っていない機能には ⚑ を付ける**
+  （⚑ は「3.3.1 の利用者にはまだ無い」の意味で、3.4.0 のリリース後も印として残す）
 - 最終更新: 2026-08-20
 - 正典: Authenticity Task Force, "Appendix 2: Requirements for Assessing and Maintaining
   the Authenticity of Electronic Records", in *The Long-term Preservation of Authentic

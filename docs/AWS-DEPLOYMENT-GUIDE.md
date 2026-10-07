@@ -902,7 +902,7 @@ curl -X POST -u "${COUCHDB_USER}:${COUCHDB_PASSWORD}" http://localhost:5984/_rep
 ### 12-1. 概要
 
 アーカイブされたドキュメントを Amazon S3 へコピーまたは移動し、長期保存できます。
-S3 Object Lock を使用して、コンプライアンス要件に対応した改ざん防止保存が可能です。
+S3 Object Lock の Legal Hold を使うと、コールドアーカイブ後のオブジェクトを、解除の権限（`s3:PutObjectLegalHold`）を持つ者が外すまで削除できないようにできます（12-5）。保護の強さは S3 側の権限の設定で決まります。
 
 #### COPY モードと MOVE モード
 

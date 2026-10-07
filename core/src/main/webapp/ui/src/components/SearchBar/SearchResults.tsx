@@ -896,8 +896,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                       case 'boolean':
                         return (
                           <Select placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })} allowClear>
-                            <Select.Option value="true">{t('common.yes')} (true)</Select.Option>
-                            <Select.Option value="false">{t('common.no')} (false)</Select.Option>
+                            <Select.Option value="true">{t('common.booleanTrue')}</Select.Option>
+                            <Select.Option value="false">{t('common.booleanFalse')}</Select.Option>
                           </Select>
                         );
 
@@ -980,8 +980,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                       case 'boolean':
                         return (
                           <Select placeholder={t('searchResults.placeholders.selectProperty', { name: propDef.displayName })} allowClear>
-                            <Select.Option value="true">{t('common.yes')} (true)</Select.Option>
-                            <Select.Option value="false">{t('common.no')} (false)</Select.Option>
+                            <Select.Option value="true">{t('common.booleanTrue')}</Select.Option>
+                            <Select.Option value="false">{t('common.booleanFalse')}</Select.Option>
                           </Select>
                         );
 

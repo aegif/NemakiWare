@@ -108,7 +108,7 @@ export default function LineageDeadLetterPanel() {
     <>
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
-          {t('common.refresh', 'Refresh')}
+          {t('common.refresh')}
         </Button>
         <Popconfirm title={t('integrationSettings.lineage.replayAllConfirm')} onConfirm={handleReplayAll}>
           <Button type="primary">

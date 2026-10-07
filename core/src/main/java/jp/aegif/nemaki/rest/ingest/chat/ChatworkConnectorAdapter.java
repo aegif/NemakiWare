@@ -99,7 +99,11 @@ public class ChatworkConnectorAdapter {
         if (response.statusCode() == 204) return List.of();
 
         JsonNode root = MAPPER.readTree(response.body());
-        if (!root.isArray()) return List.of();
+        // Not a list is not "no messages": read as none, the room would look empty.
+        if (!root.isArray()) {
+            throw new IllegalStateException("Chatwork answered the messages of room " + roomId
+                    + " with something other than a list; nothing was read");
+        }
 
         List<ChatworkMessage> messages = new ArrayList<>();
         for (JsonNode msg : root) {
@@ -129,7 +133,12 @@ public class ChatworkConnectorAdapter {
         if (response.statusCode() == 204) return List.of();
 
         JsonNode root = MAPPER.readTree(response.body());
-        if (!root.isArray()) return List.of();
+        // As for the messages: not a list is not "no files". Read as none, every file of the
+        // room was passed over and the run recorded as complete (9-6 review, P1).
+        if (root == null || !root.isArray()) {
+            throw new IllegalStateException("Chatwork answered the files of room " + roomId
+                    + " with something other than a list; nothing was read");
+        }
 
         List<ChatworkFile> files = new ArrayList<>();
         for (JsonNode file : root) {
@@ -154,8 +163,15 @@ public class ChatworkConnectorAdapter {
     public String getFileDownloadUrl(String roomId, String fileId) throws Exception {
         String url = "/rooms/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(roomId) + "/files/" + jp.aegif.nemaki.rest.ingest.AdapterHttpClient.encodePathSegment(fileId) + "?create_download_url=1";
         HttpResponse<String> response = get(url);
-        JsonNode root = MAPPER.readTree(response.body());
-        return root.path("download_url").asText(null);
+        JsonNode root = response.statusCode() == 204 ? null : MAPPER.readTree(response.body());
+        String downloadUrl = root == null ? null : root.path("download_url").asText(null);
+        // A file the API listed but gave no URL for has not been read. Returning null let the
+        // fetch skip it without a word, so the file was neither imported nor reported.
+        if (downloadUrl == null || downloadUrl.isBlank()) {
+            throw new IllegalStateException("Chatwork gave no download URL for file " + fileId
+                    + " in room " + roomId + "; the file was not read");
+        }
+        return downloadUrl;
     }
 
     /**

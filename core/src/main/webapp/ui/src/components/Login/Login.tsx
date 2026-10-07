@@ -695,7 +695,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 margin: '8px 0'
               }} 
             />
-            <p style={{ color: '#666', margin: '8px 0 0 0' }}>CMIS Document Management System</p>
+            <p style={{ color: '#666', margin: '8px 0 0 0' }}>{t('login.subtitle')}</p>
           </div>
         }
         style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
@@ -852,10 +852,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           textAlign: 'center'
         }}>
           <div>
-            Core: {coreBuildInfo ? `v${coreBuildInfo.version} (${coreBuildInfo.buildTime})` : 'Loading...'}
+            {t('common.coreLabel')} {coreBuildInfo ? `v${coreBuildInfo.version} (${coreBuildInfo.buildTime})` : t('common.loading')}
           </div>
           <div>
-            UI: v{typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '?'} ({typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : '?'})
+            {t('common.uiLabel')} v{typeof __UI_VERSION__ !== 'undefined' ? __UI_VERSION__ : '?'} ({typeof __UI_BUILD_TIME__ !== 'undefined' ? __UI_BUILD_TIME__ : '?'})
           </div>
         </div>
       </Card>

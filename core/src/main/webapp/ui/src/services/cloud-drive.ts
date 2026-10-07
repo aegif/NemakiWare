@@ -2,6 +2,7 @@
  * Cloud Drive Service for pushing/pulling documents to/from Google Drive and OneDrive.
  */
 
+import i18n from '../i18n';
 import { parseJsonResponseBody } from './http/jsonFetch';
 import { getResourceBaseErrorMessage, isResourceBaseSuccess } from './http/restResult';
 
@@ -287,9 +288,9 @@ export function getGoogleDriveAccessToken(clientId: string, loginHint?: string):
           // error.type can be: 'popup_failed_to_open', 'popup_closed', 'unknown'
           let errorMsg = 'Google OAuth error';
           if (error.type === 'popup_failed_to_open') {
-            errorMsg = 'ポップアップがブロックされました。ポップアップを許可してください。';
+            errorMsg = i18n.t('cloudDrive.popupBlocked');
           } else if (error.type === 'popup_closed') {
-            errorMsg = 'ログインがキャンセルされました';
+            errorMsg = i18n.t('cloudDrive.loginCancelled');
           } else if (error.message) {
             errorMsg = `${error.type}: ${error.message}`;
           } else {
