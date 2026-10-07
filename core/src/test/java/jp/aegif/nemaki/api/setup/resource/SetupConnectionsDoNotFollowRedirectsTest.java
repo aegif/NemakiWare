@@ -43,10 +43,13 @@ import jp.aegif.nemaki.init.DatabasePreInitializer;
  * <p>Each behaviour test points the code at a stand-in CouchDB that answers with a redirect to a
  * second server, and asserts that the second server heard nothing — and that the stand-in did
  * hear the request, so the test cannot pass by never getting there. The last test reads the
- * source of the setup resources, {@code DatabasePreInitializer} and {@code StartupProbeService}:
- * every {@code openConnection()} there is followed, in code, by
- * {@code setInstanceFollowRedirects(false)} on that same connection; nothing sets it back to
- * {@code true}; and the one {@code openStream()} is the known one below.
+ * source of the setup resources, {@code DatabasePreInitializer} and {@code StartupProbeService},
+ * with every comment — line or block, wherever it starts — removed first: every
+ * {@code openConnection()} there is followed, in code, by {@code setInstanceFollowRedirects(false)}
+ * on that same connection; every {@code setInstanceFollowRedirects} call passes the literal
+ * {@code false}; nothing sets the JVM-wide default; and the one {@code openStream()} is the known
+ * one below. It is a reading, not an interpreter: a refusal placed inside an {@code if}, a
+ * connection used before its refusal, or reflection would get past it.
  *
  * <p>What this does not cover: {@code StartupProbeService} reads a {@code repositories.yml} given as
  * an http(s) path with {@code openStream()} (it follows redirects — the path is the operator's
@@ -278,21 +281,24 @@ class SetupConnectionsDoNotFollowRedirectsTest {
         // shape this cannot read is a failure, not a pass — an unread line is an unchecked one.
         Pattern opened = Pattern.compile(
                 "^(?:[\\w.]+\\s+)?(\\w+)\\s*=\\s*\\((?:java\\.net\\.)?HttpURLConnection\\)\\s*\\w+\\.openConnection\\(\\);");
+        Pattern setter = Pattern.compile("setInstanceFollowRedirects\\(([^)]*)\\)");
+        Pattern jvmWide = Pattern.compile("\\bsetFollowRedirects\\(");
         int connections = 0;
         List<String> mayFollow = new ArrayList<>();
         List<String> openStreams = new ArrayList<>();
         for (Path file : files) {
-            List<String> code = new ArrayList<>();
-            for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-                String line = raw.trim();
-                boolean comment = line.startsWith("//") || line.startsWith("*") || line.startsWith("/*");
-                code.add(comment ? "" : line);
-            }
+            List<String> code = codeLines(file);
             for (int i = 0; i < code.size(); i++) {
                 String line = code.get(i);
                 String at = file.getFileName() + ":" + (i + 1) + "  " + line;
-                if (line.contains("setInstanceFollowRedirects(true")) {
-                    mayFollow.add(at + "  — turns redirects back on");
+                Matcher set = setter.matcher(line);
+                while (set.find()) {
+                    if (!"false".equals(set.group(1).trim())) {
+                        mayFollow.add(at + "  — sets redirects to " + set.group(1).trim() + ", not the literal false");
+                    }
+                }
+                if (jvmWide.matcher(line).find()) {
+                    mayFollow.add(at + "  — changes the JVM-wide default");
                 }
                 if (line.contains(".openStream(")) {
                     openStreams.add(file.getFileName().toString());
@@ -328,5 +334,59 @@ class SetupConnectionsDoNotFollowRedirectsTest {
                 "an openStream() follows redirects and is outside the openConnection() check; the only "
                         + "one allowed is StartupProbeService's read of a repositories.yml path (operator "
                         + "configuration)");
+    }
+
+    /**
+     * The file's lines, trimmed, with every comment blanked out — a line comment to its end, a
+     * block comment from its opening to its close, across lines — so a commented-out statement is
+     * not read as code. String and character literals are kept as written.
+     */
+    private static List<String> codeLines(Path file) throws IOException {
+        String src = Files.readString(file, StandardCharsets.UTF_8);
+        StringBuilder out = new StringBuilder(src.length());
+        int n = src.length();
+        int i = 0;
+        while (i < n) {
+            char c = src.charAt(i);
+            char next = i + 1 < n ? src.charAt(i + 1) : '\0';
+            if (c == '/' && next == '/') {
+                while (i < n && src.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && next == '*') {
+                i += 2;
+                while (i < n && !(src.charAt(i) == '*' && i + 1 < n && src.charAt(i + 1) == '/')) {
+                    if (src.charAt(i) == '\n') {
+                        out.append('\n');
+                    }
+                    i++;
+                }
+                i += 2;
+            } else if (c == '"' || c == '\'') {
+                out.append(c);
+                i++;
+                while (i < n && src.charAt(i) != c && src.charAt(i) != '\n') {
+                    if (src.charAt(i) == '\\' && i + 1 < n) {
+                        out.append(src.charAt(i)).append(src.charAt(i + 1));
+                        i += 2;
+                        continue;
+                    }
+                    out.append(src.charAt(i));
+                    i++;
+                }
+                if (i < n && src.charAt(i) == c) {
+                    out.append(c);
+                    i++;
+                }
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : out.toString().split("\n", -1)) {
+            lines.add(line.trim());
+        }
+        return lines;
     }
 }

@@ -32,7 +32,7 @@ public class RepositoryInfoMap {
 	// Explicitly track the first repository ID for deterministic default selection
 	private String firstRepositoryId;
 
-	// A product.version setting was seen (and ignored) — see ignoreProductVersionSetting
+	// A product.version setting was already seen — the startup WARN is said once (ignoreProductVersionSetting)
 	private boolean productVersionSettingSeen;
 
 	public void init(){
@@ -306,10 +306,6 @@ public class RepositoryInfoMap {
 		productVersionSettingSeen = true;
 	}
 
-	/** Whether a product.version setting was seen and ignored — the condition of the startup WARN. */
-	boolean productVersionSettingSeen() {
-		return productVersionSettingSeen;
-	}
 
 	public void setCapabilities(Capabilities capabilities) {
 		this.capabilities = capabilities;

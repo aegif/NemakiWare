@@ -5,6 +5,7 @@ default:
   principal.anyone: GROUP_EVERYONE
   vendor: aegif
   product.name: NemakiWare
-  # A literal the build does not check — must not be what CMIS reports.
-  product.version: 9.9.9
+  # Filtered by Maven to the build's own version (core/pom.xml testResources): the one value the
+  # first version of the WARN stayed silent for. It must still be warned about.
+  product.version: ${project.version}
 super.users: bedroom
