@@ -86,7 +86,7 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root\
 ## 2026-08-08 の実測結果 (Apple Silicon 14 core, 単一ホスト)
 
 索引は全バージョンで purge → 再索引 → 静定を確認。1 スタックずつ順に起動し、
-毎回 productVersion で対象を確認。
+毎回 productVersion で対象を確認（この記録の 3 版はそれで見分けられた前提で書いている。3.3.1 以後は productVersion が `3.3.0` のままなので、上の `build-info` で確かめる）。
 
 ### 訂正: 「3.0 が 3 割速い」は測定の誤り
 

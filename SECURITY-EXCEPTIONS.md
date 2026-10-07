@@ -77,11 +77,18 @@ internet-facing); **java/sensitive-log (144)** — verified across every site to
 log CMIS change tokens / ids / key-prefixes (metadata), with the only two
 credential-touching sites being intentional guarded one-time displays (MCP
 auto-generated password with opt-out, setup-token file-write-failure fallback);
-**java/user-controlled-bypass** — the authorization checks themselves, except
-the setup change-password site (#148, `SetupAdminResource`): that one is not an
-authorization check — CodeQL reads `CouchDbConfigWriter.basicAuth`, which only
-builds an outgoing header, as an auth method by its name. Its successor #1409
-stays **open** by owner decision (`docs/design/v3.4-release-readiness.md` §6);
+**java/user-controlled-bypass** — ten alerts (#148–#157) were dismissed on
+2026-07-19 with one shared reason, "the authorization checks themselves". It
+holds for seven (#151–#157: `login`, the `authenticate*` methods, and the
+comparisons against the authenticated repository). It does not hold for three,
+whose sinks are only *named* like auth methods — CodeQL's `AuthMethod` matches
+`auth` / `login` in a method name: `CouchDbConfigWriter.basicAuth`, which builds
+an outgoing header, in setup change-password (#148) and setup apply (#149), and
+`probeAuthorizationEndpoint`, a GET to the IdP during setup (#150). #148's
+successor #1409 stays **open** by owner decision
+(`docs/design/v3.4-release-readiness.md` §6). The 13 authorization-stamp alerts
+(#1425–#1437) were dismissed separately on 2026-09-27 for a different reason —
+the stamps cannot be set from the wire (`@JsonIgnore`; readiness §6);
 **java/xss** — output escaped via escapeForJavaScript; **polynomial-redos /
 client-side sanitization** — authenticated/size-bounded or server-authoritative;
 plus vendored JS (Solr admin webapp) and test-only findings.

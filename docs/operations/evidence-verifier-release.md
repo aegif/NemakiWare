@@ -3,8 +3,8 @@
 受け取る組織が動かすのは `evidence-verifier-cli` である。**彼らは NemakiWare を持っていない**
 という前提が成果物の形を決める。
 
-計画 §10 が要求する成果物: jar、SHA-256SUMS、detached signature、SBOM、result schema、
-profile spec、vectors。
+計画 §10 が要求する成果物: jar、SHA-256SUMS、detached signature、SBOM、provenance、
+result schema、profile spec、vectors（provenance は 3.4.0 では付けていない — 下の「まだできていないこと」）。
 
 ---
 
@@ -16,13 +16,16 @@ profile spec、vectors。
 | profile spec | [`evidence-profile-v1.md`](../design/evidence-profile-v1.md) |
 | vectors | [`docs/evidence-profile/v1/vectors/`](../evidence-profile/v1/vectors/)。**3 実装が同じ 1 ファイルを読む** |
 | SHA-256SUMS | 下の手順で作る |
+| SBOM | **3.4.0 は 2026-10-07 に作って Release に付けた**（`nemakiware-3.4.0-sbom.json` / `.xml` と `nemakiware-3.4.0-ui-sbom.json`。readiness §7）。作り方は `tools/sbom/make-sbom.sh` — Maven の全 module を aggregate した CycloneDX 1.6（verifier の 2 module も入る）と、UI の npm 依存（2026-09-23 から。それまでは plugin がローカルに無いとして置いていた — 正典 R105）。**リリースのたびに git worktree で切った tagged tree で流す** — この作業コピーで出したものは HEAD の依存であって、タグの依存ではない。script は署名しない（`SHA-256SUMS` に載せ、その署名で覆う — 手順 3・4） |
+| detached signature | **3.4.0 は 2026-10-07 にリリース担当者の鍵で署名した**（`SHA-256SUMS.asc`。readiness §7。それまでは鍵を持っていなかった）。鍵は RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名は自動化しない（方針。鍵を CI に置かない）。**3.4.0 の署名はリリース担当者の開発機で行った** — その機械で担当者と同じ OS ユーザーとして動くもの全部を信頼することが、この署名の前提になる（手順 4） |
 
 ## まだできていないこと（残件。成功扱いにしない）
 
 | 成果物 | なぜ |
 |---|---|
-| **SBOM**（タグのもの） | ~~`cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。~~ **2026-09-23 から `tools/sbom/make-sbom.sh` で作れる**（Maven の全 module を aggregate した CycloneDX 1.6 — verifier の 2 module も入る — と、UI の npm 依存）。**ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。~~**タグの SBOM はまだ無い**~~ **3.4.0 のタグの SBOM は 2026-10-07 に、木がタグと同じ `5e33b004c` の git worktree から作って Release に付けた**（readiness §7）。この作業コピーで出したものは今の HEAD の依存であって、タグの依存ではない — リリースのたびに git worktree で切った tagged tree から作る。script は署名しない（下の detached signature） |
-| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵は RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名は自動化しない（方針。鍵を CI に置かない）。**3.4.0 の署名はリリース担当者の開発機で行う** — その機械で担当者と同じ OS ユーザーとして動くもの全部を信頼することが、この署名の前提になる（手順 4）。**残件**: 署名専用の機械かハードウェアの鍵での署名、GitHub の外での鍵の公開、手順 4 の書き漏れ 2 件（同じ OS ユーザーで動くものに、外部につながる Codex の exec-server と cursor-agent がある／この機械の `commit.gpgsign=true` は、どのリポジトリの commit もこの鍵で署名させる — 2026-10-07 の確認 5 巡目で見つけ、止め方に従い手順 4 は直していない） |
+| **SBOM の作り方の限界** | **ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**3.4.0 の UI の SBOM は、worktree に作業コピーの `node_modules` を借りて作った**（`package-lock.json` が同じことだけを確かめた — readiness §7） |
+| **detached signature の残件** | 署名専用の機械かハードウェアの鍵での署名、GitHub の外での鍵の公開、手順 4 の書き漏れ 2 件（同じ OS ユーザーで動くものに、外部につながる Codex の exec-server と cursor-agent がある／この機械の `commit.gpgsign=true` は、どのリポジトリの commit もこの鍵で署名させる — 2026-10-07 の確認 5 巡目で見つけ、止め方に従い手順 4 は直していない） |
+| **provenance** | 計画 §10 が要求するが、**3.4.0 の Release の資産には付けていない** — GitHub の attestations に無い（`evidence-verifier-3.4.0.zip` の digest で引くと 404）。コンテナイメージには buildx の attestation が付いている（`ghcr.io/aegif/nemakiware-core:3.4.0` の index に `attestation-manifest`）が、それは verifier の成果物ではない |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
@@ -58,8 +61,12 @@ BouncyCastle の jar を Maven Central の checksum と照合できるままに�
 
 ### 3. SHA-256SUMS
 
+SBOM を先に作っておく（`tools/sbom/make-sbom.sh` を tagged tree で。出力はリポジトリ直下の `target/`）。
+**SBOM も `SHA-256SUMS` に載せる** — 載せないと、SBOM は黙って署名の外に出る。3.4.0 の
+`SHA-256SUMS` は 9 行（jar 1・依存 4・result schema・SBOM 3）。
+
 ```bash
-cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json . && shasum -a 256 evidence-verifier-cli-3.4.0.jar lib/*.jar verifier-result.schema.json > SHA-256SUMS
+cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json ../../target/nemakiware-3.4.0-sbom.json ../../target/nemakiware-3.4.0-sbom.xml ../../target/nemakiware-3.4.0-ui-sbom.json . && shasum -a 256 evidence-verifier-cli-3.4.0.jar lib/*.jar verifier-result.schema.json nemakiware-3.4.0-sbom.json nemakiware-3.4.0-sbom.xml nemakiware-3.4.0-ui-sbom.json > SHA-256SUMS
 ```
 
 ### 4. 署名（リリース担当者の作業）
