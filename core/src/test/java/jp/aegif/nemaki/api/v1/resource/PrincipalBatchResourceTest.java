@@ -340,14 +340,23 @@ class PrincipalBatchResourceTest {
         StringBuilder out = new StringBuilder();
         for (ILoggingEvent event : appender.list) {
             out.append(event.getFormattedMessage()).append('\n');
-            for (var proxy = event.getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
-                out.append(proxy.getClassName()).append(": ").append(proxy.getMessage()).append('\n');
-                for (var frame : proxy.getStackTraceElementProxyArray()) {
-                    out.append("  at ").append(frame.getSTEAsString()).append('\n');
-                }
-            }
+            render(event.getThrowableProxy(), "", out);
         }
         return out.toString();
+    }
+
+    /** A throwable as the log carries it: the cause chain, and every suppressed throwable on it. */
+    private static void render(ch.qos.logback.classic.spi.IThrowableProxy first, String indent, StringBuilder out) {
+        for (var proxy = first; proxy != null; proxy = proxy.getCause()) {
+            out.append(indent).append(proxy.getClassName()).append(": ").append(proxy.getMessage()).append('\n');
+            for (var frame : proxy.getStackTraceElementProxyArray()) {
+                out.append(indent).append("  at ").append(frame.getSTEAsString()).append('\n');
+            }
+            for (var suppressed : proxy.getSuppressed()) {
+                out.append(indent).append("  Suppressed: ").append('\n');
+                render(suppressed, indent + "    ", out);
+            }
+        }
     }
 
     @Test
@@ -401,6 +410,31 @@ class PrincipalBatchResourceTest {
         // the failure actually happened (confirmation review, round 3, P2: the first fix dropped it).
         assertTrue(logged.contains("java.lang.IllegalArgumentException: weak: [password redacted]"),
                 "the cause's class and redacted message are not in the log: " + logged);
+    }
+
+    @Test
+    @DisplayName("a suppressed throwable — a close that failed after the write did — is logged too, redacted")
+    void aSuppressedFailureIsLoggedRedacted() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        IllegalStateException write = new IllegalStateException("write failed");
+        write.addSuppressed(new IllegalArgumentException("connection reset while closing the request for " + secret));
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]"));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        String logged = rendered(log);
+        assertTrue(logged.contains("java.lang.IllegalArgumentException: connection reset while closing the request for [password redacted]"),
+                "the suppressed failure — the close, often the connection-level reason — was not in the log "
+                        + "(Codex, confirmation review c98, P2: only the cause chain was rebuilt): " + logged);
+        assertFalse(logged.contains(secret),
+                "the suppressed throwable carried the password into the log: " + logged);
     }
 
     @Test

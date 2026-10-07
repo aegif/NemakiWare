@@ -129,17 +129,36 @@ public final class Secrets {
     }
 
     /**
-     * {@code e} rebuilt for the log: the same classes and stack frames down the cause chain,
-     * each message redacted. The original is never handed to the logger — its messages, and
-     * its causes' messages, are whatever the failing layers wrote.
+     * {@code e} rebuilt for the log: the same classes and stack frames down the cause chain and
+     * on every suppressed throwable, each message redacted. The original is never handed to the
+     * logger — its messages, its causes' and its suppressed throwables' messages are whatever
+     * the failing layers wrote.
+     *
+     * <p>Suppressed throwables were dropped (Codex, confirmation review c98, P2): a store write
+     * that failed inside try-with-resources, and whose close failed too, logged the write's
+     * failure and lost the close's — often the connection-level reason an incident is about.
      */
     public Throwable loggable(Throwable e) {
-        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        return copyChain(e, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    /**
+     * The cause chain from {@code head}, walked iteratively (a deep chain does not deepen the
+     * stack); each node's suppressed throwables are copied the same way, and a throwable seen
+     * once is not copied again (a cycle, or one throwable in two places).
+     */
+    private RuntimeException copyChain(Throwable head, Set<Throwable> seen) {
         RuntimeException top = null;
         RuntimeException tail = null;
-        for (Throwable t = e; t != null && seen.add(t); t = t.getCause()) {
+        for (Throwable t = head; t != null && seen.add(t); t = t.getCause()) {
             RuntimeException copy = new RuntimeException(t.getClass().getName() + ": " + redact(t.getMessage()));
             copy.setStackTrace(t.getStackTrace());
+            for (Throwable suppressed : t.getSuppressed()) {
+                RuntimeException suppressedCopy = copyChain(suppressed, seen);
+                if (suppressedCopy != null) {
+                    copy.addSuppressed(suppressedCopy);
+                }
+            }
             if (top == null) {
                 top = copy;
             } else {
