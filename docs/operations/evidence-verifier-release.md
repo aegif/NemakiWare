@@ -22,7 +22,7 @@ profile spec、vectors。
 | 成果物 | なぜ |
 |---|---|
 | **SBOM**（タグのもの） | ~~`cyclonedx-maven-plugin` が**このマシンのローカルリポジトリに無い**ため、オフラインでは配線できない。~~ **2026-09-23 から `tools/sbom/make-sbom.sh` で作れる**（Maven の全 module を aggregate した CycloneDX 1.6 — verifier の 2 module も入る — と、UI の npm 依存）。**ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**タグの SBOM はまだ無い** — この作業コピーで出したものは今の HEAD の依存であって、タグの依存ではない。リリース時に git worktree で切った tagged tree から作る。script は署名しない（下の detached signature） |
-| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵は RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名はリリース担当者が passphrase を入力して行い、自動化しない（鍵を CI に置かない）。**3.4.0 の署名はリリース担当者の開発機で行う** — その機械で担当者と同じ OS ユーザーとして 動くもの（agent・ビルドの道具・gpg と pinentry 自体）を信頼することが、この署名の前提になる（手順 4）。**残件**: 署名専用の機械か ハードウェアの鍵での署名、GitHub の外での鍵の公開 |
+| **detached signature** | ~~**鍵は持っていない。**~~ **3.4.0 からリリース担当者の鍵で署名する**（2026-10-07）。鍵は RSA 4096、fingerprint `DEE5 2327 1849 9934 2FC7  C689 C321 AD4E D1A2 0918`。署名は自動化しない（方針。鍵を CI に置かない）。**3.4.0 の署名はリリース担当者の開発機で行う** — その機械で担当者と同じ OS ユーザーとして動くもの全部を信頼することが、この署名の前提になる（手順 4）。**残件**: 署名専用の機械かハードウェアの鍵での署名、GitHub の外での鍵の公開 |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
 ---
@@ -74,26 +74,31 @@ gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-relea
 **この署名が言えるのは、「fingerprint `DEE5…0918` の鍵を使える環境が、この `SHA-256SUMS` に署名した」まで**
 である。誰が・どの機械で、の部分は次の事実に依る（3.4.0、2026-10-07）:
 
-- 署名はリリース担当者の開発機で、担当者が pinentry に passphrase を入力して行う。pinentry は**何に**署名するかを示さない
-- その機械では、agent（Claude Code）とビルドの道具（WAR のビルドの `npm install`、SBOM の `npx`）が担当者と同じ OS
-  ユーザーで動き、鍵もそのユーザーの `~/.gnupg` にある。gpg と pinentry-mac は同じユーザーが書き換えられる
-  `/opt/homebrew` にある
-- 同じユーザーで動くものは、gpg-agent が passphrase を覚えている間（既定で 10 分、使うたびに延びて最長 2 時間）は
-  prompt なしに署名でき、gpg・pinentry・gpg-agent の設定そのものも書き換えられる。**この鍵は git の commit の署名にも
-  設定されている**ので、commit が passphrase を cache に残す
+- 署名のコマンドはリリース担当者の開発機で打つ。passphrase を求められたら担当者が pinentry に入力する（gpg-agent が
+  覚えていれば求められない — 下記）。pinentry は**何に**署名するかを示さない
+- その機械では、担当者と同じ OS ユーザーで、agent（この版の作業では Claude Code と Codex）とビルドの道具（Maven・
+  WAR のビルドの `npm install`・SBOM の `npx`）が動き、鍵もそのユーザーの `~/.gnupg` にある。gpg と pinentry-mac は
+  同じユーザーが書き換えられる `/opt/homebrew` にある
+- gpg-agent は passphrase を覚える（既定で 10 分、使うたびに延びて最長 2 時間）。pinentry-mac は「キーチェーンに保存」を
+  出し（gpg-agent.conf に `no-allow-external-cache` が無い間）、保存すれば期限なく覚える。覚えている間は、同じユーザーで
+  動くものが prompt なしに署名できる。**この機械の `~/.gitconfig` はこの鍵を git の commit の署名鍵にもしている**ので、
+  署名付きの commit も passphrase を覚えさせる（このブランチの commit は署名していない）
+- 同じユーザーで動くものは、gpg・pinentry・gpg-agent の設定そのものも書き換えられる。gpg-agent.conf の
+  `ignore-cache-for-signing` と `no-allow-external-cache` は、cache を経由した署名を prompt に変えるが、同じユーザーの
+  process はこの設定ごと外せる
 
-したがって、この署名を信頼することは、その機械で同じユーザーとして動いていたものを信頼することでもある。
-gpg-agent.conf の `ignore-cache-for-signing` と `no-allow-external-cache` は cache を経由した署名の窓を狭めるが、
-同じユーザーの process には効かない。署名の後に担当者が `gpg --verify` と `SHA-256SUMS` の中身を確かめる。
+したがって、この署名を信頼することは、その機械で同じユーザーとして動いていたもの全部を信頼することでもあり、
+**この署名は、人の手で出たことの保証ではない**。署名の後に担当者が `gpg --verify` と `SHA-256SUMS` の中身を確かめる。
 **より強い保証が要る版では、鍵を作るところから、署名専用の機械かハードウェアの鍵で行う**（残件）。
 
-**鍵を CI に置かないこと。** 自動化できないことが署名の値打ちである。
+**鍵を CI に置かないこと。** 署名は自動化しない（方針）。
 
 公開鍵（`nemakiware-release-key.asc`）を Release に添え、**fingerprint は Release の本文とこの文書に書く**。
 受け取る側は、添付の鍵を信頼する前に、**Release の添付物とは別の経路で得た** fingerprint と照合する
 （同じ Release のページの本文と照合しても、鍵と本文を一緒に差し替えたものには一致してしまう）。
-この文書から得た fingerprint で防げるのは、**GitHub の aegif/NemakiWare から読んだ場合に**、Release の添付物だけが
-差し替わった配布物まで。リポジトリごと写したミラーや、リポジトリに書ける者による差し替えは防げない。
+この文書を **GitHub の aegif/NemakiWare から読んで** fingerprint を得ていれば、ミラーから取った配布物の鍵の差し替えも、
+添付物だけの差し替えも、照合で見つけられる。見つけられないのは、この文書も一緒に差し替わる場合（この文書をミラーから
+読んだとき、リポジトリに書ける者が文書と添付物を両方変えたとき）。照合は、したときだけ効く検出である。
 GitHub の外の経路（鍵サーバ・組織の Web など）での公開は、まだしていない（残件）。
 
 ---
