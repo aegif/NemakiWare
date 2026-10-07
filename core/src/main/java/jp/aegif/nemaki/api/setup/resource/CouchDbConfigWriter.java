@@ -66,12 +66,7 @@ final class CouchDbConfigWriter {
         json.append("}");
 
         // PUT document
-        URL url = new URL(dbUrl + "/" + docId);
-        HttpURLConnection putConn = (HttpURLConnection) url.openConnection();
-        putConn.setRequestProperty("Authorization", authHeader);
-        putConn.setRequestProperty("Content-Type", "application/json");
-        putConn.setRequestMethod("PUT");
-        putConn.setDoOutput(true);
+        HttpURLConnection putConn = openPut(dbUrl + "/" + docId, authHeader);
         try (OutputStreamWriter out = new OutputStreamWriter(putConn.getOutputStream(), StandardCharsets.UTF_8)) {
             out.write(json.toString());
         }
@@ -116,6 +111,26 @@ final class CouchDbConfigWriter {
         conn.setReadTimeout(5000);
         conn.setRequestProperty("Authorization", authHeader);
         conn.setRequestMethod("GET");
+        return conn;
+    }
+
+    /**
+     * A JSON PUT that does not follow redirects — every setup write goes through here.
+     *
+     * <p>The URL is the CouchDB a setup request named, and the request carries the CouchDB
+     * admin's credentials. A followed redirect re-sends the PUT, body and all, to an address
+     * {@link jp.aegif.nemaki.api.setup.filter.UrlValidator} never saw: on JDK 21 a PUT follows
+     * 301 / 302 / 303 / 307, and only the Authorization header is dropped when the host changes.
+     * Same policy as {@link #openGet}.
+     */
+    static HttpURLConnection openPut(String urlStr, String authHeader) throws Exception {
+        URL u = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+        conn.setInstanceFollowRedirects(false);
+        conn.setRequestProperty("Authorization", authHeader);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestMethod("PUT");
+        conn.setDoOutput(true);
         return conn;
     }
 

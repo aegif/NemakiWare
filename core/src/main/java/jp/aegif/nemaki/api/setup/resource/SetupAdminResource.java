@@ -2,7 +2,6 @@ package jp.aegif.nemaki.api.setup.resource;
 
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.logging.Level;
@@ -195,12 +194,7 @@ public class SetupAdminResource {
             ObjectNode mutable = (ObjectNode) adminDoc.deepCopy();
             mutable.put("passwordHash", bcryptHash);
 
-            URL url = new URL(dbUrl + "/" + adminDocId);
-            HttpURLConnection putConn = (HttpURLConnection) url.openConnection();
-            putConn.setRequestProperty("Authorization", authHeader);
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestMethod("PUT");
-            putConn.setDoOutput(true);
+            HttpURLConnection putConn = CouchDbConfigWriter.openPut(dbUrl + "/" + adminDocId, authHeader);
             try (OutputStreamWriter out = new OutputStreamWriter(putConn.getOutputStream(), StandardCharsets.UTF_8)) {
                 out.write(mapper.writeValueAsString(mutable));
             }
