@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
-import { message } from 'antd';
+import { ConfigProvider, message } from 'antd';
 import i18n from '../../i18n';
 import { AccountSettings } from './AccountSettings';
 
@@ -32,15 +32,25 @@ vi.mock('../../services/passwordPolicy', () => ({
 vi.mock('../PasskeyManagement/PasskeyManagement', () => ({ default: () => null }));
 vi.mock('../ApiKeyManagement/ApiKeyManagement', () => ({ ApiKeyManagement: () => null }));
 
-// message.destroy() schedules a React update of antd's message holder. Outside act it went to the
-// scheduler and could run after the file's jsdom was torn down — "ReferenceError: window is not
-// defined" from react-dom, an unhandled error that fails the run with every test green (CI on
-// 8f0a7c2b9, and 1 run in 4 locally). Inside act the update is flushed before the hook returns.
+// antd's message notices must not outlive a test. A notice leaves through rc-motion, stepped on
+// requestAnimationFrame and finished by transitionend, which jsdom never fires — so a "destroyed"
+// notice stayed mounted, and its duration timer kept updating React on every frame, outside any
+// act. That work could run after the file's jsdom was torn down: "ReferenceError: window is not
+// defined" from react-dom, an unhandled error that failed the run with every test green (CI on
+// 8f0a7c2b9; 1 run in 4 locally). Wrapping destroy() in act alone left the notices mounted (1, then
+// 2 — measured with the assertion below). With motion off, destroy() unmounts them inside act and
+// nothing of the holder keeps running.
+ConfigProvider.config({
+  holderRender: (children) => <ConfigProvider theme={{ token: { motion: false } }}>{children}</ConfigProvider>,
+});
+
 afterEach(async () => {
   cleanup();
   await act(async () => {
     message.destroy();
   });
+  expect(document.querySelectorAll('.ant-message-notice').length,
+    'a message notice outlived the test; its timer keeps updating React after the hook').toBe(0);
 });
 
 describe('AccountSettings refused password change', () => {
