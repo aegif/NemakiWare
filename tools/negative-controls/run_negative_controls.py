@@ -13909,7 +13909,7 @@ CONTROLS = [
         module='core',
         file='docs/design/v3.4-release-readiness.md',
         # Re-pointed 2026-10-07: the §1.4 record of 2026-10-06 moved the figure to 7,880.
-        find='**7,880 本 green**',
+        find='**7,881 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
