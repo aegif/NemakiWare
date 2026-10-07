@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, afterAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { ConfigProvider, message } from 'antd';
 import i18n from '../../i18n';
@@ -32,16 +32,20 @@ vi.mock('../../services/passwordPolicy', () => ({
 vi.mock('../PasskeyManagement/PasskeyManagement', () => ({ default: () => null }));
 vi.mock('../ApiKeyManagement/ApiKeyManagement', () => ({ ApiKeyManagement: () => null }));
 
-// antd's message notices must not outlive a test. A notice leaves through rc-motion, stepped on
-// requestAnimationFrame and finished by transitionend, which jsdom never fires — so a "destroyed"
-// notice stayed mounted, and its duration timer kept updating React on every frame, outside any
-// act. That work could run after the file's jsdom was torn down: "ReferenceError: window is not
-// defined" from react-dom, an unhandled error that failed the run with every test green (CI on
-// 8f0a7c2b9; 1 run in 4 locally). Wrapping destroy() in act alone left the notices mounted (1, then
-// 2 — measured with the assertion below). With motion off, destroy() unmounts them inside act and
-// nothing of the holder keeps running.
+// antd's message notices must not outlive a test. A notice leaves through @rc-component/motion,
+// stepped on requestAnimationFrame and finished by transitionend, which jsdom never fires — so a
+// "destroyed" notice stayed mounted (1, then 2 — measured with the assertion below while destroy()
+// was only wrapped in act). Read from the code (useNoticeTimer), a mounted notice's duration timer
+// updates React on every frame, outside any act — work that can run after the file's jsdom is torn
+// down: "ReferenceError: window is not defined" from react-dom, an unhandled error that failed the
+// run with every test green (CI on 8f0a7c2b9; 1 run in 4 locally). With motion off, destroy()
+// unmounts the notices inside act, and neither the notices nor their timers outlive the hook.
 ConfigProvider.config({
   holderRender: (children) => <ConfigProvider theme={{ token: { motion: false } }}>{children}</ConfigProvider>,
+});
+// The setting is global; vitest isolates test files by default, and this puts it back regardless.
+afterAll(() => {
+  ConfigProvider.config({ holderRender: undefined });
 });
 
 afterEach(async () => {
@@ -69,7 +73,11 @@ describe('AccountSettings refused password change', () => {
       fireEvent.change(screen.getByPlaceholderText(next), { target: { value: 'New-pass-1234' } });
       fireEvent.change(screen.getByPlaceholderText(confirm), { target: { value: 'New-pass-1234' } });
       fireEvent.click(screen.getByRole('button', { name: button }));
-      expect(await screen.findByText(expected)).toBeInTheDocument();
+      const shown = await screen.findByText(expected);
+      expect(shown).toBeInTheDocument();
+      // The afterEach count is only worth something if its selector finds a real notice in this
+      // very state (motion off): a renamed class would leave it counting nothing, green.
+      expect(shown.closest('.ant-message-notice')).not.toBeNull();
     });
   }
 });
