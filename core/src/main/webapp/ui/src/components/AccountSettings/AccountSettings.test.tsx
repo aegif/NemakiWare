@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { message } from 'antd';
 import i18n from '../../i18n';
 import { AccountSettings } from './AccountSettings';
@@ -32,9 +32,15 @@ vi.mock('../../services/passwordPolicy', () => ({
 vi.mock('../PasskeyManagement/PasskeyManagement', () => ({ default: () => null }));
 vi.mock('../ApiKeyManagement/ApiKeyManagement', () => ({ ApiKeyManagement: () => null }));
 
-afterEach(() => {
+// message.destroy() schedules a React update of antd's message holder. Outside act it went to the
+// scheduler and could run after the file's jsdom was torn down — "ReferenceError: window is not
+// defined" from react-dom, an unhandled error that fails the run with every test green (CI on
+// 8f0a7c2b9, and 1 run in 4 locally). Inside act the update is flushed before the hook returns.
+afterEach(async () => {
   cleanup();
-  message.destroy();
+  await act(async () => {
+    message.destroy();
+  });
 });
 
 describe('AccountSettings refused password change', () => {
