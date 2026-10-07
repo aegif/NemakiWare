@@ -12,6 +12,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import jp.aegif.nemaki.rest.BuildInfoResource;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
@@ -265,7 +266,10 @@ public class RepositoryInfoMap {
 			}else if(key.equals("product.name")){
 				info.setProductName(val);
 			}else if(key.equals("product.version")){
-				info.setProductVersion(val);
+				// Not read. productVersion is the version this build was made from, set in
+				// buildDefaultInfo. A literal here is what made 3.3.1 and 3.4.0 report "3.3.0":
+				// nothing checked it against the build, so nobody bumped it.
+				warnIgnoredProductVersion(val);
 			}else if(key.equals("nameSpace")){
 				info.setNameSpace(val);
 			}else if(key.equals("archive")){
@@ -279,7 +283,18 @@ public class RepositoryInfoMap {
 	private RepositoryInfo buildDefaultInfo(Map<String, String> setting){
 		RepositoryInfo info = new RepositoryInfo();
 		modifyInfo(setting, info);
+		// The build's version (Maven-filtered version.properties), the same value
+		// /rest/all/build-info reports — never a configured literal (see modifyInfo).
+		info.setProductVersion(BuildInfoResource.getVersion());
 		return info;
+	}
+
+	private void warnIgnoredProductVersion(String configured) {
+		String built = BuildInfoResource.getVersion();
+		if (!configured.isEmpty() && !configured.equals(built)) {
+			log.warn("repositories.yml sets product.version=" + configured + ", which is not read: "
+					+ "CMIS productVersion reports the version of this build (" + built + ")");
+		}
 	}
 
 	public void setCapabilities(Capabilities capabilities) {

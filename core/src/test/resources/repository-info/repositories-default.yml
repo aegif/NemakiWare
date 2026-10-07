@@ -1,0 +1,10 @@
+default:
+  description: fixture for CmisProductVersionIsTheBuildVersionTest
+  root: fixture-root
+  principal.anonymous: anonymous
+  principal.anyone: GROUP_EVERYONE
+  vendor: aegif
+  product.name: NemakiWare
+  # A literal the build does not check — must not be what CMIS reports.
+  product.version: 9.9.9
+super.users: bedroom
