@@ -1,11 +1,10 @@
 default:
-  description: fixture for CmisProductVersionIsTheBuildVersionTest
+  description: fixture for CmisProductVersionIsTheBuildVersionTest (what CMIS reports)
   root: fixture-root
   principal.anonymous: anonymous
   principal.anyone: GROUP_EVERYONE
   vendor: aegif
   product.name: NemakiWare
-  # Filtered by Maven to the build's own version (core/pom.xml testResources): the one value the
-  # first version of the WARN stayed silent for. It must still be warned about.
-  product.version: ${project.version}
+  # A literal the build does not check — like the 3.3.0 a 3.3.x repositories file carries over.
+  product.version: 9.9.9
 super.users: bedroom

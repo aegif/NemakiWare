@@ -1,0 +1,12 @@
+default:
+  description: fixture for CmisProductVersionIsTheBuildVersionTest (the WARN)
+  root: fixture-root
+  principal.anonymous: anonymous
+  principal.anyone: GROUP_EVERYONE
+  vendor: aegif
+  product.name: NemakiWare
+  # Filtered by Maven to the build's own version (core/pom.xml testResources): the value the first
+  # version of the WARN stayed silent for. It is the only product.version in this fixture, so the
+  # one WARN expected can only be about it.
+  product.version: ${project.version}
+super.users: bedroom

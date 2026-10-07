@@ -1451,14 +1451,14 @@
 				<directory>src/test/resources</directory>
 				<filtering>true</filtering>
 				<includes>
-					<include>repository-info/repositories-default.yml</include>
+					<include>repository-info-built/repositories-default.yml</include>
 				</includes>
 			</testResource>
 			<testResource>
 				<directory>src/test/resources</directory>
 				<filtering>false</filtering>
 				<excludes>
-					<exclude>repository-info/repositories-default.yml</exclude>
+					<exclude>repository-info-built/repositories-default.yml</exclude>
 				</excludes>
 			</testResource>
 		</testResources>

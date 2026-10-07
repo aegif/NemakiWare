@@ -44,12 +44,14 @@ import jp.aegif.nemaki.init.DatabasePreInitializer;
  * second server, and asserts that the second server heard nothing — and that the stand-in did
  * hear the request, so the test cannot pass by never getting there. The last test reads the
  * source of the setup resources, {@code DatabasePreInitializer} and {@code StartupProbeService},
- * with every comment — line or block, wherever it starts — removed first: every
- * {@code openConnection()} there is followed, in code, by {@code setInstanceFollowRedirects(false)}
- * on that same connection; every {@code setInstanceFollowRedirects} call passes the literal
- * {@code false}; nothing sets the JVM-wide default; and the one {@code openStream()} is the known
- * one below. It is a reading, not an interpreter: a refusal placed inside an {@code if}, a
- * connection used before its refusal, or reflection would get past it.
+ * with every comment — line or block, wherever it starts — removed and the contents of every
+ * string, character and text-block literal emptied first: every {@code openConnection()} there is
+ * followed, in code, by {@code setInstanceFollowRedirects(false)} on that same connection; a line
+ * that names {@code setInstanceFollowRedirects} or {@code setFollowRedirects} must be exactly that
+ * refusal, alone (so nothing passes another value, splits the call, or sets the JVM-wide default);
+ * and the one {@code openStream()} is the known one below. It is a reading of conventionally
+ * written Java, not an interpreter: a refusal placed inside an {@code if}, a connection used before
+ * its refusal, reflection, or source spelled with unicode escapes would get past it.
  *
  * <p>What this does not cover: {@code StartupProbeService} reads a {@code repositories.yml} given as
  * an http(s) path with {@code openStream()} (it follows redirects — the path is the operator's
@@ -281,8 +283,10 @@ class SetupConnectionsDoNotFollowRedirectsTest {
         // shape this cannot read is a failure, not a pass — an unread line is an unchecked one.
         Pattern opened = Pattern.compile(
                 "^(?:[\\w.]+\\s+)?(\\w+)\\s*=\\s*\\((?:java\\.net\\.)?HttpURLConnection\\)\\s*\\w+\\.openConnection\\(\\);");
-        Pattern setter = Pattern.compile("setInstanceFollowRedirects\\(([^)]*)\\)");
-        Pattern jvmWide = Pattern.compile("\\bsetFollowRedirects\\(");
+        Pattern opens = Pattern.compile("\\.openConnection\\s*\\(");
+        Pattern streams = Pattern.compile("\\.openStream\\s*\\(");
+        Pattern namesRedirects = Pattern.compile("\\bset(?:Instance)?FollowRedirects\\b");
+        Pattern refusal = Pattern.compile("^\\w+\\.setInstanceFollowRedirects\\(false\\);$");
         int connections = 0;
         List<String> mayFollow = new ArrayList<>();
         List<String> openStreams = new ArrayList<>();
@@ -291,19 +295,14 @@ class SetupConnectionsDoNotFollowRedirectsTest {
             for (int i = 0; i < code.size(); i++) {
                 String line = code.get(i);
                 String at = file.getFileName() + ":" + (i + 1) + "  " + line;
-                Matcher set = setter.matcher(line);
-                while (set.find()) {
-                    if (!"false".equals(set.group(1).trim())) {
-                        mayFollow.add(at + "  — sets redirects to " + set.group(1).trim() + ", not the literal false");
-                    }
+                if (namesRedirects.matcher(line).find() && !refusal.matcher(line).matches()) {
+                    mayFollow.add(at + "  — names the redirect setting but is not, alone, <connection>"
+                            + ".setInstanceFollowRedirects(false);");
                 }
-                if (jvmWide.matcher(line).find()) {
-                    mayFollow.add(at + "  — changes the JVM-wide default");
-                }
-                if (line.contains(".openStream(")) {
+                if (streams.matcher(line).find()) {
                     openStreams.add(file.getFileName().toString());
                 }
-                if (!line.contains(".openConnection(")) {
+                if (!opens.matcher(line).find()) {
                     continue;
                 }
                 connections++;
@@ -320,7 +319,7 @@ class SetupConnectionsDoNotFollowRedirectsTest {
                         continue;
                     }
                     seen++;
-                    refused |= code.get(j).startsWith(refuse);
+                    refused |= code.get(j).equals(refuse);
                 }
                 if (!refused) {
                     mayFollow.add(at + "  — no " + refuse + " within two code lines");
@@ -337,9 +336,10 @@ class SetupConnectionsDoNotFollowRedirectsTest {
     }
 
     /**
-     * The file's lines, trimmed, with every comment blanked out — a line comment to its end, a
-     * block comment from its opening to its close, across lines — so a commented-out statement is
-     * not read as code. String and character literals are kept as written.
+     * The file's lines, trimmed, as code only: every comment blanked out — a line comment to its
+     * end, a block comment from its opening to its close, across lines — and the contents of every
+     * string, character and text-block literal emptied, so neither a commented-out statement nor
+     * one spelled inside a literal is read as code. Line numbers are kept.
      */
     private static List<String> codeLines(Path file) throws IOException {
         String src = Files.readString(file, StandardCharsets.UTF_8);
@@ -362,17 +362,31 @@ class SetupConnectionsDoNotFollowRedirectsTest {
                     i++;
                 }
                 i += 2;
-            } else if (c == '"' || c == '\'') {
-                out.append(c);
-                i++;
-                while (i < n && src.charAt(i) != c && src.charAt(i) != '\n') {
+            } else if (src.startsWith("\"\"\"", i)) {
+                // A text block: emptied, its line breaks kept so the numbering holds.
+                out.append("\"\"\"");
+                i += 3;
+                while (i < n && !src.startsWith("\"\"\"", i)) {
                     if (src.charAt(i) == '\\' && i + 1 < n) {
-                        out.append(src.charAt(i)).append(src.charAt(i + 1));
+                        if (src.charAt(i + 1) == '\n') {
+                            out.append('\n');
+                        }
                         i += 2;
                         continue;
                     }
-                    out.append(src.charAt(i));
+                    if (src.charAt(i) == '\n') {
+                        out.append('\n');
+                    }
                     i++;
+                }
+                out.append("\"\"\"");
+                i += 3;
+            } else if (c == '"' || c == '\'') {
+                // A string or character literal on one line: emptied.
+                out.append(c);
+                i++;
+                while (i < n && src.charAt(i) != c && src.charAt(i) != '\n') {
+                    i += src.charAt(i) == '\\' && i + 1 < n ? 2 : 1;
                 }
                 if (i < n && src.charAt(i) == c) {
                     out.append(c);
