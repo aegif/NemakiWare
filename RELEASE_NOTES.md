@@ -7,6 +7,34 @@ only repository gotchas.
 
 ---
 
+# 未リリース (3.4.1 に向けた作業)
+
+## CMIS の `productVersion` がビルドの版を返すようになりました
+
+3.3.1 と 3.4.0 は、CMIS の repositoryInfo（と REST の `/api/v1/cmis/repositories/{id}`）の
+`productVersion` に `3.3.0` を返していました。`repositories-default.yml` の `product.version` を
+3.3.0 のリリースで書いたまま、上げていなかったためです。
+
+- `productVersion` はビルドの版（`/core/rest/all/build-info` と同じ値）になります。
+- `repositories.yml` の `product.version` は読みません。書いてあれば起動時に WARN を出します。
+- 3.4.0 以前の版を相手に版を確かめるときは、`/core/rest/all/build-info` を使ってください。
+
+## setup が CouchDB に送る要求は、リダイレクトに従わなくなりました
+
+setup が CouchDB に送る要求のうち、admin のパスワード変更、設定の書き込み、`/apply` での
+データベースの作成と初期データの投入は、CouchDB の URL の先がリダイレクトを返すと、転送先へ
+要求を送り直していました。JDK 21 では PUT も本文ごと送り直します（Authorization ヘッダは宛先が
+変わると外れます）。setup の URL の検査は、その転送先を見ていません。
+
+- これらの要求は、ほかの setup の要求と同じくリダイレクトに従いません。リダイレクトはその要求の
+  失敗として扱います。
+- 起動時のデータベースの初期化（`DatabasePreInitializer`）も同じです。設定した CouchDB の URL が
+  リダイレクトを返す構成（http から https へ転送するプロキシなど）では、起動時の作成と投入が
+  失敗するようになります。CouchDB を直接指してください。
+- 検査と接続の間に DNS の答えが変わる窓（R53）は、この修正では閉じていません。
+
+---
+
 # 3.4.0 (2026-10-07)
 
 ## 画面に混ざっていた、表示言語と違う言語の文言を直しました（日本語・英語）
