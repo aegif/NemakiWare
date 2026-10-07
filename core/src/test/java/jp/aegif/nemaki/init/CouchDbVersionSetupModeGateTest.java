@@ -205,9 +205,12 @@ class CouchDbVersionSetupModeGateTest {
 	 *
 	 * <p>The system property is not a trust boundary: {@code SetupApplyResource} takes this URL
 	 * from a request body and stores it, and {@code changePassword} then sends Basic credentials
-	 * to whatever it names. CodeQL raised {@code java/user-controlled-bypass} on the read; the
-	 * first reading of that alert — "a system property is not remote input" — was wrong, and a
-	 * review traced the path that makes it remote.
+	 * to whatever it names. A review that was chasing CodeQL's {@code java/user-controlled-bypass}
+	 * alert on {@code changePassword} (#1409) traced this path; its first reading, "a system
+	 * property is not remote input", was wrong. The alert itself does not flow through the URL:
+	 * its source is the request body ({@code req}), its condition the null check on it, and its
+	 * sink {@code basicAuth}, which CodeQL treats as an auth method by its name (readiness §6).
+	 * Closing the window below is therefore not expected to close the alert.
 	 *
 	 * <p>What this measures is the refusal, not confinement of the whole flow: the window
 	 * between this check and the connection is still open (see the residual).

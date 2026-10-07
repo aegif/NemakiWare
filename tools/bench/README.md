@@ -30,9 +30,12 @@ python3 tools/bench/cmis_bench.py --run --only create --label 3.3 --levels 8
 確かめてください。
 
 ```bash
-curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom?cmisselector=repositoryInfo" \
-  | python3 -c "import json,sys;print(list(json.load(sys.stdin).values())[0]['productVersion'])"
+curl -s "http://localhost:8080/core/rest/all/build-info"
 ```
+
+CMIS の `productVersion` では見分けられません — 3.3.0 のリリースで書いた値のまま、
+3.3.1 でも 3.4.0 でも `3.3.0` を返します（`docs/design/v3.4-release-readiness.md` §7）。
+`build-info` は Maven の版を返し、3.0.0-RC1 以後の版にはどれも在ります。
 
 ### 2. Solr イメージに古い索引が焼き込まれる
 
@@ -83,7 +86,7 @@ curl -s -u admin:admin "http://localhost:8080/core/browser/bedroom/root\
 ## 2026-08-08 の実測結果 (Apple Silicon 14 core, 単一ホスト)
 
 索引は全バージョンで purge → 再索引 → 静定を確認。1 スタックずつ順に起動し、
-毎回 productVersion で対象を確認。
+毎回 productVersion で対象を確認（この記録の 3 版はそれで見分けられた前提で書いている。3.3.1 以後は productVersion が `3.3.0` のままなので、上の `build-info` で確かめる）。
 
 ### 訂正: 「3.0 が 3 割速い」は測定の誤り
 
