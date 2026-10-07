@@ -52,5 +52,10 @@ class CmisProductVersionIsTheBuildVersionTest {
                     id + " reports productVersion '" + info.getProductVersion() + "' but this build is "
                             + built);
         }
+        // Ignored, but not silently: the release notes promise a startup WARN whenever the
+        // setting is present, so an operator can find the dead line in their repositories file.
+        assertTrue(map.productVersionSettingSeen(),
+                "product.version was set in the fixture but nothing recorded that it was ignored, so the "
+                        + "startup WARN the release notes promise did not happen");
     }
 }

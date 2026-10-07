@@ -32,6 +32,9 @@ public class RepositoryInfoMap {
 	// Explicitly track the first repository ID for deterministic default selection
 	private String firstRepositoryId;
 
+	// A product.version setting was seen (and ignored) — see ignoreProductVersionSetting
+	private boolean productVersionSettingSeen;
+
 	public void init(){
 		loadRepositoriesSetting();
 	}
@@ -269,7 +272,7 @@ public class RepositoryInfoMap {
 				// Not read. productVersion is the version this build was made from, set in
 				// buildDefaultInfo. A literal here is what made 3.3.1 and 3.4.0 report "3.3.0":
 				// nothing checked it against the build, so nobody bumped it.
-				warnIgnoredProductVersion(val);
+				ignoreProductVersionSetting(val);
 			}else if(key.equals("nameSpace")){
 				info.setNameSpace(val);
 			}else if(key.equals("archive")){
@@ -289,12 +292,23 @@ public class RepositoryInfoMap {
 		return info;
 	}
 
-	private void warnIgnoredProductVersion(String configured) {
-		String built = BuildInfoResource.getVersion();
-		if (!configured.isEmpty() && !configured.equals(built)) {
-			log.warn("repositories.yml sets product.version=" + configured + ", which is not read: "
-					+ "CMIS productVersion reports the version of this build (" + built + ")");
+	/**
+	 * A setting named product.version, whatever its value — equal to the build's, empty, or a
+	 * literal from an older release — is not read. Said once per startup, not once per
+	 * repository (a value in the default block is applied to every repository).
+	 */
+	private void ignoreProductVersionSetting(String configured) {
+		if (!productVersionSettingSeen) {
+			log.warn("The repository settings (repositories-default.yml / repositories.yml) set product.version="
+					+ configured + ", which is not read: CMIS productVersion reports the version of this build ("
+					+ BuildInfoResource.getVersion() + ")");
 		}
+		productVersionSettingSeen = true;
+	}
+
+	/** Whether a product.version setting was seen and ignored — the condition of the startup WARN. */
+	boolean productVersionSettingSeen() {
+		return productVersionSettingSeen;
 	}
 
 	public void setCapabilities(Capabilities capabilities) {

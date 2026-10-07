@@ -20,6 +20,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
@@ -28,20 +30,28 @@ import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.init.DatabasePreInitializer;
 
 /**
- * Nothing on the setup path follows a redirect.
+ * No {@code HttpURLConnection} the setup code opens follows a redirect.
  *
  * <p>Every request here goes to the CouchDB a setup request named, with the CouchDB admin's
  * credentials. {@code UrlValidator} checks that URL; a redirect from it is a second address
- * nobody checked. On JDK 21 an {@code HttpURLConnection} PUT follows 301 / 302 / 303 / 307 and
- * re-sends its body — only the Authorization header is dropped when the host changes. The GET
- * helper and the probes already refused redirects; the three admin and config PUTs, and
- * {@code DatabasePreInitializer} (which {@code /apply} drives with the same URL), did not.
+ * nobody checked. On JDK 21 an {@code HttpURLConnection} PUT follows a same-protocol 301 / 302 /
+ * 303 / 307 and re-sends its body — only the Authorization header is dropped when the host
+ * changes (it does not follow a redirect that changes the protocol). The GET helper and the probes
+ * already refused redirects; the three admin and config PUTs, and {@code DatabasePreInitializer}
+ * (which {@code /apply} drives with the same URL), did not.
  *
  * <p>Each behaviour test points the code at a stand-in CouchDB that answers with a redirect to a
  * second server, and asserts that the second server heard nothing — and that the stand-in did
  * hear the request, so the test cannot pass by never getting there. The last test reads the
- * source: every connection opened on this path refuses redirects before it is used, so a new
- * call site that forgets is caught even where no behaviour test reaches.
+ * source of the setup resources, {@code DatabasePreInitializer} and {@code StartupProbeService}:
+ * every {@code openConnection()} there is followed, in code, by
+ * {@code setInstanceFollowRedirects(false)} on that same connection; nothing sets it back to
+ * {@code true}; and the one {@code openStream()} is the known one below.
+ *
+ * <p>What this does not cover: {@code StartupProbeService} reads a {@code repositories.yml} given as
+ * an http(s) path with {@code openStream()} (it follows redirects — the path is the operator's
+ * configuration, not something a setup request names). Connections made by other clients — the
+ * Cloudant client the repository layer uses — are outside these files and this scan.
  */
 class SetupConnectionsDoNotFollowRedirectsTest {
 
@@ -264,28 +274,59 @@ class SetupConnectionsDoNotFollowRedirectsTest {
         files.add(Path.of("src/main/java/jp/aegif/nemaki/init/DatabasePreInitializer.java"));
         files.add(Path.of("src/main/java/jp/aegif/nemaki/init/StartupProbeService.java"));
 
+        // The one shape a connection may be opened in: assigned, cast, from a URL variable. A
+        // shape this cannot read is a failure, not a pass — an unread line is an unchecked one.
+        Pattern opened = Pattern.compile(
+                "^(?:[\\w.]+\\s+)?(\\w+)\\s*=\\s*\\((?:java\\.net\\.)?HttpURLConnection\\)\\s*\\w+\\.openConnection\\(\\);");
         int connections = 0;
         List<String> mayFollow = new ArrayList<>();
+        List<String> openStreams = new ArrayList<>();
         for (Path file : files) {
-            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-            for (int i = 0; i < lines.size(); i++) {
-                String line = lines.get(i).trim();
-                if (line.startsWith("*") || line.startsWith("//") || !line.contains(".openConnection(")) {
+            List<String> code = new ArrayList<>();
+            for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String line = raw.trim();
+                boolean comment = line.startsWith("//") || line.startsWith("*") || line.startsWith("/*");
+                code.add(comment ? "" : line);
+            }
+            for (int i = 0; i < code.size(); i++) {
+                String line = code.get(i);
+                String at = file.getFileName() + ":" + (i + 1) + "  " + line;
+                if (line.contains("setInstanceFollowRedirects(true")) {
+                    mayFollow.add(at + "  — turns redirects back on");
+                }
+                if (line.contains(".openStream(")) {
+                    openStreams.add(file.getFileName().toString());
+                }
+                if (!line.contains(".openConnection(")) {
                     continue;
                 }
                 connections++;
+                Matcher m = opened.matcher(line);
+                if (!m.find()) {
+                    mayFollow.add(at + "  — not in the one shape this check reads");
+                    continue;
+                }
+                // The very connection, in code, within the next two code lines.
+                String refuse = m.group(1) + ".setInstanceFollowRedirects(false);";
                 boolean refused = false;
-                for (int j = i + 1; j <= Math.min(i + 2, lines.size() - 1); j++) {
-                    refused |= lines.get(j).contains("setInstanceFollowRedirects(false)");
+                for (int j = i + 1, seen = 0; j < code.size() && seen < 2; j++) {
+                    if (code.get(j).isEmpty()) {
+                        continue;
+                    }
+                    seen++;
+                    refused |= code.get(j).startsWith(refuse);
                 }
                 if (!refused) {
-                    mayFollow.add(file.getFileName() + ":" + (i + 1) + "  " + line);
+                    mayFollow.add(at + "  — no " + refuse + " within two code lines");
                 }
             }
         }
         assertTrue(connections >= 9, "found only " + connections
                 + " connections on the setup path — the scan is not reading the files it names");
-        assertEquals(List.of(), mayFollow,
-                "connections on the setup path that do not refuse redirects within two lines of opening");
+        assertEquals(List.of(), mayFollow, "connections on the setup path that may follow a redirect");
+        assertEquals(List.of("StartupProbeService.java"), openStreams,
+                "an openStream() follows redirects and is outside the openConnection() check; the only "
+                        + "one allowed is StartupProbeService's read of a repositories.yml path (operator "
+                        + "configuration)");
     }
 }

@@ -129,8 +129,12 @@ public class SetupAdminResource {
             }
 
             if (updatedCount == 0) {
+                // Not "not found": updateAdminInDb also answers false when it found the document
+                // and the write was refused (a conflict, a redirect it does not follow).
                 return Response.serverError()
-                        .entity("{\"error\":\"Admin user document not found in any repository\"}")
+                        .entity("{\"error\":\"The admin password was not changed in any repository: the admin "
+                                + "user document was not found, or writing it was refused\",\"results\":["
+                                + perDb + "]}")
                         .build();
             }
 
