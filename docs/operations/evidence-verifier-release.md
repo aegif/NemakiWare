@@ -23,7 +23,7 @@ result schema、profile spec、vectors（provenance は 3.4.0 では付けてい
 
 | 成果物 | なぜ |
 |---|---|
-| **SBOM の作り方の限界** | **ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**3.4.0 の UI の SBOM は、worktree に作業コピーの `node_modules` を借りて作った**（`package-lock.json` が同じことだけを確かめた — readiness §7） |
+| **SBOM の作り方の限界** | **ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**3.4.0 の UI の SBOM は、worktree に作業コピーの `node_modules` を借りて作った**（`package-lock.json` が同じことだけを確かめた — readiness §7）。`make-sbom.sh` は UI の `npm ci` をせず、`node_modules` に在るものから作る — 新しく切った worktree には `node_modules` が無いので、**次のリリースで worktree に `npm ci` するか借りるかは決めていない**（2026-10-08 の確認で記録） |
 | **detached signature の残件** | 署名専用の機械かハードウェアの鍵での署名、GitHub の外での鍵の公開、手順 4 の書き漏れ 2 件（同じ OS ユーザーで動くものに、外部につながる Codex の exec-server と cursor-agent がある／この機械の `commit.gpgsign=true` は、どのリポジトリの commit もこの鍵で署名させる — 2026-10-07 の確認 5 巡目で見つけ、止め方に従い手順 4 は直していない） |
 | **provenance** | 計画 §10 が要求するが、**3.4.0 の Release の資産には付けていない** — GitHub の attestations に無い（`evidence-verifier-3.4.0.zip` の digest で引くと 404）。コンテナイメージには buildx の attestation が付いている（`ghcr.io/aegif/nemakiware-core:3.4.0` の index に `attestation-manifest`）が、それは verifier の成果物ではない |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
@@ -186,7 +186,7 @@ profile は**積み上げ**で、上位は下位の必須検査を全部含み�
 
 ## 受け取る側に渡すもの
 
-jar（と `lib/` の 4 つ）、`SHA-256SUMS`、`SHA-256SUMS.asc`、署名の公開鍵（`nemakiware-release-key.asc` — fingerprint は上の表）、profile spec、vectors、**result schema**（`verifier-result.schema.json` — `SHA-256SUMS` が参照するので、無いと照合できない）。
+jar（と `lib/` の 4 つ）、`SHA-256SUMS`、`SHA-256SUMS.asc`、署名の公開鍵（`nemakiware-release-key.asc` — fingerprint は上の表）、profile spec、vectors、**result schema**（`verifier-result.schema.json` — `SHA-256SUMS` が参照するので、無いと照合できない）、**SBOM 3 本**（`nemakiware-<版>-sbom.json` / `.xml` と `nemakiware-<版>-ui-sbom.json` — 手順 3 で `SHA-256SUMS` に載せるので、無いと `shasum -c` が落ちる。3.4.0 は Release の資産と zip の両方に入れた）。
 
 **verifier のダウンロード URL を package に埋め込まない**（計画 §10）。package が
 「これで私を検証してください」と指す先を自分で名乗れるなら、差し替えた package は

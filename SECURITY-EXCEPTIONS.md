@@ -78,9 +78,13 @@ log CMIS change tokens / ids / key-prefixes (metadata), with the only two
 credential-touching sites being intentional guarded one-time displays (MCP
 auto-generated password with opt-out, setup-token file-write-failure fallback);
 **java/user-controlled-bypass** — ten alerts (#148–#157) were dismissed on
-2026-07-19 with one shared reason, "the authorization checks themselves". It
-holds for seven (#151–#157: `login`, the `authenticate*` methods, and the
-comparisons against the authenticated repository). It does not hold for three,
+2026-07-19 with one shared comment ("This IS the authorization/authentication
+check itself …"). It was taken to hold for seven (#151–#157: `login`, the
+`authenticate*` methods, and the comparisons against the authenticated
+repository); for #151 the condition CodeQL points at is the public OpenAPI path
+exclusion in front of `login` — an intended unauthenticated route, which that
+comment does not describe (noted in review on 2026-10-08, not re-triaged). It
+does not hold for three,
 whose sinks are only *named* like auth methods — CodeQL's `AuthMethod` matches
 `auth` / `login` in a method name: `CouchDbConfigWriter.basicAuth`, which builds
 an outgoing header, in setup change-password (#148) and setup apply (#149), and
