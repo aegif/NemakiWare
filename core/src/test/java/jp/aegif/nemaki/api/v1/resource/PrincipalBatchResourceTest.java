@@ -533,7 +533,7 @@ class PrincipalBatchResourceTest {
         assertTrue(throwablesIn(incident) <= 64, "the logged copy carries " + throwablesIn(incident)
                 + " throwables");
         List<String> messages = everyMessage(log);
-        assertTrue(messages.stream().anyMatch(m -> m.contains("the logged copy ends here")),
+        assertTrue(messages.stream().anyMatch(m -> m.contains("the logged copy is cut at")),
                 "the copy stops without saying so: " + messages.size() + " messages");
         assertFalse(messages.stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
@@ -568,7 +568,7 @@ class PrincipalBatchResourceTest {
                         && suppressed[1].getMessage().contains("the same java.lang.IllegalArgumentException as logged elsewhere in this trace"),
                 "the repeat is not named where it repeats: "
                         + (suppressed.length > 1 ? suppressed[1].getMessage() : suppressed.length + " suppressed"));
-        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy ends here"),
+        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy is cut at"),
                 "the copy stops without saying so: " + suppressed[suppressed.length - 1].getMessage());
         assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
@@ -627,8 +627,12 @@ class PrincipalBatchResourceTest {
         for (var proxy = theIncidentLine(log, 2).getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
             primary.add(proxy.getMessage());
         }
-        assertEquals(3, primary.size(), "the looping cause chain was not cut where it repeats: " + primary);
-        assertTrue(primary.get(2).contains("the same java.lang.IllegalStateException as logged elsewhere in this trace"),
+        // Two questions, asked apart (batch 2 review, subagent P3): whether the loop was cut, and
+        // whether the cut says it is a repeat. Asked as one, a cut with no mark failed on the
+        // first and the second never fired.
+        assertTrue(primary.size() <= 3, "the looping cause chain was not cut: " + primary.size() + " links");
+        assertTrue(primary.size() == 3
+                        && primary.get(2).contains("the same java.lang.IllegalStateException as logged elsewhere in this trace"),
                 "the cut does not say it is a repeat: " + primary);
     }
 
@@ -696,7 +700,7 @@ class PrincipalBatchResourceTest {
         }
         assertTrue(throwablesIn(incident) <= 64, "the logged copy carries " + throwablesIn(incident)
                 + " throwables, " + primary.size() + " links deep");
-        assertTrue(primary.get(primary.size() - 1).contains("the logged copy ends here"),
+        assertTrue(primary.get(primary.size() - 1).contains("the logged copy is cut at"),
                 "the logged chain stops without saying so: " + primary.get(primary.size() - 1));
         assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
@@ -724,7 +728,7 @@ class PrincipalBatchResourceTest {
         var suppressed = incident.getThrowableProxy().getSuppressed();
         assertTrue(suppressed.length > 0 && throwablesIn(incident) <= 64,
                 "the logged copy carries " + throwablesIn(incident) + " throwables");
-        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy ends here"),
+        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy is cut at"),
                 "the copy stops without saying so: " + suppressed[suppressed.length - 1].getMessage());
         assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }

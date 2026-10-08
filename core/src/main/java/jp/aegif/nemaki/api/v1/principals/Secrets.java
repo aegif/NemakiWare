@@ -138,9 +138,14 @@ public final class Secrets {
      */
     static final int MOST = 64;
 
-    /** The last throwable of a copy that was cut: it stands for itself and everything not yet shown. */
-    static final String ENDS_HERE = "the logged copy ends here, at " + MOST + " throwables: this one and every"
-            + " throwable not yet shown were left out";
+    /**
+     * The last throwable of a copy that was cut: it stands for itself and for every throwable the
+     * trace does not show. Not "ends here" and "not yet shown": logback writes a throwable's
+     * suppressed ones before its cause, so lines of the copy can follow this one in the log
+     * (batch 2 review, subagent P3).
+     */
+    static final String ENDS_HERE = "the logged copy is cut at " + MOST + " throwables: this one, and every"
+            + " throwable this trace does not show, were left out";
 
     /** A copied throwable whose suppressed throwables are still to be copied. */
     private record Pending(Throwable original, RuntimeException copy) {
