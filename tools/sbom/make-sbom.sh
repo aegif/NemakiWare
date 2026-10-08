@@ -12,6 +12,10 @@
 #   - 署名はしない。detached signature は鍵を持つリリース担当者の作業で、この script の外。
 #   - リリース成果物は git worktree で切った tagged tree から作ること (CLAUDE.md)。
 #     この作業コピーで作った SBOM は「今の HEAD の依存」であって「タグの依存」ではない。
+#   - UI の SBOM は、その木の package-lock.json から `npm ci` で入れた node_modules を読む
+#     (cyclonedx-npm は node_modules を読む)。3.4.0 は worktree に node_modules が無く、作業コピーの
+#     node_modules を借りた (package-lock.json が同じことだけを確かめた)。いまはこの script が毎回
+#     `npm ci --ignore-scripts` で入れ直す — 作業コピーで流すと、その node_modules も入れ直す。
 #
 # 使い方
 #   tools/sbom/make-sbom.sh            # version は root pom から読む
@@ -29,6 +33,9 @@ mkdir -p target
 echo "== Maven aggregate BOM (${PLUGIN}) =="
 mvn -q "${PLUGIN}:makeAggregateBom" -DoutputFormat=all -DoutputName="nemakiware-${VERSION}-sbom" -DskipTests
 ls -la "target/nemakiware-${VERSION}-sbom.json" "target/nemakiware-${VERSION}-sbom.xml"
+
+echo "== npm ci (the lockfile of this tree, not a borrowed node_modules) =="
+( cd core/src/main/webapp/ui && npm ci --ignore-scripts --no-audit --no-fund )
 
 echo "== npm BOM (${NPM_TOOL}) =="
 ( cd core/src/main/webapp/ui && npx --yes "${NPM_TOOL}" --output-format JSON \

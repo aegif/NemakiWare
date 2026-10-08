@@ -5,20 +5,22 @@
 # gate with explicit, dated exceptions, so unfixed vulnerabilities stay
 # *visible* (the workflow also uploads a full report including unfixed CVEs as
 # an informational artifact) rather than silently dropped. The scans are
-# informational now (below), so an entry here hides a row of the report — and
-# its `expiredAt` is still read by the required "Security exception expiry"
-# job (security-scan.yml), which turns red once the date has passed.
+# informational now (below), so an entry here hides a row of the report until
+# its `expired_at` — the key Trivy reads (v0.72.0, pkg/result/ignore.go); past
+# that date Trivy reports the finding again. The required "Security exception
+# expiry" job (security-scan.yml) reads the same key and turns red once the date
+# has passed. Until 3.4.1 the key here was `expiredAt`, which Trivy does not
+# read: an entry would have stayed hidden after its date (R144).
 #
-# Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expiredAt`;
-# the expiry job is what forces the re-review (residual R144 in
-# docs/design/fail-closed-reads.md records what Trivy itself does with the key).
+# Every entry MUST mirror a row in SECURITY-EXCEPTIONS.md and carry `expired_at`;
+# the expiry job is what forces the re-review.
 #
 # Template (leave the list empty until a concrete exception is needed). The
 # date is a placeholder on purpose: the expiry job's pattern reads comments too,
 # and a real date here would turn that required check red on the day after it.
 # vulnerabilities:
 #   - id: CVE-XXXX-XXXXX
-#     expiredAt: YYYY-MM-DD
+#     expired_at: YYYY-MM-DD
 #     statement: "Why this fixable finding is accepted for now. See SECURITY-EXCEPTIONS.md."
 
 # NOTE: the image Trivy scans in security-scan.yml / release-images.yml are
@@ -28,9 +30,9 @@
 # Tomcat, …) that we cannot patch independently of a new upstream image, so
 # gating on them would be non-actionable churn. Base-image bumps come from
 # Dependabot (docker); our own Java deps are gated by maven-dep-check (a
-# hand-written denylist), and before a tag the resolved SBOM is matched against
-# OSV by hand (tools/sbom/osv-check.py — no workflow runs it; the OSV job cannot
-# parse core/pom.xml). This file
+# hand-written denylist), core's resolved SBOM is matched against OSV by the
+# informational osv-sbom-check job (tools/sbom/osv-check.py — osv-scanner cannot
+# parse core/pom.xml), and before a tag the full SBOM is matched by hand. This file
 # is retained for any future case where a specific image finding
 # should be explicitly suppressed with a dated reason.
 vulnerabilities: []

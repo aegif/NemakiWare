@@ -20,9 +20,11 @@ name: Security Scan
 #      version surfaces without waiting for a hand-written denylist entry
 #      (informational — does not block). It cannot parse core/pom.xml or
 #      evidence-verifier-cli/pom.xml ("Attempted to scan lockfile but failed"),
-#      so the WAR's resolved Java dependencies are not in it; before a tag, the
-#      resolved SBOM is matched against OSV by hand (tools/sbom/osv-check.py —
-#      no workflow runs it; SECURITY-EXCEPTIONS.md).
+#      so the WAR's resolved Java dependencies are not in it — job 6 matches them.
+#   6. OSV match of core's resolved dependencies (osv-sbom-check) — builds
+#      core's CycloneDX SBOM (the dependencies Maven resolves for the WAR) and
+#      asks OSV with tools/sbom/osv-check.py, the check the release runs by hand
+#      over the full SBOM (informational — does not block; added in 3.4.1).
 #   5. Trivy container-image scan — builds the Solr image and reports its
 #      HIGH/CRITICAL OS/library CVEs (informational: the job is
 #      continue-on-error and trivy runs without --exit-code, so a finding does
@@ -55,6 +57,7 @@ on:
       - 'osv-scanner.toml'
       - '.trivyignore.yaml'
       - 'SECURITY-EXCEPTIONS.md'
+      - 'tools/sbom/**'
       # Source paths so the XML-hardening / credential gates also run on
       # code-only PRs (previously they were skipped when no manifest changed).
       - 'core/src/main/java/**'
@@ -418,7 +421,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Hard gate: fails if any documented risk-acceptance (osv-scanner.toml
-    # ignoreUntil / .trivyignore.yaml expiredAt) is past its date, forcing
+    # ignoreUntil / .trivyignore.yaml expired_at) is past its date, forcing
     # periodic re-review of accepted-but-unfixed advisories. Runs on the daily
     # schedule so an exception "expires into" a red check over time.
     steps:
@@ -431,7 +434,7 @@ jobs:
           fails = []
           checks = [
               ("osv-scanner.toml",   r'ignoreUntil\s*=\s*(\d{4}-\d{2}-\d{2})'),
-              (".trivyignore.yaml",  r'expiredAt\s*:\s*(\d{4}-\d{2}-\d{2})'),
+              (".trivyignore.yaml",  r'expired_at\s*:\s*(\d{4}-\d{2}-\d{2})'),
           ]
           for fname, pat in checks:
               p = pathlib.Path(fname)
@@ -456,10 +459,11 @@ jobs:
     # FLIP CONDITION (to remove continue-on-error and make this a hard gate):
     # once a run is clean except for advisories that each have a dated entry in
     # osv-scanner.toml, set continue-on-error: false so new, un-accepted CVEs
-    # fail the build — and make the scan step keep osv-scanner's exit code
-    # (`set -o pipefail`): the step pipes into `tee` under `bash -e`, so today a
-    # finding's non-zero exit is dropped and the step stays green either way.
-    # The exception-expiry job already hard-fails expired ones.
+    # fail the build. The scan step keeps osv-scanner's exit code (`set -o
+    # pipefail` before the pipe into `tee`; until 3.4.1 a finding's non-zero exit
+    # was dropped and the step stayed green either way — R144), so a finding
+    # turns this job red now, and continue-on-error is what keeps it from failing
+    # the run. The exception-expiry job already hard-fails expired ones.
     continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -479,12 +483,62 @@ jobs:
         # accepted no-fix advisories (e.g. the Solr GHSA) do not re-flag until
         # their ignoreUntil date, at which point exception-expiry fails.
         run: |
+          set -o pipefail
           "$RUNNER_TEMP/osv-scanner" --config=osv-scanner.toml --recursive --skip-git --format table . | tee osv-report.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: osv-report
           path: osv-report.txt
+          retention-days: 30
+
+  osv-sbom-check:
+    name: OSV match of core's resolved dependencies (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # osv-scanner (the job above) cannot read core/pom.xml, so the WAR's
+    # resolved Java dependencies were in no automated OSV match: the release
+    # matched the resolved SBOM by hand. This job does the same match on every
+    # run, over core's SBOM. Informational like the job above: osv-check.py's
+    # exit 1 (advisories) or 2 (could not ask) turns this job red, and
+    # continue-on-error keeps it from failing the run. The release still matches
+    # the full SBOM (tools/sbom/make-sbom.sh: every module and the UI) by hand.
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: read   # resolve the custom OpenCMIS from GitHub Packages
+    env:
+      MAVEN_USERNAME: ${{ github.actor }}
+      MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: github-opencmis
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+      - name: Build sibling modules (install to local repo)
+        run: |
+          mvn clean install -N -DskipTests -q
+          mvn clean install -f common/pom.xml -DskipTests -q
+          mvn clean install -f cloudant-init/pom.xml -DskipTests -q
+      - name: Build core's SBOM (CycloneDX — the dependencies the WAR resolves)
+        run: |
+          mvn -q -f core/pom.xml -Pdevelopment,opencmis-github-packages \
+            org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeBom \
+            -DoutputFormat=json -DoutputName=core-sbom -DskipTests
+      - name: Match it against OSV (tools/sbom/osv-check.py — exit 1 advisories, 2 could not ask)
+        run: |
+          set -o pipefail
+          python3 tools/sbom/osv-check.py core/target/core-sbom.json 2>&1 | tee osv-check-report.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: osv-check-report
+          path: osv-check-report.txt
           retention-days: 30
 
   trivy-image:
@@ -499,9 +553,10 @@ jobs:
     # the vuln DB updates. The actionable signal — "a newer Solr base image
     # exists" — is delivered by Dependabot (docker ecosystem, watching
     # docker/solr/Dockerfile's FROM). Our OWN Java dependencies are gated by
-    # maven-dep-check (a hand-written denylist); the OSV job only reports and
-    # cannot parse core/pom.xml, so before a tag the resolved SBOM is matched
-    # against OSV by hand (tools/sbom/osv-check.py — no workflow runs it). This
+    # maven-dep-check (a hand-written denylist); the OSV jobs only report
+    # (osv-scanner cannot parse core/pom.xml; osv-sbom-check matches core's
+    # resolved SBOM with tools/sbom/osv-check.py), and before a tag the full
+    # resolved SBOM is matched against OSV by hand. This
     # job publishes the full report (table +
     # SARIF artifact) for visibility. The core image is likewise scanned
     # informationally in release-images.yml.

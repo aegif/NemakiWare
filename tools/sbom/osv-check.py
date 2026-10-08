@@ -14,9 +14,9 @@ tools/sbom/make-sbom.sh が出した SBOM を渡す:
 exit code
   0  全部の purl に答えが返り（OSV がページに分けた答えは最後のページまで辿る）、警告は 0 件
   1  警告がある
-  2  訊けなかった（網・HTTP・応答の形・ページが終わらない）、または渡されたものが CycloneDX の
-     SBOM でない（読めない・component が 1 つも無い）。0 件とは言わない — 訊けなかったことを
-     「無かった」と同じ値で返さない
+  2  訊けなかった（網・HTTP・応答の形・ページが終わらない・ページの印が文字列でない）、または渡された
+     ものが CycloneDX の SBOM でない（読めない・component が 1 つも無い）か、版付きの purl を 1 つも
+     持たない（何も訊けない）。0 件とは言わない — 訊けなかったことを「無かった」と同じ値で返さない
 
 言わないこと
   - 照合は名前と版だけを見る。その component が実際に呼ばれるか（到達できるか）は見ない。
@@ -29,7 +29,8 @@ exit code
 なぜ CI の OSV ジョブでは足りないか: security-scan.yml の osv-scanner（v1.9.2）は pom.xml を
 lockfile として読むが、core/pom.xml と evidence-verifier-cli/pom.xml は "Attempted to scan
 lockfile but failed" で読めていない（2026-10-05、PR #516 のログ）。WAR の Java の依存は、
-解決済みの SBOM を照合しないと見えない。
+解決済みの SBOM を照合しないと見えない。3.4.1 から security-scan.yml の osv-sbom-check が
+core の SBOM をこの script で照合する（情報扱い）。リリースでは全 module と UI の SBOM を手で照合する。
 """
 import json
 import sys
@@ -115,8 +116,14 @@ def ask(purls):
                     raise NotAnswered(f"OSV's answer for {purl} has an advisory without an id")
                 if ids:
                     hits.setdefault(purl, []).extend(ids)
-                if result.get("next_page_token"):
-                    still_paging.append((purl, result["next_page_token"]))
+                token = result.get("next_page_token")
+                # A string, or absent. Anything else was passed on as the next page_token, and a
+                # stub answering {"next_page_token": 7} and then {} read as clean (R143).
+                if token is not None and not isinstance(token, str):
+                    raise NotAnswered(f"OSV's answer for {purl} has a next_page_token that is not a "
+                                      f"string: {token!r}")
+                if token:
+                    still_paging.append((purl, token))
         pending = still_paging
     return {purl: sorted(set(ids)) for purl, ids in hits.items()}
 
@@ -129,6 +136,11 @@ def main(paths):
     for path in paths:
         try:
             purls, missing = purls_of(path)
+            if not purls:
+                # Components, and not one with a versioned purl: "0 purls asked" exited 0, the
+                # same value as a clean answer, while nothing had been asked (R143).
+                raise NotAnswered(f"none of its {missing} components carries a versioned purl, so "
+                                  f"there is nothing to ask about")
             hits = ask(purls)
         except NotAnswered as failure:
             print(f"{path}: could not ask OSV ({failure}) — this is not a clean result", file=sys.stderr)

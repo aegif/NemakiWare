@@ -62,6 +62,10 @@ on:
       - 'RELEASE_NOTES.md'
       - 'deploy/**'
       - 'docker/**'
+      # What the release-tool locks read (3.4.1): the OSV check, the SBOM script and the scan settings.
+      - 'tools/sbom/**'
+      - '.trivyignore.yaml'
+      - '.github/workflows/security-scan.yml'
   pull_request:
     branches: [ master, main, develop ]
     paths:
@@ -120,6 +124,10 @@ on:
       - 'RELEASE_NOTES.md'
       - 'deploy/**'
       - 'docker/**'
+      # What the release-tool locks read (3.4.1): the OSV check, the SBOM script and the scan settings.
+      - 'tools/sbom/**'
+      - '.trivyignore.yaml'
+      - '.github/workflows/security-scan.yml'
 
 permissions:
   contents: read
@@ -199,7 +207,14 @@ jobs:
                  TheBundleIsFixedBeforeTheWriteTest
                  TheStatementViewIsInTheOnePutTest
                  TheAssemblerReadsOncePerPackageTest
-                 AssuranceIsCheckedBeforeAnythingIsWrittenTest"
+                 AssuranceIsCheckedBeforeAnythingIsWrittenTest
+                 OsvCheckDoesNotReadSilenceAsCleanTest
+                 TheScanSettingsAreReadAsWrittenTest
+                 TheReleaseSbomIsOfItsOwnTreeTest
+                 CmisProductVersionIsTheBuildVersionTest
+                 TheSipNamesTheBuildThatWroteItTest
+                 TheAtomFeedNamesTheBuildVersionTest
+                 TheUiNamesTheBuildVersionTest"
           for lock in $LOCKS; do
             if ! printf '%s' "$NAMES" | tr ',' '\n' | grep -qx "$lock"; then
               echo "::error::$lock is not named in the unit -Dtest list, so nothing in it runs here"
@@ -224,7 +239,7 @@ jobs:
       - name: Run unit tests
         run: |
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,WhichProfilesCanPassIsMeasuredTest,TheRequirementMatrixIsHonestTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest' \
+            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,WhichProfilesCanPassIsMeasuredTest,TheRequirementMatrixIsHonestTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest,OsvCheckDoesNotReadSilenceAsCleanTest,TheScanSettingsAreReadAsWrittenTest,TheReleaseSbomIsOfItsOwnTreeTest,CmisProductVersionIsTheBuildVersionTest,TheSipNamesTheBuildThatWroteItTest,TheAtomFeedNamesTheBuildVersionTest,TheUiNamesTheBuildVersionTest' \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a
