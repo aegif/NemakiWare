@@ -36,7 +36,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code __UI_VERSION__}), and {@code Layout.tsx} falls back to a literal where a bundle was built
  * without it. Both are bumped by hand at a release. 3.4.0 made them agree with Maven by hand (A-0)
  * and nothing checked it after, so a release that bumped the pom alone would ship a WAR, a SIP and
- * a feed naming one version and a screen naming another (3.4.1 batch 1 review, Codex P2).
+ * a feed naming one version and a screen naming another (3.4.1 batch 1 review, Codex P2). The
+ * define that carries package.json's version into the bundle is read too (round 2, both
+ * reviewers): with it a literal, the two files could be right and the screen not.
+ *
+ * <p>What this cannot see: {@code package-lock.json}'s copy of the version, and a pom that was not
+ * bumped at all — then every exit and this lock agree on the old version. The release smoke
+ * compares the running image's version with the tag, after the images are pushed.
  */
 class TheUiNamesTheBuildVersionTest {
 
@@ -69,5 +75,25 @@ class TheUiNamesTheBuildVersionTest {
                 "Layout.tsx's fallback for __UI_VERSION__");
         assertEquals(TheBuildVersion.expected(), version,
                 "Layout.tsx falls back to " + version + ", and this build is " + TheBuildVersion.expected());
+    }
+
+    @Test
+    @DisplayName("vite bakes ui/package.json's version into the bundle — the label is not a literal")
+    void viteBakesThePackageVersionIntoTheBundle() throws Exception {
+        // The seam between the two checks above and the screen: package.json can be right and the
+        // bundle still show a literal, if the define stops reading it (3.4.1 batch 1, round 2,
+        // Codex P2). Comments are stripped first, so a commented-out define does not count.
+        String code = Files.readString(UI.resolve("vite.config.ts"), StandardCharsets.UTF_8)
+                .replaceAll("(?s)/\\*.*?\\*/", "")
+                .replaceAll("(?m)//.*$", "");
+        String defined = onlyMatch(code, Pattern.compile("__UI_VERSION__\\s*:\\s*([^,}\\n]+)"),
+                "vite's define of __UI_VERSION__");
+        assertEquals("JSON.stringify(pkgVersion)", defined.trim(),
+                "the bundle's version label is not package.json's version: __UI_VERSION__ is " + defined.trim());
+        String read = onlyMatch(code, Pattern.compile("const\\s+pkgVersion\\s*=\\s*([^;]*?\\)\\.version)\\b"),
+                "the definition of pkgVersion");
+        assertTrue(read.replaceAll("\\s+", "").equals(
+                        "JSON.parse(fs.readFileSync(newURL('./package.json',import.meta.url),'utf-8')).version"),
+                "pkgVersion is not ui/package.json's version: " + read);
     }
 }
