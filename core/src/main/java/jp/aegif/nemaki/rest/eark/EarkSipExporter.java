@@ -357,8 +357,8 @@ public class EarkSipExporter {
             SIP sip = new EARKSIP(sipId(repositoryId, objectId), IPContentType.getMIXED(),
                     IPContentInformationType.getMIXED(), CSIP_VERSION);
             // The build's version (version.properties). It was the manifest's
-            // Implementation-Version, which this WAR does not set (and classes under
-            // WEB-INF/classes have no manifest), so the packages 3.4.0 wrote said "unknown".
+            // Implementation-Version, which this WAR's manifest does not carry, so a 3.4.0
+            // build wrote "unknown" here.
             sip.addCreatorSoftwareAgent("NemakiWare", BuildInfoResource.getVersion());
             // SIP15 (MUST): who submitted has to be a WHO. addCreatorSoftwareAgent writes
             // TYPE="OTHER" OTHERTYPE="SOFTWARE", which the rule does not accept.

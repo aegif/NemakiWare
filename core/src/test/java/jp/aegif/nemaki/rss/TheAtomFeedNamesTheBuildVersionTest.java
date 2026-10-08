@@ -18,8 +18,8 @@ package jp.aegif.nemaki.rss;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.dao.ContentDaoService;
-import jp.aegif.nemaki.rest.BuildInfoResource;
 import jp.aegif.nemaki.rest.RssFeedResource;
+import jp.aegif.nemaki.rest.TheBuildVersion;
 
 import jakarta.ws.rs.core.Response;
 
@@ -36,7 +36,6 @@ import java.util.List;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -47,8 +46,8 @@ import static org.mockito.Mockito.when;
  * through 3.4.0. Nothing compared it with the build.
  *
  * <p>Driven through {@code RssFeedResource} with {@code format=atom}, for the folder feed and the
- * document feed. The version it is compared with is checked to be a filtered one first, so a
- * fallback on both sides cannot agree.
+ * document feed. The version it is compared with is the one Maven filters into a test resource
+ * ({@link TheBuildVersion}), not the product's own source.
  */
 class TheAtomFeedNamesTheBuildVersionTest {
 
@@ -76,12 +75,9 @@ class TheAtomFeedNamesTheBuildVersionTest {
         resource.setRssTokenService(tokens);
     }
 
+    /** Not BuildInfoResource, which the exit reads too: see TheBuildVersion. */
     private static String built() {
-        String built = BuildInfoResource.getVersion();
-        assertTrue(built.matches("\\d+\\.\\d+\\.\\d+.*"),
-                "version.properties was not filtered on this classpath (got '" + built + "'), so "
-                        + "this test cannot tell the build's version from a fallback");
-        return built;
+        return TheBuildVersion.expected();
     }
 
     private static void namesTheBuild(Response response, String feed) throws Exception {

@@ -16,7 +16,7 @@
  */
 package jp.aegif.nemaki.rest.eark;
 
-import jp.aegif.nemaki.rest.BuildInfoResource;
+import jp.aegif.nemaki.rest.TheBuildVersion;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,30 +39,26 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A SIP names the software that wrote it with the version of the build that wrote it.
  *
  * <p>The METS header names the creating software ({@code agent ROLE="CREATOR" TYPE="OTHER"
  * OTHERTYPE="SOFTWARE"}) and carries its version in a note ({@code csip:NOTETYPE="SOFTWARE
- * VERSION"}). The version was the manifest's {@code Implementation-Version}, which this WAR does
- * not set, so the packages 3.4.0 wrote said {@code unknown} — measured on a 3.4.0 build on
- * 2026-10-09. A receiving archive that records which software produced a package had nothing to
- * record.
+ * VERSION"}). The version was the manifest's {@code Implementation-Version}, which this WAR's
+ * manifest does not carry, so a 3.4.0 build wrote {@code unknown} — measured on 2026-10-09; the
+ * WAR of the 3.4.0 release gate carries no {@code Implementation-Version} either. A receiving
+ * archive that records which software produced a package had nothing to record.
  *
  * <p>Driven through {@code EarkSipExporter.export}, the method both controller endpoints call. The
- * version it is compared with is checked to be a filtered one first, so a fallback on both sides
- * cannot agree.
+ * version it is compared with is the one Maven filters into a test resource
+ * ({@link TheBuildVersion}), not the product's own source.
  */
 class TheSipNamesTheBuildThatWroteItTest {
 
+    /** Not BuildInfoResource, which the exit reads too: see TheBuildVersion. */
     private static String built() {
-        String built = BuildInfoResource.getVersion();
-        assertTrue(built.matches("\\d+\\.\\d+\\.\\d+.*"),
-                "version.properties was not filtered on this classpath (got '" + built + "'), so "
-                        + "this test cannot tell the build's version from a fallback");
-        return built;
+        return TheBuildVersion.expected();
     }
 
     /** Each METS in the zip, by entry name. */

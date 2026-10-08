@@ -18,7 +18,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import jp.aegif.nemaki.rest.BuildInfoResource;
+import jp.aegif.nemaki.rest.TheBuildVersion;
 import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
@@ -42,12 +42,13 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
  */
 class CmisProductVersionIsTheBuildVersionTest {
 
+    /**
+     * Not BuildInfoResource, which productVersion reads too: a lock comparing with the product's
+     * own source agreed with any value it returned (3.4.1 batch 1 review, Codex P2). See
+     * TheBuildVersion.
+     */
     private static String built() {
-        String built = BuildInfoResource.getVersion();
-        assertTrue(built.matches("\\d+\\.\\d+\\.\\d+.*"),
-                "version.properties was not filtered on this classpath (got '" + built + "'), so "
-                        + "this test cannot tell the build's version from a fallback");
-        return built;
+        return TheBuildVersion.expected();
     }
 
     private static RepositoryInfoMap load(String fixture) {

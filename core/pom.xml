@@ -1443,14 +1443,17 @@
 				</excludes>
 			</resource>
 		</resources>
-		<!-- One test fixture carries the build's own version: the value the first product.version
-		     WARN stayed silent for (CmisProductVersionIsTheBuildVersionTest). Everything else in
-		     src/test/resources is copied as is, as before. -->
+		<!-- Two test resources carry the build's own version: the version the locks on the version
+		     exits compare with (build-version, read by TheBuildVersion — not by BuildInfoResource,
+		     which the exits read), and the value the first product.version WARN stayed silent for
+		     (CmisProductVersionIsTheBuildVersionTest). Everything else in src/test/resources is
+		     copied as is, as before. -->
 		<testResources>
 			<testResource>
 				<directory>src/test/resources</directory>
 				<filtering>true</filtering>
 				<includes>
+					<include>build-version/expected-version.txt</include>
 					<include>repository-info-built/repositories-default.yml</include>
 				</includes>
 			</testResource>
@@ -1458,6 +1461,7 @@
 				<directory>src/test/resources</directory>
 				<filtering>false</filtering>
 				<excludes>
+					<exclude>build-version/expected-version.txt</exclude>
 					<exclude>repository-info-built/repositories-default.yml</exclude>
 				</excludes>
 			</testResource>
