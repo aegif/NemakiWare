@@ -745,8 +745,9 @@ class AnchorSchedulerTest {
         AnchorReceipt lost = confirmedTsa();
         when(anchors.retryUnsettled(any())).thenAnswer(inv -> {
             EvidenceCheckpoint cp = inv.getArgument(0);
-            return new AnchorService.Outcome(cp.domain(), cp.toSequence(), cp.merkleRoot(), List.of(lost), null,
-                    List.of(lost));
+            // Refused, as the service refuses the loss since R125; the list is what is read.
+            return new AnchorService.Outcome(cp.domain(), cp.toSequence(), cp.merkleRoot(), List.of(lost),
+                    "a commitment was made and its receipt was NOT stored", List.of(lost));
         });
         AnchorScheduler scheduler = scheduler();
 

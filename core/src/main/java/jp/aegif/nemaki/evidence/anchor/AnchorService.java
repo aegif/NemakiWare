@@ -449,18 +449,30 @@ public class AnchorService {
             AnchorReceipt receipt = receiptFrom(target, checkpoint.merkleRoot());
             receipts.add(receipt);
             if (!persist(checkpoint.domain(), checkpoint.toSequence(), receipt)) {
-                // Carried, not refused: the HTTP answer of this verb is unchanged (a known gap —
-                // it still says the rung was contacted). The scheduler reads this list, because a
-                // retry on its timer would otherwise contact the same rung again next period and
-                // make another commitment for a receipt it could not keep.
                 unstored.add(receipt);
             }
+        }
+        // Refused, as anchor() refuses the same loss (R125). It used to be carried and not
+        // refused, so the endpoint answered 200 "contacted again" over a commitment whose
+        // receipt is gone: it cannot be upgraded or shown later, and a second contact mints a
+        // new one. The list still names what was lost — the scheduler reads it to hold its next
+        // retry of this checkpoint.
+        if (!unstored.isEmpty()) {
+            List<String> lost = new ArrayList<>();
+            for (AnchorReceipt receipt : unstored) {
+                lost.add(receipt.kind().name());
+            }
+            return new Outcome(checkpoint.domain(), checkpoint.toSequence(),
+                    checkpoint.merkleRoot(), receipts,
+                    "a commitment was made and its receipt was NOT stored (" + lost
+                            + "). It cannot be upgraded or shown later, and retrying mints a "
+                            + "new one rather than recovering this", unstored);
         }
         // An empty result is NOT a refusal. Reporting it as one made a healthy deployment —
         // every rung settled — answer refused:true on every call, which is how an operator
         // learns to ignore the field. Nothing stopped us; there was nothing to do.
         return new Outcome(checkpoint.domain(), checkpoint.toSequence(), checkpoint.merkleRoot(),
-                receipts, null, unstored);
+                receipts, null);
     }
 
     /**

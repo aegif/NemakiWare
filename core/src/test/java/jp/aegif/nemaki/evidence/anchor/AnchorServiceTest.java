@@ -916,11 +916,13 @@ class AnchorServiceTest {
     }
 
     @org.junit.jupiter.api.Test
-    @org.junit.jupiter.api.DisplayName("a RETRY whose receipt could not be stored names it too, and still answers as before")
+    @org.junit.jupiter.api.DisplayName("a RETRY whose receipt could not be stored is refused, as anchor() is, and names what was lost")
     void aRetryWhoseReceiptCouldNotBeStoredNamesIt() {
         // retryUnsettled ignored persist()'s answer, so a commitment made by a retry and then
-        // lost left nothing for the caller to see. The HTTP answer of the endpoint is left as it
-        // was (no refusal); the list is what the scheduler reads before its next retry.
+        // lost left nothing for the caller to see. It then named the loss and still did not
+        // refuse — this lock asserted that, and the endpoint answered 200 "contacted again"
+        // (R125). Refused now, as anchor() refuses the same loss; the list is what the
+        // scheduler reads before its next retry.
         AnchorReceiptStore refusingToWrite = new StubStore() {
             @Override
             public SaveOutcome save(String domain, long toSequence,
@@ -933,8 +935,11 @@ class AnchorServiceTest {
 
         AnchorService.Outcome outcome = service.retryUnsettled(checkpoint(5));
 
-        org.junit.jupiter.api.Assertions.assertNull(outcome.refusedReason(),
-                "the endpoint's answer changed: " + outcome.refusedReason());
+        org.junit.jupiter.api.Assertions.assertNotNull(outcome.refusedReason(),
+                "a retried commitment was lost and the retry is not refused: " + outcome.asMap());
+        org.junit.jupiter.api.Assertions.assertTrue(outcome.refusedReason().contains("NOT stored")
+                        && outcome.refusedReason().contains("OPENTIMESTAMPS"),
+                "the refusal does not say which receipt was not stored: " + outcome.refusedReason());
         org.junit.jupiter.api.Assertions.assertEquals(1, outcome.unstored().size(),
                 "a retried commitment was lost and the outcome does not say so: " + outcome.asMap());
     }

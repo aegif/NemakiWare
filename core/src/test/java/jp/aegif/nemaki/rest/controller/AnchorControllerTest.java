@@ -699,6 +699,51 @@ class AnchorControllerTest {
         assertTrue(message.contains("not asked") && message.contains("RFC3161_TSA"), message);
     }
 
+    /**
+     * A retry that made a commitment and could not store its receipt is refused, as the seal is
+     * (R125). It answered 200 "the rungs that held nothing were contacted again": the receipt is
+     * gone, so the commitment cannot be upgraded or shown later, and the next retry mints another.
+     */
+    @Test
+    @DisplayName("a retry whose new commitment's receipt could not be stored is refused, not 200 'contacted again'")
+    void aRetryWhoseReceiptCouldNotBeStoredIsRefused() throws Exception {
+        jp.aegif.nemaki.evidence.anchor.AnchorReceiptStore receipts = receiptsHolding(List.of(), List.of());
+        when(receipts.save(anyString(), org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new IllegalStateException("couchdb is down"));
+        jp.aegif.nemaki.rest.purview.anchor.AnchorTarget calendar = new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorKind kind() {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorKind.OPENTIMESTAMPS;
+            }
+
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt anchor(String hexDigest) {
+                return jp.aegif.nemaki.rest.purview.anchor.AnchorReceipt.pending(kind(), hexDigest,
+                        java.time.Instant.now(), new byte[] {1, 2, 3}, "d1", java.util.Map.of());
+            }
+        };
+        AnchorController controller = controllerOverRealRungs(receipts, calendar);
+
+        Object response = AnchorController.class.getDeclaredMethod("retryUnsettled", String.class)
+                .invoke(controller, "bedroom");
+        java.util.Map<String, Object> body = bodyOf(response);
+        String message = String.valueOf(body.get("message"));
+
+        assertEquals(HttpStatus.CONFLICT, statusOf(response),
+                "a commitment was made and its receipt is gone, and the retry answered as a success: " + body);
+        assertTrue(message.contains("NOT stored") && message.contains("OPENTIMESTAMPS"),
+                "the answer does not say which receipt was not stored: " + message);
+        assertTrue(message.contains("contacted again"),
+                "the answer does not say the rung WAS contacted — a second retry makes another commitment: " + message);
+        org.junit.jupiter.api.Assertions.assertFalse(message.contains("nothing was retried"),
+                "the answer says nothing was retried over a commitment it made: " + message);
+    }
+
     /** A catalog rung that is asked and settles: the rung a mixed seal reaches (c45). */
     private static jp.aegif.nemaki.rest.purview.anchor.AnchorTarget settlingCatalog() {
         return new jp.aegif.nemaki.rest.purview.anchor.AnchorTarget() {

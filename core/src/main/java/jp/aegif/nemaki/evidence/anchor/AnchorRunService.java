@@ -280,8 +280,15 @@ public final class AnchorRunService {
             body.put("notAsked", notAsked);
         }
         // Said out loud, because an empty receipt list has two very different causes and the
-        // list alone cannot tell them apart.
-        body.put("message", outcome.refusedReason() != null
+        // list alone cannot tell them apart. A receipt that was not stored is a refusal too, and
+        // the one refusal that comes AFTER the rungs were contacted (R125): "nothing was
+        // retried" would be false there.
+        body.put("message", !outcome.unstored().isEmpty()
+                ? "the rungs that held nothing were contacted again: " + asked + ", and refused: "
+                        + outcome.refusedReason()
+                        + (notAsked.isEmpty() ? "" : "; not asked, because they refuse their "
+                                + "configuration: " + notAsked)
+                : outcome.refusedReason() != null
                 ? "nothing was retried: " + outcome.refusedReason()
                 : onlyRefusals
                         ? "nothing was retried: every rung that held nothing refuses its "
