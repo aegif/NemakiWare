@@ -6,6 +6,7 @@ default:
   thinClientUri: http://localhost:8080/core/ui/
   vendor: aegif
   product.name: NemakiWare
-  product.version: 3.3.0
+  # No product.version: CMIS productVersion is the version of the build (version.properties).
+  # A value here is not read — it said 3.3.0 through 3.3.1 and 3.4.0.
   namespace: http://www.aegif.jp/NemakiWare/
 super.users: bedroom

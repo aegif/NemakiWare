@@ -2,7 +2,6 @@ package jp.aegif.nemaki.api.setup.resource;
 
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -513,7 +512,9 @@ public class SetupApplyResource {
     /**
      * Find and update admin user in a single DB. Returns true if admin was found and updated.
      */
-    private boolean updateAdminInDb(String couchUrl, String dbName, String authHeader, String bcryptHash) throws Exception {
+    // Package-private so the redirect lock can reach this PUT: /apply refuses the ephemeral port
+    // a test server listens on (UrlValidator's setup port list), so the entry point cannot carry it.
+    boolean updateAdminInDb(String couchUrl, String dbName, String authHeader, String bcryptHash) throws Exception {
         String dbUrl = couchUrl + "/" + dbName;
         String viewUrl = dbUrl + "/_design/_repo/_view/admin?key=\"admin\"&reduce=false";
         HttpURLConnection conn = CouchDbConfigWriter.openGet(viewUrl, authHeader);
@@ -548,12 +549,7 @@ public class SetupApplyResource {
         tools.jackson.databind.node.ObjectNode mutable = (tools.jackson.databind.node.ObjectNode) adminDoc.deepCopy();
         mutable.put("passwordHash", bcryptHash);
 
-        URL url = new URL(dbUrl + "/" + adminDocId);
-        HttpURLConnection putConn = (HttpURLConnection) url.openConnection();
-        putConn.setRequestProperty("Authorization", authHeader);
-        putConn.setRequestProperty("Content-Type", "application/json");
-        putConn.setRequestMethod("PUT");
-        putConn.setDoOutput(true);
+        HttpURLConnection putConn = CouchDbConfigWriter.openPut(dbUrl + "/" + adminDocId, authHeader);
         try (OutputStreamWriter out = new OutputStreamWriter(putConn.getOutputStream(), StandardCharsets.UTF_8)) {
             out.write(mapper.writeValueAsString(mutable));
         }

@@ -98,6 +98,18 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
     }
 
     /**
+     * Every connection this class opens. Redirects are not followed: {@code /apply} hands this
+     * class the CouchDB URL from a setup request body ({@link #initializeDatabases}), and a
+     * followed redirect re-sends the request — the body of a PUT or POST included — to an address
+     * the setup URL validator never saw. Same policy as the rest of the setup path.
+     */
+    private static java.net.HttpURLConnection open(java.net.URL url) throws java.io.IOException {
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+        conn.setInstanceFollowRedirects(false);
+        return conn;
+    }
+
+    /**
      * Execute Phase 1 database initialization
      *
      * CRITICAL: This method is called by Spring AFTER the entire ApplicationContext is fully
@@ -247,7 +259,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
             for (String dbName : requiredDatabases) {
                 // Check if database exists
                 java.net.URL checkUrl = new java.net.URL(couchdbUrl + "/" + dbName);
-                java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
+                java.net.HttpURLConnection checkConn = open(checkUrl);
                 
                 String auth = couchdbUsername + ":" + couchdbPassword;
                 String encodedAuth = java.util.Base64.getEncoder().encodeToString(auth.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -268,7 +280,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 // Check design documents for all databases
                 {
                     java.net.URL designUrl = new java.net.URL(couchdbUrl + "/" + dbName + "/_design/_repo");
-                    java.net.HttpURLConnection designConn = (java.net.HttpURLConnection) designUrl.openConnection();
+                    java.net.HttpURLConnection designConn = open(designUrl);
                     designConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
                     designConn.setRequestMethod("GET");  // Changed from HEAD to GET to read content
 
@@ -389,7 +401,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
         try {
             // Check if database exists
             java.net.URL checkUrl = new java.net.URL(couchdbUrl + "/" + dbName);
-            java.net.HttpURLConnection checkConn = (java.net.HttpURLConnection) checkUrl.openConnection();
+            java.net.HttpURLConnection checkConn = open(checkUrl);
             
             // Add authentication
             String auth = couchdbUsername + ":" + couchdbPassword;
@@ -405,7 +417,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
                 log.info("Creating database: " + dbName);
                 
                 java.net.URL createUrl = new java.net.URL(couchdbUrl + "/" + dbName);
-                java.net.HttpURLConnection createConn = (java.net.HttpURLConnection) createUrl.openConnection();
+                java.net.HttpURLConnection createConn = open(createUrl);
                 createConn.setRequestProperty("Authorization", "Basic " + encodedAuth);
                 createConn.setRequestMethod("PUT");
                 
@@ -596,7 +608,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
      */
     private int putDocument(String dbName, String docId, String docJson, String encodedAuth) throws Exception {
         java.net.URL url = new java.net.URL(couchdbUrl + "/" + dbName + "/" + docId);
-        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+        java.net.HttpURLConnection conn = open(url);
         conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestMethod("PUT");
@@ -623,7 +635,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
         try {
             // Fetch the existing design document (full body, not just HEAD)
             java.net.URL url = new java.net.URL(couchdbUrl + "/" + dbName + "/" + docId);
-            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            java.net.HttpURLConnection conn = open(url);
             conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
             conn.setRequestMethod("GET");
             int code = conn.getResponseCode();
@@ -716,7 +728,7 @@ public class DatabasePreInitializer implements ApplicationListener<ContextRefres
 
                 // Use Mango query to find .system folders efficiently
                 java.net.URL findUrl = new java.net.URL(couchdbUrl + "/" + repositoryId + "/_find");
-                java.net.HttpURLConnection findConn = (java.net.HttpURLConnection) findUrl.openConnection();
+                java.net.HttpURLConnection findConn = open(findUrl);
                 findConn.setConnectTimeout(5000);
                 findConn.setReadTimeout(5000);
                 findConn.setRequestProperty("Authorization", "Basic " + encodedAuth);

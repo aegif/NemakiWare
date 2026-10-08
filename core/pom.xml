@@ -1443,6 +1443,25 @@
 				</excludes>
 			</resource>
 		</resources>
+		<!-- One test fixture carries the build's own version: the value the first product.version
+		     WARN stayed silent for (CmisProductVersionIsTheBuildVersionTest). Everything else in
+		     src/test/resources is copied as is, as before. -->
+		<testResources>
+			<testResource>
+				<directory>src/test/resources</directory>
+				<filtering>true</filtering>
+				<includes>
+					<include>repository-info-built/repositories-default.yml</include>
+				</includes>
+			</testResource>
+			<testResource>
+				<directory>src/test/resources</directory>
+				<filtering>false</filtering>
+				<excludes>
+					<exclude>repository-info-built/repositories-default.yml</exclude>
+				</excludes>
+			</testResource>
+		</testResources>
 		<plugins>
 			<!-- All org.springframework modules must resolve to ONE version
 			     (${org.springframework.version}). spring-tx once leaked in at 7.0.4

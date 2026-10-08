@@ -1,0 +1,7 @@
+repositories:
+  - id: bedroom
+    name: bedroom
+  - id: canopy
+    name: canopy
+    # A per-repository literal, read after the default block — must not win either.
+    product.version: 8.8.8

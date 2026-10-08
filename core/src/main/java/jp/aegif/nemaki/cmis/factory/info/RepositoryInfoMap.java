@@ -12,6 +12,7 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import jp.aegif.nemaki.rest.BuildInfoResource;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.YamlManager;
@@ -30,6 +31,9 @@ public class RepositoryInfoMap {
 
 	// Explicitly track the first repository ID for deterministic default selection
 	private String firstRepositoryId;
+
+	// A product.version setting was already seen — the startup WARN is said once (ignoreProductVersionSetting)
+	private boolean productVersionSettingSeen;
 
 	public void init(){
 		loadRepositoriesSetting();
@@ -265,7 +269,10 @@ public class RepositoryInfoMap {
 			}else if(key.equals("product.name")){
 				info.setProductName(val);
 			}else if(key.equals("product.version")){
-				info.setProductVersion(val);
+				// Not read. productVersion is the version this build was made from, set in
+				// buildDefaultInfo. A literal here is what made 3.3.1 and 3.4.0 report "3.3.0":
+				// nothing checked it against the build, so nobody bumped it.
+				ignoreProductVersionSetting(val);
 			}else if(key.equals("nameSpace")){
 				info.setNameSpace(val);
 			}else if(key.equals("archive")){
@@ -279,8 +286,26 @@ public class RepositoryInfoMap {
 	private RepositoryInfo buildDefaultInfo(Map<String, String> setting){
 		RepositoryInfo info = new RepositoryInfo();
 		modifyInfo(setting, info);
+		// The build's version (Maven-filtered version.properties), the same value
+		// /rest/all/build-info reports — never a configured literal (see modifyInfo).
+		info.setProductVersion(BuildInfoResource.getVersion());
 		return info;
 	}
+
+	/**
+	 * A setting named product.version, whatever its value — equal to the build's, empty, or a
+	 * literal from an older release — is not read. Said once per startup, not once per
+	 * repository (a value in the default block is applied to every repository).
+	 */
+	private void ignoreProductVersionSetting(String configured) {
+		if (!productVersionSettingSeen) {
+			log.warn("The repository settings (repositories-default.yml / repositories.yml) set product.version="
+					+ configured + ", which is not read: CMIS productVersion reports the version of this build ("
+					+ BuildInfoResource.getVersion() + ")");
+		}
+		productVersionSettingSeen = true;
+	}
+
 
 	public void setCapabilities(Capabilities capabilities) {
 		this.capabilities = capabilities;

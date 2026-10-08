@@ -2,7 +2,6 @@ package jp.aegif.nemaki.api.setup.resource;
 
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.logging.Level;
@@ -130,8 +129,12 @@ public class SetupAdminResource {
             }
 
             if (updatedCount == 0) {
+                // Not "not found": updateAdminInDb also answers false when it found the document
+                // and the write was refused (a conflict, a redirect it does not follow).
                 return Response.serverError()
-                        .entity("{\"error\":\"Admin user document not found in any repository\"}")
+                        .entity("{\"error\":\"The admin password was not changed in any repository: the admin "
+                                + "user document was not found, or writing it was refused\",\"results\":["
+                                + perDb + "]}")
                         .build();
             }
 
@@ -195,12 +198,7 @@ public class SetupAdminResource {
             ObjectNode mutable = (ObjectNode) adminDoc.deepCopy();
             mutable.put("passwordHash", bcryptHash);
 
-            URL url = new URL(dbUrl + "/" + adminDocId);
-            HttpURLConnection putConn = (HttpURLConnection) url.openConnection();
-            putConn.setRequestProperty("Authorization", authHeader);
-            putConn.setRequestProperty("Content-Type", "application/json");
-            putConn.setRequestMethod("PUT");
-            putConn.setDoOutput(true);
+            HttpURLConnection putConn = CouchDbConfigWriter.openPut(dbUrl + "/" + adminDocId, authHeader);
             try (OutputStreamWriter out = new OutputStreamWriter(putConn.getOutputStream(), StandardCharsets.UTF_8)) {
                 out.write(mapper.writeValueAsString(mutable));
             }
