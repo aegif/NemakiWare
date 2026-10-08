@@ -91,7 +91,8 @@ gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-relea
   出し（gpg-agent.conf に `no-allow-external-cache` が無い間）、保存すれば期限なく覚える。覚えている間は、同じユーザーで
   動くものが prompt なしに署名できる。**この機械の `~/.gitconfig` はこの鍵を git の commit の署名鍵にもしていて、
   `commit.gpgsign=true` なので、どのリポジトリの commit も既定でこの鍵で署名される**。署名付きの commit も passphrase を
-  覚えさせる（agent の commit は `git -c commit.gpgsign=false` で署名していない）
+  覚えさせる（このリポジトリでの agent の commit は `git -c commit.gpgsign=false` で署名していない — 取り決めで、
+  強制ではない）
 - 同じユーザーで動くものは、gpg・pinentry・gpg-agent の設定そのものも書き換えられる。gpg-agent.conf の
   `ignore-cache-for-signing` と `no-allow-external-cache` は、cache を経由した署名を prompt に変えるが、同じユーザーの
   process はこの設定ごと外せる
@@ -114,22 +115,28 @@ GitHub の外の経路（鍵サーバ・組織の Web など）での公開は�
 
 **この節は手順であって、記録ではない。** 3.4.1 の時点で、どちらもしていない。
 
-**署名専用の機械かハードウェアの鍵で署名する。** 上の前提（同じ OS ユーザーで動くもの全部を信頼する）を外すには、
-鍵が開発機の `~/.gnupg` に無いことが要る。
+**署名専用の機械かハードウェアの鍵で署名する。** 上の前提のうち「鍵を使える環境」の部分を外すには、鍵が開発機の
+`~/.gnupg` に無いことが要る。**これで外れるのは鍵の側だけである**: 成果物と `SHA-256SUMS` を開発機で作って運ぶかぎり、
+開発機で同じユーザーとして動くものは、両方を揃えて差し替えられる（verifier の jar は `project.build.outputTimestamp` を
+設定していないので、作り直すと同じ bytes にならず、署名機で作り直して照合することもできない）。中身の側の前提を外すには、成果物も署名機か CI で作り、その来歴
+（provenance）を確かめてから署名する（計画書の provenance の項）。
 
 1. 新しい署名用の鍵を、OpenPGP カード（YubiKey など — 署名のたびに触れることを求める設定にする）の上で作るか、
    ネットワークにつながない署名専用の機械で作る。開発機で作った鍵をカードに移しても、開発機に写しが残ったことを
    否定できないので、作るところから行う
-2. 新しい鍵の fingerprint を、下の「GitHub の外の経路」と Release の本文とこの文書に書く。`DEE5…0918` で署名した
-   版（3.4.0 から）は、その鍵で照合し続ける — 古い鍵を失効させるのは、その鍵が漏れたと分かったときだけ
+2. 新しい鍵の fingerprint を、下の「GitHub の外の経路」と Release の本文とこの文書に書く。そのとき、`DEE5…0918` で
+   署名した版がどの版までかもこの文書に書く（3.4.0 から、新しい鍵に移る前の最後の版まで）。それより後の版に
+   `DEE5…0918` の署名が付いていたら、受け取る側はそれを受け入れない。古い鍵を失効させるのは、その鍵が漏れたと
+   分かったときだけ
 3. 署名はその機械かカードで行い、`SHA-256SUMS` は開発機から運ぶ。運んだ `SHA-256SUMS` は、署名の前にその機械で
-   成果物と照合する（`shasum -a 256 -c`）
+   成果物と照合する（`shasum -a 256 -c` — 運んだ 2 つが互いに合っていることまでを見る。上の「鍵の側だけ」を参照）
 
 **GitHub の外の経路で公開する。** 照合が GitHub の上の文書だけに頼らないように、fingerprint を少なくとも 1 つ、
 GitHub と別の管理の場所に置く。
 
-1. 鍵サーバ: `gpg --keyserver hkps://keys.openpgp.org --send-keys <fingerprint>` の後、keys.openpgp.org から届く
-   確認のメールに答える（答えるまで user ID は公開されない）
+1. 鍵サーバ: keys.openpgp.org は `gpg --send-keys` では user ID の確認を始めない（user ID の無い鍵だけが載る）。
+   `gpg --export <fingerprint> | curl -T - https://keys.openpgp.org` が返す URL を開くか、Web の upload の画面で鍵を
+   上げ、そこから user ID の確認を求め、届いたメールに答える（答えるまで user ID は公開されない）
 2. 組織の Web など、リポジトリに書ける者とは別の者が管理する場所に fingerprint を載せる
 3. Release の本文に、照合できる場所（上の 2 つ）を書く
 

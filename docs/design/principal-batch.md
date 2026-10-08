@@ -206,7 +206,7 @@ memberships / replace の `members: []` だけが「空にする」）。
 - 上の 3 者を `memberships / remove` / `replace` で管理者グループから外す行は**禁止しない**
   （グループ所属は admin flag ではない）。preview の `message` に注意だけ出す（**未実装** — §13）
 
-この guard は**この機能の validator に置く**。既存 3 層に同じ guard を足すかは別の判断
+この guard は**この機能の validator に置く**（3.4.1 で、判定を `ProtectedPrincipals` にまとめ、既存 3 層・CMIS の削除・ディレクトリ同期にも効かせた — 正典 R115）。既存 3 層に同じ guard を足すかは別の判断
 （§12 の限界 1）。
 
 ---
@@ -333,7 +333,7 @@ runner の規則どおり: 錠は本番の入口（`PrincipalBatchResource`）�
 
 ## 12. 既知の限界（実装時に正典の残件表へ行として写す）
 
-1. **既存 3 層に built-in 保護が無い**（§2.4）。この機能の guard は一括の入口だけを守る。
+1. **既存 3 層に built-in 保護が無い**（§2.4）。この機能の guard は一括の入口だけを守る。（3.4.1 で処置 — 正典 R115）
    正準メソッドへ guard を下ろすかは、既存 API の挙動変更なので別判断。
 2. **同期由来は推定**（§2.3）。LDAP ユーザーは印が無く、`LOOKS_DIRECTORY_SYNCED` に掛からない。
 3. **plan はノードローカル**（§6.1）。複数レプリカでは同じノードに当たらないと 409。

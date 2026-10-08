@@ -37,9 +37,13 @@ only repository gotchas.
 `/core/api/v1/cmis/repositories/{repositoryId}/users/...`）は拒んでおらず、`admin` を 1 件ずつ削除できました。
 
 - 3 つの API の削除は、これらの利用者を拒みます（Jersey と Spring MVC は 403、legacy は失敗の JSON）。
-- ディレクトリ同期の削除も、組み込みのアカウントは削除しません。
+- CMIS の削除（`deleteObject` — Browser binding・AtomPub・`/core/api/v1/cmis/repositories/{repositoryId}/items/{id}`）で
+  利用者の item を消すときも、同じ利用者を拒みます（CMIS の permissionDenied）。これまでは一般の削除で消え、
+  グループの所属も残っていました。いまは利用者の API と同じ削除を通り、所属も外します。
+- ディレクトリ同期（LDAP と Microsoft のクラウド同期）の削除も、組み込みのアカウントは削除しません。
 - legacy の API の admin の剥奪（`isAdmin=false`）は、自分自身に加えて組み込みのアカウントも拒みます。
-- 組み込みの `admin` を admin でない状態で保存する更新は、どの経路でも拒みます。
+- 組み込みの `admin` を admin でない状態で保存する更新は、Jersey と Spring MVC の利用者の更新、legacy の更新で
+  拒みます（3.4.1 より前に admin フラグを外された `admin` は、legacy の更新で `isAdmin=true` に戻してください）。
 
 ## 手動の retry-unsettled は、受領を保存できなかったとき 409 で拒否を返すようになりました（HTTP の挙動の変更）
 
