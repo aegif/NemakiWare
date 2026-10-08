@@ -374,8 +374,9 @@ public class UserController {
         Map<String, Object> response = new HashMap<>();
 
         try {
-            // shared canonical delete also strips group memberships
-            if (!getContentService().deleteUser(repositoryId, userId)) {
+            // shared canonical delete also strips group memberships, and refuses the built-in
+            // accounts and the acting user (R115)
+            if (!getContentService().deleteUser(repositoryId, userId, getAuthenticatedUsername())) {
                 response.put("status", "error");
                 response.put("message", "User not found");
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
@@ -386,6 +387,11 @@ public class UserController {
             
             return ResponseEntity.ok(response);
             
+        } catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+            response.put("status", "error");
+            response.put("message", refused.getMessage());
+            response.put("reason", refused.reason().name());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
         } catch (Exception e) {
             response.put("status", "error");
             response.put("message", "Failed to delete user");

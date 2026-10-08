@@ -36,6 +36,8 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
+import jp.aegif.nemaki.businesslogic.ProtectedPrincipals;
+
 /**
  * Decides, without writing, what applying each row would do (design §5).
  *
@@ -51,20 +53,11 @@ final class PrincipalBatchPlanner {
     record Guards(String adminUserId, String solrUserId, String mcpServiceUserId, String actorUserId,
                   Set<String> groupPrefixes, String userPrefix) {
 
+        /** The decision every user write path asks ({@link ProtectedPrincipals}, R115), in this registry's words. */
         Reason forbiddenReasonFor(String userId) {
-            if (userId == null) {
-                return null;
-            }
-            if (userId.equals(adminUserId)) {
-                return Reason.BUILT_IN_ADMIN;
-            }
-            if (userId.equals(solrUserId) || userId.equals(mcpServiceUserId)) {
-                return Reason.BUILT_IN_SERVICE_ACCOUNT;
-            }
-            if (actorUserId != null && userId.equals(actorUserId)) {
-                return Reason.ACTOR_ITSELF;
-            }
-            return null;
+            ProtectedPrincipals.Reason why = ProtectedPrincipals.reasonFor(userId, actorUserId, adminUserId,
+                    solrUserId, mcpServiceUserId);
+            return why == null ? null : Reason.valueOf(why.name());
         }
 
         /** A GUESS from the id (design §2.3): LDAP users carry no marker at all. */

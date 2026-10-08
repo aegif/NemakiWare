@@ -96,8 +96,8 @@ public class PrincipalBatchResource {
 
     private static final Logger logger = LoggerFactory.getLogger(PrincipalBatchResource.class);
 
-    static final String ADMIN_USER_ID = "admin";
-    static final String MCP_SERVICE_USER_ID = "mcp-service";
+    static final String ADMIN_USER_ID = jp.aegif.nemaki.businesslogic.ProtectedPrincipals.ADMIN_USER_ID;
+    static final String MCP_SERVICE_USER_ID = jp.aegif.nemaki.businesslogic.ProtectedPrincipals.MCP_SERVICE_USER_ID;
 
     @Autowired
     private ContentService contentService;
@@ -430,7 +430,7 @@ public class PrincipalBatchResource {
     }
 
     private PrincipalBatchEngine engine(String repositoryId) {
-        String solrUserId = read(PropertyKey.SOLR_NEMAKI_USERID, "solr");
+        String solrUserId = read(PropertyKey.SOLR_NEMAKI_USERID, jp.aegif.nemaki.businesslogic.ProtectedPrincipals.DEFAULT_SOLR_USER_ID);
         String groupPrefix = read(PropertyKey.DIRECTORY_SYNC_GROUP_PREFIX, DirectorySyncConfig.DEFAULT_GROUP_PREFIX);
         String userPrefix = propertyManager == null ? DirectorySyncConfig.DEFAULT_USER_PREFIX
                 : String.valueOf(propertyManager.readValue(PropertyKey.DIRECTORY_SYNC_USER_PREFIX) == null

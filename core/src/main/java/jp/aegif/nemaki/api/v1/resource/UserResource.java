@@ -482,8 +482,9 @@ public class UserResource {
                 checkAdminAuthorization();
 
                 try {
-                    // shared canonical delete also strips group memberships
-                    if (!contentService.deleteUser(repositoryId, userId)) {
+                    // shared canonical delete also strips group memberships, and refuses the
+                    // built-in accounts and the acting user (R115)
+                    if (!contentService.deleteUser(repositoryId, userId, actingUser())) {
                         throw ApiException.userNotFound(userId, repositoryId);
                     }
 
@@ -491,6 +492,8 @@ public class UserResource {
             
         } catch (ApiException e) {
             throw e;
+        } catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+            throw ApiException.permissionDenied(refused.getMessage());
         } catch (Exception e) {
             logger.severe("Error deleting user " + userId + ": " + e.getMessage());
             throw ApiException.internalError("Failed to delete user: " + e.getMessage(), e);
@@ -702,6 +705,16 @@ public class UserResource {
             return httpRequest.getUserPrincipal().getName();
         }
         return "system";
+    }
+
+    /**
+     * The user making this request, as authentication recorded it (the CallContext). Not
+     * {@link #getAuthenticatedUsername()}: nothing in this application sets the servlet principal,
+     * so that answers "system", and the acting user would never be recognised as itself (R115).
+     */
+    private String actingUser() {
+        CallContext callContext = httpRequest == null ? null : (CallContext) httpRequest.getAttribute("CallContext");
+        return callContext == null ? null : callContext.getUsername();
     }
     
     private Map<String, LinkInfo> buildListLinks(String repositoryId, int skipCount, int maxItems, int totalCount) {

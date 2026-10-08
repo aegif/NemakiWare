@@ -860,6 +860,17 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername) {
+		// The built-in administrator stays an administrator (R115). This is the one demotion
+		// this method can refuse from the merged user alone: what was stored is not known here
+		// (the cached read hands back the instance the caller just changed), so the demotion
+		// of a service account or of the acting user is refused where the entry still has
+		// the stored flag — the legacy endpoint and the batch's planner.
+		if (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.ADMIN_USER_ID.equals(user.getUserId())
+				&& !Boolean.TRUE.equals(user.isAdmin())) {
+			throw new jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException(
+					jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason.BUILT_IN_ADMIN, user.getUserId(),
+					"demoted");
+		}
 		user.setModifier(actorUsername);
 		user.setModified(new java.util.GregorianCalendar());
 		update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user);
@@ -867,6 +878,18 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public boolean deleteUser(String repositoryId, String userId) {
+		return deleteUser(repositoryId, userId, null);
+	}
+
+	@Override
+	public boolean deleteUser(String repositoryId, String userId, String actor) {
+		// Before the read: a protected id is refused whether or not it exists here (R115).
+		jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason refused =
+				jp.aegif.nemaki.businesslogic.ProtectedPrincipals.reasonFor(userId, actor,
+						propertyManager == null ? null : propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID));
+		if (refused != null) {
+			throw new jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException(refused, userId, "deleted");
+		}
 		jp.aegif.nemaki.model.UserItem user = getUserItemById(repositoryId, userId);
 		if (user == null) {
 			return false;

@@ -295,6 +295,9 @@ public interface ContentService {
 	 * already-merged user. Each REST stack performs its own field-merge and
 	 * password-policy enforcement to preserve its contract, then delegates the
 	 * identical signature-and-persist tail here.
+	 *
+	 * @throws ProtectedPrincipals.RefusedException when the user is the built-in
+	 *         administrator and the merged user is not an admin (R115)
 	 */
 	void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername);
 
@@ -304,8 +307,23 @@ public interface ContentService {
 	 * list (preventing dangling references), then deletes it under a
 	 * {@link SystemCallContext}. Consolidates the three user REST stacks, two of
 	 * which previously skipped the group-membership cleanup.
+	 *
+	 * <p>For a path that acts for nobody (directory sync). A request made by a user
+	 * goes through {@link #deleteUser(String, String, String)}.
+	 *
+	 * @throws ProtectedPrincipals.RefusedException for the built-in administrator and
+	 *         service accounts (R115)
 	 */
 	boolean deleteUser(String repositoryId, String userId);
+
+	/**
+	 * {@link #deleteUser(String, String)} on behalf of {@code actor}: also refuses to
+	 * delete the acting user (R115).
+	 *
+	 * @throws ProtectedPrincipals.RefusedException for the built-in administrator and
+	 *         service accounts, and for {@code actor} itself
+	 */
+	boolean deleteUser(String repositoryId, String userId, String actor);
 
 	/**
 	 * Get a path string

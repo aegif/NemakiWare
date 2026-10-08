@@ -179,6 +179,12 @@ private ContentService getContentServiceSafe() {
 		return null;
 	}
 
+	/** Solr's account as this deployment sets it, for the protected-principal decision (R115). */
+	private String solrUserId() {
+		PropertyManager pm = getPropertyManager();
+		return pm == null ? null : pm.readValue(PropertyKey.SOLR_NEMAKI_USERID);
+	}
+
 	private ThreadLockService getThreadLockService() {
 		if (threadLockService != null) {
 			return threadLockService;
@@ -921,12 +927,20 @@ private ContentService getContentServiceSafe() {
 				boolean newIsAdmin = "true".equalsIgnoreCase(isAdminStr);
 				boolean currentIsAdmin = Boolean.TRUE.equals(user.isAdmin());
 
-				// Prevent removing own admin privilege
-				if (!newIsAdmin && currentIsAdmin && userId.equals(callContext.getUsername())) {
-					status = false;
-					addErrMsg(errMsg, ITEM_USER, "Cannot revoke your own admin privilege");
-					makeResult(status, result, errMsg);
-					return result.toJSONString();
+				// The admin flag of the built-in accounts and of the acting user is never removed
+				// (R115 — the same decision as the batch's planner and the canonical delete). Decided
+				// here, from the flag as stored, because the canonical update only sees the merged user.
+				if (!newIsAdmin && currentIsAdmin) {
+					jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason refused =
+							jp.aegif.nemaki.businesslogic.ProtectedPrincipals.reasonFor(userId, callContext.getUsername(),
+									solrUserId());
+					if (refused != null) {
+						status = false;
+						addErrMsg(errMsg, ITEM_USER, new jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException(
+								refused, userId, "demoted").getMessage());
+						makeResult(status, result, errMsg);
+						return result.toJSONString();
+					}
 				}
 
 				user.setAdmin(newIsAdmin);
@@ -1049,13 +1063,17 @@ private ContentService getContentServiceSafe() {
 		// Admin check - only admins can delete users
 		status = checkAdmin(errMsg, httpRequest);
 
-		// Delete a user (shared canonical delete also strips group memberships)
+		// Delete a user (shared canonical delete also strips group memberships, and refuses the
+		// built-in accounts and the acting user — R115)
 		if (status) {
 			try {
-				if (!getContentService().deleteUser(repositoryId, userId)) {
+				if (!getContentService().deleteUser(repositoryId, userId, getCallContextUsername(httpRequest))) {
 					status = false;
 					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_NOTFOUND);
 				}
+			} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+				status = false;
+				addErrMsg(errMsg, ITEM_USER, refused.getMessage());
 			} catch (Exception ex) {
 				log.error("Failed to delete user: " + userId, ex);
 				status = false;
