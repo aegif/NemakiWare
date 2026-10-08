@@ -1,9 +1,11 @@
 package jp.aegif.nemaki.api.v1.principals;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,9 +23,10 @@ import jp.aegif.nemaki.api.v1.principals.PrincipalBatch.Row;
  * incident id. So every logged text goes through {@link #redact(String)} — each known secret
  * replaced, and the text WITHHELD when a secret still survives (a password equal to the
  * placeholder, or part of it) — and every logged throwable through {@link #loggable(Throwable)},
- * which keeps the classes and frames of the whole cause chain and redacts each message (9-6
- * review of area C and its confirmation, 2026-10-06: nothing measured the log; the first fix
- * redacted one message with a fixed placeholder and dropped the cause chain).
+ * which keeps the classes and frames of the cause chain and of the suppressed throwables, up to
+ * a bound, and redacts each message (9-6 review of area C and its confirmation, 2026-10-06:
+ * nothing measured the log; the first fix redacted one message with a fixed placeholder and
+ * dropped the cause chain).
  *
  * <p>Until the request has been read as rows ({@link #learn}), what it carries is not known, so
  * nothing of a message is logged: a parser's text may quote the body. This arm is defensive and
@@ -129,6 +132,17 @@ public final class Secrets {
     }
 
     /**
+     * How many throwables the logged copy carries at most, counting each cause and each
+     * suppressed one. It is also the deepest the copy can nest, which is what keeps logback's
+     * per-link recursion bounded.
+     */
+    static final int MOST = 64;
+
+    /** A copied throwable whose suppressed throwables are still to be copied. */
+    private record Pending(Throwable original, RuntimeException copy) {
+    }
+
+    /**
      * {@code e} rebuilt for the log: the same classes and stack frames down the cause chain and
      * on every suppressed throwable, each message redacted. The original is never handed to the
      * logger — its messages, its causes' and its suppressed throwables' messages are whatever
@@ -137,27 +151,65 @@ public final class Secrets {
      * <p>Suppressed throwables were dropped (Codex, confirmation review c98, P2): a store write
      * that failed inside try-with-resources, and whose close failed too, logged the write's
      * failure and lost the close's — often the connection-level reason an incident is about.
+     *
+     * <p>Nothing here recurses, and the copy carries at most {@link #MOST} throwables; what is
+     * beyond that is replaced by one line saying it was left out. The suppressed throwables used
+     * to be copied by recursion, so a throwable nested a few thousand suppressed deep overflowed
+     * the stack inside the applier's catch: no incident line, no incident response, and no audit
+     * of the rows already applied (R146). Logback's {@code ThrowableProxy} recurses once per link
+     * too, so a copy as deep as its original would overflow there instead: the bound is on what
+     * the logger is given, not only on how it is built.
+     *
+     * <p>The primary cause chain is copied before any suppressed throwable, and a throwable met a
+     * second time — a cycle, or one throwable that is both a cause and a suppressed one — is
+     * written as a line naming it. The suppressed ones used to be walked first, so a throwable
+     * that was both cut the primary chain short at that point, with no mark (R146).
      */
     public Throwable loggable(Throwable e) {
-        return copyChain(e, Collections.newSetFromMap(new IdentityHashMap<>()));
+        if (e == null) {
+            return null;
+        }
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        Deque<Pending> pending = new ArrayDeque<>();
+        int[] left = {MOST};
+        RuntimeException top = copyChain(e, seen, left, pending);
+        while (!pending.isEmpty()) {
+            Pending node = pending.removeFirst();
+            Throwable[] suppressed = node.original().getSuppressed();
+            for (int i = 0; i < suppressed.length; i++) {
+                if (left[0] <= 0) {
+                    node.copy().addSuppressed(leftOut((suppressed.length - i) + " suppressed throwable(s) left out,"
+                            + " with what they carry: the logged copy stops at " + MOST + " throwables"));
+                    break;
+                }
+                node.copy().addSuppressed(copyChain(suppressed[i], seen, left, pending));
+            }
+        }
+        return top;
     }
 
     /**
-     * The cause chain from {@code head}, walked iteratively (a deep chain does not deepen the
-     * stack); each node's suppressed throwables are copied the same way, and a throwable seen
-     * once is not copied again (a cycle, or one throwable in two places).
+     * The cause chain from {@code head}, walked iteratively. Each copied throwable is queued, so
+     * that its suppressed throwables are copied after every chain already begun.
      */
-    private RuntimeException copyChain(Throwable head, Set<Throwable> seen) {
+    private RuntimeException copyChain(Throwable head, Set<Throwable> seen, int[] left,
+            Deque<Pending> pending) {
         RuntimeException top = null;
         RuntimeException tail = null;
-        for (Throwable t = head; t != null && seen.add(t); t = t.getCause()) {
-            RuntimeException copy = new RuntimeException(t.getClass().getName() + ": " + redact(t.getMessage()));
-            copy.setStackTrace(t.getStackTrace());
-            for (Throwable suppressed : t.getSuppressed()) {
-                RuntimeException suppressedCopy = copyChain(suppressed, seen);
-                if (suppressedCopy != null) {
-                    copy.addSuppressed(suppressedCopy);
-                }
+        for (Throwable t = head; t != null; t = t.getCause()) {
+            RuntimeException copy;
+            boolean last = true;
+            if (!seen.add(t)) {
+                copy = leftOut("the same " + t.getClass().getName() + " as logged above");
+            } else if (left[0] <= 0) {
+                copy = leftOut("the rest of this cause chain left out: the logged copy stops at " + MOST
+                        + " throwables");
+            } else {
+                copy = new RuntimeException(t.getClass().getName() + ": " + redact(t.getMessage()));
+                copy.setStackTrace(t.getStackTrace());
+                left[0]--;
+                pending.addLast(new Pending(t, copy));
+                last = false;
             }
             if (top == null) {
                 top = copy;
@@ -165,7 +217,17 @@ public final class Secrets {
                 tail.initCause(copy);
             }
             tail = copy;
+            if (last) {
+                break;
+            }
         }
         return top;
+    }
+
+    /** One line in place of what was not copied: no frames of its own, nothing below it. */
+    private static RuntimeException leftOut(String what) {
+        RuntimeException line = new RuntimeException("[" + what + "]");
+        line.setStackTrace(new StackTraceElement[0]);
+        return line;
     }
 }

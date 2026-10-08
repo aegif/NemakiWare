@@ -55,6 +55,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -435,6 +436,206 @@ class PrincipalBatchResourceTest {
                         + "(Codex, confirmation review c98, P2: only the cause chain was rebuilt): " + logged);
         assertFalse(logged.contains(secret),
                 "the suppressed throwable carried the password into the log: " + logged);
+    }
+
+    /** Every message the captured events carry — formatted lines and every throwable in them — walked without recursion. */
+    private static List<String> everyMessage(ListAppender<ILoggingEvent> appender) {
+        List<String> messages = new ArrayList<>();
+        for (ILoggingEvent event : appender.list) {
+            messages.add(event.getFormattedMessage());
+            java.util.Deque<ch.qos.logback.classic.spi.IThrowableProxy> todo = new java.util.ArrayDeque<>();
+            if (event.getThrowableProxy() != null) {
+                todo.add(event.getThrowableProxy());
+            }
+            while (!todo.isEmpty()) {
+                var proxy = todo.removeFirst();
+                messages.add(proxy.getClassName() + ": " + proxy.getMessage());
+                if (proxy.getCause() != null) {
+                    todo.add(proxy.getCause());
+                }
+                todo.addAll(List.of(proxy.getSuppressed()));
+            }
+        }
+        return messages;
+    }
+
+    /** The applier's incident line — the event whose message says where applying stopped. */
+    private static ILoggingEvent theIncidentLine(ListAppender<ILoggingEvent> appender, int line) {
+        List<ILoggingEvent> found = appender.list.stream()
+                .filter(event -> event.getFormattedMessage().contains("stopped at line " + line + " "))
+                .toList();
+        assertEquals(1, found.size(), "expected the applier's one incident line for line " + line + ", got: "
+                + appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList());
+        return found.get(0);
+    }
+
+    @Test
+    @DisplayName("a failure nested thousands of suppressed deep still writes the incident line, its response and the audit")
+    void aDeeplyNestedFailureStillWritesTheIncident() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        // No producer of this shape is known (R146). It is the shape that overflowed the stack
+        // while the incident was being logged — after the first row had been applied.
+        IllegalStateException write = new IllegalStateException("write failed");
+        Throwable innermost = write;
+        for (int i = 0; i < 20_000; i++) {
+            IllegalArgumentException close = new IllegalArgumentException("close " + i + " failed for " + secret);
+            innermost.addSuppressed(close);
+            innermost = close;
+        }
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        AuditLogger audit = mock(AuditLogger.class);
+        PrincipalBatchResource resource = resourceWith(cs, true, audit);
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u8\",\"name\":\"Eight\",\"password\":\"An0ther-Passw0rd!\"},"
+                        + "{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")),
+                "logging the failure overflowed the stack: no incident line, no incident response, and no audit "
+                        + "of the row already applied (R146)");
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertEquals("partial", body(execute).get("status"), String.valueOf(execute.getEntity()));
+        String incidentId = (String) body(execute).get("incidentId");
+        assertNotNull(incidentId, "the response does not name the incident: " + execute.getEntity());
+        ArgumentCaptor<Map<String, ?>> details = ArgumentCaptor.forClass(Map.class);
+        verify(audit).logOperation(eq(AuditOperation.PRINCIPAL_BATCH), eq(REPO), eq(ACTOR), anyString(), eq(false),
+                any(), details.capture());
+        assertEquals(1L, ((Map<?, ?>) details.getValue().get("counts")).get("applied"),
+                "the audit does not record the row applied before the failure: " + details.getValue());
+        assertTrue(theIncidentLine(log, 3).getFormattedMessage().contains(incidentId),
+                "the incident line does not carry the incident id the response names");
+        List<String> messages = everyMessage(log);
+        assertTrue(messages.stream().anyMatch(m -> m.contains("left out")),
+                "the copy is not bounded, or it drops what it leaves out without saying so: "
+                        + messages.size() + " messages");
+        assertFalse(messages.stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
+    }
+
+    @Test
+    @DisplayName("a suppressed throwable below the top, and the cause chain of a suppressed one, are logged too, redacted")
+    void aSuppressedFailureAnywhereIsLoggedRedacted() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        IllegalStateException refused = new IllegalStateException("the store refused the write");
+        refused.addSuppressed(new IllegalArgumentException("a close below the top failed for " + secret));
+        IllegalStateException write = new IllegalStateException("write failed", refused);
+        write.addSuppressed(new IllegalArgumentException("the close failed",
+                new IllegalStateException("the connection under the close echoed " + secret)));
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        String logged = rendered(log);
+        // The lock above measures the TOP throwable's suppressed only, so a copy that handled
+        // nothing else stayed green under it (R146).
+        assertTrue(logged.contains("a close below the top failed for [password redacted]"),
+                "the suppressed throwable of a cause below the top was not in the log: " + logged);
+        assertTrue(logged.contains("the connection under the close echoed [password redacted]"),
+                "the cause chain of a suppressed throwable was not in the log: " + logged);
+        assertFalse(logged.contains(secret), "the password reached the log: " + logged);
+    }
+
+    @Test
+    @DisplayName("a throwable that is both a cause and a suppressed one does not cut the primary chain, and is named where it repeats")
+    void aThrowableInTwoPlacesDoesNotCutThePrimaryChain() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        IllegalStateException refused = new IllegalStateException("the store refused the write",
+                new IllegalStateException("the root cause"));
+        IllegalStateException write = new IllegalStateException("write failed", refused);
+        write.addSuppressed(refused);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        ch.qos.logback.classic.spi.IThrowableProxy top = theIncidentLine(log, 2).getThrowableProxy();
+        assertNotNull(top, "the incident line carries no throwable");
+        List<String> primary = new ArrayList<>();
+        for (var proxy = top; proxy != null; proxy = proxy.getCause()) {
+            primary.add(proxy.getMessage());
+        }
+        assertEquals(3, primary.size(),
+                "the primary cause chain was cut where its throwable is also a suppressed one (R146): " + primary);
+        assertTrue(primary.get(1).endsWith("the store refused the write") && primary.get(2).endsWith("the root cause"),
+                "the primary cause chain is not the one thrown: " + primary);
+        assertEquals(1, top.getSuppressed().length, "the suppressed slot is gone");
+        assertTrue(top.getSuppressed()[0].getMessage().contains("the same java.lang.IllegalStateException as logged above"),
+                "the second place of the same throwable does not say what it is: " + top.getSuppressed()[0].getMessage());
+    }
+
+    @Test
+    @DisplayName("a cause chain thousands deep still writes the incident line and its response — the copy stops and says so")
+    void aDeepCauseChainIsLoggedBounded() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        // Secrets walked the cause chain iteratively already; the copy it handed the logger was as
+        // deep as the original, and logback's ThrowableProxy recurses once per link (R146).
+        Throwable chain = new IllegalStateException("the root cause for " + secret);
+        for (int i = 0; i < 20_000; i++) {
+            chain = new IllegalStateException("wrapped " + i, chain);
+        }
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow((RuntimeException) chain);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")),
+                "logging a deep cause chain overflowed the stack (R146)");
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        assertNotNull(body(execute).get("incidentId"), String.valueOf(execute.getEntity()));
+        List<String> primary = new ArrayList<>();
+        for (var proxy = theIncidentLine(log, 2).getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
+            primary.add(proxy.getMessage());
+        }
+        assertTrue(primary.size() < 100, "the logged cause chain is " + primary.size() + " links deep");
+        assertTrue(primary.get(primary.size() - 1).contains("the rest of this cause chain left out"),
+                "the logged chain stops without saying so: " + primary.get(primary.size() - 1));
+        assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
+    }
+
+    @Test
+    @DisplayName("ten thousand suppressed throwables at one level are logged as a bounded few, and the rest is counted")
+    void aWideFailureIsLoggedBounded() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        IllegalStateException write = new IllegalStateException("write failed");
+        for (int i = 0; i < 10_000; i++) {
+            write.addSuppressed(new IllegalArgumentException("close " + i + " failed for " + secret));
+        }
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        var suppressed = theIncidentLine(log, 2).getThrowableProxy().getSuppressed();
+        assertTrue(suppressed.length > 0 && suppressed.length < 100,
+                "the logged copy carries " + suppressed.length + " suppressed throwables");
+        assertTrue(suppressed[suppressed.length - 1].getMessage().matches("\\[\\d+ suppressed throwable\\(s\\) left out.*"),
+                "the copy stops without saying how many it left out: " + suppressed[suppressed.length - 1].getMessage());
+        assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
 
     @Test
