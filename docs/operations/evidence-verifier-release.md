@@ -23,8 +23,8 @@ result schema、profile spec、vectors（provenance は 3.4.0 では付けてい
 
 | 成果物 | なぜ |
 |---|---|
-| **SBOM の作り方の限界** | **ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**3.4.0 の UI の SBOM は、worktree に作業コピーの `node_modules` を借りて作った**（`package-lock.json` が同じことだけを確かめた — readiness §7）。`make-sbom.sh` は UI の `npm ci` をせず、`node_modules` に在るものから作る — 新しく切った worktree には `node_modules` が無いので、**次のリリースで worktree に `npm ci` するか借りるかは決めていない**（2026-10-08 の確認で記録） |
-| **detached signature の残件** | 署名専用の機械かハードウェアの鍵での署名、GitHub の外での鍵の公開、手順 4 の書き漏れ 2 件（同じ OS ユーザーで動くものに、外部につながる Codex の exec-server と cursor-agent がある／この機械の `commit.gpgsign=true` は、どのリポジトリの commit もこの鍵で署名させる — 2026-10-07 の確認 5 巡目で見つけ、止め方に従い手順 4 は直していない） |
+| **SBOM の作り方の限界** | **ネットワークが要る** — plugin と `@cyclonedx/cyclonedx-npm` を取り寄せるまでは、ネットワークの無い機械では毎回落ちる。版を固定してあるのは Maven の plugin（2.9.3）だけで、npm 側の道具は取り寄せたときの版になる（09-23 の 561 component と比べるなら道具の版も記録する）。**3.4.0 の UI の SBOM は、worktree に作業コピーの `node_modules` を借りて作った**（`package-lock.json` が同じことだけを確かめた — readiness §7）。3.4.1 から `make-sbom.sh` は、npm 側の SBOM の前にその木の `package-lock.json` から `npm ci --ignore-scripts` で入れ直す（借りない。錠 `TheReleaseSbomIsOfItsOwnTreeTest`）。入れ直すのでネットワークが要り、作業コピーで流せばその `node_modules` も入れ直す |
+| **detached signature の残件** | 署名専用の機械かハードウェアの鍵での署名と、GitHub の外での鍵の公開（どちらもリリース担当者の作業。手順は 4a に書いた — 3.4.1 の時点ではしていない）。手順 4 の書き漏れ 2 件（同じ OS ユーザーで動くものに、外部につながる Codex の exec-server と cursor-agent がある／`commit.gpgsign=true` は、どのリポジトリの commit もこの鍵で署名させる — 2026-10-07 の確認 5 巡目で見つけた）は 3.4.1 で手順 4 に書いた |
 | **provenance** | 計画 §10 が要求するが、**3.4.0 の Release の資産には付けていない** — GitHub の attestations に無い（`evidence-verifier-3.4.0.zip` の digest で引くと 404）。コンテナイメージには buildx の attestation が付いている（`ghcr.io/aegif/nemakiware-core:3.4.0` の index に `attestation-manifest`）が、それは verifier の成果物ではない |
 | ~~**result schema**~~ | **書いた（2026-09-22）**: `docs/evidence-profile/v1/verifier-result.schema.json`。閉じた schema、`reasonCode` は登録簿 `Outcome.Check.REASON_CODES`（27 値）と両方向で一致、`limits` 必須。**verifier は schema を読まない** — 受け取る側が自分の validator で検証する。`SHA-256SUMS` に載せる（下記） |
 
@@ -83,13 +83,15 @@ gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-relea
 
 - 署名のコマンドはリリース担当者の開発機で打つ。passphrase を求められたら担当者が pinentry に入力する（gpg-agent が
   覚えていれば求められない — 下記）。pinentry は**何に**署名するかを示さない
-- その機械では、担当者と同じ OS ユーザーで、agent（この版の作業では Claude Code と Codex）とビルドの道具（Maven・
-  WAR のビルドの `npm install`・SBOM の `npx`）が動き、鍵もそのユーザーの `~/.gnupg` にある。gpg と pinentry-mac は
+- その機械では、担当者と同じ OS ユーザーで、agent（この版の作業では Claude Code と Codex — Codex は外部につながる
+  exec-server を動かす — と、エディタの cursor-agent）とビルドの道具（Maven・WAR のビルドの `npm install`・SBOM の
+  `npx`）が動き、鍵もそのユーザーの `~/.gnupg` にある。gpg と pinentry-mac は
   同じユーザーが書き換えられる `/opt/homebrew` にある
 - gpg-agent は passphrase を覚える（既定で 10 分、使うたびに延びて最長 2 時間）。pinentry-mac は「キーチェーンに保存」を
   出し（gpg-agent.conf に `no-allow-external-cache` が無い間）、保存すれば期限なく覚える。覚えている間は、同じユーザーで
-  動くものが prompt なしに署名できる。**この機械の `~/.gitconfig` はこの鍵を git の commit の署名鍵にもしている**ので、
-  署名付きの commit も passphrase を覚えさせる（このブランチの commit は署名していない）
+  動くものが prompt なしに署名できる。**この機械の `~/.gitconfig` はこの鍵を git の commit の署名鍵にもしていて、
+  `commit.gpgsign=true` なので、どのリポジトリの commit も既定でこの鍵で署名される**。署名付きの commit も passphrase を
+  覚えさせる（agent の commit は `git -c commit.gpgsign=false` で署名していない）
 - 同じユーザーで動くものは、gpg・pinentry・gpg-agent の設定そのものも書き換えられる。gpg-agent.conf の
   `ignore-cache-for-signing` と `no-allow-external-cache` は、cache を経由した署名を prompt に変えるが、同じユーザーの
   process はこの設定ごと外せる
@@ -107,6 +109,29 @@ gpg --armor --export DEE52327184999342FC7C689C321AD4ED1A20918 > nemakiware-relea
 添付物だけの差し替えも、照合で見つけられる。見つけられないのは、この文書も一緒に差し替わる場合（この文書をミラーから
 読んだとき、リポジトリに書ける者が文書と添付物を両方変えたとき）。照合は、したときだけ効く検出である。
 GitHub の外の経路（鍵サーバ・組織の Web など）での公開は、まだしていない（残件）。
+
+### 4a. 鍵を移す・公開する（リリース担当者の作業 — まだしていない）
+
+**この節は手順であって、記録ではない。** 3.4.1 の時点で、どちらもしていない。
+
+**署名専用の機械かハードウェアの鍵で署名する。** 上の前提（同じ OS ユーザーで動くもの全部を信頼する）を外すには、
+鍵が開発機の `~/.gnupg` に無いことが要る。
+
+1. 新しい署名用の鍵を、OpenPGP カード（YubiKey など — 署名のたびに触れることを求める設定にする）の上で作るか、
+   ネットワークにつながない署名専用の機械で作る。開発機で作った鍵をカードに移しても、開発機に写しが残ったことを
+   否定できないので、作るところから行う
+2. 新しい鍵の fingerprint を、下の「GitHub の外の経路」と Release の本文とこの文書に書く。`DEE5…0918` で署名した
+   版（3.4.0 から）は、その鍵で照合し続ける — 古い鍵を失効させるのは、その鍵が漏れたと分かったときだけ
+3. 署名はその機械かカードで行い、`SHA-256SUMS` は開発機から運ぶ。運んだ `SHA-256SUMS` は、署名の前にその機械で
+   成果物と照合する（`shasum -a 256 -c`）
+
+**GitHub の外の経路で公開する。** 照合が GitHub の上の文書だけに頼らないように、fingerprint を少なくとも 1 つ、
+GitHub と別の管理の場所に置く。
+
+1. 鍵サーバ: `gpg --keyserver hkps://keys.openpgp.org --send-keys <fingerprint>` の後、keys.openpgp.org から届く
+   確認のメールに答える（答えるまで user ID は公開されない）
+2. 組織の Web など、リポジトリに書ける者とは別の者が管理する場所に fingerprint を載せる
+3. Release の本文に、照合できる場所（上の 2 つ）を書く
 
 ---
 

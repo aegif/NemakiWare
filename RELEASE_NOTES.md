@@ -29,6 +29,18 @@ only repository gotchas.
   RSS 2.0 のフィードは、これまでどおり版を書きません。
 - どちらも `productVersion` と同じく `/core/rest/all/build-info` と同じ値です（読めない配備では `unknown`）。
 
+## 組み込みのアカウントと自分自身は、どの利用者の API でも削除・admin の剥奪ができなくなりました（挙動の変更）
+
+一括プリンシパル是正（3.4.0）は、組み込みの `admin`、サービスアカウント（Solr のもの — `solr.nemaki.userid`、既定は
+`solr` — と `mcp-service`）、要求した利用者自身の削除と admin の剥奪を拒んでいました。既存の 3 つの利用者の API
+（legacy の `/core/rest/repo/{repositoryId}/user/...`、Spring MVC の `/core/api/v1/repo/{repositoryId}/users/...`、Jersey の
+`/core/api/v1/cmis/repositories/{repositoryId}/users/...`）は拒んでおらず、`admin` を 1 件ずつ削除できました。
+
+- 3 つの API の削除は、これらの利用者を拒みます（Jersey と Spring MVC は 403、legacy は失敗の JSON）。
+- ディレクトリ同期の削除も、組み込みのアカウントは削除しません。
+- legacy の API の admin の剥奪（`isAdmin=false`）は、自分自身に加えて組み込みのアカウントも拒みます。
+- 組み込みの `admin` を admin でない状態で保存する更新は、どの経路でも拒みます。
+
 ## 手動の retry-unsettled は、受領を保存できなかったとき 409 で拒否を返すようになりました（HTTP の挙動の変更）
 
 `POST /core/api/v1/admin/anchor/retry-unsettled`（再送）は、何も持たなかった段に連絡して commitment を作り、その受領を
@@ -39,10 +51,11 @@ only repository gotchas.
   拒否は `"refused"` なので、拒否は 409 で判定してください）。本文の `anchor.refusedReason` は受領を保存できなかった
   段を名指し、`message` は「連絡はした、そのうえで拒否した」と言います。
 - 自動の再送（`anchor.schedule.retry-unsettled-interval-minutes`）も同じ拒否を受け、管理画面の最後の再送の結果は
-  `SUCCESS` ではなく `REFUSED` になります。自動の再送は、自分の再送や封入で受領を保存できなかった checkpoint への
-  次の自動の再送を止めます。**手動の再送の結果はこれに入りません** — 手動の再送で受領を失っても、自動の再送は
-  その checkpoint にまた連絡します。止めたことはそのノードのメモリにしか持たないので、再起動や leader の交代で
-  消えます（既知の限界）。
+  `SUCCESS` ではなく `REFUSED` になります。自動の再送は、自分の再送や自動の封入で commitment を作り
+  （受領が PENDING か CONFIRMED）、その受領を保存できなかった checkpoint への、その後の自動の再送を止めます。
+  **手動の再送と手動の封入（画面の「今すぐ封じて送る」）の結果はこれに入りません** — 手で受領を失っても、自動の
+  再送はその checkpoint にまた連絡します。止めたことはそのノードのメモリにしか持たないので、再起動や leader の
+  交代で消えます（既知の限界）。
 - この応答を 200 として扱っていた呼び出し側は、409 と本文を読むようにしてください。
 
 ## 一括プリンシパル是正の incident のログは、例外の写しに上限を置くようになりました

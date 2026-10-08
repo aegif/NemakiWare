@@ -8,7 +8,7 @@ forcing periodic re-review.
 
 Machine-readable counterparts:
 - OSV / dependency advisories → [`osv-scanner.toml`](osv-scanner.toml) (`ignoreUntil`)
-- Trivy container-image findings → [`.trivyignore.yaml`](.trivyignore.yaml) (`expiredAt`)
+- Trivy container-image findings → [`.trivyignore.yaml`](.trivyignore.yaml) (`expired_at` — the key Trivy reads)
 
 Keep the three files in sync. When adding an exception, record *why it does not
 apply or cannot be fixed*, not just that it is ignored.
@@ -43,12 +43,13 @@ gate). The actionable signals are elsewhere:
   `FROM` tag when a newer image exists (this is how the Solr 9.10.0→9.10.1
   CVE-2025-66516 lag is caught).
 - **Our own Java dependencies** → `maven-dep-check` (the hand-written denylist; a hard gate).
-  The OSV job is informational, and osv-scanner does not read `core/pom.xml` or
+  The OSV jobs are informational. osv-scanner does not read `core/pom.xml` or
   `evidence-verifier-cli/pom.xml` ("Attempted to scan lockfile but failed", PR #516
-  log, 2026-10-05) — so it never saw the WAR's resolved Java dependencies. Before a
-  release, match the resolved SBOM against OSV by hand (no workflow runs it):
-  `tools/sbom/make-sbom.sh`, then `tools/sbom/osv-check.py target/*-sbom.json`
-  (exit 1 = advisories, 2 = could not ask).
+  log, 2026-10-05), so since 3.4.1 the `osv-sbom-check` job builds core's resolved
+  SBOM and matches it with `tools/sbom/osv-check.py` (exit 1 = advisories, 2 = could
+  not ask — either turns that job red). Before a release, match the full resolved
+  SBOM (every module and the UI) by hand: `tools/sbom/make-sbom.sh`, then
+  `tools/sbom/osv-check.py target/*-sbom.json`.
 
 Solr is additionally never exposed to untrusted clients (bound to `127.0.0.1`
 in dev, off-host internal network in prod), so its bundled-server CVEs
