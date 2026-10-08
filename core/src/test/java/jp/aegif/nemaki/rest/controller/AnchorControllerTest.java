@@ -743,6 +743,10 @@ class AnchorControllerTest {
         String refusedReason = String.valueOf(((java.util.Map<String, Object>) body.get("anchor")).get("refusedReason"));
         assertTrue(refusedReason.contains("NOT stored") && refusedReason.contains("OPENTIMESTAMPS"),
                 "the refusal does not say which receipt was not stored: " + refusedReason);
+        // And the message says it was refused — the refusal read from the map alone stayed green
+        // when the message lost it (batch 3, round 2, subagent P3).
+        assertTrue(message.contains("and refused") && message.contains("NOT stored"),
+                "the answer does not say the retry was refused: " + message);
         assertTrue(message.contains("contacted again"),
                 "the answer does not say the rung WAS contacted — a second retry makes another commitment: " + message);
         org.junit.jupiter.api.Assertions.assertFalse(message.contains("nothing was retried"),
