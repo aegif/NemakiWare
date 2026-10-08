@@ -736,8 +736,13 @@ class AnchorControllerTest {
 
         assertEquals(HttpStatus.CONFLICT, statusOf(response),
                 "a commitment was made and its receipt is gone, and the retry answered as a success: " + body);
-        assertTrue(message.contains("NOT stored") && message.contains("OPENTIMESTAMPS"),
-                "the answer does not say which receipt was not stored: " + message);
+        // From the refusal itself, not the message: the message names the rung it contacted
+        // anyway, so it would carry OPENTIMESTAMPS with no rung named in the refusal (batch 3,
+        // round 1, subagent P3).
+        @SuppressWarnings("unchecked")
+        String refusedReason = String.valueOf(((java.util.Map<String, Object>) body.get("anchor")).get("refusedReason"));
+        assertTrue(refusedReason.contains("NOT stored") && refusedReason.contains("OPENTIMESTAMPS"),
+                "the refusal does not say which receipt was not stored: " + refusedReason);
         assertTrue(message.contains("contacted again"),
                 "the answer does not say the rung WAS contacted — a second retry makes another commitment: " + message);
         org.junit.jupiter.api.Assertions.assertFalse(message.contains("nothing was retried"),

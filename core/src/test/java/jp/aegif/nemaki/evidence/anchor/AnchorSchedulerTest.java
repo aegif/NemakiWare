@@ -757,4 +757,31 @@ class AnchorSchedulerTest {
         scheduler.tick(NOW.plus(Duration.ofMinutes(61)));
         verify(anchors, times(1)).retryUnsettled(any());
     }
+
+    @Test
+    @DisplayName("a retry refused for any other reason does not hold the next one — the hold reads the lost receipts, not the refusal")
+    void aRetryRefusedForAnotherReasonDoesNotHoldTheNext() throws Exception {
+        // The lock above stubs a refusal that carries a lost receipt, as the service answers since
+        // R125, so it no longer tells "hold what lost a receipt" from "hold whatever was refused".
+        // A refusal with nothing lost — the stored receipts could not be read — must not hold the
+        // checkpoint, or the screen reports a receipt that was never lost (batch 3, round 1,
+        // subagent P3).
+        dueByEitherArm();
+        saved.put(AnchorScheduleSettings.RETRY_UNSETTLED_INTERVAL_MINUTES, "60");
+        sealed(0, 4, NOW.minus(Duration.ofHours(3)), failedTsa());
+        highest = 4;
+        when(anchors.retryUnsettled(any())).thenAnswer(inv -> {
+            EvidenceCheckpoint cp = inv.getArgument(0);
+            return new AnchorService.Outcome(cp.domain(), cp.toSequence(), cp.merkleRoot(), List.of(),
+                    "the stored receipts could not be read, so it is unknown which rungs already hold a commitment");
+        });
+        AnchorScheduler scheduler = scheduler();
+
+        scheduler.tick(NOW);
+        scheduler.tick(NOW.plus(Duration.ofMinutes(61)));
+
+        verify(anchors, times(2)).retryUnsettled(any());
+        assertEquals(null, scheduler.state(REPO).retryHeldForCheckpoint,
+                "a refusal with no lost receipt held the checkpoint as if a receipt had been lost");
+    }
 }

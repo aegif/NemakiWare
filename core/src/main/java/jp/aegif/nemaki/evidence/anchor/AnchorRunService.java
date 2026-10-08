@@ -38,8 +38,9 @@ import java.util.Map;
  *
  * <p>The bodies were moved here from {@code AnchorController} unchanged. What stayed in the
  * controller is the mapping of a {@link Kind} to an HTTP status, so the move itself changed no
- * response (the answers changed later, and on purpose: rungs that were not asked, c44 / c45, and
- * upgrades that could not finish, c46); what the scheduler reads is the {@link Kind} and the
+ * response (the answers changed later, and on purpose: rungs that were not asked, c44 / c45,
+ * upgrades that could not finish, c46, and a retry whose receipt was not stored, R125 in 3.4.1);
+ * what the scheduler reads is the {@link Kind} and the
  * {@link AnchorService.Outcome}, never a status code. "The scheduler drives the existing API" means
  * it calls these methods — not that it sends HTTP to itself.
  *

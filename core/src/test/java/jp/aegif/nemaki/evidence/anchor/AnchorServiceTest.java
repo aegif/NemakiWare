@@ -582,6 +582,11 @@ class AnchorServiceTest {
                         + "unanchored for ever: the seal cannot be redone and upgrade-pending "
                         + "only looks at PENDING rows");
         assertEquals(1, written.size(), "the retry's receipt was not stored");
+        // Stored, so not refused: the refusal is for a receipt that was NOT stored (R125), and a
+        // refusal read from the receipt's status instead would turn every good retry into a 409
+        // (batch 3, round 1, subagent P3).
+        org.junit.jupiter.api.Assertions.assertNull(outcome.refusedReason(),
+                "a retry whose receipt was stored is refused: " + outcome.refusedReason());
     }
 
     @Test
