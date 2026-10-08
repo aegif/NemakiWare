@@ -111,6 +111,10 @@ class TheScanSettingsAreReadAsWrittenTest {
         int job = workflow.lastIndexOf("\n  osv-sbom-check:", at);
         assertTrue(job > 0, "the call is not in the osv-sbom-check job");
         String jobText = workflow.substring(job, at);
+        // The call is in that job, not in a later one: no other job starts between the two.
+        assertFalse(Pattern.compile("(?m)^  [A-Za-z0-9_-]+:\\s*$").matcher(jobText.substring(1)).results()
+                        .anyMatch(m -> !m.group().trim().equals("osv-sbom-check:")),
+                "osv-check.py runs in another job than the one that builds core's SBOM:\n" + jobText);
         assertTrue(jobText.contains("-f core/pom.xml") && jobText.contains("cyclonedx-maven-plugin")
                         && jobText.contains("makeBom") && jobText.contains("-DoutputName=core-sbom"),
                 "the SBOM osv-check.py reads is not built from core/pom.xml in the same job:\n" + jobText);

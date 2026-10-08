@@ -46,7 +46,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TheUiNamesTheBuildVersionTest {
 
-    private static final Path UI = Path.of("src/main/webapp/ui");
+    // Spelt from the repository root ("../core/..."), not from core: the lock that requires the
+    // workflow to start for every document a lock reads only sees paths written that way, and with
+    // "src/main/webapp/ui" it saw none of these — a pull request changing package.json or vite's
+    // define alone did not start the workflow that runs this lock (batch 5 review, subagent P2).
+    private static final Path PACKAGE_JSON = Path.of("../core/src/main/webapp/ui/package.json");
+    private static final Path LAYOUT = Path.of("../core/src/main/webapp/ui/src/components/Layout/Layout.tsx");
+    private static final Path VITE_CONFIG = Path.of("../core/src/main/webapp/ui/vite.config.ts");
 
     private static String onlyMatch(String text, Pattern pattern, String what) {
         Matcher m = pattern.matcher(text);
@@ -59,7 +65,7 @@ class TheUiNamesTheBuildVersionTest {
     @Test
     @DisplayName("ui/package.json carries the build's version — the one the bundle shows")
     void packageJsonIsTheBuildVersion() throws Exception {
-        String version = onlyMatch(Files.readString(UI.resolve("package.json"), StandardCharsets.UTF_8),
+        String version = onlyMatch(Files.readString(PACKAGE_JSON, StandardCharsets.UTF_8),
                 Pattern.compile("(?m)^  \"version\": \"([^\"]+)\",?$"), "the top-level version of ui/package.json");
         assertEquals(TheBuildVersion.expected(), version,
                 "the screen shows ui/package.json's version " + version + ", and this build is "
@@ -70,7 +76,7 @@ class TheUiNamesTheBuildVersionTest {
     @DisplayName("Layout.tsx's fallback names the build's version")
     void theLayoutFallbackIsTheBuildVersion() throws Exception {
         String version = onlyMatch(
-                Files.readString(UI.resolve("src/components/Layout/Layout.tsx"), StandardCharsets.UTF_8),
+                Files.readString(LAYOUT, StandardCharsets.UTF_8),
                 Pattern.compile("typeof __UI_VERSION__ !== 'undefined' \\? __UI_VERSION__ : '([^']+)'"),
                 "Layout.tsx's fallback for __UI_VERSION__");
         assertEquals(TheBuildVersion.expected(), version,
@@ -83,7 +89,7 @@ class TheUiNamesTheBuildVersionTest {
         // The seam between the two checks above and the screen: package.json can be right and the
         // bundle still show a literal, if the define stops reading it (3.4.1 batch 1, round 2,
         // Codex P2). Comments are stripped first, so a commented-out define does not count.
-        String code = Files.readString(UI.resolve("vite.config.ts"), StandardCharsets.UTF_8)
+        String code = Files.readString(VITE_CONFIG, StandardCharsets.UTF_8)
                 .replaceAll("(?s)/\\*.*?\\*/", "")
                 .replaceAll("(?m)//.*$", "");
         String defined = onlyMatch(code, Pattern.compile("__UI_VERSION__\\s*:\\s*([^,}\\n]+)"),

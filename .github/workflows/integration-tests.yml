@@ -62,6 +62,9 @@ on:
       - 'RELEASE_NOTES.md'
       - 'deploy/**'
       - 'docker/**'
+      # What the UI version lock reads besides ui/src (3.4.1).
+      - 'core/src/main/webapp/ui/package.json'
+      - 'core/src/main/webapp/ui/vite.config.ts'
       # What the release-tool locks read (3.4.1): the OSV check, the SBOM script and the scan settings.
       - 'tools/sbom/**'
       - '.trivyignore.yaml'
@@ -124,6 +127,9 @@ on:
       - 'RELEASE_NOTES.md'
       - 'deploy/**'
       - 'docker/**'
+      # What the UI version lock reads besides ui/src (3.4.1).
+      - 'core/src/main/webapp/ui/package.json'
+      - 'core/src/main/webapp/ui/vite.config.ts'
       # What the release-tool locks read (3.4.1): the OSV check, the SBOM script and the scan settings.
       - 'tools/sbom/**'
       - '.trivyignore.yaml'
