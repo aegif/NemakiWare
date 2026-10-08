@@ -178,6 +178,18 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 				nemakiCachePool.get(repositoryId).removeCmisCache(targetObjectId);
 				nemakiCachePool.get(repositoryId).removeCmisCache(sourceObjectId);
+			} else if (content instanceof jp.aegif.nemaki.model.UserItem userItem) {
+				// A user's item is deleted as a user: through the canonical delete, which strips its
+				// group memberships and refuses the built-in accounts and the acting user (R115).
+				// The generic delete below did neither, so CMIS deleteObject — the browser binding,
+				// AtomPub, /items/{id} — deleted the built-in administrator (measured on a 3.4.0
+				// build, 2026-10-09) and left the user's id in every group that listed it.
+				try {
+					contentService.deleteUser(repositoryId, userItem.getUserId(), callContext.getUsername());
+				} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException(
+							refused.getMessage());
+				}
 			} else{
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 			}

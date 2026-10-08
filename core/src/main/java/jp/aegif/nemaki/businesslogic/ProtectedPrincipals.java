@@ -22,9 +22,11 @@ package jp.aegif.nemaki.businesslogic;
  * <p>The bulk principal batch (C-1) refused to delete or demote the built-in {@code admin}, the
  * service accounts (Solr's and {@code mcp-service}) and the acting user; the three existing user
  * endpoints — legacy {@code /rest}, Spring MVC {@code /api/v1/repo}, Jersey {@code /api/v1/cmis}
- * — had no such guard, so {@code admin} could be deleted one request at a time. The decision is
- * here, and the batch's planner, {@code ContentService.deleteUser} and the legacy endpoint's
- * admin-flag change all ask it.
+ * — had no such guard, so {@code admin} could be deleted one request at a time. Nor had CMIS
+ * {@code deleteObject} on a user's item, or the Microsoft cloud sync's removal, which both used the
+ * generic delete. The decision is here, and the batch's planner, {@code ContentService.deleteUser}
+ * (which every user deletion now goes through) and the legacy endpoint's admin-flag change all
+ * ask it.
  */
 public final class ProtectedPrincipals {
 

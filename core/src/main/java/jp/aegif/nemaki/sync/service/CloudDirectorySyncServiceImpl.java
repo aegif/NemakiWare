@@ -657,11 +657,14 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				UserItem existingItem = (contentService != null)
 						? contentService.getUserItemById(repositoryId, userId) : null;
 				if (existingItem != null) {
-					// Delete through contentService to properly remove UserItem
-					contentService.delete(new SystemCallContext(repositoryId), repositoryId,
-							existingItem.getId(), true);
+					// The canonical delete: it strips the user's group memberships and refuses the
+					// built-in accounts (R115). The generic delete did neither.
+					contentService.deleteUser(repositoryId, userId);
 					result.incrementUsersDeleted();
 				}
+			} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+				log.warn("Not deleting MS user " + userId + ": " + refused.getMessage());
+				result.addError("User delete refused: " + refused.getMessage());
 			} catch (Exception e) {
 				log.warn("Failed to delete MS user " + userId + ": " + e.getMessage());
 				result.addError("User delete failed: " + userId);
