@@ -239,6 +239,7 @@ Cursor の JDT LS が `core/target` を共有するため、この木では
 | MCP サーバ | [`docs/MCP-SERVER.md`](docs/MCP-SERVER.md) |
 | Webhook 機能設計 | [`docs/design/webhook-feature-proposal.md`](docs/design/webhook-feature-proposal.md) |
 | 3.3.1 パッチ計画 | [`docs/design/v3.3.1-plan.md`](docs/design/v3.3.1-plan.md) |
+| 3.4.1 パッチ計画（範囲・順番・入れないもの） | [`docs/design/v3.4.1-plan.md`](docs/design/v3.4.1-plan.md) |
 | 3.4.0 の残件と証拠プロファイル計画 | [`docs/design/v3.4.0-evidence-and-residuals-plan.md`](docs/design/v3.4.0-evidence-and-residuals-plan.md) |
 | 一括プリンシパル是正 (3.4.0 トラック C) | [`docs/design/principal-batch.md`](docs/design/principal-batch.md) |
 | 自発封入スケジューラ (3.4.0 トラック C) | [`docs/design/anchor-scheduler.md`](docs/design/anchor-scheduler.md) |

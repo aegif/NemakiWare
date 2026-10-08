@@ -22,9 +22,9 @@ only repository gotchas.
 
 ## E-ARK の SIP と Atom フィードも、ビルドの版を名乗るようになりました
 
-- E-ARK の SIP の METS は、作成ソフトウェア（NemakiWare）の版の欄（`SOFTWARE VERSION`）に `unknown` と
-  書いていました（3.4.0）。版を WAR のマニフェストから読んでいて、マニフェストに版が無かったためです。
-  ビルドの版を書きます。3.4.0 が書き出した SIP の欄は `unknown` のままです。
+- E-ARK の SIP の METS の、作成ソフトウェア（NemakiWare）の版の欄（`SOFTWARE VERSION`）は、版を WAR の
+  マニフェストから読んでいました。3.4.0 の WAR のマニフェストには版が無く、版 3.4.0 のビルドで書き出すと
+  `unknown` でした。ビルドの版を書きます。すでに書き出した SIP は書き直しません。
 - Atom フィードの `generator` の版は、3.1.0 から 3.4.0 まで `3.0.0` でした。ビルドの版を書きます。
   RSS 2.0 のフィードは、これまでどおり版を書きません。
 - どちらも `productVersion` と同じく `/core/rest/all/build-info` と同じ値です（読めない配備では `unknown`）。
