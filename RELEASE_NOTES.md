@@ -29,6 +29,19 @@ only repository gotchas.
   RSS 2.0 のフィードは、これまでどおり版を書きません。
 - どちらも `productVersion` と同じく `/core/rest/all/build-info` と同じ値です（読めない配備では `unknown`）。
 
+## 一括プリンシパル是正の incident のログは、例外の写しに上限を置くようになりました
+
+一括プリンシパル是正（`/core/api/v1/cmis/repositories/{repositoryId}/principals/batch`）は、失敗の例外を、パスワードを伏せた写しにして
+incident id と一緒にログに書きます。この写しは suppressed の例外を再帰で辿っていたので、suppressed が数千段に
+入れ子になった例外では `StackOverflowError` になり、incident の行と所定の応答の代わりに汎用の 500 が返り、
+execute ではそれまでに適用した行の監査（`PRINCIPAL_BATCH`）も書かれませんでした。そのような例外を作る経路は
+見つかっていません。
+
+- 写しは cause の鎖を先に、suppressed をその後に辿り、64 個までにします。越えた分は「省いた」という行になります
+  （cause の鎖は残りを省いたと、suppressed は省いた数を言います）。
+- 同じ例外が cause と suppressed の 2 か所にあると、2 か所目は「上と同じ」という行になります。これまでは
+  cause の鎖がそこで印もなく切れていました。
+
 ## setup が CouchDB に送る要求は、リダイレクトに従わなくなりました
 
 setup が CouchDB に送る要求のうち、admin のパスワード変更、設定の書き込み、`/apply` での
