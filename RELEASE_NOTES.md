@@ -29,6 +29,18 @@ only repository gotchas.
   RSS 2.0 のフィードは、これまでどおり版を書きません。
 - どちらも `productVersion` と同じく `/core/rest/all/build-info` と同じ値です（読めない配備では `unknown`）。
 
+## 手動の retry-unsettled は、受領を保存できなかったとき 409 で拒否を返すようになりました（HTTP の挙動の変更）
+
+`POST /core/api/v1/admin/anchor/retry-unsettled`（再送）は、何も持たなかった段に連絡して commitment を作り、その受領を
+保存できなかったときも、200 で「contacted again」と答えていました。受領が無い commitment は upgrade も提示も
+できず、もう一度再送すると新しい commitment をもう 1 つ作ります（RFC 3161 なら token をもう 1 つ買います）。
+
+- この場合は封入（`checkpoint-and-anchor`）と同じく拒否し、409 を返します。本文の `anchor.refusedReason` は
+  受領を保存できなかった段を名指し、`message` は「連絡はした、そのうえで拒否した」と言います。
+- 自動の再送（`anchor.schedule.retry-unsettled-interval-minutes`）は、これまでどおりその checkpoint の次の再送を
+  止めます。
+- この応答を 200 として扱っていた呼び出し側は、409 と本文を読むようにしてください。
+
 ## 一括プリンシパル是正の incident のログは、例外の写しに上限を置くようになりました
 
 一括プリンシパル是正（`/core/api/v1/cmis/repositories/{repositoryId}/principals/batch`）は、失敗の例外を、パスワードを伏せた写しにして
@@ -38,9 +50,11 @@ execute ではそれまでに適用した行の監査（`PRINCIPAL_BATCH`）も�
 見つかっていません。
 
 - 写しは cause の鎖を先に、suppressed をその後に辿ります。写しは、写さなかったものの代わりに置く行も含めて
-  64 個までで、64 個目は「写しはここで終わり、これとまだ出していないものは省いた」という行になります。
+  64 個までで、64 個目は「写しは 64 個で切った — これと、このトレースに出ていないものは省いた」という行に
+  なります。
 - 同じ例外が 2 か所にある（cause と suppressed の両方にある、cause の鎖が輪になっている）と、2 か所目は
-  「同じ例外がこのログの別の場所にある」という行になります。これまでは cause の鎖がそこで印もなく切れていました。
+  「同じ例外がこのログの別の場所にある」という行になります（2 か所目がちょうど 64 個目に当たったときは、上の
+  切った行になります）。これまでは cause の鎖がそこで印もなく切れていました。
 
 ## setup が CouchDB に送る要求は、リダイレクトに従わなくなりました
 
