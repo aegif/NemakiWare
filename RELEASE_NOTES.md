@@ -35,10 +35,14 @@ only repository gotchas.
 保存できなかったときも、200 で「contacted again」と答えていました。受領が無い commitment は upgrade も提示も
 できず、もう一度再送すると新しい commitment をもう 1 つ作ります（RFC 3161 なら token をもう 1 つ買います）。
 
-- この場合は封入（`checkpoint-and-anchor`）と同じく拒否し、409 を返します。本文の `anchor.refusedReason` は
-  受領を保存できなかった段を名指し、`message` は「連絡はした、そのうえで拒否した」と言います。
-- 自動の再送（`anchor.schedule.retry-unsettled-interval-minutes`）は、これまでどおりその checkpoint の次の再送を
-  止めます。
+- この場合は封入（`checkpoint-and-anchor`）と同じく拒否し、409 を返します（本文の `status` は `"error"` — 封入の
+  拒否は `"refused"` なので、拒否は 409 で判定してください）。本文の `anchor.refusedReason` は受領を保存できなかった
+  段を名指し、`message` は「連絡はした、そのうえで拒否した」と言います。
+- 自動の再送（`anchor.schedule.retry-unsettled-interval-minutes`）も同じ拒否を受け、管理画面の最後の再送の結果は
+  `SUCCESS` ではなく `REFUSED` になります。自動の再送は、自分の再送や封入で受領を保存できなかった checkpoint への
+  次の自動の再送を止めます。**手動の再送の結果はこれに入りません** — 手動の再送で受領を失っても、自動の再送は
+  その checkpoint にまた連絡します。止めたことはそのノードのメモリにしか持たないので、再起動や leader の交代で
+  消えます（既知の限界）。
 - この応答を 200 として扱っていた呼び出し側は、409 と本文を読むようにしてください。
 
 ## 一括プリンシパル是正の incident のログは、例外の写しに上限を置くようになりました

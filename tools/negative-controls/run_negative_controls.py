@@ -9766,8 +9766,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9886,8 +9886,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 130 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 134 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10888,7 +10888,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10902,7 +10902,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10958,8 +10958,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 130 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 134 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10972,8 +10972,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **130 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **130 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **134 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **134 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11809,7 +11809,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **130 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **134 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13793,8 +13793,8 @@ CONTROLS = [
         # Re-pointed when controls sit above the boundary again (QK4〜QQ4, 2026-10-06): the
         # empty-range form of this control (a count stated for no range) comes back when the
         # next full sweep empties the range. Here the count is wrong by one.
-        find='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
-        replace='**9 回目以後に足した control は 130 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
+        find='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
+        replace='**9 回目以後に足した control は 134 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13865,7 +13865,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 1853 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 1857 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13951,7 +13951,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **130 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **134 本**（通し未実施）。',
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **213 本**（通し未実施）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
@@ -13961,7 +13961,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **1853**（2026-10-09 時点）',
+        find='- コントロール **1857**（2026-10-09 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -18913,7 +18913,7 @@ CONTROLS = [
         find='        if (obs.unsealedCount() == 0) {',
         replace='        if (false && obs.unsealedCount() == 0) {',
         test='AnchorSchedulerTest',
-        expect_fail=['dueButEverythingIsSealedCallsNothing', 'aRetryThatLostItsReceiptHoldsTheNext', 'theRetryRunsOnItsPeriodForAFailedAnchor'],
+        expect_fail=['dueButEverythingIsSealedCallsNothing', 'aRetryThatLostItsReceiptHoldsTheNext', 'theRetryRunsOnItsPeriodForAFailedAnchor', 'aRetryRefusedForAnotherReasonDoesNotHoldTheNext'],
     ),
     dict(
         id='NA4',
@@ -18953,15 +18953,7 @@ CONTROLS = [
         find='        Map<String, String> stored = settingsService.readRepositorySettings(repositoryId,\n                AnchorScheduleSettings.KEYS);',
         replace='        Map<String, String> stored = Map.of();',
         test='AnchorSchedulerTest',
-        expect_fail=['aSavedValueIsWhatTheNextTickActsOn', 'aLostCommitmentHoldsTheRetryForThatCheckpoint', 'aReceiptQueryThatFailedIsNotNothingAnchored', 'aRetryThatLostItsReceiptHoldsTheNext', 'anAnchoredPositionThatCannotBeReadSealsNothingAndShowsNoCount', 'anErrorWaitsTheMinimumIntervalBeforeTryingAgain', 'anExhaustedWalkStillSeals', 'anUnreadableSavedSettingDoesNotFallBackToTheStartupValue', 'dueButEverythingIsSealedCallsNothing', 'enabledWithoutAnIntervalSealsNothingAndWarnsOnce', 'theCountArmAloneSeals', 'theDomainsOwnValueWinsOverTheDeploymentWideOne', 'theRecordContentDomainIsSealedToo', 'theRetryRunsOnItsPeriodForAFailedAnchor', 'theTimeArmAloneSeals', 'upgradeRunsOnItsOwnPeriod', 'withNoRungConfiguredNothingIsSealed', 'withinTheMinimumIntervalNothingIsSealed',
-                     # c41 (2026-09-29): the upgrade-display lock enables the domain through its saved value
-                     'anUndecodablePendingRowIsNotNothingPending',
-                     # c44: the refused-upgrade lock enables the domain the same way
-                     'aRefusedUpgradeIsRecordedWithItsReason',
-                     # c45: the seal-record locks enable the domain the same way
-                     'aSealThatDidNotAskARungNamesItInTheRecord', 'aRefusedSealNamesTheRungsItDidNotAsk',
-                     # c46: so does the lock for an upgrade that could not finish
-                     'anUpgradeThatCouldNotFinishIsRecordedAsUnavailable'],
+        expect_fail=['aSavedValueIsWhatTheNextTickActsOn', 'aLostCommitmentHoldsTheRetryForThatCheckpoint', 'aReceiptQueryThatFailedIsNotNothingAnchored', 'aRetryThatLostItsReceiptHoldsTheNext', 'anAnchoredPositionThatCannotBeReadSealsNothingAndShowsNoCount', 'anErrorWaitsTheMinimumIntervalBeforeTryingAgain', 'anExhaustedWalkStillSeals', 'anUnreadableSavedSettingDoesNotFallBackToTheStartupValue', 'dueButEverythingIsSealedCallsNothing', 'enabledWithoutAnIntervalSealsNothingAndWarnsOnce', 'theCountArmAloneSeals', 'theDomainsOwnValueWinsOverTheDeploymentWideOne', 'theRecordContentDomainIsSealedToo', 'theRetryRunsOnItsPeriodForAFailedAnchor', 'theTimeArmAloneSeals', 'upgradeRunsOnItsOwnPeriod', 'withNoRungConfiguredNothingIsSealed', 'withinTheMinimumIntervalNothingIsSealed', 'anUndecodablePendingRowIsNotNothingPending', 'aRefusedUpgradeIsRecordedWithItsReason', 'aSealThatDidNotAskARungNamesItInTheRecord', 'aRefusedSealNamesTheRungsItDidNotAsk', 'anUpgradeThatCouldNotFinishIsRecordedAsUnavailable', 'aRetryRefusedForAnotherReasonDoesNotHoldTheNext'],
     ),
     dict(
         id='NE4',
@@ -19021,7 +19013,7 @@ CONTROLS = [
         find='        if (interval == null || obs.latest() == null) {',
         replace='        if (true) {',
         test='AnchorSchedulerTest',
-        expect_fail=['theRetryRunsOnItsPeriodForAFailedAnchor', 'aRetryThatLostItsReceiptHoldsTheNext'],
+        expect_fail=['theRetryRunsOnItsPeriodForAFailedAnchor', 'aRetryThatLostItsReceiptHoldsTheNext', 'aRetryRefusedForAnotherReasonDoesNotHoldTheNext'],
     ),
     dict(
         id='NK4',
@@ -21112,6 +21104,47 @@ CONTROLS = [
         replace='        body.put("message", false\n',
         test='AnchorControllerTest',
         expect_fail=['aRetryWhoseReceiptCouldNotBeStoredIsRefused'],
+    ),
+    # ---- 3.4.1 batch 3, round 1 (subagent P3: the refusal's rung, a stored retry, the scheduler's hold) ----
+    dict(
+        id='VK4',
+        what="the retry's refusal no longer names the rung whose receipt was lost — the message still names the rung it contacted, which is what the entry lock used to read",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/anchor/AnchorService.java',
+        find='"a commitment was made and its receipt was NOT stored (" + lost\n                            + "). It cannot be upgraded or shown later, and retrying mints a "',
+        replace='"a commitment was made and its receipt was NOT stored (" + "some rungs"\n                            + "). It cannot be upgraded or shown later, and retrying mints a "',
+        test='AnchorControllerTest',
+        expect_fail=['aRetryWhoseReceiptCouldNotBeStoredIsRefused'],
+    ),
+    dict(
+        id='VL4',
+        what='the same, measured at the service: the refusal does not say which receipt was not stored',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/anchor/AnchorService.java',
+        find='"a commitment was made and its receipt was NOT stored (" + lost\n                            + "). It cannot be upgraded or shown later, and retrying mints a "',
+        replace='"a commitment was made and its receipt was NOT stored (" + "some rungs"\n                            + "). It cannot be upgraded or shown later, and retrying mints a "',
+        test='AnchorServiceTest',
+        expect_fail=['aRetryWhoseReceiptCouldNotBeStoredNamesIt'],
+    ),
+    dict(
+        id='VM4',
+        what='the retry is refused whenever it contacted a rung, stored or not — every good retry becomes a 409',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/anchor/AnchorService.java',
+        find='        if (!unstored.isEmpty()) {\n            List<String> lost = new ArrayList<>();',
+        replace='        if (!receipts.isEmpty()) {\n            List<String> lost = new ArrayList<>();',
+        test='AnchorServiceTest',
+        expect_fail=['aFailedRungIsRetried', 'readableRowsDoNotStopARetry'],
+    ),
+    dict(
+        id='VN4',
+        what='the scheduler holds a checkpoint on any refused retry, so a refusal that lost nothing reads on the screen as a lost receipt',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/evidence/anchor/AnchorScheduler.java',
+        find='if (run.outcome() != null && holdsAConfiguredCommitment(run.outcome().unstored())) {',
+        replace='if (run.kind() == AnchorRunService.Kind.REFUSED || (run.outcome() != null && holdsAConfiguredCommitment(run.outcome().unstored()))) {',
+        test='AnchorSchedulerTest',
+        expect_fail=['aRetryRefusedForAnotherReasonDoesNotHoldTheNext'],
     ),
 ]
 

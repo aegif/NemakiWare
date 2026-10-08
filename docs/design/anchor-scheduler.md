@@ -354,7 +354,7 @@ checkpoint を封じて送る。送った結果と未封入の件数を管理画
 - **error の後は最短間隔だけ待つ**（`nextEligibleAt`、ノードのメモリ）。封じられなかった場合 checkpoint の時刻は動かないので、
   §3.2 の最短間隔の判定だけでは毎分繰り返す。
 - **再送の保留**: 封入の anchor でも再送でも、commitment を作ったのに受領を保存できなかった段があれば（`Outcome.unstored`、
-  このバッチで `AnchorService` に足した — HTTP の応答は変えていない。3.4.1 で手動の再送も `anchor()` と同じく拒否にした — R125）、その checkpoint の自動再送を止める（ノードの
+  このバッチで `AnchorService` に足した — HTTP の応答は変えていない。3.4.1 で再送も — 手動・自動とも — `anchor()` と同じく拒否にした — R125。自動の再送の `lastRetryOutcome` は `REFUSED:` になる。手動の再送の結果は保留に入らない）、その checkpoint の自動再送を止める（ノードの
   メモリ。再起動で消える — 残件 R124）。同じ tick で封じた直後は再送しない（失敗した段を 2 度叩かない）。
 - **WARN は理由が変わったときだけ**（毎分同じ行を書かない）。
 - **PUT の検査**: 送った値をいまの値に重ねて、scheduler と同じ規則（`AnchorScheduleSettings.parse`）で検査する。空にしたキーは
