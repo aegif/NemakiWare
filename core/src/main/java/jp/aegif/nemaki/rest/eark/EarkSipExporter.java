@@ -23,6 +23,7 @@ import jp.aegif.nemaki.evidence.EvidenceLedgerEntry;
 import jp.aegif.nemaki.model.AttachmentNode;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
+import jp.aegif.nemaki.rest.BuildInfoResource;
 
 import org.roda_project.commons_ip.utils.METSEnums;
 import org.roda_project.commons_ip2.model.IPAgent;
@@ -355,7 +356,10 @@ public class EarkSipExporter {
 
             SIP sip = new EARKSIP(sipId(repositoryId, objectId), IPContentType.getMIXED(),
                     IPContentInformationType.getMIXED(), CSIP_VERSION);
-            sip.addCreatorSoftwareAgent("NemakiWare", nemakiVersion());
+            // The build's version (version.properties). It was the manifest's
+            // Implementation-Version, which this WAR does not set (and classes under
+            // WEB-INF/classes have no manifest), so the packages 3.4.0 wrote said "unknown".
+            sip.addCreatorSoftwareAgent("NemakiWare", BuildInfoResource.getVersion());
             // SIP15 (MUST): who submitted has to be a WHO. addCreatorSoftwareAgent writes
             // TYPE="OTHER" OTHERTYPE="SOFTWARE", which the rule does not accept.
             sip.addAgent(new IPAgent(options.submittingOrganisation(), SUBMITTER_ROLE, null,
@@ -1317,11 +1321,5 @@ public class EarkSipExporter {
 
     private static String sipId(String repositoryId, String objectId) {
         return ("nemaki-" + repositoryId + "-" + objectId).replaceAll("[^A-Za-z0-9._-]", "-");
-    }
-
-    private static String nemakiVersion() {
-        String version = EarkSipExporter.class.getPackage() == null ? null
-                : EarkSipExporter.class.getPackage().getImplementationVersion();
-        return version == null ? "unknown" : version;
     }
 }

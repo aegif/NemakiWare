@@ -161,13 +161,10 @@ public class AuditLogger {
         if (version != null && !version.isEmpty()) {
             return version;
         }
-        // Use BuildInfoResource as single source of truth
-        try {
-            return jp.aegif.nemaki.rest.BuildInfoResource.getVersion();
-        } catch (Exception e) {
-            // Fallback if BuildInfoResource is not available (e.g., unit tests)
-            return "3.0.0";
-        }
+        // BuildInfoResource is the single source of truth. It does not throw: when
+        // version.properties cannot be read it answers "unknown". (A catch here used to
+        // answer "3.0.0" — an arm nothing reached.)
+        return jp.aegif.nemaki.rest.BuildInfoResource.getVersion();
     }
 
     public enum DetailLevel {

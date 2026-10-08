@@ -36,6 +36,8 @@ import javax.xml.stream.XMLStreamWriter;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import jp.aegif.nemaki.rest.BuildInfoResource;
+
 /**
  * Generator for RSS 2.0 and Atom 1.0 feeds.
  * 
@@ -140,7 +142,8 @@ public class RssFeedGenerator {
             
             xml.writeStartElement("generator");
             xml.writeAttribute("uri", "https://github.com/aegif/NemakiWare");
-            xml.writeAttribute("version", "3.0.0");
+            // The build's version, not a literal: 3.1.0 through 3.4.0 all said 3.0.0 here.
+            xml.writeAttribute("version", BuildInfoResource.getVersion());
             xml.writeCharacters("NemakiWare");
             xml.writeEndElement();
             
