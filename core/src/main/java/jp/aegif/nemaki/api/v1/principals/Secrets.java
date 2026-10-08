@@ -132,11 +132,15 @@ public final class Secrets {
     }
 
     /**
-     * How many throwables the logged copy carries at most, counting each cause and each
-     * suppressed one. It is also the deepest the copy can nest, which is what keeps logback's
-     * per-link recursion bounded.
+     * How many throwables the logged copy carries at most — the copies and the lines that stand
+     * in for what was not copied alike. It is also the deepest the copy can nest, which is what
+     * keeps logback's per-link recursion bounded.
      */
     static final int MOST = 64;
+
+    /** The last throwable of a copy that was cut: it stands for itself and everything not yet shown. */
+    static final String ENDS_HERE = "the logged copy ends here, at " + MOST + " throwables: this one and every"
+            + " throwable not yet shown were left out";
 
     /** A copied throwable whose suppressed throwables are still to be copied. */
     private record Pending(Throwable original, RuntimeException copy) {
@@ -152,18 +156,22 @@ public final class Secrets {
      * that failed inside try-with-resources, and whose close failed too, logged the write's
      * failure and lost the close's — often the connection-level reason an incident is about.
      *
-     * <p>Nothing here recurses, and the copy carries at most {@link #MOST} throwables; what is
-     * beyond that is replaced by one line saying it was left out. The suppressed throwables used
-     * to be copied by recursion, so a throwable nested a few thousand suppressed deep overflowed
-     * the stack inside the applier's catch: no incident line, no incident response, and no audit
-     * of the rows already applied (R146). Logback's {@code ThrowableProxy} recurses once per link
-     * too, so a copy as deep as its original would overflow there instead: the bound is on what
-     * the logger is given, not only on how it is built.
+     * <p>Nothing here recurses, and the copy carries at most {@link #MOST} throwables, each line
+     * that stands in for something counted like a copy; the last one is then {@link #ENDS_HERE}.
+     * The suppressed throwables used to be copied by recursion, so a throwable nested a few
+     * thousand suppressed deep overflowed the stack inside the applier's catch: no incident line,
+     * no incident response, and no audit of the rows already applied (R146). Logback's
+     * {@code ThrowableProxy} recurses once per link too, so a copy as deep as its original would
+     * overflow there instead: the bound is on what the logger is given, not only on how it is
+     * built. The lines that stand in were not counted at first, so one throwable suppressed ten
+     * thousand times gave a copy ten thousand lines long (batch 2 review, Codex P1).
      *
      * <p>The primary cause chain is copied before any suppressed throwable, and a throwable met a
      * second time — a cycle, or one throwable that is both a cause and a suppressed one — is
      * written as a line naming it. The suppressed ones used to be walked first, so a throwable
-     * that was both cut the primary chain short at that point, with no mark (R146).
+     * that was both cut the primary chain short at that point, with no mark (R146). The line does
+     * not say "above": logback writes a throwable's suppressed ones before its cause, so the one
+     * it repeats may be printed below it (batch 2 review, subagent P3).
      */
     public Throwable loggable(Throwable e) {
         if (e == null) {
@@ -175,39 +183,38 @@ public final class Secrets {
         RuntimeException top = copyChain(e, seen, left, pending);
         while (!pending.isEmpty()) {
             Pending node = pending.removeFirst();
-            Throwable[] suppressed = node.original().getSuppressed();
-            for (int i = 0; i < suppressed.length; i++) {
+            for (Throwable suppressed : node.original().getSuppressed()) {
                 if (left[0] <= 0) {
-                    node.copy().addSuppressed(leftOut((suppressed.length - i) + " suppressed throwable(s) left out,"
-                            + " with what they carry: the logged copy stops at " + MOST + " throwables"));
                     break;
                 }
-                node.copy().addSuppressed(copyChain(suppressed[i], seen, left, pending));
+                node.copy().addSuppressed(copyChain(suppressed, seen, left, pending));
             }
         }
         return top;
     }
 
     /**
-     * The cause chain from {@code head}, walked iteratively. Each copied throwable is queued, so
-     * that its suppressed throwables are copied after every chain already begun.
+     * The cause chain from {@code head}, walked iteratively, each throwable spending one of
+     * {@code left}. Each copied throwable is queued, so that its suppressed throwables are copied
+     * after every chain already begun. The throwable that spends the last one is written as
+     * {@link #ENDS_HERE}, and nothing is copied after it.
      */
     private RuntimeException copyChain(Throwable head, Set<Throwable> seen, int[] left,
             Deque<Pending> pending) {
         RuntimeException top = null;
         RuntimeException tail = null;
-        for (Throwable t = head; t != null; t = t.getCause()) {
+        for (Throwable t = head; t != null && left[0] > 0; t = t.getCause()) {
+            left[0]--;
             RuntimeException copy;
             boolean last = true;
-            if (!seen.add(t)) {
-                copy = leftOut("the same " + t.getClass().getName() + " as logged above");
-            } else if (left[0] <= 0) {
-                copy = leftOut("the rest of this cause chain left out: the logged copy stops at " + MOST
-                        + " throwables");
+            if (left[0] == 0) {
+                copy = leftOut(ENDS_HERE);
+                pending.clear();
+            } else if (!seen.add(t)) {
+                copy = leftOut("the same " + t.getClass().getName() + " as logged elsewhere in this trace");
             } else {
                 copy = new RuntimeException(t.getClass().getName() + ": " + redact(t.getMessage()));
                 copy.setStackTrace(t.getStackTrace());
-                left[0]--;
                 pending.addLast(new Pending(t, copy));
                 last = false;
             }

@@ -459,6 +459,28 @@ class PrincipalBatchResourceTest {
         return messages;
     }
 
+    /**
+     * How many throwables the logged copy of {@code event} carries — causes, suppressed ones and
+     * the lines that stand in for what was left out — counted without recursion. The bound the
+     * release notes state is on this number (64), not on one list in it (batch 2 review, Codex P2).
+     */
+    private static int throwablesIn(ILoggingEvent event) {
+        int count = 0;
+        java.util.Deque<ch.qos.logback.classic.spi.IThrowableProxy> todo = new java.util.ArrayDeque<>();
+        if (event.getThrowableProxy() != null) {
+            todo.add(event.getThrowableProxy());
+        }
+        while (!todo.isEmpty()) {
+            var proxy = todo.removeFirst();
+            count++;
+            if (proxy.getCause() != null) {
+                todo.add(proxy.getCause());
+            }
+            todo.addAll(List.of(proxy.getSuppressed()));
+        }
+        return count;
+    }
+
     /** The applier's incident line — the event whose message says where applying stopped. */
     private static ILoggingEvent theIncidentLine(ListAppender<ILoggingEvent> appender, int line) {
         List<ILoggingEvent> found = appender.list.stream()
@@ -505,13 +527,50 @@ class PrincipalBatchResourceTest {
                 any(), details.capture());
         assertEquals(1L, ((Map<?, ?>) details.getValue().get("counts")).get("applied"),
                 "the audit does not record the row applied before the failure: " + details.getValue());
-        assertTrue(theIncidentLine(log, 3).getFormattedMessage().contains(incidentId),
+        ILoggingEvent incident = theIncidentLine(log, 3);
+        assertTrue(incident.getFormattedMessage().contains(incidentId),
                 "the incident line does not carry the incident id the response names");
+        assertTrue(throwablesIn(incident) <= 64, "the logged copy carries " + throwablesIn(incident)
+                + " throwables");
         List<String> messages = everyMessage(log);
-        assertTrue(messages.stream().anyMatch(m -> m.contains("left out")),
-                "the copy is not bounded, or it drops what it leaves out without saying so: "
-                        + messages.size() + " messages");
+        assertTrue(messages.stream().anyMatch(m -> m.contains("the logged copy ends here")),
+                "the copy stops without saying so: " + messages.size() + " messages");
         assertFalse(messages.stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
+    }
+
+    @Test
+    @DisplayName("one throwable suppressed ten thousand times is logged as a bounded few — the lines naming a repeat count too")
+    void oneThrowableSuppressedManyTimesIsLoggedBounded() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        // The line that names a repeat spent nothing, so this gave a copy of ten thousand lines
+        // (batch 2 review, Codex P1) — the size R146 is about, by width instead of depth.
+        IllegalStateException write = new IllegalStateException("write failed");
+        IllegalArgumentException close = new IllegalArgumentException("the close failed for " + secret);
+        for (int i = 0; i < 10_000; i++) {
+            write.addSuppressed(close);
+        }
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        ILoggingEvent incident = theIncidentLine(log, 2);
+        assertTrue(throwablesIn(incident) <= 64, "the logged copy carries " + throwablesIn(incident)
+                + " throwables");
+        var suppressed = incident.getThrowableProxy().getSuppressed();
+        assertTrue(suppressed.length > 1
+                        && suppressed[1].getMessage().contains("the same java.lang.IllegalArgumentException as logged elsewhere in this trace"),
+                "the repeat is not named where it repeats: "
+                        + (suppressed.length > 1 ? suppressed[1].getMessage() : suppressed.length + " suppressed"));
+        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy ends here"),
+                "the copy stops without saying so: " + suppressed[suppressed.length - 1].getMessage());
+        assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
 
     @Test
@@ -545,6 +604,35 @@ class PrincipalBatchResourceTest {
     }
 
     @Test
+    @DisplayName("a cause chain that loops back is cut where it repeats, with a line saying so")
+    void aCycleInTheCauseChainIsNamedWhereItRepeats() throws Exception {
+        String secret = "S3cret-Passw0rd!";
+        ContentService cs = mock(ContentService.class);
+        when(cs.getUserItemById(eq(REPO), anyString())).thenReturn(null);
+        // write -> refused -> write: a cycle the copy has to end, and say it ended (the arm the
+        // javadoc names and no lock measured — batch 2 review, subagent P3).
+        IllegalStateException write = new IllegalStateException("write failed");
+        IllegalStateException refused = new IllegalStateException("the store refused the write", write);
+        write.initCause(refused);
+        when(cs.buildAndCreateUser(eq(REPO), eq("u9"), eq("Nine"), eq(secret), any(), any(), any(), eq(ACTOR)))
+                .thenThrow(write);
+        PrincipalBatchResource resource = resourceWith(cs, true, mock(AuditLogger.class));
+        ListAppender<ILoggingEvent> log = capturingTheLog();
+
+        Response execute = assertDoesNotThrow(() -> resource.executeJson(REPO, json("users", "create", "",
+                "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
+
+        assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
+        List<String> primary = new ArrayList<>();
+        for (var proxy = theIncidentLine(log, 2).getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
+            primary.add(proxy.getMessage());
+        }
+        assertEquals(3, primary.size(), "the looping cause chain was not cut where it repeats: " + primary);
+        assertTrue(primary.get(2).contains("the same java.lang.IllegalStateException as logged elsewhere in this trace"),
+                "the cut does not say it is a repeat: " + primary);
+    }
+
+    @Test
     @DisplayName("a throwable that is both a cause and a suppressed one does not cut the primary chain, and is named where it repeats")
     void aThrowableInTwoPlacesDoesNotCutThePrimaryChain() throws Exception {
         String secret = "S3cret-Passw0rd!";
@@ -574,7 +662,7 @@ class PrincipalBatchResourceTest {
         assertTrue(primary.get(1).endsWith("the store refused the write") && primary.get(2).endsWith("the root cause"),
                 "the primary cause chain is not the one thrown: " + primary);
         assertEquals(1, top.getSuppressed().length, "the suppressed slot is gone");
-        assertTrue(top.getSuppressed()[0].getMessage().contains("the same java.lang.IllegalStateException as logged above"),
+        assertTrue(top.getSuppressed()[0].getMessage().contains("the same java.lang.IllegalStateException as logged elsewhere in this trace"),
                 "the second place of the same throwable does not say what it is: " + top.getSuppressed()[0].getMessage());
     }
 
@@ -601,18 +689,20 @@ class PrincipalBatchResourceTest {
 
         assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
         assertNotNull(body(execute).get("incidentId"), String.valueOf(execute.getEntity()));
+        ILoggingEvent incident = theIncidentLine(log, 2);
         List<String> primary = new ArrayList<>();
-        for (var proxy = theIncidentLine(log, 2).getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
+        for (var proxy = incident.getThrowableProxy(); proxy != null; proxy = proxy.getCause()) {
             primary.add(proxy.getMessage());
         }
-        assertTrue(primary.size() < 100, "the logged cause chain is " + primary.size() + " links deep");
-        assertTrue(primary.get(primary.size() - 1).contains("the rest of this cause chain left out"),
+        assertTrue(throwablesIn(incident) <= 64, "the logged copy carries " + throwablesIn(incident)
+                + " throwables, " + primary.size() + " links deep");
+        assertTrue(primary.get(primary.size() - 1).contains("the logged copy ends here"),
                 "the logged chain stops without saying so: " + primary.get(primary.size() - 1));
         assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
 
     @Test
-    @DisplayName("ten thousand suppressed throwables at one level are logged as a bounded few, and the rest is counted")
+    @DisplayName("ten thousand suppressed throwables at one level are logged as a bounded few, and the cut is said")
     void aWideFailureIsLoggedBounded() throws Exception {
         String secret = "S3cret-Passw0rd!";
         ContentService cs = mock(ContentService.class);
@@ -630,11 +720,12 @@ class PrincipalBatchResourceTest {
                 "[{\"userId\":\"u9\",\"name\":\"Nine\",\"password\":\"" + secret + "\"}]")));
 
         assertEquals(500, execute.getStatus(), String.valueOf(execute.getEntity()));
-        var suppressed = theIncidentLine(log, 2).getThrowableProxy().getSuppressed();
-        assertTrue(suppressed.length > 0 && suppressed.length < 100,
-                "the logged copy carries " + suppressed.length + " suppressed throwables");
-        assertTrue(suppressed[suppressed.length - 1].getMessage().matches("\\[\\d+ suppressed throwable\\(s\\) left out.*"),
-                "the copy stops without saying how many it left out: " + suppressed[suppressed.length - 1].getMessage());
+        ILoggingEvent incident = theIncidentLine(log, 2);
+        var suppressed = incident.getThrowableProxy().getSuppressed();
+        assertTrue(suppressed.length > 0 && throwablesIn(incident) <= 64,
+                "the logged copy carries " + throwablesIn(incident) + " throwables");
+        assertTrue(suppressed[suppressed.length - 1].getMessage().contains("the logged copy ends here"),
+                "the copy stops without saying so: " + suppressed[suppressed.length - 1].getMessage());
         assertFalse(everyMessage(log).stream().anyMatch(m -> m.contains(secret)), "the password reached the log");
     }
 
