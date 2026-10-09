@@ -335,16 +335,19 @@ public interface ContentService {
 	 * @throws org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException when the
 	 *         user id {@code item} names resolves to no user, or to another document: the
 	 *         repository holds two documents for that user, and which one is the user cannot be
-	 *         decided here
+	 *         decided here. A second document is not otherwise detected — when the id resolves to
+	 *         {@code item}, it may be deleted as the user
 	 */
 	void checkUserItemDeletion(CallContext callContext, String repositoryId, UserItem item);
 
 	/**
-	 * Delete {@code item} as a user, for CMIS {@code deleteObject} (R115): refuses as
-	 * {@link #checkUserItemDeletion}, strips the user from every group that lists it, then deletes
-	 * this document — the one the request named, never another found by its user id. Every write
-	 * is made with {@code callContext}, so the change events, the webhooks and the archive name
-	 * the acting user, as the generic delete this replaces did.
+	 * Delete {@code item} as a user, for CMIS {@code deleteObject} (R115), after
+	 * {@link #checkUserItemDeletion} allowed it and before anything else was written: refuses a
+	 * protected user again, but does not resolve the user id again (a user created under it in
+	 * between must not turn the delete into a refusal after a cascade). Strips the user from every
+	 * group that lists it, then deletes this document — the one the request named, never another
+	 * found by its user id. Every write is made with {@code callContext}, so the change events,
+	 * the webhooks and the archive name the acting user, as the generic delete this replaces did.
 	 */
 	void deleteUserItem(CallContext callContext, String repositoryId, UserItem item, Boolean deletedWithParent);
 

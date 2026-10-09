@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -178,6 +179,21 @@ class CmisDeleteObjectDeletesAUserAsAUserTest {
         verify(service, never()).delete(any(), eq(REPO), eq("carol-second-doc"), any());
         verify(service, never()).delete(any(), eq(REPO), eq("carol-doc"), any());
         verify(service, never()).deleteDocument(any(), eq(REPO), eq(child), any(), any());
+    }
+
+    @Test
+    @DisplayName("the user id is resolved once, before the cascade — a user created under it since does not refuse the delete after the children are gone")
+    void theUserIdIsResolvedOnceBeforeAnythingIsWritten() {
+        UserItem createdSince = new UserItem("alice-since-doc", "nemaki:user", "alice", "alice", null, false, null);
+        // The first resolution is the check's; a later one would see the user created since.
+        doReturn(items.get("alice")).doReturn(createdSince).when(service).getUserItemById(REPO, "alice");
+        String child = childOf("alice-doc");
+
+        assertDoesNotThrow(
+                () -> objects.deleteObjectInternal(callContext, REPO, items.get("alice"), false, false),
+                "the delete was refused after its cascade had run");
+        verify(service).deleteDocument(any(), eq(REPO), eq(child), any(), any());
+        verify(service).delete(same(callContext), eq(REPO), eq("alice-doc"), eq(false));
     }
 
     @Test

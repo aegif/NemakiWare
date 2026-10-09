@@ -22,6 +22,7 @@ import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
 
+import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,8 +47,9 @@ import static org.mockito.Mockito.when;
  * The canonical user writes refuse the built-in accounts and the acting user (R115).
  *
  * <p>{@code ContentService.deleteUser} is where every user deletion ends — the three user
- * endpoints, the bulk batch and directory sync — so the built-in administrator and the service
- * accounts are refused there whoever asks, and the acting user when a request names one.
+ * endpoints, the bulk batch and directory sync; CMIS ends in {@code deleteUserItem} — so the
+ * built-in administrator and the service accounts are refused there whoever asks, and the acting
+ * user when a request names one.
  * {@code applyUserUpdate} keeps the built-in administrator an administrator.
  *
  * <p>The service is real; only its reads and writes of the store are stubbed.
@@ -111,6 +113,19 @@ class ProtectedPrincipalsAreNeverDeletedOrDemotedTest {
         assertEquals(Reason.ACTOR_ITSELF, refusedDeleting("alice", "alice"));
         assertTrue(service.deleteUser(REPO, "alice", "bob"));
         verify(service).delete(any(), eq(REPO), eq("alice-doc"), eq(false));
+    }
+
+    @Test
+    @DisplayName("CMIS's delete of a user item refuses the protected users by itself, not only through the check before it")
+    void theUserItemDeleteRefusesProtectedUsersByItself() {
+        CallContext bob = mock(CallContext.class);
+        when(bob.getUsername()).thenReturn("bob");
+        for (String id : List.of("admin", "solr", "mcp-service", "bob")) {
+            UserItem item = service.getUserItemById(REPO, id);
+            assertThrows(ProtectedPrincipals.RefusedException.class,
+                    () -> service.deleteUserItem(bob, REPO, item, false), id + " was deleted");
+            verify(service, never()).delete(any(), eq(REPO), eq(id + "-doc"), any());
+        }
     }
 
     @Test

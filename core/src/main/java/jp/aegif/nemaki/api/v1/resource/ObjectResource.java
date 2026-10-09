@@ -267,7 +267,15 @@ public class ObjectResource {
             ),
             @ApiResponse(
                     responseCode = "403",
-                    description = "Permission denied",
+                    description = "Permission denied — including a protected user's item (the built-in accounts, the acting user)",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "422",
+                    description = "Constraint violation — e.g. a folder that is not empty, or a user's item whose user id resolves to no user or to another document",
                     content = @Content(
                             mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class)

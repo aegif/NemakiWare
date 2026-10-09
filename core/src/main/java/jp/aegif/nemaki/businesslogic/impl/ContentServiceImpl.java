@@ -902,13 +902,14 @@ public class ContentServiceImpl implements ContentService {
 		// The memberships a user delete strips are the user id's, not this document's. When the id
 		// resolves to another document, the user lives on there and so must its memberships; when
 		// it resolves to none, the index and this document disagree. Either way which document is
-		// the user is not decided here, and nothing is written.
-		jp.aegif.nemaki.model.UserItem resolved =
-				userId == null || userId.isBlank() ? null : getUserItemById(repositoryId, userId);
+		// the user is not decided here, and nothing is written. A second document is not otherwise
+		// detected: when the id resolves to this one, this one is deleted as the user.
+		jp.aegif.nemaki.model.UserItem resolved = userId == null ? null : getUserItemById(repositoryId, userId);
 		if (resolved == null || !item.getId().equals(resolved.getId())) {
-			throw new CmisConstraintException("the user item '" + item.getId() + "' names the user '"
-					+ userId + "', which " + (resolved == null ? "resolves to no user"
-							: "resolves to another document ('" + resolved.getId() + "')")
+			throw new CmisConstraintException("the user item '" + item.getId() + "' "
+					+ (userId == null ? "names no user id"
+							: "names the user '" + userId + "', which " + (resolved == null ? "resolves to no user"
+									: "resolves to another document ('" + resolved.getId() + "')"))
 					+ "; which document is the user cannot be decided here, so nothing was deleted");
 		}
 	}
@@ -916,7 +917,11 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public void deleteUserItem(CallContext callContext, String repositoryId, jp.aegif.nemaki.model.UserItem item,
 			Boolean deletedWithParent) {
-		checkUserItemDeletion(callContext, repositoryId, item);
+		// The protected-principal question again: it reads the deployment's settings, not the
+		// repository. Not the resolution — checkUserItemDeletion asked it before the cascade, and a
+		// user created under the same id since would turn this delete into a refusal after the
+		// children are gone (3.4.1 batch 4 review, round 3).
+		refuseProtectedUser(item.getUserId(), callContext.getUsername());
 		removeUserFromAllGroups(callContext, repositoryId, item.getUserId());
 		delete(callContext, repositoryId, item.getId(), deletedWithParent);
 	}

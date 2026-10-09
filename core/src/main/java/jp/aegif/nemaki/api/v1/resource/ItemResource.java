@@ -323,6 +323,22 @@ public class ItemResource {
                     description = "Item deleted successfully"
             ),
             @ApiResponse(
+                    responseCode = "403",
+                    description = "Permission denied — including a protected user's item (the built-in accounts, the acting user)",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
+                    responseCode = "422",
+                    description = "Constraint violation — e.g. a user's item whose user id resolves to no user or to another document",
+                    content = @io.swagger.v3.oas.annotations.media.Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
+            ),
+            @ApiResponse(
                     responseCode = "404",
                     description = "Item not found",
                     content = @io.swagger.v3.oas.annotations.media.Content(
