@@ -326,6 +326,29 @@ public interface ContentService {
 	boolean deleteUser(String repositoryId, String userId, String actor);
 
 	/**
+	 * Whether {@code item} may be deleted as a user on behalf of {@code callContext}'s user —
+	 * asked before anything is written, so CMIS {@code deleteObject} refuses before its
+	 * parentChild cascade deletes a child (R115). Returns normally when it may.
+	 *
+	 * @throws ProtectedPrincipals.RefusedException for the built-in administrator and service
+	 *         accounts, and for the acting user itself
+	 * @throws org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException when the
+	 *         user id {@code item} names resolves to no user, or to another document: the
+	 *         repository holds two documents for that user, and which one is the user cannot be
+	 *         decided here
+	 */
+	void checkUserItemDeletion(CallContext callContext, String repositoryId, UserItem item);
+
+	/**
+	 * Delete {@code item} as a user, for CMIS {@code deleteObject} (R115): refuses as
+	 * {@link #checkUserItemDeletion}, strips the user from every group that lists it, then deletes
+	 * this document — the one the request named, never another found by its user id. Every write
+	 * is made with {@code callContext}, so the change events, the webhooks and the archive name
+	 * the acting user, as the generic delete this replaces did.
+	 */
+	void deleteUserItem(CallContext callContext, String repositoryId, UserItem item, Boolean deletedWithParent);
+
+	/**
 	 * Get a path string
 	 * @param repositoryId TODO
 	 * @param content

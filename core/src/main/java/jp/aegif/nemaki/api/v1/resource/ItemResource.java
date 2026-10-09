@@ -36,6 +36,8 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
@@ -357,6 +359,10 @@ public class ItemResource {
             
         } catch (ApiException e) {
             throw e;
+        } catch (CmisPermissionDeniedException | CmisConstraintException refused) {
+            // The caller's answer, not a server fault — a protected user's item is refused so
+            // (R115). ApiExceptionMapper answers each as itself: 403, 422.
+            throw refused;
         } catch (Exception e) {
             logger.severe("Error deleting item " + itemId + ": " + e.getMessage());
             throw ApiException.internalError("Failed to delete item: " + e.getMessage(), e);

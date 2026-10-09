@@ -884,12 +884,7 @@ public class ContentServiceImpl implements ContentService {
 	@Override
 	public boolean deleteUser(String repositoryId, String userId, String actor) {
 		// Before the read: a protected id is refused whether or not it exists here (R115).
-		jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason refused =
-				jp.aegif.nemaki.businesslogic.ProtectedPrincipals.reasonFor(userId, actor,
-						propertyManager == null ? null : propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID));
-		if (refused != null) {
-			throw new jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException(refused, userId, "deleted");
-		}
+		refuseProtectedUser(userId, actor);
 		jp.aegif.nemaki.model.UserItem user = getUserItemById(repositoryId, userId);
 		if (user == null) {
 			return false;
@@ -899,11 +894,54 @@ public class ContentServiceImpl implements ContentService {
 		return true;
 	}
 
+	@Override
+	public void checkUserItemDeletion(CallContext callContext, String repositoryId,
+			jp.aegif.nemaki.model.UserItem item) {
+		String userId = item.getUserId();
+		refuseProtectedUser(userId, callContext.getUsername());
+		// The memberships a user delete strips are the user id's, not this document's. When the id
+		// resolves to another document, the user lives on there and so must its memberships; when
+		// it resolves to none, the index and this document disagree. Either way which document is
+		// the user is not decided here, and nothing is written.
+		jp.aegif.nemaki.model.UserItem resolved =
+				userId == null || userId.isBlank() ? null : getUserItemById(repositoryId, userId);
+		if (resolved == null || !item.getId().equals(resolved.getId())) {
+			throw new CmisConstraintException("the user item '" + item.getId() + "' names the user '"
+					+ userId + "', which " + (resolved == null ? "resolves to no user"
+							: "resolves to another document ('" + resolved.getId() + "')")
+					+ "; which document is the user cannot be decided here, so nothing was deleted");
+		}
+	}
+
+	@Override
+	public void deleteUserItem(CallContext callContext, String repositoryId, jp.aegif.nemaki.model.UserItem item,
+			Boolean deletedWithParent) {
+		checkUserItemDeletion(callContext, repositoryId, item);
+		removeUserFromAllGroups(callContext, repositoryId, item.getUserId());
+		delete(callContext, repositoryId, item.getId(), deletedWithParent);
+	}
+
+	/** Refuses to delete a protected user (R115): the built-in accounts, and {@code actor} itself. */
+	private void refuseProtectedUser(String userId, String actor) {
+		jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason refused =
+				jp.aegif.nemaki.businesslogic.ProtectedPrincipals.reasonFor(userId, actor,
+						propertyManager == null ? null : propertyManager.readValue(PropertyKey.SOLR_NEMAKI_USERID));
+		if (refused != null) {
+			throw new jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException(refused, userId, "deleted");
+		}
+	}
+
+	/** {@link #removeUserFromAllGroups(CallContext, String, String)} for a delete that acts for nobody. */
+	private void removeUserFromAllGroups(String repositoryId, String userId) {
+		removeUserFromAllGroups(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId,
+				userId);
+	}
+
 	/**
 	 * Strip {@code userId} from the member list of every group that references it,
 	 * so deleting a user never leaves dangling references behind.
 	 */
-	private void removeUserFromAllGroups(String repositoryId, String userId) {
+	private void removeUserFromAllGroups(CallContext callContext, String repositoryId, String userId) {
 		// Reverse-lookup view, not an enumeration of every group — same change and same reason
 		// as removeGroupFromAllNestedGroups below. Deleting a user had the identical cost.
 		List<String> parents = getGroupIdsDirectlyContainingUser(repositoryId, userId);
@@ -928,7 +966,7 @@ public class ContentServiceImpl implements ContentService {
 			List<String> updated = new ArrayList<>(current);
 			updated.remove(userId);
 			g.setUsers(updated);
-			update(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, g);
+			update(callContext, repositoryId, g);
 		}
 	}
 

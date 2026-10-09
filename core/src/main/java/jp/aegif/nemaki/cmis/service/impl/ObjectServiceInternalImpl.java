@@ -88,6 +88,15 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 
+			// A user's item is deleted as a user (R115), and whether it may be is asked here, before
+			// the parentChild cascade below: a refusal that came after it would leave the children
+			// deleted and the user in place.
+			jp.aegif.nemaki.model.UserItem userItem =
+					content instanceof jp.aegif.nemaki.model.UserItem user ? user : null;
+			if (userItem != null) {
+				refusedAsCmis(() -> contentService.checkUserItemDeletion(callContext, repositoryId, userItem));
+			}
+
 			// //////////////////
 			// ParentChild cascade: delete children via deleteObjectInternal so each
 			// child gets permission check, lock, and cache invalidation.
@@ -178,18 +187,17 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 				nemakiCachePool.get(repositoryId).removeCmisCache(targetObjectId);
 				nemakiCachePool.get(repositoryId).removeCmisCache(sourceObjectId);
-			} else if (content instanceof jp.aegif.nemaki.model.UserItem userItem) {
-				// A user's item is deleted as a user: through the canonical delete, which strips its
-				// group memberships and refuses the built-in accounts and the acting user (R115).
-				// The generic delete below did neither, so CMIS deleteObject — the browser binding,
-				// AtomPub, /items/{id} — deleted the built-in administrator (measured on a 3.4.0
-				// build, 2026-10-09) and left the user's id in every group that listed it.
-				try {
-					contentService.deleteUser(repositoryId, userItem.getUserId(), callContext.getUsername());
-				} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
-					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException(
-							refused.getMessage());
-				}
+			} else if (userItem != null) {
+				// A user's item is deleted as a user: it strips the user's group memberships and
+				// refuses the built-in accounts and the acting user (R115). The generic delete below
+				// did neither. CMIS deleteObject — the browser binding, AtomPub, OData and the Jersey
+				// /items/{id} and /objects/{id} — took it: an administrator deleted a user's item with
+				// one browser-binding request on a 3.4.0 build (measured 2026-10-09, with a test user),
+				// nothing on that path singles out the built-in administrator's item (read), and the
+				// deleted id stayed in every group that listed it. The caller's context is kept, so
+				// the change event, the webhook and the archive still name the acting user.
+				refusedAsCmis(() -> contentService.deleteUserItem(callContext, repositoryId, userItem,
+						deleteWithParent));
 			} else{
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 			}
@@ -199,6 +207,15 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 		} finally {
 			lock.unlock();
 			releaseCascadeVisited(objectId, visited);
+		}
+	}
+
+	/** A protected user's refusal (R115), answered as CMIS answers a permission it does not grant. */
+	private static void refusedAsCmis(Runnable write) {
+		try {
+			write.run();
+		} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
+			throw new CmisPermissionDeniedException(refused.getMessage());
 		}
 	}
 
