@@ -37,9 +37,17 @@ only repository gotchas.
 `/core/api/v1/cmis/repositories/{repositoryId}/users/...`）は拒んでおらず、`admin` を 1 件ずつ削除できました。
 
 - 3 つの API の削除は、これらの利用者を拒みます（Jersey と Spring MVC は 403、legacy は失敗の JSON）。
-- CMIS の削除（`deleteObject` — Browser binding・AtomPub・`/core/api/v1/cmis/repositories/{repositoryId}/items/{id}`）で
-  利用者の item を消すときも、同じ利用者を拒みます（CMIS の permissionDenied）。これまでは一般の削除で消え、
-  グループの所属も残っていました。いまは利用者の API と同じ削除を通り、所属も外します。
+- CMIS の削除（`deleteObject` — Browser binding・AtomPub・`/core/api/v1/cmis/repositories/{repositoryId}/items/{id}`・
+  `/objects/{id}`）で利用者の item を消すときも、同じ利用者を拒みます（CMIS の permissionDenied）。これまでは一般の
+  削除で消え、グループの所属も残っていました。いまは利用者として消え、所属も外します。拒否は何かを消す前
+  （parentChild の子を含む）に決まります。CMIS で消したときに変更ログ・webhook・archive が記録する実行者は、
+  3.4.0 と同じく要求した利用者です（所属を外す更新も要求した利用者として記録します）。
+- 同じ userId を持つ文書が 2 つある状態でその 1 つを CMIS で消そうとすると、どちらの文書も消さずに拒否します
+  （CMIS の constraint）。userId が他方の文書に解決されるので、利用者として消すと残る利用者の所属を外すことに
+  なるためです。重複の片付けは CMIS ではできません。
+- Jersey の `/items/{id}` と `/objects/{id}` の DELETE は、CMIS の拒否（permissionDenied・constraint）を 500 でなく
+  403・422 の problem+json で返します。利用者の item 以外の拒否（空でないフォルダの削除など）も同じです
+  （HTTP の挙動の変更）。
 - ディレクトリ同期（LDAP と Microsoft のクラウド同期）の削除も、組み込みのアカウントは削除しません。
 - legacy の API の admin の剥奪（`isAdmin=false`）は、自分自身に加えて組み込みのアカウントも拒みます。
 - 組み込みの `admin` を admin でない状態で保存する更新は、Jersey と Spring MVC の利用者の更新、legacy の更新で

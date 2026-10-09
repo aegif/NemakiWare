@@ -46,8 +46,8 @@ gate). The actionable signals are elsewhere:
   The OSV jobs are informational. osv-scanner does not read `core/pom.xml` or
   `evidence-verifier-cli/pom.xml` ("Attempted to scan lockfile but failed", PR #516
   log, 2026-10-05), so since 3.4.1 the `osv-sbom-check` job builds core's resolved
-  SBOM and matches it with `tools/sbom/osv-check.py` (added in 3.4.1; its first run is the
-  pull request's CI) (exit 1 = advisories, 2 = could
+  SBOM and matches it with `tools/sbom/osv-check.py` (added in 3.4.1; it has not run in CI yet —
+  its first run is when the 3.4.1 branch reaches CI) (exit 1 = advisories, 2 = could
   not ask — either turns that job red). Before a release, match the full resolved
   SBOM (every module and the UI) by hand: `tools/sbom/make-sbom.sh`, then
   `tools/sbom/osv-check.py target/*-sbom.json`.

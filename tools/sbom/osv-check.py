@@ -30,7 +30,7 @@ exit code
 lockfile として読むが、core/pom.xml と evidence-verifier-cli/pom.xml は "Attempted to scan
 lockfile but failed" で読めていない（2026-10-05、PR #516 のログ）。WAR の Java の依存は、
 解決済みの SBOM を照合しないと見えない。3.4.1 で security-scan.yml に osv-sbom-check を足し
-（最初の実走は PR の CI）、core の SBOM をこの script で照合する（情報扱い）。リリースでは全 module と UI の SBOM を手で照合する。
+（CI ではまだ走っていない — 最初の実走は 3.4.1 の branch が CI に届いたとき）、core の SBOM をこの script で照合する（情報扱い）。リリースでは全 module と UI の SBOM を手で照合する。
 """
 import json
 import sys
