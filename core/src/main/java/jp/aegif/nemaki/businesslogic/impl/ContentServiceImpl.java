@@ -922,10 +922,11 @@ public class ContentServiceImpl implements ContentService {
 
 	@Override
 	public void deleteUserItem(UserItemDeletion decided, Boolean deletedWithParent) {
-		// Carried out as decided, nothing asked again: asking again after a cascade has run turns
-		// whatever changed in between — a user created under the same id, the Solr account read
-		// differently from nemaki_conf — into a refusal that leaves the children deleted and the
-		// user in place (3.4.1 batch 4 review, rounds 3 and 4).
+		// Carried out as decided, the decision's two questions not asked again: asking again after
+		// a cascade has run turns whatever changed in between — a user created under the same id,
+		// the Solr account read differently from nemaki_conf — into a refusal that leaves the
+		// children deleted and the user in place (3.4.1 batch 4 review, rounds 3 and 4). The
+		// generic delete below still reads the document again by its id (residual R147).
 		if (!(decided instanceof DecidedUserItemDeletion deletion)) {
 			throw new IllegalArgumentException("not a deletion this service decided; ask checkUserItemDeletion");
 		}

@@ -342,17 +342,19 @@ public interface ContentService {
 	 * @throws org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException when the
 	 *         user id {@code item} names resolves to no user, or to another document: the
 	 *         repository holds two documents for that user, and which one is the user cannot be
-	 *         decided here. A second document is not otherwise detected — when the id resolves to
-	 *         {@code item}, it may be deleted as the user
+	 *         decided here; and when {@code item} names no user id. A second document is not
+	 *         otherwise detected — when the id resolves to {@code item}, it may be deleted as the user
 	 */
 	UserItemDeletion checkUserItemDeletion(CallContext callContext, String repositoryId, UserItem item);
 
 	/**
 	 * Carry out a deletion {@link #checkUserItemDeletion} decided (R115): strips the user from every
 	 * group that lists it, then deletes the item — the one the request named, never another found
-	 * by its user id. Nothing is asked again: what changes after the decision (a user created under
-	 * the same id, the Solr account read differently from {@code nemaki_conf}) must not turn the
-	 * delete into a refusal after a cascade has run. Every write is made with the deciding request's
+	 * by its user id. The decision's two questions are not asked again: what changes after the
+	 * decision (a user created under the same id, the Solr account read differently from
+	 * {@code nemaki_conf}) must not turn the delete into a refusal after a cascade has run. The
+	 * generic delete it ends in still reads the document again by its id (residual R147). Every
+	 * write is made with the deciding request's
 	 * context, so the change events, the webhooks and the archive name the acting user, as the
 	 * generic delete this replaces did.
 	 *
