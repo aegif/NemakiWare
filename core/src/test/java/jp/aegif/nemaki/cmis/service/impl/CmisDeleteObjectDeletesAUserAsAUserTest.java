@@ -21,7 +21,9 @@ import jp.aegif.nemaki.cmis.aspect.ExceptionService;
 import jp.aegif.nemaki.model.Document;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
+import jp.aegif.nemaki.util.constant.PropertyKey;
 import jp.aegif.nemaki.util.lock.ThreadLockService;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -187,6 +190,26 @@ class CmisDeleteObjectDeletesAUserAsAUserTest {
         UserItem createdSince = new UserItem("alice-since-doc", "nemaki:user", "alice", "alice", null, false, null);
         // The first resolution is the check's; a later one would see the user created since.
         doReturn(items.get("alice")).doReturn(createdSince).when(service).getUserItemById(REPO, "alice");
+        String child = childOf("alice-doc");
+
+        assertDoesNotThrow(
+                () -> objects.deleteObjectInternal(callContext, REPO, items.get("alice"), false, false),
+                "the delete was refused after its cascade had run");
+        verify(service).deleteDocument(any(), eq(REPO), eq(child), any(), any());
+        verify(service).delete(same(callContext), eq(REPO), eq("alice-doc"), eq(false));
+    }
+
+    @Test
+    @DisplayName("the protected-principal question is asked once, before the cascade — Solr's account read differently since does not refuse the delete after the children are gone")
+    void theProtectedQuestionIsAskedOnceBeforeAnythingIsWritten() throws Exception {
+        // Solr's account comes from PropertyManager, which can read nemaki_conf: the decision reads
+        // "solr"; a later read — after a change, or after a failed store read fell back to the
+        // properties file — reads "alice".
+        PropertyManager settings = mock(PropertyManager.class);
+        when(settings.readValue(PropertyKey.SOLR_NEMAKI_USERID)).thenReturn("solr", "alice");
+        Field field = ContentServiceImpl.class.getDeclaredField("propertyManager");
+        field.setAccessible(true);
+        field.set(service, settings);
         String child = childOf("alice-doc");
 
         assertDoesNotThrow(

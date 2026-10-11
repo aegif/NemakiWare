@@ -88,14 +88,14 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 
-			// A user's item is deleted as a user (R115), and whether it may be is asked here, before
-			// the parentChild cascade below: a refusal that came after it would leave the children
-			// deleted and the user in place.
-			jp.aegif.nemaki.model.UserItem userItem =
-					content instanceof jp.aegif.nemaki.model.UserItem user ? user : null;
-			if (userItem != null) {
-				refusedAsCmis(() -> contentService.checkUserItemDeletion(callContext, repositoryId, userItem));
-			}
+			// A user's item is deleted as a user (R115). Whether it may be is decided once, here,
+			// before the parentChild cascade below, and the delete further down carries the decision
+			// out without asking again: a refusal that came after the cascade would leave the
+			// children deleted and the user in place.
+			final ContentService.UserItemDeletion userItemDeletion =
+					content instanceof jp.aegif.nemaki.model.UserItem user
+							? refusedAsCmis(() -> contentService.checkUserItemDeletion(callContext, repositoryId, user))
+							: null;
 
 			// //////////////////
 			// ParentChild cascade: delete children via deleteObjectInternal so each
@@ -187,7 +187,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 
 				nemakiCachePool.get(repositoryId).removeCmisCache(targetObjectId);
 				nemakiCachePool.get(repositoryId).removeCmisCache(sourceObjectId);
-			} else if (userItem != null) {
+			} else if (userItemDeletion != null) {
 				// A user's item is deleted as a user: it strips the user's group memberships and
 				// refuses the built-in accounts and the acting user (R115). The generic delete below
 				// did neither. CMIS deleteObject — the browser binding, AtomPub, OData and the Jersey
@@ -196,8 +196,7 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 				// nothing on that path singles out the built-in administrator's item (read), and the
 				// deleted id stayed in every group that listed it. The caller's context is kept, so
 				// the change event, the webhook and the archive still name the acting user.
-				refusedAsCmis(() -> contentService.deleteUserItem(callContext, repositoryId, userItem,
-						deleteWithParent));
+				contentService.deleteUserItem(userItemDeletion, deleteWithParent);
 			} else{
 				contentService.delete(callContext, repositoryId, objectId, deleteWithParent);
 			}
@@ -211,9 +210,9 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 	}
 
 	/** A protected user's refusal (R115), answered as CMIS answers a permission it does not grant. */
-	private static void refusedAsCmis(Runnable write) {
+	private static <T> T refusedAsCmis(java.util.function.Supplier<T> decision) {
 		try {
-			write.run();
+			return decision.get();
 		} catch (jp.aegif.nemaki.businesslogic.ProtectedPrincipals.RefusedException refused) {
 			throw new CmisPermissionDeniedException(refused.getMessage());
 		}

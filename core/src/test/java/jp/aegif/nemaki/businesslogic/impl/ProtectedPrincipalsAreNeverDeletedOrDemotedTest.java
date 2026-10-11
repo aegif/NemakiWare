@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.businesslogic.impl;
 
+import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.businesslogic.ProtectedPrincipals;
 import jp.aegif.nemaki.businesslogic.ProtectedPrincipals.Reason;
 import jp.aegif.nemaki.model.UserItem;
@@ -47,9 +48,10 @@ import static org.mockito.Mockito.when;
  * The canonical user writes refuse the built-in accounts and the acting user (R115).
  *
  * <p>{@code ContentService.deleteUser} is where every user deletion ends — the three user
- * endpoints, the bulk batch and directory sync; CMIS ends in {@code deleteUserItem} — so the
- * built-in administrator and the service accounts are refused there whoever asks, and the acting
- * user when a request names one.
+ * endpoints, the bulk batch and directory sync; CMIS is decided by {@code checkUserItemDeletion},
+ * whose decision is the only one {@code deleteUserItem} carries out — so the built-in administrator
+ * and the service accounts are refused there whoever asks, and the acting user when a request
+ * names one.
  * {@code applyUserUpdate} keeps the built-in administrator an administrator.
  *
  * <p>The service is real; only its reads and writes of the store are stubbed.
@@ -116,16 +118,25 @@ class ProtectedPrincipalsAreNeverDeletedOrDemotedTest {
     }
 
     @Test
-    @DisplayName("CMIS's delete of a user item refuses the protected users by itself, not only through the check before it")
-    void theUserItemDeleteRefusesProtectedUsersByItself() {
+    @DisplayName("CMIS's decision refuses the built-in accounts and the acting user")
+    void theUserItemDecisionRefusesProtectedUsers() {
         CallContext bob = mock(CallContext.class);
         when(bob.getUsername()).thenReturn("bob");
         for (String id : List.of("admin", "solr", "mcp-service", "bob")) {
             UserItem item = service.getUserItemById(REPO, id);
             assertThrows(ProtectedPrincipals.RefusedException.class,
-                    () -> service.deleteUserItem(bob, REPO, item, false), id + " was deleted");
-            verify(service, never()).delete(any(), eq(REPO), eq(id + "-doc"), any());
+                    () -> service.checkUserItemDeletion(bob, REPO, item), id + " may be deleted");
         }
+    }
+
+    @Test
+    @DisplayName("CMIS's delete of a user item carries out only a decision this service made — skipping the decision deletes nothing")
+    void aDeletionThisServiceDidNotDecideIsNotCarriedOut() {
+        ContentService.UserItemDeletion madeUp = new ContentService.UserItemDeletion() {
+        };
+        assertThrows(IllegalArgumentException.class, () -> service.deleteUserItem(madeUp, false));
+        assertThrows(IllegalArgumentException.class, () -> service.deleteUserItem(null, false));
+        verify(service, never()).delete(any(), any(), any(), any());
     }
 
     @Test

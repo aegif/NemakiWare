@@ -25,9 +25,9 @@ package jp.aegif.nemaki.businesslogic;
  * — had no such guard, so {@code admin} could be deleted one request at a time. Nor had CMIS
  * {@code deleteObject} on a user's item, or the Microsoft cloud sync's removal, which both used the
  * generic delete. The decision is here, and the batch's planner, {@code ContentService}'s user
- * deletions ({@code deleteUser}, and {@code checkUserItemDeletion} / {@code deleteUserItem} for
- * CMIS — every user deletion now goes through one of them) and the legacy endpoint's admin-flag
- * change all ask it.
+ * deletions ({@code deleteUser}, and for CMIS {@code checkUserItemDeletion}, whose decision is the
+ * only one {@code deleteUserItem} carries out — every user deletion now goes through one of them)
+ * and the legacy endpoint's admin-flag change all ask it.
  */
 public final class ProtectedPrincipals {
 

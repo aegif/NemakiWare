@@ -894,8 +894,13 @@ public class ContentServiceImpl implements ContentService {
 		return true;
 	}
 
+	/** What checkUserItemDeletion decided; only this service makes one. */
+	private record DecidedUserItemDeletion(CallContext callContext, String repositoryId,
+			jp.aegif.nemaki.model.UserItem item) implements UserItemDeletion {
+	}
+
 	@Override
-	public void checkUserItemDeletion(CallContext callContext, String repositoryId,
+	public UserItemDeletion checkUserItemDeletion(CallContext callContext, String repositoryId,
 			jp.aegif.nemaki.model.UserItem item) {
 		String userId = item.getUserId();
 		refuseProtectedUser(userId, callContext.getUsername());
@@ -912,18 +917,20 @@ public class ContentServiceImpl implements ContentService {
 									: "resolves to another document ('" + resolved.getId() + "')"))
 					+ "; which document is the user cannot be decided here, so nothing was deleted");
 		}
+		return new DecidedUserItemDeletion(callContext, repositoryId, item);
 	}
 
 	@Override
-	public void deleteUserItem(CallContext callContext, String repositoryId, jp.aegif.nemaki.model.UserItem item,
-			Boolean deletedWithParent) {
-		// The protected-principal question again: it reads the deployment's settings, not the
-		// repository. Not the resolution — checkUserItemDeletion asked it before the cascade, and a
-		// user created under the same id since would turn this delete into a refusal after the
-		// children are gone (3.4.1 batch 4 review, round 3).
-		refuseProtectedUser(item.getUserId(), callContext.getUsername());
-		removeUserFromAllGroups(callContext, repositoryId, item.getUserId());
-		delete(callContext, repositoryId, item.getId(), deletedWithParent);
+	public void deleteUserItem(UserItemDeletion decided, Boolean deletedWithParent) {
+		// Carried out as decided, nothing asked again: asking again after a cascade has run turns
+		// whatever changed in between — a user created under the same id, the Solr account read
+		// differently from nemaki_conf — into a refusal that leaves the children deleted and the
+		// user in place (3.4.1 batch 4 review, rounds 3 and 4).
+		if (!(decided instanceof DecidedUserItemDeletion deletion)) {
+			throw new IllegalArgumentException("not a deletion this service decided; ask checkUserItemDeletion");
+		}
+		removeUserFromAllGroups(deletion.callContext(), deletion.repositoryId(), deletion.item().getUserId());
+		delete(deletion.callContext(), deletion.repositoryId(), deletion.item().getId(), deletedWithParent);
 	}
 
 	/** Refuses to delete a protected user (R115): the built-in accounts, and {@code actor} itself. */

@@ -326,9 +326,16 @@ public interface ContentService {
 	boolean deleteUser(String repositoryId, String userId, String actor);
 
 	/**
-	 * Whether {@code item} may be deleted as a user on behalf of {@code callContext}'s user —
-	 * asked before anything is written, so CMIS {@code deleteObject} refuses before its
-	 * parentChild cascade deletes a child (R115). Returns normally when it may.
+	 * A deletion of a user's item that {@link #checkUserItemDeletion} decided may happen (R115).
+	 * Opaque: {@link #deleteUserItem} carries out only a decision this service made.
+	 */
+	interface UserItemDeletion {
+	}
+
+	/**
+	 * Decide whether {@code item} may be deleted as a user on behalf of {@code callContext}'s user
+	 * — before anything is written, so CMIS {@code deleteObject} refuses before its parentChild
+	 * cascade deletes a child (R115). Returns the decision {@link #deleteUserItem} carries out.
 	 *
 	 * @throws ProtectedPrincipals.RefusedException for the built-in administrator and service
 	 *         accounts, and for the acting user itself
@@ -338,18 +345,20 @@ public interface ContentService {
 	 *         decided here. A second document is not otherwise detected — when the id resolves to
 	 *         {@code item}, it may be deleted as the user
 	 */
-	void checkUserItemDeletion(CallContext callContext, String repositoryId, UserItem item);
+	UserItemDeletion checkUserItemDeletion(CallContext callContext, String repositoryId, UserItem item);
 
 	/**
-	 * Delete {@code item} as a user, for CMIS {@code deleteObject} (R115), after
-	 * {@link #checkUserItemDeletion} allowed it and before anything else was written: refuses a
-	 * protected user again, but does not resolve the user id again (a user created under it in
-	 * between must not turn the delete into a refusal after a cascade). Strips the user from every
-	 * group that lists it, then deletes this document — the one the request named, never another
-	 * found by its user id. Every write is made with {@code callContext}, so the change events,
-	 * the webhooks and the archive name the acting user, as the generic delete this replaces did.
+	 * Carry out a deletion {@link #checkUserItemDeletion} decided (R115): strips the user from every
+	 * group that lists it, then deletes the item — the one the request named, never another found
+	 * by its user id. Nothing is asked again: what changes after the decision (a user created under
+	 * the same id, the Solr account read differently from {@code nemaki_conf}) must not turn the
+	 * delete into a refusal after a cascade has run. Every write is made with the deciding request's
+	 * context, so the change events, the webhooks and the archive name the acting user, as the
+	 * generic delete this replaces did.
+	 *
+	 * @throws IllegalArgumentException for a decision this service did not make
 	 */
-	void deleteUserItem(CallContext callContext, String repositoryId, UserItem item, Boolean deletedWithParent);
+	void deleteUserItem(UserItemDeletion decided, Boolean deletedWithParent);
 
 	/**
 	 * Get a path string
