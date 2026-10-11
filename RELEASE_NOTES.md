@@ -54,6 +54,9 @@ only repository gotchas.
 - legacy の API の admin の剥奪（`isAdmin=false`）は、自分自身に加えて組み込みのアカウントも拒みます。
 - 組み込みの `admin` を admin でない状態で保存する更新は、Jersey と Spring MVC の利用者の更新、legacy の更新で
   拒みます（3.4.1 より前に admin フラグを外された `admin` は、legacy の更新で `isAdmin=true` に戻してください）。
+- 限界（残件 R147 に記録）: CMIS の削除は、判定の後の最後の削除で文書を id から読み直します。別のレプリカが同じ
+  文書をその間に書き換えると、判定した状態でない文書を消すことがあります。Solr の利用者 id を `nemaki_conf` に
+  だけ置いた配備では、`nemaki_conf` が答えない間、その利用者を保護しません（properties ファイルの値に落ちます）。
 
 ## 手動の retry-unsettled は、受領を保存できなかったとき 409 で拒否を返すようになりました（HTTP の挙動の変更）
 
