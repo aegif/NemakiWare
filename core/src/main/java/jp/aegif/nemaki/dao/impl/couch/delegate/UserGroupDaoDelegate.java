@@ -611,51 +611,11 @@ public class UserGroupDaoDelegate {
 
 	public List<GroupItem> getGroupItems(String repositoryId) {
 		try {
-			// Use ViewQuery to get all group items from groupItemsById view
 			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", true);  // CRITICAL: Include full documents
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-
-			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-
-			if (result.getRows() == null) {
-				// Authorisation data fails CLOSED: "answered without rows" is not "no group
-				// items", and a membership check over a short list answers questions about
-				// who may see what.
-				throw new IllegalStateException("the groupItemsById view answered without rows"
-						+ " in '" + repositoryId + "'; that is not the same as there being"
-						+ " none");
-			}
-			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() == null) {
-					// Fail-closed applies to the null RETURNS too, not only the catch.
-					throw new IllegalStateException("a group item row carries no document in '"
-							+ repositoryId + "'; refusing to answer membership from a short"
-							+ " list");
-				}
-				try {
-					ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					Map<String, Object> docProperties = doc.getProperties();
-					CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-					if (cgi == null) {
-						throw new IllegalStateException("a group item could not be decoded in '"
-								+ repositoryId + "'; refusing to answer membership from a"
-								+ " short list");
-					}
-					GroupItem gi = cgi.convert();
-					groupItems.add(gi);
-				} catch (Exception e) {
-					// Authorisation data fails CLOSED. A group item that will not
-					// decode still GRANTS things; walking past it answers membership
-					// questions from a list that is silently missing members.
-					throw new IllegalStateException("a group item could not be decoded"
-							+ " in '" + repositoryId + "'; refusing to answer"
-							+ " membership from a short list", e);
-				}
-			}
-
-			return groupItems;
+			queryParams.put("include_docs", false);
+			return groupItemsFromViewValues(
+					connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams),
+					repositoryId);
 		} catch (Exception e) {
 			log.error("Error getting group items for repository: " + repositoryId + ", error: " + e.getMessage(), e);
 			throw new IllegalStateException("the group items could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
@@ -665,53 +625,69 @@ public class UserGroupDaoDelegate {
 	public List<GroupItem> getGroupItems(String repositoryId, int skip, int limit) {
 		try {
 			Map<String, Object> queryParams = new HashMap<String, Object>();
-			queryParams.put("include_docs", true);
+			queryParams.put("include_docs", false);
 			queryParams.put("skip", skip);
 			queryParams.put("limit", limit);
-			ViewResult result = connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams);
-
-			List<GroupItem> groupItems = new ArrayList<GroupItem>();
-			if (result.getRows() == null) {
-				// The unpaged overload got this and the paged one did not — the exact
-				// "one arm of the pair" this batch keeps finding in its own fixes.
-				throw new IllegalStateException("the groupItemsById view answered without rows"
-						+ " in '" + repositoryId + "'; that is not the same as there being"
-						+ " none");
-			}
-			for (ViewResultRow row : result.getRows()) {
-				if (row.getDoc() == null) {
-					// Fail-closed applies to the null RETURNS too, not only the catch: a row
-					// with no document is a group item that exists and cannot be read.
-					throw new IllegalStateException("a group item row carries no document in '"
-							+ repositoryId + "'; refusing to answer membership from a short"
-							+ " list");
-				}
-				try {
-					ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
-					com.ibm.cloud.cloudant.v1.model.Document doc = row.getDoc();
-					Map<String, Object> docProperties = doc.getProperties();
-					CouchGroupItem cgi = mapper.convertValue(docProperties, CouchGroupItem.class);
-					if (cgi == null) {
-						throw new IllegalStateException("a group item could not be decoded in '"
-								+ repositoryId + "'; refusing to answer membership from a"
-								+ " short list");
-					}
-					GroupItem gi = cgi.convert();
-					groupItems.add(gi);
-				} catch (Exception e) {
-					// Authorisation data fails CLOSED. A group item that will not
-					// decode still GRANTS things; walking past it answers membership
-					// questions from a list that is silently missing members.
-					throw new IllegalStateException("a group item could not be decoded"
-							+ " in '" + repositoryId + "'; refusing to answer"
-							+ " membership from a short list", e);
-				}
-			}
-			return groupItems;
+			return groupItemsFromViewValues(
+					connectorPool.getClient(repositoryId).queryView("_repo", "groupItemsById", queryParams),
+					repositoryId);
 		} catch (Exception e) {
 			log.error("Error getting group items (paginated) for repository: " + repositoryId + ", error: " + e.getMessage(), e);
 			throw new IllegalStateException("the group items could not be read in '" + repositoryId + "'; this is NOT a finding that there are none", e);
 		}
+	}
+
+	/**
+	 * Decodes the rows of a {@code groupItemsById} query from the values the view emitted.
+	 *
+	 * <p>The view is {@code emit(doc.groupId, doc)}, so the value is the document. Asking for
+	 * {@code include_docs=true} on top made CouchDB look every group up again by id: 3.0 s for
+	 * 3,041 groups against 0.1 s for the values (nb33, 2026-10-12). Every user list paid it —
+	 * it reads all groups to show each user's memberships — and so did every group search and
+	 * the permission screen. Sound for the reason {@code ContentDaoServiceImpl}'s view readers
+	 * give: these queries use CouchDB's default freshness, so the emitted value is the indexed
+	 * document. A caller that adds {@code stale=ok} / {@code update=false} must go back to
+	 * {@code include_docs}.
+	 *
+	 * <p>Authorisation data fails CLOSED. A group item that will not decode still GRANTS things;
+	 * walking past it answers membership questions from a list that is silently missing members.
+	 */
+	@SuppressWarnings("unchecked")
+	private List<GroupItem> groupItemsFromViewValues(ViewResult result, String repositoryId) {
+		if (result == null || result.getRows() == null) {
+			// "Answered without rows" is not "no group items", and a membership check over a short
+			// list answers questions about who may see what.
+			throw new IllegalStateException("the groupItemsById view answered without rows"
+					+ " in '" + repositoryId + "'; that is not the same as there being"
+					+ " none");
+		}
+		ObjectMapper mapper = daoHelper.createConfiguredObjectMapper();
+		List<GroupItem> groupItems = new ArrayList<GroupItem>();
+		for (ViewResultRow row : result.getRows()) {
+			Object value = row.getValue();
+			if (!(value instanceof Map)) {
+				// A row with no document is a group item that exists and cannot be read.
+				throw new IllegalStateException("a group item row carries no document in '"
+						+ repositoryId + "'; refusing to answer membership from a short"
+						+ " list");
+			}
+			GroupItem gi;
+			try {
+				CouchGroupItem cgi = mapper.convertValue((Map<String, Object>) value, CouchGroupItem.class);
+				gi = cgi == null ? null : cgi.convert();
+			} catch (Exception e) {
+				throw new IllegalStateException("a group item could not be decoded"
+						+ " in '" + repositoryId + "'; refusing to answer"
+						+ " membership from a short list", e);
+			}
+			if (gi == null) {
+				throw new IllegalStateException("a group item could not be decoded in '"
+						+ repositoryId + "'; refusing to answer membership from a"
+						+ " short list");
+			}
+			groupItems.add(gi);
+		}
+		return groupItems;
 	}
 
 	public int getGroupItemCount(String repositoryId) {
