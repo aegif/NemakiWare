@@ -163,7 +163,8 @@ setup が CouchDB に送る要求のうち、admin のパスワード変更、�
   どちらも含まなければ利用者です（グループの検索ベースが空のときは `ou=users`・`ou=groups` などの語で決めます）。
   入れ子のグループが利用者と読まれると（検索ベースが同じ、Active Directory の `CN=Users` に利用者とグループが同居
   している、`ou=users-archive` のように別の名前に検索ベースの文字列が含まれる、グループの検索ベースの外にある、
-  など）、そのグループの RDN の値が利用者の所属に書かれ、入れ子の同期をしているときは入れ子が空で上書きされます。
+  など）、そのグループの RDN の値が利用者の所属に書かれ、入れ子の同期をしているときは、誤って読まれた入れ子が外れ
+  ます（すべてが誤って読まれれば入れ子は空になります）。
   逆に、利用者がグループと読まれることもあります。
 - 読めない member は黙って落ちます。member の値が DN でないとき（`memberUid` を使う posixGroup）、Active Directory が
   member の多いグループ（既定で 1,500 を超えるもの）を範囲付きの属性名（`member;range=0-1499`）で返すとき、bind
@@ -174,16 +175,28 @@ setup が CouchDB に送る要求のうち、admin のパスワード変更、�
 設定だけから言い切ることはできません。**LDAP の同期を使っているときは、3.4.1 を起動する前に同期を止め、R148 が
 直るまで止めておいてください。** 直していません（残件 R148）。
 
+止めている間は、同期がしていたこと — 利用者とグループの作成、利用者の更新、LDAP から消えたグループの削除
+（`directory.sync.delete.orphan.groups`。WAR の設定ファイルの既定は true、公開の Docker イメージの設定ファイルでは
+false）、有効にしていれば利用者の削除 — も止まります。LDAP で利用者・グループを足したり消したり、所属を変えたり
+したときは、その間は NemakiWare でも手で反映してください（LDAP で消したグループを通じた権限は、手で消すまで
+残ります）。
+
 止め方:
 
 - `directory.sync.enabled=false`。この設定は `-D`・環境変数（`DIRECTORY_SYNC_ENABLED`）・設定データベース
-  （`nemaki_conf`）・設定ファイルの順に読まれるので、**先に読まれる場所で** false にしてください（同梱の
-  `docker-compose-simple.yml` と `docker-compose-prod.yml` は `-Ddirectory.sync.enabled` を環境変数
-  `DIRECTORY_SYNC_ENABLED` の値で渡し、`docker-compose-ldap.yml` は `true` を直に渡します）。
+  （`nemaki_conf`）・設定ファイルの順に読まれるので、**先に読まれる場所で** false にしてください。起動に使っている
+  compose や起動スクリプトの中の `-Ddirectory.sync.enabled` と `DIRECTORY_SYNC_ENABLED` を探し、どちらも false に
+  してください。同梱の compose では、`docker-compose-simple.yml` と `docker-compose-prod.yml` は compose を起動する
+  ときの環境変数（`.env`）の `DIRECTORY_SYNC_ENABLED` を `-D` で渡し（コンテナの `env_file` に false と書いても `-D`
+  が先に読まれます）、`docker-compose-ldap.yml`（`-D`）と `docker-compose-ldap-keycloak-test.yml`（コンテナの環境
+  変数）は `true` を直に書いています。
 - スケジュールを使っていれば `directory.sync.schedule.enabled=false` も。管理画面で保存した値は設定ファイルより先に
   読まれるので、管理画面でも止めてください。
-- 設定は同期を始めるときに読むので、走っている同期は止まりません。3.4.1 を起動した後、
-  `GET /core/rest/repo/{repositoryId}/sync/config` の `enabled` が false であることを確かめてください。
+- 設定は同期を始めるときに読むので、走っている同期は止まりません。**3.4.0 のまま設定を変えて再起動し、
+  `GET /core/rest/repo/{repositoryId}/sync/config` の `enabled` が false になったことを確かめてから、3.4.1 に上げて
+  ください**（3.4.0 の同期は既存のグループを書き換えられないので、ここで確かめても所属は変わりません）。複数の
+  レプリカで動かしているときは、LDAP の同期のスケジュールは（`directory.sync.schedule.node.ip` を設定していなければ）
+  どのレプリカでも動くので、ロードバランサを通さずにレプリカごとに確かめてください。
 
 入れ子のグループについて:
 
