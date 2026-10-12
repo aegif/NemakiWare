@@ -991,8 +991,15 @@ class ConnectorLegacyIdMigrationTest {
         String dlq = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java"));
-        assertTrue(dlq.contains("connectorDefinitionService.existsIndexFree("),
-                "the DLQ retry answers 'connector not found' from the index alone again");
+        // Each answer asks index-free, the retry's own and the dispatch's. A file-wide contains()
+        // was satisfied by either alone, so removing one went unnoticed — the 10th sweep's SA did
+        // not fire once 9-6 added the retry's own check (2026-10-12).
+        for (String answer : List.of("public ResponseEntity<?> retryDlqEntry(",
+                "private ExternalIngestResult dispatchByArchetype(")) {
+            assertTrue(jp.aegif.nemaki.util.test.JavaSource.methodBody(dlq, answer)
+                            .contains("connectorDefinitionService.existsIndexFree("),
+                    "the DLQ answers 'connector not found' from the index alone again in " + answer);
+        }
         String canonical = jp.aegif.nemaki.util.test.JavaSource.withoutComments(
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));

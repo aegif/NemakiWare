@@ -2402,6 +2402,61 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         assertTrue(PackageReader.safe("sip/metadata/preservation/premis.xml"));
     }
 
+    /**
+     * Two entries, the second's name changed to the first's in ONE of the archive's two tables —
+     * occurrence 0 is the local header, 1 the central directory. The test above changes both, so
+     * either duplicate check answers it alone; since 9-6 added the central directory's, the
+     * streaming check could be removed and that test stayed green (the 10th sweep's IW3 did not
+     * fire, 2026-10-12). One table each separates them.
+     */
+    private static Path duplicateInOneTable(Path tmp, int occurrence) throws Exception {
+        Path file = tmp.resolve("duplicate-" + occurrence + ".zip");
+        try (OutputStream out = Files.newOutputStream(file);
+                ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry("a/premis.xml"));
+            zip.write("first".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("b/premis.xml"));
+            zip.write("second".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        byte[] raw = Files.readAllBytes(file);
+        byte[] from = "b/premis.xml".getBytes(StandardCharsets.UTF_8);
+        byte[] to = "a/premis.xml".getBytes(StandardCharsets.UTF_8);
+        int seen = 0;
+        for (int i = 0; i + from.length <= raw.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < from.length; j++) {
+                if (raw[i + j] != from[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match && seen++ == occurrence) {
+                System.arraycopy(to, 0, raw, i, to.length);
+            }
+        }
+        assertEquals(2, seen, "the fixture expects the name once in each table");
+        Files.write(file, raw);
+        return file;
+    }
+
+    @Test
+    @DisplayName("a name repeated only in the local headers is refused as a duplicate")
+    void aDuplicateInTheLocalHeadersIsADuplicate(@TempDir Path tmp) throws Exception {
+        PackageReader.Unreadable refusal = assertThrows(PackageReader.Unreadable.class,
+                () -> PackageReader.open(duplicateInOneTable(tmp, 0)));
+        assertEquals(PackageReader.Refusal.DUPLICATE_ENTRY, refusal.refusal(), refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("a name repeated only in the central directory is refused as a duplicate")
+    void aDuplicateInTheCentralDirectoryIsADuplicate(@TempDir Path tmp) throws Exception {
+        PackageReader.Unreadable refusal = assertThrows(PackageReader.Unreadable.class,
+                () -> PackageReader.open(duplicateInOneTable(tmp, 1)));
+        assertEquals(PackageReader.Refusal.DUPLICATE_ENTRY, refusal.refusal(), refusal.getMessage());
+    }
+
     @Test
     @DisplayName("a duplicate entry name is refused, not resolved by taking one")
     void aDuplicateEntryIsRefused(@TempDir Path tmp) throws Exception {
