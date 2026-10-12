@@ -42,7 +42,7 @@ mvn -q package  -f evidence-verifier-cli/pom.xml
 ### 2. 動作確認（成果物を信じる前に）
 
 ```bash
-java -jar evidence-verifier-cli/target/evidence-verifier-cli-3.4.0.jar verify <sip.zip> --profile RECORD_LEDGER_V1
+java -jar evidence-verifier-cli/target/evidence-verifier-cli-3.4.1.jar verify <sip.zip> --profile RECORD_LEDGER_V1
 ```
 
 `package` が `target/lib/` に 4 つの jar（`evidence-verifier-core` と BouncyCastle 1.85 の `bcpkix` /
@@ -66,7 +66,7 @@ SBOM を先に作っておく（`tools/sbom/make-sbom.sh` を tagged tree で。
 `SHA-256SUMS` は 9 行（jar 1・依存 4・result schema・SBOM 3）。
 
 ```bash
-cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json ../../target/nemakiware-3.4.0-sbom.json ../../target/nemakiware-3.4.0-sbom.xml ../../target/nemakiware-3.4.0-ui-sbom.json . && shasum -a 256 evidence-verifier-cli-3.4.0.jar lib/*.jar verifier-result.schema.json nemakiware-3.4.0-sbom.json nemakiware-3.4.0-sbom.xml nemakiware-3.4.0-ui-sbom.json > SHA-256SUMS
+cd evidence-verifier-cli/target && cp ../../docs/evidence-profile/v1/verifier-result.schema.json ../../target/nemakiware-3.4.1-sbom.json ../../target/nemakiware-3.4.1-sbom.xml ../../target/nemakiware-3.4.1-ui-sbom.json . && shasum -a 256 evidence-verifier-cli-3.4.1.jar lib/*.jar verifier-result.schema.json nemakiware-3.4.1-sbom.json nemakiware-3.4.1-sbom.xml nemakiware-3.4.1-ui-sbom.json > SHA-256SUMS
 ```
 
 ### 4. 署名（リリース担当者の作業）

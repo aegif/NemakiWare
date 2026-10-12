@@ -217,6 +217,17 @@ R148 が直るまでは従わないでください。
   同じものとみなし、所属・名前・ほかの入れ子に違いが無ければ書かずに、そのローカルのグループが残ります（直して
   いません — 残件 R148）。
 
+## 独立 verifier の CLI は 3.4.1 の版で配ります（判定は 3.4.0 と同じです）
+
+verifier のコードは 3.4.0 から変えていません。配布物の名前だけが 3.4.1 になります。
+
+```
+java -jar evidence-verifier-cli-3.4.1.jar verify <package.zip> --profile RECORD_LEDGER_V1
+```
+
+配布物は `evidence-verifier-cli-3.4.1.jar` と、**同じ場所に置く `lib/`**
+（`evidence-verifier-core-3.4.1.jar` と BouncyCastle 1.85 の `bcpkix` / `bcprov` / `bcutil`）です。
+
 ---
 
 # 3.4.0 (2026-10-07)

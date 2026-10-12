@@ -3880,7 +3880,7 @@ CONTROLS = [
                      'anIdleRefusalThatCouldNotBeRecordedIsCounted',
                      'aFailureTheDlqCouldNotTakeIsCounted',
                      'aFetchThatThrewIsRecordedAsNeverRead',
-                     'anImportThatThrewIsRecordedAsRead'],
+                     'anImportThatThrewIsRecordedAsRead', 'anIdleImportWithMissingPartsIsRecorded'],
     ),
     dict(
         id="UD",
@@ -4532,7 +4532,7 @@ CONTROLS = [
                      # R2's lock, added after the last completed sweep. Reading the recipients
                      # from the selector while it is down loses the row that carries the
                      # secret, so the dispatch this lock checks does not happen. From the run.
-                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown'],
+                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown', 'aBoxDeliveryKeepsTheProfilesSchedulerParams'],
     ),
     dict(
         id="VY",
@@ -4999,7 +4999,7 @@ CONTROLS = [
                      'theWalkIsMadeOnceTheSignatureVerified',
                      'aFailedSignatureIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
                      'aDisabledConnectorIsTheRefusedReadsAnswerWhileTheSelectorIsDown',
-                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown'],
+                     'theRightSecretIsStillDispatchedWhileTheSelectorIsDown', 'aBoxDeliveryKeepsTheProfilesSchedulerParams'],
     ),
     dict(
         id="XE",
@@ -7164,7 +7164,7 @@ CONTROLS = [
                      'anIdleRefusalThatCouldNotBeRecordedIsCounted',
                      'aFailureTheDlqCouldNotTakeIsCounted',
                      'aFetchThatThrewIsRecordedAsNeverRead',
-                     'anImportThatThrewIsRecordedAsRead'],
+                     'anImportThatThrewIsRecordedAsRead', 'anIdleImportWithMissingPartsIsRecorded'],
     ),
     dict(
         id="VD2",
@@ -9766,8 +9766,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9886,8 +9886,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 178 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 179 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10222,7 +10222,7 @@ CONTROLS = [
         find='        if (anchorTargetCheckpoint == null || checkpointChain.isEmpty()\n                || !anchorPresent(AnchorKind.RFC3161_TSA)) {',
         replace='        if (false) {',
         test='TheBundleIsFixedBeforeTheWriteTest',
-        expect_fail=['theDeclaredProfileTracksWhatIsActuallyThere'],
+        expect_fail=['theDeclaredProfileTracksWhatIsActuallyThere', 'anOtsProofAloneIsNotP2AndWithAnRfc3161TokenIsP4'],
     ),
     dict(
         id='IF3',
@@ -10261,7 +10261,7 @@ CONTROLS = [
         find='            if (candidate != null && digest.equals(candidate.payloadDigest())) {',
         replace='            if (candidate != null) {',
         test='TheAssemblerReadsOncePerPackageTest',
-        expect_fail=['theEntryMatchesTheStatementItShipsWith'],
+        expect_fail=['theEntryMatchesTheStatementItShipsWith', 'aFullWindowWithoutAMatchIsARefusal'],
     ),
     dict(
         id='IJ3',
@@ -10306,7 +10306,7 @@ CONTROLS = [
         find='            return required == null || (supported != null && supported.contains(required));',
         replace='            return required == null || (supported != null && !supported.isEmpty());',
         test='AssuranceIsCheckedBeforeAnythingIsWrittenTest',
-        expect_fail=['aWeakerPackageDoesNotSatisfyAStrongerRequirement'],
+        expect_fail=['aWeakerPackageDoesNotSatisfyAStrongerRequirement', 'aSiblingProfileDoesNotSatisfyTheOther', 'anUnknownProfileSatisfiesNothing'],
     ),
     dict(
         id='IO3',
@@ -10423,7 +10423,7 @@ CONTROLS = [
         find='                if (!seen.add(name)) {',
         replace='                if (false) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aDuplicateEntryIsRefused'],
+        expect_fail=['aDuplicateInTheLocalHeadersIsADuplicate'],
     ),
     dict(
         id='IX3',
@@ -10509,7 +10509,7 @@ CONTROLS = [
         # sabotage too, undeclared — locks added to the same test class after it was last measured.
         expect_fail=['anIndeterminatePackageExitsThree',
                      'anUnreadablePackageIsIndeterminate',
-                     'theJsonConformsToThePublishedSchema'],
+                     'theJsonConformsToThePublishedSchema', 'anExpectedCheckpointAfterThePackageIsNotDecided', 'anExpectedCheckpointIsLookedForOnTheChain', 'anUndecidableExpectedCheckpointIsIndeterminateNotVerified'],
     ),
     dict(
         id='JF3',
@@ -10519,7 +10519,7 @@ CONTROLS = [
         find='        if (!KNOWN_PROFILES.contains(profile)) {',
         replace='        if (false) {',
         test='TheExitCodeIsTheInterfaceTest',
-        expect_fail=['anUnknownProfileIsAUsageError'],
+        expect_fail=['anUnknownProfileIsAUsageError', 'anExpectedCheckpointBelowP2IsUsage'],
     ),
     dict(
         id='JG3',
@@ -10555,7 +10555,7 @@ CONTROLS = [
                    'chain agrees with itself whatever it holds");'),
         replace='            return Outcome.Check.passed("rollback");',
         test='TheChainIsWalkedNotAssumedTest',
-        expect_fail=['rollbackWithoutAnExpectedCheckpointIsNotPassed'],
+        expect_fail=['rollbackWithoutAnExpectedCheckpointIsNotPassed', 'aChainWhoseLinksAreNotAListOrEmptyFailsTheRollbackThatWasAsked', 'aMalformedChainFailsTheRollbackThatWasAsked', 'aMalformedChainIsFailedNotAbsent'],
     ),
     dict(
         id='JJ3',
@@ -10888,7 +10888,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10902,7 +10902,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10958,8 +10958,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 178 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 179 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10972,8 +10972,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **178 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **178 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **179 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **179 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11057,7 +11057,7 @@ CONTROLS = [
         find='            if (check.reasonCode() != null) {\n                fields.put("reasonCode", check.reasonCode());\n            }',
         replace='',
         test='TheExitCodeIsTheInterfaceTest',
-        expect_fail=['theJsonConformsToThePublishedSchema'],
+        expect_fail=['theJsonConformsToThePublishedSchema', 'anExpectedCheckpointAfterThePackageIsNotDecided', 'anExpectedCheckpointIsLookedForOnTheChain', 'anUndecidableExpectedCheckpointIsIndeterminateNotVerified'],
     ),
     dict(
         id='LW3',
@@ -11809,7 +11809,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **178 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **179 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -11847,8 +11847,8 @@ CONTROLS = [
         # Every phase is started now, so the readiness side has no unstarted phase left to claim;
         # the plan's Phase 9 row loses its date instead, and the readiness line still says 0〜9.
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='**2026-10-05 に着手**（UI の依存の脆弱性、',
-        replace='**着手**（UI の依存の脆弱性、',
+        find_span=('**2026-10-05 に着手**（UI の依存の脆弱性、', '**2026-10-07 にすべて済んだ**'),
+        replace='**着手**（UI の依存の脆弱性、9 回目の通しの記録、RELEASE_NOTES、SBOM の OSV 照合とサーバの依存の更新。TCK と Playwright は依存を上げた RC の WAR で、core の全ユニットは依存を上げた木で、同じ日に取り直した（verifier と UI は、依存の変わらない `89cdb3b2a` で流した）— readiness §1.4。~~残るのは独立 review・CLI の成果物・タグ~~ **すべて済んだ**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePhaseStatusAgreesWithThePlan'],
     ),
@@ -12181,7 +12181,7 @@ CONTROLS = [
         find='            String payloadDigest = sha256HexOf(payload);',
         replace='            String payloadDigest = null;',
         test='EarkSipExporterTest',
-        expect_fail=['thePremisCarriesThePayloadsFixity'],
+        expect_fail=['thePremisCarriesThePayloadsFixity', 'thePremisFixityIsOfThePackagedBytes'],
     ),
     dict(
         id='OV3',
@@ -12274,7 +12274,7 @@ CONTROLS = [
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         find='        } catch (RuntimeException malformed) {\n            return null;\n        }\n    }',
-        replace='        } catch (Json.NotCanonicalisable malformed) {\n            return null;\n        }\n    }',
+        replace='        } catch (UnsupportedOperationException malformed) {\n            return null;\n        }\n    }',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aMalformedProfileIsAFindingNotACrash'],
     ),
@@ -13793,8 +13793,8 @@ CONTROLS = [
         # Re-pointed when controls sit above the boundary again (QK4〜QQ4, 2026-10-06): the
         # empty-range form of this control (a count stated for no range) comes back when the
         # next full sweep empties the range. Here the count is wrong by one.
-        find='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
-        replace='**9 回目以後に足した control は 178 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
+        find='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
+        replace='**9 回目以後に足した control は 179 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13805,7 +13805,7 @@ CONTROLS = [
         file='docs/design/v3.4-release-readiness.md',
         # Re-pointed 2026-10-07: the §1.4 record of 2026-10-06 rewrote the sentence after the count, and
         # the anchor went with it (found by a dry anchor check, not by a run). Anchored on the count alone.
-        find='verifier-core 242 / cli 20 は',
+        find='verifier-core 244 / cli 20 は',
         replace='verifier-core 190 / cli 20 は',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessVerifierCountIsTheVerifiers'],
@@ -13865,7 +13865,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 1901 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 1902 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13951,7 +13951,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **178 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **179 本**（通し未実施）。',
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **213 本**（通し未実施）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
@@ -13961,7 +13961,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **1901**（2026-10-12 時点）',
+        find='- コントロール **1902**（2026-10-13 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -19855,7 +19855,7 @@ CONTROLS = [
         replace='',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aFileOnlyInTheLocalHeadersIsRefused', 'aFileOnlyInTheCentralDirectoryIsRefused',
-                     'anEntryWhoseTwoRecordsHoldDifferentBytesIsRefused'],
+                     'anEntryWhoseTwoRecordsHoldDifferentBytesIsRefused', 'aLongerCentralRecordIsRefusedWhereTheLocalBytesEnd'],
     ),
     dict(
         id='QS4',
@@ -19935,7 +19935,7 @@ CONTROLS = [
         find='                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.requiredFor(\n                        expectedCheckpoint != null));',
         replace='                requiredNames.addAll(jp.aegif.nemaki.verifier.AnchoredCheckpoint.REQUIRED);',
         test='TheExitCodeIsTheInterfaceTest',
-        expect_fail=['anUndecidableExpectedCheckpointIsIndeterminateNotVerified'],
+        expect_fail=['anUndecidableExpectedCheckpointIsIndeterminateNotVerified', 'anExpectedCheckpointAfterThePackageIsNotDecided', 'anExpectedCheckpointIsLookedForOnTheChain'],
     ),
     dict(
         id='RA4',
@@ -20001,7 +20001,7 @@ CONTROLS = [
         expect_fail=['anUnaskableJournalYieldsNoBundle', 'aFailedStatementReadIsARefusal',
                      'aFailedEntryReadIsARefusal', 'aFullWindowWithoutAMatchIsARefusal',
                      'aCheckpointWalkThatDoesNotEndIsARefusal', 'aChainThatCannotBeWalkedIsARefusal',
-                     'aProofThatCouldNotBeProducedIsARefusal'],
+                     'aProofThatCouldNotBeProducedIsARefusal', 'aStepWithoutItsSideIsARefusal'],
     ),
     dict(
         id='RG4',
@@ -21594,6 +21594,17 @@ CONTROLS = [
         replace='',
         test='DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest',
         expect_fail=['aSyncedNestingIsReplaced'],
+    ),
+    # ---- 3.4.1 batch 9: the 10th sweep's leftovers (2026-10-12) ----
+    dict(
+        id='XG4',
+        what="the central directory may list one name twice — the package has two answers for one path in the table every other zip reader uses, and only the local headers' check is left",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageReader.java',
+        find='                if (!central.add(name)) {\n                    throw new Unreadable(Refusal.DUPLICATE_ENTRY, "the central directory lists \\""\n                            + name + "\\" twice");\n                }\n',
+        replace='                central.add(name);\n',
+        test='PackageIntegrityIsCheckedNotAssumedTest',
+        expect_fail=['aDuplicateInTheCentralDirectoryIsADuplicate'],
     ),
 ]
 
