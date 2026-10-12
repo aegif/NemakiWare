@@ -208,7 +208,9 @@ test.describe('ACL Inheritance Breaking', () => {
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
-    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
+    // The screen reads the object, its ACL, all users and all groups before it renders anything
+    // (7 s with 3,041 groups before 3.4.1's list fix).
+    await expect(permissionsHeading).toBeVisible({ timeout: 15000 });
 
     const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
@@ -259,7 +261,9 @@ test.describe('ACL Inheritance Breaking', () => {
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
-    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
+    // The screen reads the object, its ACL, all users and all groups before it renders anything
+    // (7 s with 3,041 groups before 3.4.1's list fix).
+    await expect(permissionsHeading).toBeVisible({ timeout: 15000 });
 
     const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
@@ -333,7 +337,9 @@ test.describe('ACL Inheritance Breaking', () => {
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
-    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
+    // The screen reads the object, its ACL, all users and all groups before it renders anything
+    // (7 s with 3,041 groups before 3.4.1's list fix).
+    await expect(permissionsHeading).toBeVisible({ timeout: 15000 });
 
     const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i
@@ -440,7 +446,9 @@ test.describe('ACL Inheritance Breaking', () => {
 
     // Wait for permissions page to load (not a modal, but a full page)
     const permissionsHeading = page.locator('h2').filter({ hasText: /権限管理|Permission/i });
-    await expect(permissionsHeading).toBeVisible({ timeout: 5000 });
+    // The screen reads the object, its ACL, all users and all groups before it renders anything
+    // (7 s with 3,041 groups before 3.4.1's list fix).
+    await expect(permissionsHeading).toBeVisible({ timeout: 15000 });
 
     const breakInheritanceButton = page.locator('button').filter({
       hasText: /継承を切る|Break Inheritance/i

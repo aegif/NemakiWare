@@ -234,12 +234,19 @@ test.describe('Admin Privilege Management', () => {
       await page.goto(`${UI_URL}/#/users`);
     }
     await page.waitForSelector('.ant-table', { timeout: 15000 });
+    // The table renders before the list arrives (it is empty and loading until then).
+    await expect(page.locator('.ant-table .ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
 
-    // Search for admin user to isolate the row
+    // Search for admin user to isolate the row, and wait for the search's own answer
     const searchInput = page.locator('input[placeholder*="検索"], input[placeholder*="search"], .ant-input-search input');
     if (await searchInput.count() > 0) {
+      const searched = page.waitForResponse(
+        resp => resp.url().includes('/user/list') && resp.url().includes('query=admin'),
+        { timeout: 15000 }
+      ).catch(() => null);
       await searchInput.first().fill('admin');
-      await waitForRender(page);
+      await searched;
+      await expect(page.locator('.ant-table .ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
     }
 
     // Find the admin user row (first cell contains exactly "admin")

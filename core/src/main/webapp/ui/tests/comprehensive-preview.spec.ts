@@ -238,6 +238,9 @@ test.describe('Comprehensive Preview Tests', () => {
     await page.fill('input[placeholder="ユーザー名"]', 'admin');
     await page.fill('input[placeholder="パスワード"]', 'admin');
     await page.click('button:has-text("ログイン")');
+    // After login the app moves to #/documents with the root folder. A test that opens its own
+    // folder before that redirect lands is sent back to the root (3.4.1 gate, reproduced).
+    await page.waitForURL(/#\/documents\?folderId=/, { timeout: 30000 });
     await waitForUiStable(page);
   });
 

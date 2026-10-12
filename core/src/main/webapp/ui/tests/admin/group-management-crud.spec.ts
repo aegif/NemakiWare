@@ -305,7 +305,7 @@ test.describe('Group Management CRUD Operations', () => {
       console.log('[DEBUG] Test 1: Group verified via API');
 
       // Also try to find in UI via search (best effort, not hard assertion)
-      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      const searchInput = page.locator('.ant-input-search input');
       if (await searchInput.count() > 0) {
         await searchInput.first().fill(TEST_GROUP_NAME);
         await searchInput.first().press('Enter');
@@ -423,9 +423,12 @@ test.describe('Group Management CRUD Operations', () => {
       await expect(modal).not.toBeVisible({ timeout: 10000 });
       console.log('[DEBUG] Test 2: Modal closed after member update');
 
-      // Postcondition: reopen the edit modal and verify the member persisted
-      await waitForRender(page);
-      await membersButton.first().click({ force: true });
+      // Postcondition: reopen the edit modal and verify the member persisted.
+      // Saving reloads the searched list; a forced click while it loads lands on the table's
+      // spinner and opens nothing (3.4.1 gate, reproduced). Wait for the reload, and click
+      // without force so the click itself waits until the button can take it.
+      await expect(page.locator('.ant-table .ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
+      await membersButton.first().click();
       const verifyModal = page.locator('.ant-modal, .ant-drawer');
       await expect(verifyModal).toBeVisible({ timeout: 5000 });
 

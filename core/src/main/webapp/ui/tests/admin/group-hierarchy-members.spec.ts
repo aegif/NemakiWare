@@ -432,7 +432,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
     };
 
     const verifyGroupVisible = async (page: any, groupId: string) => {
-      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      const searchInput = page.locator('.ant-input-search input');
       if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
         await searchInput.fill(groupId);
         const searchPromise = page.waitForResponse(
@@ -468,7 +468,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
       await createGroupViaApi(page, groupBId, 'Test Circular Group B', groupAId);
 
       // Verify group B was created (narrow via search so it is on the page)
-      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      const searchInput = page.locator('.ant-input-search input');
       if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
         await searchInput.fill(groupBId);
         const searchPromise = page.waitForResponse(
@@ -495,7 +495,7 @@ test.describe('Group Hierarchy and Large Member Display', () => {
     // page when A's edit modal opens, so B never gets marked disabled. Narrow
     // the list to just circ-a/circ-b via search first, so both are loaded.
     const narrowToCircGroups = async (page: any) => {
-      const searchInput = page.locator('.ant-input-search input[type="text"]');
+      const searchInput = page.locator('.ant-input-search input');
       if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
         await searchInput.fill('circ-');
         const searchPromise = page.waitForResponse(
