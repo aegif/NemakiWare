@@ -370,8 +370,9 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     @DisplayName("a profile.json that is not JSON is a finding, not a crash")
     void aMalformedProfileIsAFindingNotACrash(@TempDir Path tmp) throws Exception {
         Map<String, String> entries = new LinkedHashMap<>(goodPackage("the minutes"));
-        // A broken unicode escape: Json.parse raises NumberFormatException, not
-        // NotCanonicalisable, so this used to leave the verifier itself failing (exit 5).
+        // A broken unicode escape. Json.parse raised NumberFormatException for it, not
+        // NotCanonicalisable, so this used to leave the verifier itself failing (exit 5); since
+        // 2026-10-06 it raises NotCanonicalisable, and the lock holds either way.
         entries.put(ROOT + "metadata/other/nemaki-evidence/profile.json",
                 "{\"profileVersion\":\"" + (char) 92 + "uZZZZ\"}");
 
@@ -2404,7 +2405,8 @@ class PackageIntegrityIsCheckedNotAssumedTest {
 
     /**
      * Two entries, the second's name changed to the first's in ONE of the archive's two tables —
-     * occurrence 0 is the local header, 1 the central directory. The test above changes both, so
+     * occurrence 0 is the local header, 1 the central directory. {@code aDuplicateEntryIsRefused}
+     * (below) changes both, so
      * either duplicate check answers it alone; since 9-6 added the central directory's, the
      * streaming check could be removed and that test stayed green (the 10th sweep's IW3 did not
      * fire, 2026-10-12). One table each separates them.
@@ -2454,6 +2456,38 @@ class PackageIntegrityIsCheckedNotAssumedTest {
     void aDuplicateInTheCentralDirectoryIsADuplicate(@TempDir Path tmp) throws Exception {
         PackageReader.Unreadable refusal = assertThrows(PackageReader.Unreadable.class,
                 () -> PackageReader.open(duplicateInOneTable(tmp, 1)));
+        assertEquals(PackageReader.Refusal.DUPLICATE_ENTRY, refusal.refusal(), refusal.getMessage());
+    }
+
+    /**
+     * The two shapes only the duplicate checks see. In the fixtures above the tables also disagree
+     * — a name only in one of them — so the archive is refused even with a duplicate check gone,
+     * and those locks tell the arms apart only by the refusal's kind (batch 9 review, P3). Here
+     * the tables agree on every name and every byte: without its own check, each archive is read.
+     */
+    @Test
+    @DisplayName("a name written twice in the local headers is refused when the central directory lists only the second")
+    void aLocalDuplicateTheDirectoryHidesIsStillADuplicate(@TempDir Path tmp) throws Exception {
+        RawZip raw = new RawZip();
+        raw.put("a/premis.xml", utf8("first"));
+        int second = raw.put("a/premis.xml", utf8("second"));
+        raw.list("a/premis.xml", utf8("second"), second);
+
+        PackageReader.Unreadable refusal = assertThrows(PackageReader.Unreadable.class,
+                () -> PackageReader.open(raw.writeTo(tmp.resolve("hidden-local-duplicate.zip"))));
+        assertEquals(PackageReader.Refusal.DUPLICATE_ENTRY, refusal.refusal(), refusal.getMessage());
+    }
+
+    @Test
+    @DisplayName("a name the central directory lists twice is refused when both records point at the one local entry")
+    void aDirectoryDuplicateOverOneEntryIsStillADuplicate(@TempDir Path tmp) throws Exception {
+        RawZip raw = new RawZip();
+        int only = raw.put("a/premis.xml", utf8("only"));
+        raw.list("a/premis.xml", utf8("only"), only);
+        raw.list("a/premis.xml", utf8("only"), only);
+
+        PackageReader.Unreadable refusal = assertThrows(PackageReader.Unreadable.class,
+                () -> PackageReader.open(raw.writeTo(tmp.resolve("directory-duplicate.zip"))));
         assertEquals(PackageReader.Refusal.DUPLICATE_ENTRY, refusal.refusal(), refusal.getMessage());
     }
 
