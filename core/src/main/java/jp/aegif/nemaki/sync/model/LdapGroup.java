@@ -31,9 +31,27 @@ public class LdapGroup {
     private String dn;
     private String groupId;
     private String groupName;
+    /**
+     * The member values as the directory returned them — DNs, or ids where the member attribute
+     * holds ids ({@code memberUid}). Not interpreted here: {@code LdapMemberResolver} looks each
+     * one up among the entries the same sync read, and fills the two lists below (R148).
+     */
     private List<String> memberDns = new ArrayList<>();
     private List<String> memberUserIds = new ArrayList<>();
     private List<String> memberGroupIds = new ArrayList<>();
+    /** Member values that are neither a user nor a group this sync read. */
+    private List<String> unresolvedMembers = new ArrayList<>();
+    /**
+     * Whether the entry carried the member attribute at all. Absent is what an empty group looks
+     * like — and what a group whose members the bind account may not read looks like too.
+     */
+    private boolean memberAttributePresent;
+    /**
+     * Whether the directory returned the member attribute in ranges ({@code member;range=0-1499},
+     * Active Directory's ranged retrieval). The values of such an attribute are not read, so the
+     * membership is not known.
+     */
+    private boolean membersRanged;
     private Map<String, Object> attributes = new HashMap<>();
 
     public LdapGroup() {}
@@ -90,6 +108,30 @@ public class LdapGroup {
 
     public void setMemberGroupIds(List<String> memberGroupIds) {
         this.memberGroupIds = memberGroupIds;
+    }
+
+    public List<String> getUnresolvedMembers() {
+        return unresolvedMembers;
+    }
+
+    public void setUnresolvedMembers(List<String> unresolvedMembers) {
+        this.unresolvedMembers = unresolvedMembers;
+    }
+
+    public boolean isMemberAttributePresent() {
+        return memberAttributePresent;
+    }
+
+    public void setMemberAttributePresent(boolean memberAttributePresent) {
+        this.memberAttributePresent = memberAttributePresent;
+    }
+
+    public boolean isMembersRanged() {
+        return membersRanged;
+    }
+
+    public void setMembersRanged(boolean membersRanged) {
+        this.membersRanged = membersRanged;
     }
 
     public Map<String, Object> getAttributes() {

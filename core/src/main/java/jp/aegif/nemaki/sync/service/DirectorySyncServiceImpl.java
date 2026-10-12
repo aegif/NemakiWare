@@ -51,6 +51,7 @@ import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.sync.connector.LdapDirectoryConnector;
+import jp.aegif.nemaki.sync.connector.LdapMemberResolver;
 import jp.aegif.nemaki.sync.model.DirectorySyncConfig;
 import jp.aegif.nemaki.sync.model.DirectorySyncResult;
 import jp.aegif.nemaki.sync.model.DirectorySyncResult.SyncStatus;
@@ -117,7 +118,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
                 log.info("AUDIT: Starting directory sync for repository: " + repositoryId + " (dryRun=" + dryRun + ")");
 
-                LdapDirectoryConnector connector = new LdapDirectoryConnector(config);
+                LdapDirectoryConnector connector = createConnector(config);
                 
                 try {
                     connector.connect();
@@ -126,6 +127,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     performUserSync(repositoryId, ldapUsers, config, result, dryRun);
                     
                     List<LdapGroup> ldapGroups = connector.searchGroups();
+                    // Members are looked up among the entries this sync read — their ids are the
+                    // id attribute's values on those entries, not the DN's first RDN (R148).
+                    LdapMemberResolver.resolve(ldapUsers, ldapGroups);
                     performGroupSync(repositoryId, ldapGroups, config, result, dryRun);
                     
                     if (result.getErrors().isEmpty()) {
@@ -170,6 +174,14 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 lock.unlock();
             }
         }
+    }
+
+    /**
+     * The connector the sync reads the directory through. A seam, so that the sync's entry point
+     * can be measured against a stand-in directory.
+     */
+    LdapDirectoryConnector createConnector(DirectorySyncConfig config) {
+        return new LdapDirectoryConnector(config);
     }
 
     private List<String> validateConfig(DirectorySyncConfig config) {
@@ -520,8 +532,22 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
             
             try {
-                if (syncedGroupMap.containsKey(nemakiGroupId)) {
-                    GroupItem existingGroup = syncedGroupMap.get(nemakiGroupId);
+                GroupItem existingGroup = syncedGroupMap.get(nemakiGroupId);
+                // A membership this sync could not establish is not written — neither as "no
+                // members" nor as guessed ids (R148).
+                String unknown = unknownMembership(ldapGroup, existingGroup, config);
+                if (unknown != null) {
+                    log.warn("AUDIT: Group not written by directory sync: " + nemakiGroupId + " - " + unknown);
+                    result.addError(nemakiGroupId, unknown);
+                    continue;
+                }
+                List<String> unresolved = ldapGroup.getUnresolvedMembers();
+                if (unresolved != null && !unresolved.isEmpty()) {
+                    result.addWarning(nemakiGroupId, unresolved.size() + " member value(s) are not a user "
+                            + "or group this sync read and were not written, for example "
+                            + unresolved.subList(0, Math.min(3, unresolved.size())));
+                }
+                if (existingGroup != null) {
                     if (hasGroupChanges(existingGroup, ldapGroup, groupPrefix, config)) {
                         if (!dryRun) {
                             updateGroup(repositoryId, existingGroup, ldapGroup, groupPrefix, config);
@@ -586,19 +612,18 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         }
 
         if (config.isSyncNestedGroups()) {
-            Set<String> existingSubGroups = new HashSet<>();
-            if (existingGroup.getGroups() != null) {
-                for (String g : existingGroup.getGroups()) {
-                    if (g.startsWith(groupPrefix)) {
-                        existingSubGroups.add(g.substring(groupPrefix.length()));
-                    } else {
-                        existingSubGroups.add(g);
-                    }
+            // Compared as stored, the way the users are: the sync writes the nested groups with the
+            // prefix. Stripping it took a local group that shares an LDAP group's id for that group,
+            // and the nesting was left as it was (R148 (c)).
+            Set<String> existingSubGroups = new HashSet<>(existingGroup.getGroups() != null ? existingGroup.getGroups() : new ArrayList<>());
+            Set<String> ldapSubGroupsWithPrefix = new HashSet<>();
+            if (ldapGroup.getMemberGroupIds() != null) {
+                for (String subGroupId : ldapGroup.getMemberGroupIds()) {
+                    ldapSubGroupsWithPrefix.add(groupPrefix + subGroupId);
                 }
             }
-            Set<String> ldapSubGroups = new HashSet<>(ldapGroup.getMemberGroupIds() != null ? ldapGroup.getMemberGroupIds() : new ArrayList<>());
-            
-            if (!existingSubGroups.equals(ldapSubGroups)) {
+
+            if (!existingSubGroups.equals(ldapSubGroupsWithPrefix)) {
                 return true;
             }
         }
@@ -613,6 +638,39 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         }
 
         return false;
+    }
+
+    /**
+     * Why the group's membership is not known well enough to write, or null. Each case used to be
+     * written — as "no members", or as ids guessed from the DN (R148).
+     */
+    private static String unknownMembership(LdapGroup ldapGroup, GroupItem existingGroup, DirectorySyncConfig config) {
+        if (ldapGroup.isMembersRanged()) {
+            return "the directory returned the member attribute in ranges (Active Directory's "
+                    + "member;range=...), which this sync does not read, so the group's membership is not "
+                    + "known; the group is not written";
+        }
+        List<String> values = ldapGroup.getMemberDns() == null ? List.of() : ldapGroup.getMemberDns();
+        boolean noUsers = ldapGroup.getMemberUserIds() == null || ldapGroup.getMemberUserIds().isEmpty();
+        boolean noGroups = ldapGroup.getMemberGroupIds() == null || ldapGroup.getMemberGroupIds().isEmpty();
+        if (!values.isEmpty() && noUsers && noGroups) {
+            return "none of the group's " + values.size() + " member value(s) is a user or group this sync "
+                    + "read (compare the user search base, filter and id attribute with the member values); "
+                    + "the group is not written";
+        }
+        if (!ldapGroup.isMemberAttributePresent() && existingGroup != null && hasMembers(existingGroup, config)) {
+            return "the directory returned no member attribute for the group. An empty group and one whose "
+                    + "members the bind account may not read look the same, so its existing members are kept "
+                    + "and the group is not written (empty it by hand if it is meant to be empty)";
+        }
+        return null;
+    }
+
+    /** Whether the stored group has members the sync would replace. */
+    private static boolean hasMembers(GroupItem group, DirectorySyncConfig config) {
+        boolean users = group.getUsers() != null && !group.getUsers().isEmpty();
+        boolean nested = config.isSyncNestedGroups() && group.getGroups() != null && !group.getGroups().isEmpty();
+        return users || nested;
     }
 
     private void createGroup(String repositoryId, LdapGroup ldapGroup, String groupPrefix, DirectorySyncConfig config) {
@@ -820,7 +878,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             return false;
         }
         
-        LdapDirectoryConnector connector = new LdapDirectoryConnector(config);
+        LdapDirectoryConnector connector = createConnector(config);
         return connector.testConnection();
     }
 

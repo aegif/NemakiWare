@@ -31,7 +31,6 @@ import jp.aegif.nemaki.api.v1.model.response.LinkInfo;
 import jp.aegif.nemaki.api.v1.model.response.UserListResponse;
 import jp.aegif.nemaki.api.v1.model.response.UserResponse;
 import jp.aegif.nemaki.businesslogic.ContentService;
-import jp.aegif.nemaki.cmis.factory.SystemCallContext;
 import jp.aegif.nemaki.util.constant.CallContextKey;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import jp.aegif.nemaki.common.NemakiObjectType;
@@ -688,14 +687,18 @@ public class UserResource {
             boolean isMember = members.contains(userId);
             boolean shouldBeMember = targetGroups.contains(group.getGroupId());
             
+            // applyGroupUpdate stamps the group's modifier and modified before writing. The plain
+            // update left both as they were, so the change log dated a membership change to the
+            // group's previous edit (R148 (d)). The modifier is the same name the user's own update
+            // records; that this name is "system" here is the known Jersey defect, not this write.
             if (shouldBeMember && !isMember) {
                 members.add(userId);
                 group.setUsers(members);
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                contentService.applyGroupUpdate(repositoryId, group, getAuthenticatedUsername());
             } else if (!shouldBeMember && isMember) {
                 members.remove(userId);
                 group.setUsers(members);
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                contentService.applyGroupUpdate(repositoryId, group, getAuthenticatedUsername());
             }
         }
     }

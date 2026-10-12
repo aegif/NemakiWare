@@ -194,8 +194,8 @@ public class Patch_TestUserInitialization extends AbstractNemakiPatch {
                             currentUsers.add("testuser");
                             group.setUsers(currentUsers);
                             
-                            // Update the group
-                            contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+                            // Update the group, stamping its modifier and modified (R148 (d))
+                            contentService.applyGroupUpdate(repositoryId, group, "system");
                             log.info("Updated testgroup to include testuser");
                         } else {
                             log.info("testuser is already in testgroup");

@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Locale;
 
 import javax.naming.Context;
 import javax.naming.NamingEnumeration;
@@ -393,30 +394,57 @@ public class LdapDirectoryConnector {
 
         LdapGroup group = new LdapGroup(result.getNameInNamespace(), groupId, groupName);
 
-        Attribute memberAttr = attrs.get(config.getGroupMemberAttribute());
+        // The member values are kept as the directory returned them. Which entry each one names —
+        // its id, and whether it is a user or a group — is looked up among the entries this sync
+        // read (LdapMemberResolver), not read out of the value. The first RDN of a DN is not the
+        // id where the RDN attribute is not the id attribute (Active Directory: CN=<name>, and the
+        // id is sAMAccountName), and a search base's string inside a DN does not say what the entry
+        // is: both readings wrote memberships that named no user, or another user (R148).
+        String memberAttrName = config.getGroupMemberAttribute();
+        Attribute memberAttr = attrs.get(memberAttrName);
         if (memberAttr != null) {
+            group.setMemberAttributePresent(true);
             NamingEnumeration<?> members = null;
             try {
                 members = memberAttr.getAll();
                 while (members.hasMore()) {
-                    String memberDn = (String) members.next();
-                    group.addMemberDn(memberDn);
-                    
-                    String memberId = extractIdFromDn(memberDn);
-                    if (memberId != null) {
-                        if (isGroupDn(memberDn)) {
-                            group.addMemberGroupId(memberId);
-                        } else {
-                            group.addMemberUserId(memberId);
-                        }
-                    }
+                    group.addMemberDn(String.valueOf(members.next()));
                 }
             } finally {
                 closeQuietly(members);
             }
         }
+        if (isRanged(attrs, memberAttrName)) {
+            // Active Directory returns a large member attribute in ranges, under the name
+            // "member;range=0-1499", which attrs.get("member") does not find. That is a membership
+            // this sync has not read — never "no members".
+            group.setMemberAttributePresent(true);
+            group.setMembersRanged(true);
+            log.warn("Group " + result.getNameInNamespace() + " returned its " + memberAttrName
+                    + " attribute in ranges; ranged values are not read, so the group is not written");
+        }
 
         return group;
+    }
+
+    /** Whether the entry carries the member attribute under a ranged name ({@code member;range=…}). */
+    private boolean isRanged(Attributes attrs, String memberAttrName) throws NamingException {
+        if (memberAttrName == null) {
+            return false;
+        }
+        String ranged = memberAttrName.toLowerCase(Locale.ROOT) + ";range=";
+        NamingEnumeration<String> ids = attrs.getIDs();
+        try {
+            while (ids.hasMore()) {
+                String id = ids.next();
+                if (id != null && id.toLowerCase(Locale.ROOT).startsWith(ranged)) {
+                    return true;
+                }
+            }
+        } finally {
+            closeQuietly(ids);
+        }
+        return false;
     }
 
     private String getAttributeValue(Attributes attrs, String attrName) throws NamingException {
@@ -515,31 +543,6 @@ public class LdapDirectoryConnector {
             sanitizedValues[i] = sanitizeLdapFilter(values[i]);
         }
         return String.format(filterTemplate, (Object[]) sanitizedValues);
-    }
-
-    private boolean isGroupDn(String dn) {
-        if (dn == null) {
-            return false;
-        }
-        String lowerDn = dn.toLowerCase();
-        
-        String userSearchBase = config.getUserSearchBase();
-        if (userSearchBase != null && !userSearchBase.isEmpty()) {
-            if (lowerDn.contains(userSearchBase.toLowerCase())) {
-                return false;
-            }
-        }
-        
-        String groupSearchBase = config.getGroupSearchBase();
-        if (groupSearchBase != null && !groupSearchBase.isEmpty()) {
-            return lowerDn.contains(groupSearchBase.toLowerCase());
-        }
-        
-        if (lowerDn.contains("ou=users") || lowerDn.contains("cn=users")) {
-            return false;
-        }
-        
-        return lowerDn.contains("ou=groups") || lowerDn.contains("cn=groups");
     }
 
     public String resolveUserIdFromDn(String userDn) throws NamingException {

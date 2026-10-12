@@ -77,8 +77,10 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         return group;
     }
 
+    /** A group as the member resolver leaves it: its members already looked up (R148). */
     private static LdapGroup ldap(List<String> users, List<String> groups) {
         LdapGroup group = new LdapGroup("cn=eng,ou=groups,dc=example", "eng", "Engineering");
+        group.setMemberAttributePresent(true);
         group.setMemberUserIds(new ArrayList<>(users));
         group.setMemberGroupIds(new ArrayList<>(groups));
         return group;
