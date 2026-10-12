@@ -84,13 +84,15 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         return group;
     }
 
-    private void performGroupSync(LdapGroup ldapGroup, boolean syncNestedGroups) throws Exception {
+    private DirectorySyncResult performGroupSync(LdapGroup ldapGroup, boolean syncNestedGroups) throws Exception {
         DirectorySyncConfig config = new DirectorySyncConfig();
         config.setSyncNestedGroups(syncNestedGroups);
         Method step = DirectorySyncServiceImpl.class.getDeclaredMethod("performGroupSync", String.class,
                 List.class, DirectorySyncConfig.class, DirectorySyncResult.class, boolean.class);
         step.setAccessible(true);
-        step.invoke(sync, REPO, List.of(ldapGroup), config, new DirectorySyncResult(REPO, false), false);
+        DirectorySyncResult result = new DirectorySyncResult(REPO, false);
+        step.invoke(sync, REPO, List.of(ldapGroup), config, result, false);
+        return result;
     }
 
     private GroupItem written() {
@@ -126,8 +128,12 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
     @DisplayName("not syncing nested groups, a group whose only difference is its nesting is not written")
     void aNestingDifferenceAloneIsNotAChange() throws Exception {
         existing(List.of("alice"));
-        performGroupSync(ldap(List.of("alice"), List.of("qa")), false);
+        DirectorySyncResult result = performGroupSync(ldap(List.of("alice"), List.of("qa")), false);
 
         verify(contentService, never()).update(any(), any(), any());
+        // Not written because it was judged unchanged — the per-group catch also writes nothing,
+        // and answers with an error instead.
+        assertEquals(1, result.getGroupsSkipped(), "the group was not judged unchanged");
+        assertEquals(List.of(), result.getErrors(), "the group failed instead of being unchanged");
     }
 }

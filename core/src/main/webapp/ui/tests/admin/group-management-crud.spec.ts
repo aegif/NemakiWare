@@ -426,8 +426,10 @@ test.describe('Group Management CRUD Operations', () => {
       // Postcondition: reopen the edit modal and verify the member persisted.
       // Saving reloads the searched list; a forced click while it loads lands on the table's
       // spinner and opens nothing (3.4.1 gate, reproduced). Wait for the reload, and click
-      // without force so the click itself waits until the button can take it.
-      await expect(page.locator('.ant-table .ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
+      // without force so the click itself waits until the button can take it. The spinner
+      // wraps the table (antd 6: .ant-table-wrapper > .ant-spin > .ant-spin-container >
+      // .ant-table), so it is looked for under the wrapper — under .ant-table it never matches.
+      await expect(page.locator('.ant-table-wrapper .ant-spin-spinning')).toHaveCount(0, { timeout: 15000 });
       await membersButton.first().click();
       const verifyModal = page.locator('.ant-modal, .ant-drawer');
       await expect(verifyModal).toBeVisible({ timeout: 5000 });
