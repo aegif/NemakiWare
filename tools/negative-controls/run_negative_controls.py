@@ -21599,7 +21599,7 @@ CONTROLS = [
     # ---- 3.4.1 batch 9: the 10th sweep's leftovers (2026-10-12) ----
     dict(
         id='XG4',
-        what="the central directory's own duplicate check is gone — a directory that lists one name twice over the one local entry agrees with the local headers in names and bytes, so nothing else refuses it and the receiving system has two records for one path",
+        what="the central directory's own duplicate check is gone — a directory that lists one name twice over the one local entry agrees with the local headers in the set of names and in the bytes it points at, so nothing else refuses it and the receiving system has two records for one path",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageReader.java',
         find='                if (!central.add(name)) {\n                    throw new Unreadable(Refusal.DUPLICATE_ENTRY, "the central directory lists \\""\n                            + name + "\\" twice");\n                }\n',
