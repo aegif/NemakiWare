@@ -52,7 +52,8 @@ import jp.aegif.nemaki.sync.model.LdapUser;
  * {@link LdapName}s, so case, spacing after commas and escaping do not matter), and the id is the
  * configured id attribute's value on that entry. A value that is not a DN — {@code memberUid}
  * holds ids — is a member only if it is the id of a user this sync read. Anything else is not a
- * principal this sync knows: it is reported, never written under a guessed id.
+ * principal this sync knows, and a value that could name more than one entry is not known either:
+ * the sync does not write a group that has either (it cannot tell whom it would leave out).
  */
 public final class LdapMemberResolver {
 
@@ -62,46 +63,68 @@ public final class LdapMemberResolver {
     }
 
     /**
-     * Fills each group's {@code memberUserIds}, {@code memberGroupIds} and
-     * {@code unresolvedMembers} from its {@code memberDns}, replacing whatever they held.
+     * Fills each group's {@code memberUserIds}, {@code memberGroupIds}, {@code unresolvedMembers}
+     * and {@code ambiguousMembers} from its {@code memberDns}, replacing whatever they held, and
+     * marks a group whose id another group entry also has.
+     *
+     * <p>A value is ambiguous — never written — when its entry is returned by both searches, or
+     * its id is the id of more than one entry: whichever were chosen, the membership could go to a
+     * different principal than the directory meant.
      */
     public static void resolve(List<LdapUser> users, List<LdapGroup> groups) {
         Map<LdapName, String> userByDn = new HashMap<>();
-        Set<String> userIds = new HashSet<>();
+        Map<String, Integer> userIdCount = new HashMap<>();
         for (LdapUser user : users) {
             LdapName dn = parse(user.getDn());
-            if (dn != null && !dn.isEmpty()) {
+            if (dn != null) {
                 userByDn.put(dn, user.getUserId());
             }
-            userIds.add(user.getUserId());
+            userIdCount.merge(user.getUserId(), 1, Integer::sum);
         }
         Map<LdapName, String> groupByDn = new HashMap<>();
+        Map<String, Integer> groupIdCount = new HashMap<>();
         for (LdapGroup group : groups) {
             LdapName dn = parse(group.getDn());
-            if (dn != null && !dn.isEmpty()) {
+            if (dn != null) {
                 groupByDn.put(dn, group.getGroupId());
             }
+            groupIdCount.merge(group.getGroupId(), 1, Integer::sum);
         }
 
         for (LdapGroup group : groups) {
             List<String> userMembers = new ArrayList<>();
             List<String> groupMembers = new ArrayList<>();
             List<String> unresolved = new ArrayList<>();
+            List<String> ambiguous = new ArrayList<>();
             List<String> values = group.getMemberDns() == null ? List.of() : group.getMemberDns();
             for (String value : values) {
                 LdapName dn = parse(value);
                 if (dn == null) {
                     // Not a DN: the member attribute holds ids (memberUid). It names a member only
-                    // if this sync read a user with that id.
-                    if (value != null && userIds.contains(value)) {
-                        addOnce(userMembers, value);
-                    } else {
+                    // if this sync read a user with that id — and only one.
+                    if (value == null || !userIdCount.containsKey(value)) {
                         unresolved.add(value);
+                    } else if (userIdCount.get(value) > 1) {
+                        ambiguous.add(value);
+                    } else {
+                        addOnce(userMembers, value);
                     }
+                } else if (userByDn.containsKey(dn) && groupByDn.containsKey(dn)) {
+                    ambiguous.add(value);
                 } else if (userByDn.containsKey(dn)) {
-                    addOnce(userMembers, userByDn.get(dn));
+                    String id = userByDn.get(dn);
+                    if (userIdCount.get(id) > 1) {
+                        ambiguous.add(value);
+                    } else {
+                        addOnce(userMembers, id);
+                    }
                 } else if (groupByDn.containsKey(dn)) {
-                    addOnce(groupMembers, groupByDn.get(dn));
+                    String id = groupByDn.get(dn);
+                    if (groupIdCount.get(id) > 1) {
+                        ambiguous.add(value);
+                    } else {
+                        addOnce(groupMembers, id);
+                    }
                 } else {
                     unresolved.add(value);
                 }
@@ -109,9 +132,11 @@ public final class LdapMemberResolver {
             group.setMemberUserIds(userMembers);
             group.setMemberGroupIds(groupMembers);
             group.setUnresolvedMembers(unresolved);
-            if (!unresolved.isEmpty()) {
-                log.info("Group " + group.getGroupId() + ": " + unresolved.size() + " member value(s) are "
-                        + "not a user or group this sync read and are not written");
+            group.setAmbiguousMembers(ambiguous);
+            group.setIdShared(groupIdCount.get(group.getGroupId()) > 1);
+            if (!unresolved.isEmpty() || !ambiguous.isEmpty()) {
+                log.info("Group " + group.getGroupId() + ": " + unresolved.size() + " member value(s) are not a "
+                        + "user or group this sync read, " + ambiguous.size() + " name more than one entry");
             }
         }
     }

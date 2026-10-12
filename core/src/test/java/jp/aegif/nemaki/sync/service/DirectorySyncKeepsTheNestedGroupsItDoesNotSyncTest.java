@@ -29,7 +29,9 @@ import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,12 +70,18 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         sync.setContentService(contentService);
     }
 
-    /** A synced group as the list returns it: with its revision, and a nested group added by hand. */
+    /**
+     * A synced group as the list returns it: with its revision, and a nested group added by hand.
+     * The synced group {@code qa} exists too, so that LDAP's nesting names a group that exists.
+     */
     private GroupItem existing(List<String> users) {
         GroupItem group = new GroupItem("doc-eng", "nemaki:group", PREFIX + "eng", "Engineering",
                 new ArrayList<>(users), new ArrayList<>(List.of("ops-by-hand")));
         group.setRevision("3-abc");
-        when(contentService.getGroupItems(REPO)).thenReturn(new ArrayList<>(List.of(group)));
+        GroupItem qa = new GroupItem("doc-qa", "nemaki:group", PREFIX + "qa", "QA",
+                new ArrayList<>(), new ArrayList<>());
+        qa.setRevision("1-abc");
+        when(contentService.getGroupItems(REPO)).thenReturn(new ArrayList<>(List.of(group, qa)));
         return group;
     }
 
@@ -90,10 +98,15 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         DirectorySyncConfig config = new DirectorySyncConfig();
         config.setSyncNestedGroups(syncNestedGroups);
         Method step = DirectorySyncServiceImpl.class.getDeclaredMethod("performGroupSync", String.class,
-                List.class, DirectorySyncConfig.class, DirectorySyncResult.class, boolean.class);
+                List.class, DirectorySyncConfig.class, DirectorySyncResult.class, boolean.class, Map.class);
         step.setAccessible(true);
         DirectorySyncResult result = new DirectorySyncResult(REPO, false);
-        step.invoke(sync, REPO, List.of(ldapGroup), config, result, false);
+        // Every member user is a NemakiWare user: this measures the nesting.
+        Map<String, DirectorySyncServiceImpl.UserState> users = new HashMap<>();
+        for (String userId : ldapGroup.getMemberUserIds()) {
+            users.put(userId, DirectorySyncServiceImpl.UserState.EXISTS);
+        }
+        step.invoke(sync, REPO, List.of(ldapGroup), config, result, false, users);
         return result;
     }
 

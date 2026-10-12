@@ -18,11 +18,15 @@ package jp.aegif.nemaki.sync.connector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import javax.naming.NamingException;
 import javax.naming.directory.BasicAttribute;
 import javax.naming.directory.BasicAttributes;
 import javax.naming.directory.SearchResult;
@@ -43,17 +47,26 @@ import jp.aegif.nemaki.sync.model.LdapGroup;
  */
 class TheConnectorKeepsMemberValuesAsReturnedTest {
 
-    private static LdapGroup map(BasicAttributes attrs) throws Exception {
+    private static Object mapEntry(String method, BasicAttributes attrs, String dn) throws Exception {
         DirectorySyncConfig config = new DirectorySyncConfig();
         config.setGroupIdAttribute("cn");
         config.setGroupNameAttribute("cn");
         config.setGroupMemberAttribute("member");
+        config.setUserIdAttribute("uid");
         LdapDirectoryConnector connector = new LdapDirectoryConnector(config);
-        SearchResult result = new SearchResult("cn=eng", null, attrs);
-        result.setNameInNamespace("cn=eng,ou=groups,dc=x");
-        Method map = LdapDirectoryConnector.class.getDeclaredMethod("mapToLdapGroup", SearchResult.class);
+        SearchResult result = new SearchResult(dn, null, attrs);
+        result.setNameInNamespace(dn);
+        Method map = LdapDirectoryConnector.class.getDeclaredMethod(method, SearchResult.class);
         map.setAccessible(true);
-        return (LdapGroup) map.invoke(connector, result);
+        try {
+            return map.invoke(connector, result);
+        } catch (InvocationTargetException thrown) {
+            throw (Exception) thrown.getCause();
+        }
+    }
+
+    private static LdapGroup map(BasicAttributes attrs) throws Exception {
+        return (LdapGroup) mapEntry("mapToLdapGroup", attrs, "cn=eng,ou=groups,dc=x");
     }
 
     private static BasicAttributes eng() {
@@ -93,6 +106,35 @@ class TheConnectorKeepsMemberValuesAsReturnedTest {
 
         assertTrue(group.isMembersRanged(), "a ranged member attribute read as an ordinary one");
         assertTrue(group.isMemberAttributePresent(), "a ranged member attribute read as no member attribute");
+    }
+
+    @Test
+    @DisplayName("an entry with more than one value for its id attribute stops the search — which value is its id is not known")
+    void aMultiValuedIdStopsTheSearch() {
+        BasicAttributes group = new BasicAttributes(true);
+        BasicAttribute cn = new BasicAttribute("cn");
+        cn.add("engineering");
+        cn.add("eng");
+        group.put(cn);
+        NamingException refused = assertThrows(NamingException.class, () -> map(group),
+                "a group was read under one of its two ids");
+        assertTrue(refused.getMessage().contains("cn=eng,ou=groups,dc=x"), refused.getMessage());
+
+        BasicAttributes user = new BasicAttributes(true);
+        BasicAttribute uid = new BasicAttribute("uid");
+        uid.add("alice");
+        uid.add("asmith");
+        user.put(uid);
+        assertThrows(NamingException.class, () -> mapEntry("mapToLdapUser", user, "uid=alice,ou=users,dc=x"),
+                "a user was read under one of its two ids");
+    }
+
+    @Test
+    @DisplayName("an entry whose id attribute is empty is skipped like one without it")
+    void anEmptyIdIsNoId() throws Exception {
+        BasicAttributes user = new BasicAttributes(true);
+        user.put(new BasicAttribute("uid", ""));
+        assertNull(mapEntry("mapToLdapUser", user, "uid=,ou=users,dc=x"), "a user was read with an empty id");
     }
 
     @Test

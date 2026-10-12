@@ -40,8 +40,6 @@ import javax.naming.ldap.LdapContext;
 import javax.naming.ldap.PagedResultsControl;
 import javax.naming.ldap.PagedResultsResponseControl;
 import javax.naming.ldap.StartTlsRequest;
-import javax.naming.ldap.LdapName;
-import javax.naming.ldap.Rdn;
 import javax.naming.ldap.StartTlsResponse;
 
 import org.apache.commons.logging.Log;
@@ -381,7 +379,7 @@ public class LdapDirectoryConnector {
     private LdapGroup mapToLdapGroup(SearchResult result) throws NamingException {
         Attributes attrs = result.getAttributes();
         
-        String groupId = getAttributeValue(attrs, config.getGroupIdAttribute());
+        String groupId = idOf(attrs, config.getGroupIdAttribute(), result.getNameInNamespace());
         if (groupId == null) {
             log.warn("Group without ID attribute found, skipping: " + result.getNameInNamespace());
             return null;
@@ -447,6 +445,30 @@ public class LdapDirectoryConnector {
         return false;
     }
 
+    /**
+     * The entry's id: the id attribute's only value. Null when the attribute is absent or empty —
+     * the entry is skipped, as before. More than one value fails the search: which value is the id
+     * is not known, and reading the first one let the same entry be a different principal from one
+     * sync to the next (R148).
+     */
+    private String idOf(Attributes attrs, String attrName, String dn) throws NamingException {
+        if (attrName == null) {
+            return null;
+        }
+        Attribute attr = attrs.get(attrName);
+        if (attr == null || attr.size() == 0) {
+            return null;
+        }
+        if (attr.size() > 1) {
+            throw new NamingException("the entry " + dn + " has " + attr.size() + " values for the id attribute "
+                    + attrName + ", so which one is its id is not known; the directory sync stops here rather "
+                    + "than write a guessed principal");
+        }
+        Object value = attr.get();
+        String id = value == null ? null : value.toString();
+        return id == null || id.isEmpty() ? null : id;
+    }
+
     private String getAttributeValue(Attributes attrs, String attrName) throws NamingException {
         if (attrName == null) {
             return null;
@@ -455,73 +477,6 @@ public class LdapDirectoryConnector {
         if (attr != null && attr.size() > 0) {
             Object value = attr.get();
             return value != null ? value.toString() : null;
-        }
-        return null;
-    }
-
-    private String extractIdFromDn(String dn) {
-        if (dn == null || dn.isEmpty()) {
-            return null;
-        }
-        
-        try {
-            // Use LdapName for proper DN parsing (handles escaped characters correctly)
-            LdapName ldapName = new LdapName(dn);
-            List<Rdn> rdns = ldapName.getRdns();
-            if (!rdns.isEmpty()) {
-                // Get the first (most specific) RDN
-                Rdn firstRdn = rdns.get(rdns.size() - 1);
-                Object value = firstRdn.getValue();
-                return value != null ? value.toString() : null;
-            }
-        } catch (Exception e) {
-            // Fall back to simple parsing if LdapName fails
-            log.debug("Failed to parse DN with LdapName, falling back to simple parsing: " + dn);
-            return extractIdFromDnSimple(dn);
-        }
-        return null;
-    }
-
-
-    /**
-     * Simple fallback DN parsing for cases where LdapName fails.
-     * Handles basic DN format: attr=value,attr2=value2,...
-     */
-    private String extractIdFromDnSimple(String dn) {
-        if (dn == null || dn.isEmpty()) {
-            return null;
-        }
-        
-        // Handle escaped commas by looking for unescaped comma
-        StringBuilder firstPart = new StringBuilder();
-        boolean escaped = false;
-        for (int i = 0; i < dn.length(); i++) {
-            char c = dn.charAt(i);
-            if (escaped) {
-                firstPart.append(c);
-                escaped = false;
-            } else if (c == '\\') {
-                escaped = true;
-                firstPart.append(c);
-            } else if (c == ',') {
-                break;
-            } else {
-                firstPart.append(c);
-            }
-        }
-        
-        String rdnPart = firstPart.toString();
-        int eqIndex = rdnPart.indexOf('=');
-        if (eqIndex > 0 && eqIndex < rdnPart.length() - 1) {
-            String value = rdnPart.substring(eqIndex + 1).trim();
-            // Unescape the value
-            return value.replace("\\,", ",")
-                       .replace("\\+", "+")
-                       .replace("\\\"", "\"")
-                       .replace("\\\\", "\\")
-                       .replace("\\<", "<")
-                       .replace("\\>", ">")
-                       .replace("\\;", ";");
         }
         return null;
     }
@@ -543,20 +498,6 @@ public class LdapDirectoryConnector {
             sanitizedValues[i] = sanitizeLdapFilter(values[i]);
         }
         return String.format(filterTemplate, (Object[]) sanitizedValues);
-    }
-
-    public String resolveUserIdFromDn(String userDn) throws NamingException {
-        if (userDn == null || userDn.isEmpty()) {
-            return null;
-        }
-
-        try {
-            Attributes attrs = context.getAttributes(userDn, new String[]{config.getUserIdAttribute()});
-            return getAttributeValue(attrs, config.getUserIdAttribute());
-        } catch (NamingException e) {
-            log.debug("Could not resolve user DN: " + userDn + " - " + e.getMessage());
-            return extractIdFromDn(userDn);
-        }
     }
 
     public DirectorySyncConfig getConfig() {
@@ -676,7 +617,7 @@ public class LdapDirectoryConnector {
     private LdapUser mapToLdapUser(SearchResult result) throws NamingException {
         Attributes attrs = result.getAttributes();
         
-        String userId = getAttributeValue(attrs, config.getUserIdAttribute());
+        String userId = idOf(attrs, config.getUserIdAttribute(), result.getNameInNamespace());
         if (userId == null) {
             log.warn("User without ID attribute found, skipping: " + result.getNameInNamespace());
             return null;

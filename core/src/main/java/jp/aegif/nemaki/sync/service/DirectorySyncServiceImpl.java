@@ -124,13 +124,13 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     connector.connect();
                     
                     List<LdapUser> ldapUsers = connector.searchUsers();
-                    performUserSync(repositoryId, ldapUsers, config, result, dryRun);
+                    Map<String, UserState> userStates = performUserSync(repositoryId, ldapUsers, config, result, dryRun);
                     
                     List<LdapGroup> ldapGroups = connector.searchGroups();
                     // Members are looked up among the entries this sync read — their ids are the
                     // id attribute's values on those entries, not the DN's first RDN (R148).
                     LdapMemberResolver.resolve(ldapUsers, ldapGroups);
-                    performGroupSync(repositoryId, ldapGroups, config, result, dryRun);
+                    performGroupSync(repositoryId, ldapGroups, config, result, dryRun, userStates);
                     
                     if (result.getErrors().isEmpty()) {
                         result.complete(SyncStatus.SUCCESS);
@@ -203,8 +203,16 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         return errors;
     }
 
-    private void performUserSync(String repositoryId, List<LdapUser> ldapUsers,
+    /**
+     * Whether a directory user is a NemakiWare user after the user sync: it exists, or this sync
+     * created it (would create it, in a preview); it does not; or its sync failed, so it is not
+     * known. Group memberships are written only for users that exist (R148).
+     */
+    enum UserState { EXISTS, ABSENT, UNKNOWN }
+
+    private Map<String, UserState> performUserSync(String repositoryId, List<LdapUser> ldapUsers,
             DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun) {
+        Map<String, UserState> states = new HashMap<>();
         
         log.info("Syncing " + ldapUsers.size() + " users from LDAP");
 
@@ -222,6 +230,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
         for (LdapUser ldapUser : ldapUsers) {
             String nemakiUserId = userPrefix + ldapUser.getUserId();
+            states.put(nemakiUserId, UserState.UNKNOWN);
             
             try {
                 UserItem existingUser = contentService.getUserItemById(repositoryId, nemakiUserId);
@@ -232,13 +241,16 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                             createUser(repositoryId, ldapUser, userPrefix, config);
                             log.info("AUDIT: User created via directory sync: " + nemakiUserId);
                         }
+                        states.put(nemakiUserId, UserState.EXISTS);
                         result.incrementUsersAdded();
                         log.debug("User created: " + nemakiUserId);
                     } else {
+                        states.put(nemakiUserId, UserState.ABSENT);
                         result.incrementUsersSkipped();
                         log.debug("User skipped (createMissingUsers=false): " + nemakiUserId);
                     }
                 } else {
+                    states.put(nemakiUserId, UserState.EXISTS);
                     if (config.isUpdateExistingUsers() && hasUserChanges(existingUser, ldapUser)) {
                         if (!dryRun) {
                             updateUser(repositoryId, existingUser, ldapUser);
@@ -283,6 +295,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 }
             }
         }
+        return states;
     }
 
 
@@ -508,10 +521,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     private void performGroupSync(String repositoryId, List<LdapGroup> ldapGroups, 
-            DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun) {
+            DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun,
+            Map<String, UserState> userStates) {
         
         String configPrefix = config.getGroupPrefix();
         final String groupPrefix = (configPrefix == null) ? DirectorySyncConfig.DEFAULT_GROUP_PREFIX : configPrefix;
+        final String userPrefix = config.getUserPrefix() != null ? config.getUserPrefix() : "";
 
         List<GroupItem> existingGroups = contentService.getGroupItems(repositoryId);
         if (existingGroups == null) {
@@ -528,24 +543,64 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             ldapGroupMap.put(nemakiGroupId, lg);
         }
 
+        // First which groups' memberships are known at all — a membership this sync could not
+        // establish is not written, neither as "no members" nor as guessed ids (R148) — so that a
+        // nested group that will not exist is not named by its parents.
+        Map<String, String> refusals = new HashMap<>();
+        Set<String> willExist = new HashSet<>(syncedGroupMap.keySet());
+        for (LdapGroup ldapGroup : ldapGroups) {
+            String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
+            String unknown = unknownMembership(ldapGroup, nemakiGroupId, userPrefix, userStates);
+            if (unknown != null) {
+                refusals.put(nemakiGroupId, unknown);
+            } else {
+                willExist.add(nemakiGroupId);
+            }
+        }
+
         for (LdapGroup ldapGroup : ldapGroups) {
             String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
             
             try {
                 GroupItem existingGroup = syncedGroupMap.get(nemakiGroupId);
-                // A membership this sync could not establish is not written — neither as "no
-                // members" nor as guessed ids (R148).
-                String unknown = unknownMembership(ldapGroup, existingGroup, config);
+                String unknown = refusals.get(nemakiGroupId);
                 if (unknown != null) {
-                    log.warn("AUDIT: Group not written by directory sync: " + nemakiGroupId + " - " + unknown);
+                    log.warn("AUDIT: Group not written by directory sync: " + unknown);
                     result.addError(nemakiGroupId, unknown);
                     continue;
                 }
-                List<String> unresolved = ldapGroup.getUnresolvedMembers();
-                if (unresolved != null && !unresolved.isEmpty()) {
-                    result.addWarning(nemakiGroupId, unresolved.size() + " member value(s) are not a user "
-                            + "or group this sync read and were not written, for example "
-                            + unresolved.subList(0, Math.min(3, unresolved.size())));
+                // Members this sync can name but that are not, or will not be, NemakiWare principals:
+                // a directory user it did not create, a nested group it is not writing. Writing them
+                // would leave an id for whoever takes it later.
+                List<String> users = new ArrayList<>();
+                List<String> notUsers = new ArrayList<>();
+                for (String userId : ldapGroup.getMemberUserIds()) {
+                    if (userStates.get(userPrefix + userId) == UserState.EXISTS) {
+                        users.add(userId);
+                    } else {
+                        notUsers.add(userId);
+                    }
+                }
+                List<String> nested = new ArrayList<>();
+                List<String> notGroups = new ArrayList<>();
+                for (String groupId : ldapGroup.getMemberGroupIds()) {
+                    if (willExist.contains(groupPrefix + groupId)) {
+                        nested.add(groupId);
+                    } else {
+                        notGroups.add(groupId);
+                    }
+                }
+                ldapGroup.setMemberUserIds(users);
+                ldapGroup.setMemberGroupIds(nested);
+                if (!notUsers.isEmpty()) {
+                    result.addWarning(nemakiGroupId, "group " + nemakiGroupId + ": " + notUsers.size()
+                            + " member(s) are directory users that are not NemakiWare users (this sync did not "
+                            + "create them) and were not written, for example " + sample(notUsers));
+                }
+                if (config.isSyncNestedGroups() && !notGroups.isEmpty()) {
+                    result.addWarning(nemakiGroupId, "group " + nemakiGroupId + ": " + notGroups.size()
+                            + " nested group(s) this sync is not writing were not written, for example "
+                            + sample(notGroups));
                 }
                 if (existingGroup != null) {
                     if (hasGroupChanges(existingGroup, ldapGroup, groupPrefix, config)) {
@@ -642,35 +697,62 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
     /**
      * Why the group's membership is not known well enough to write, or null. Each case used to be
-     * written — as "no members", or as ids guessed from the DN (R148).
+     * written — as "no members", or as ids guessed from the DN (R148). A member value this sync
+     * cannot name could be anyone, so writing the members it can name would drop whoever that is.
      */
-    private static String unknownMembership(LdapGroup ldapGroup, GroupItem existingGroup, DirectorySyncConfig config) {
-        if (ldapGroup.isMembersRanged()) {
-            return "the directory returned the member attribute in ranges (Active Directory's "
-                    + "member;range=...), which this sync does not read, so the group's membership is not "
-                    + "known; the group is not written";
+    private static String unknownMembership(LdapGroup ldapGroup, String nemakiGroupId, String userPrefix,
+            Map<String, UserState> userStates) {
+        String group = "group " + nemakiGroupId + ": ";
+        if (ldapGroup.isIdShared()) {
+            return group + "another entry in the directory has the same group id, so which entry is this "
+                    + "group is not known; the group is not written";
         }
+        if (ldapGroup.isMembersRanged()) {
+            return group + "the directory returned the member attribute in ranges (Active Directory's "
+                    + "member;range=...), which this sync does not read, so the membership is not known; "
+                    + "the group is not written";
+        }
+        if (!ldapGroup.isMemberAttributePresent()) {
+            return group + "the directory returned no member attribute. An empty group and one whose members "
+                    + "the bind account may not read look the same, so the group is not written (create it, or "
+                    + "empty it, by hand)";
+        }
+        List<String> ambiguous = ldapGroup.getAmbiguousMembers() == null ? List.of() : ldapGroup.getAmbiguousMembers();
+        List<String> unresolved = ldapGroup.getUnresolvedMembers() == null ? List.of() : ldapGroup.getUnresolvedMembers();
         List<String> values = ldapGroup.getMemberDns() == null ? List.of() : ldapGroup.getMemberDns();
         boolean noUsers = ldapGroup.getMemberUserIds() == null || ldapGroup.getMemberUserIds().isEmpty();
         boolean noGroups = ldapGroup.getMemberGroupIds() == null || ldapGroup.getMemberGroupIds().isEmpty();
-        if (!values.isEmpty() && noUsers && noGroups) {
-            return "none of the group's " + values.size() + " member value(s) is a user or group this sync "
-                    + "read (compare the user search base, filter and id attribute with the member values); "
-                    + "the group is not written";
+        if (!values.isEmpty() && noUsers && noGroups && unresolved.isEmpty() && ambiguous.isEmpty()) {
+            // Values that came back with none of them accounted for were never looked up: "no
+            // members" is not what the directory said.
+            return group + "its " + values.size() + " member value(s) were not looked up; the group is not written";
         }
-        if (!ldapGroup.isMemberAttributePresent() && existingGroup != null && hasMembers(existingGroup, config)) {
-            return "the directory returned no member attribute for the group. An empty group and one whose "
-                    + "members the bind account may not read look the same, so its existing members are kept "
-                    + "and the group is not written (empty it by hand if it is meant to be empty)";
+        if (!ambiguous.isEmpty()) {
+            return group + ambiguous.size() + " member value(s) could name more than one entry (an entry both "
+                    + "searches returned, or an id more than one entry has), for example " + sample(ambiguous)
+                    + "; the group is not written";
+        }
+        if (!unresolved.isEmpty()) {
+            return group + unresolved.size() + " member value(s) are not a user or group this sync read, for "
+                    + "example " + sample(unresolved) + ". A member it cannot name could be anyone, so the group "
+                    + "is not written (widen the user or group search, or remove the member)";
+        }
+        List<String> unknownUsers = new ArrayList<>();
+        for (String userId : ldapGroup.getMemberUserIds()) {
+            UserState state = userStates.get(userPrefix + userId);
+            if (state == null || state == UserState.UNKNOWN) {
+                unknownUsers.add(userId);
+            }
+        }
+        if (!unknownUsers.isEmpty()) {
+            return group + "the sync of member user(s) " + sample(unknownUsers) + " failed, so whether they are "
+                    + "NemakiWare users is not known; the group is not written";
         }
         return null;
     }
 
-    /** Whether the stored group has members the sync would replace. */
-    private static boolean hasMembers(GroupItem group, DirectorySyncConfig config) {
-        boolean users = group.getUsers() != null && !group.getUsers().isEmpty();
-        boolean nested = config.isSyncNestedGroups() && group.getGroups() != null && !group.getGroups().isEmpty();
-        return users || nested;
+    private static List<String> sample(List<String> values) {
+        return values.subList(0, Math.min(3, values.size()));
     }
 
     private void createGroup(String repositoryId, LdapGroup ldapGroup, String groupPrefix, DirectorySyncConfig config) {

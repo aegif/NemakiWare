@@ -58,6 +58,10 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
  * the id (Active Directory), with no members where Active Directory returned them in ranges, and
  * with nested groups read as users where a DN contained the user search base's string.
  *
+ * <p>A group is written only when every member value names exactly one entry the sync read, and
+ * only with the members that are NemakiWare users; anything else refuses the group, so a member it
+ * cannot name keeps whatever membership it has (review round 1 of the fix).
+ *
  * <p>Driven through {@code syncGroups} — the entry point the REST trigger, the preview and the
  * scheduler call — with a stand-in directory in place of the LDAP connection.
  */
@@ -218,25 +222,43 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
-    @DisplayName("a new group without a member attribute is created empty")
-    void aNewGroupWithoutMembersIsCreatedEmpty() {
+    @DisplayName("a new group returned without a member attribute is not created either — empty and unreadable look the same")
+    void aNewGroupWithoutAMemberAttributeIsNotCreated() {
         group("CN=Finance,OU=Groups,DC=example,DC=com", "finance");
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
 
-        ArgumentCaptor<GroupItem> created = ArgumentCaptor.forClass(GroupItem.class);
-        verify(contentService).createGroupItem(any(), eq(REPO), created.capture());
-        assertEquals(List.of(), created.getValue().getUsers());
-        assertEquals("", errors(result), "an empty new group was refused");
+        verify(contentService, never()).createGroupItem(any(), any(), any());
+        assertTrue(errors(result).contains(PREFIX + "finance"), "the group was not reported: " + errors(result));
     }
 
     @Test
-    @DisplayName("a member that is not a user the sync read is reported, and the others are written")
-    void anUnknownMemberIsAWarningNotAWrite() {
+    @DisplayName("a member the sync cannot name refuses the group — whoever it is keeps the membership they have")
+    void aMemberItCannotNameRefusesTheGroup() {
         user("CN=Alice Smith,OU=Users,DC=example,DC=com", "asmith");
-        user("uid=pc1,ou=users,dc=example,dc=com", "pc1");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
         group("CN=Engineering,OU=Groups,DC=example,DC=com", "eng",
-                "CN=Alice Smith,OU=Users,DC=example,DC=com", "uid=pc1,OU=Computers,DC=example,DC=com");
+                "CN=Alice Smith,OU=Users,DC=example,DC=com", "uid=bob,OU=Contractors,DC=example,DC=com");
+        // An administrator added the contractor by hand; the directory's entry for him is outside
+        // the user search, and the synced bob is someone else.
+        stored("eng", List.of("asmith", "bob"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), writes(), "the group was rewritten from the members the sync could name");
+        assertTrue(errors(result).contains(PREFIX + "eng") && errors(result).contains("OU=Contractors"),
+                "the group and the member were not named: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a directory user that is not a NemakiWare user is not written, and the group is")
+    void aDirectoryUserWhoIsNotANemakiWareUserIsNotWritten() {
+        user("CN=Alice Smith,OU=Users,DC=example,DC=com", "asmith");
+        user("CN=Bob Jones,OU=Users,DC=example,DC=com", "bjones");
+        // Users are not created by this sync, and bjones was never created by hand.
+        when(contentService.getUserItemById(REPO, "bjones")).thenReturn(null);
+        group("CN=Engineering,OU=Groups,DC=example,DC=com", "eng",
+                "CN=Alice Smith,OU=Users,DC=example,DC=com", "CN=Bob Jones,OU=Users,DC=example,DC=com");
         stored("eng", List.of(), List.of());
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
@@ -244,15 +266,95 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         List<GroupItem> writes = writes();
         assertEquals(1, writes.size(), "the group was not written: " + errors(result));
         assertEquals(List.of("asmith"), writes.get(0).getUsers(),
-                "a member outside the sync was written as the user its RDN spells");
-        assertTrue(result.getWarnings().stream().anyMatch(w -> (PREFIX + "eng").equals(w.getGroupId())),
+                "an id no NemakiWare user has was written — whoever takes it later gets the group");
+        assertTrue(result.getWarnings().stream().anyMatch(w -> w.getMessage().contains("bjones")),
                 "the member that was not written was not reported");
+    }
+
+    @Test
+    @DisplayName("a member whose user sync failed refuses the group — whether it is a NemakiWare user is not known")
+    void aMemberWhoseUserSyncFailedRefusesTheGroup() {
+        user("CN=Alice Smith,OU=Users,DC=example,DC=com", "asmith");
+        user("CN=Bob Jones,OU=Users,DC=example,DC=com", "bjones");
+        when(contentService.getUserItemById(REPO, "bjones")).thenThrow(new IllegalStateException("store down"));
+        group("CN=Engineering,OU=Groups,DC=example,DC=com", "eng",
+                "CN=Alice Smith,OU=Users,DC=example,DC=com", "CN=Bob Jones,OU=Users,DC=example,DC=com");
+        stored("eng", List.of("asmith", "bjones"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), writes(), "bjones was dropped because his own sync failed");
+        assertTrue(errors(result).contains(PREFIX + "eng"), "the group was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a member entry both searches returned refuses the group")
+    void anEntryBothSearchesReturnedRefusesTheGroup() {
+        user("cn=ops,ou=people,dc=example,dc=com", "ops");
+        group("cn=ops,ou=people,dc=example,dc=com", "ops", "cn=ops,ou=people,dc=example,dc=com");
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "cn=ops,ou=people,dc=example,dc=com");
+        stored("eng", List.of("ops"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(g -> (PREFIX + "eng").equals(g.getGroupId())),
+                "eng was written from an entry that is both a user and a group");
+        assertTrue(errors(result).contains(PREFIX + "eng"), "the group was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a member whose id another user entry also has refuses the group")
+    void twoEntriesWithOneIdRefuseTheGroup() {
+        user("uid=sato,ou=staff,dc=example,dc=com", "sato");
+        user("uid=sato,ou=alumni,dc=example,dc=com", "sato");
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "uid=sato,ou=alumni,dc=example,dc=com");
+        stored("eng", List.of(), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), writes(), "the alumnus was written as the sato who logs in");
+        assertTrue(errors(result).contains(PREFIX + "eng"), "the group was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("two group entries with one id are neither written")
+    void aGroupIdTwoEntriesShareIsNotWritten() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+        group("cn=eng,ou=archive,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).createGroupItem(any(), any(), any());
+        assertTrue(errors(result).contains(PREFIX + "eng"), "the groups were not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a nested group the sync is not writing is not named by its parent, and the parent is written")
+    void aNestedGroupThatWillNotExistIsNotNested() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        LdapGroup big = group("cn=big,ou=groups,dc=example,dc=com", "big");
+        big.setMemberAttributePresent(true);
+        big.setMembersRanged(true);
+        group("cn=all,ou=groups,dc=example,dc=com", "all",
+                "uid=alice,ou=users,dc=example,dc=com", "cn=big,ou=groups,dc=example,dc=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        ArgumentCaptor<GroupItem> created = ArgumentCaptor.forClass(GroupItem.class);
+        verify(contentService).createGroupItem(any(), eq(REPO), created.capture());
+        assertEquals(PREFIX + "all", created.getValue().getGroupId(), "big was created");
+        assertEquals(List.of(), created.getValue().getGroups(), "a group that does not exist was nested");
+        assertEquals(List.of("alice"), created.getValue().getUsers());
+        assertTrue(result.getWarnings().stream().anyMatch(w -> w.getMessage().contains("big")),
+                "the nested group that was not written was not reported");
     }
 
     @Test
     @DisplayName("a nested group is written as a nested group, though its DN contains the user search base's string")
     void aNestedGroupIsANestedGroup() {
-        group("cn=ops,ou=users-archive,ou=groups,dc=example,dc=com", "ops");
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group("cn=ops,ou=users-archive,ou=groups,dc=example,dc=com", "ops", "uid=alice,ou=users,dc=example,dc=com");
         group("cn=eng,ou=groups,dc=example,dc=com", "eng", "cn=ops,ou=users-archive,ou=groups,dc=example,dc=com");
         stored("eng", List.of("ops"), List.of());
 

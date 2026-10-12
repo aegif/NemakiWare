@@ -17,6 +17,8 @@
 package jp.aegif.nemaki.sync.connector;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -115,6 +117,55 @@ class LdapMemberResolverTest {
 
         assertEquals(List.of("alice"), devs.getMemberUserIds());
         assertEquals(List.of("ghost"), devs.getUnresolvedMembers());
+    }
+
+    @Test
+    @DisplayName("an entry both searches returned is ambiguous — neither a user nor a group is written for it")
+    void anEntryBothSearchesReturnedIsAmbiguous() {
+        LdapGroup ops = group("cn=ops,ou=people,dc=x", "ops");
+        LdapGroup eng = group("cn=eng,ou=groups,dc=x", "eng", "cn=ops,ou=people,dc=x");
+        LdapMemberResolver.resolve(List.of(user("cn=ops,ou=people,dc=x", "ops")), List.of(ops, eng));
+
+        assertEquals(List.of(), eng.getMemberUserIds(), "the entry was taken for the user");
+        assertEquals(List.of(), eng.getMemberGroupIds(), "the entry was taken for the group");
+        assertEquals(List.of("cn=ops,ou=people,dc=x"), eng.getAmbiguousMembers());
+    }
+
+    @Test
+    @DisplayName("a member whose id another user entry also has is ambiguous — the two would be one principal")
+    void anIdTwoUserEntriesHaveIsAmbiguous() {
+        // uid=sato in ou=alumni is not the sato who logs in from ou=staff.
+        LdapGroup eng = group("cn=eng,ou=groups,dc=x", "eng", "uid=sato,ou=alumni,dc=x");
+        LdapMemberResolver.resolve(List.of(user("uid=sato,ou=staff,dc=x", "sato"),
+                user("uid=sato,ou=alumni,dc=x", "sato")), List.of(eng));
+
+        assertEquals(List.of(), eng.getMemberUserIds(), "the alumnus was written as the sato who logs in");
+        assertEquals(List.of("uid=sato,ou=alumni,dc=x"), eng.getAmbiguousMembers());
+    }
+
+    @Test
+    @DisplayName("a memberUid that more than one user entry has as its id is ambiguous")
+    void aMemberUidTwoEntriesHaveIsAmbiguous() {
+        LdapGroup devs = group("cn=devs,ou=groups,dc=x", "devs", "sato");
+        LdapMemberResolver.resolve(List.of(user("uid=sato,ou=staff,dc=x", "sato"),
+                user("uid=sato,ou=alumni,dc=x", "sato")), List.of(devs));
+
+        assertEquals(List.of(), devs.getMemberUserIds());
+        assertEquals(List.of("sato"), devs.getAmbiguousMembers());
+    }
+
+    @Test
+    @DisplayName("a group whose id another group entry has is marked, and naming it as a member is ambiguous")
+    void aGroupIdTwoEntriesHaveIsMarked() {
+        LdapGroup eng1 = group("cn=eng,ou=groups,dc=x", "eng");
+        LdapGroup eng2 = group("cn=eng,ou=archive,dc=x", "eng");
+        LdapGroup all = group("cn=all,ou=groups,dc=x", "all", "cn=eng,ou=archive,dc=x");
+        LdapMemberResolver.resolve(List.of(), List.of(eng1, eng2, all));
+
+        assertTrue(eng1.isIdShared() && eng2.isIdShared(), "two entries with one group id were not marked");
+        assertFalse(all.isIdShared());
+        assertEquals(List.of(), all.getMemberGroupIds());
+        assertEquals(List.of("cn=eng,ou=archive,dc=x"), all.getAmbiguousMembers());
     }
 
     @Test

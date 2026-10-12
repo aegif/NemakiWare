@@ -42,6 +42,13 @@ public class LdapGroup {
     /** Member values that are neither a user nor a group this sync read. */
     private List<String> unresolvedMembers = new ArrayList<>();
     /**
+     * Member values that could name more than one entry: an entry both searches returned, or an id
+     * that more than one entry has.
+     */
+    private List<String> ambiguousMembers = new ArrayList<>();
+    /** Whether another group entry has this group's id, so which entry the group is is not known. */
+    private boolean idShared;
+    /**
      * Whether the entry carried the member attribute at all. Absent is what an empty group looks
      * like — and what a group whose members the bind account may not read looks like too.
      */
@@ -116,6 +123,22 @@ public class LdapGroup {
 
     public void setUnresolvedMembers(List<String> unresolvedMembers) {
         this.unresolvedMembers = unresolvedMembers;
+    }
+
+    public List<String> getAmbiguousMembers() {
+        return ambiguousMembers;
+    }
+
+    public void setAmbiguousMembers(List<String> ambiguousMembers) {
+        this.ambiguousMembers = ambiguousMembers;
+    }
+
+    public boolean isIdShared() {
+        return idShared;
+    }
+
+    public void setIdShared(boolean idShared) {
+        this.idShared = idShared;
     }
 
     public boolean isMemberAttributePresent() {
