@@ -19855,7 +19855,7 @@ CONTROLS = [
         replace='',
         test='PackageIntegrityIsCheckedNotAssumedTest',
         expect_fail=['aFileOnlyInTheLocalHeadersIsRefused', 'aFileOnlyInTheCentralDirectoryIsRefused',
-                     'anEntryWhoseTwoRecordsHoldDifferentBytesIsRefused', 'aLongerCentralRecordIsRefusedWhereTheLocalBytesEnd'],
+                     'anEntryWhoseTwoRecordsHoldDifferentBytesIsRefused', 'aLongerCentralRecordIsRefusedWhereTheLocalBytesEnd', 'aDuplicateInTheCentralDirectoryIsADuplicate'],
     ),
     dict(
         id='QS4',
@@ -20404,7 +20404,7 @@ CONTROLS = [
         find='        if (target.malformed()) {\n            return new AnchoredRoot(null,\n                    Section.malformed("ers data object", "anchor-target-checkpoint.json"));\n        }',
         replace='        if (target.malformed()) {\n            return new AnchoredRoot(null, null);\n        }',
         test='PresenceIsNotVerificationTest',
-        expect_fail=['aMalformedAnchorTargetFailsTheDataObject'],
+        expect_fail=['aMalformedAnchorTargetFailsTheDataObject', 'aMalformedTargetFailsTheRenewalChainToo'],
     ),
     dict(
         id='SU4',
