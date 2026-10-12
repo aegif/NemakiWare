@@ -21609,7 +21609,7 @@ CONTROLS = [
     ),
     dict(
         id='XH4',
-        what="the DLQ retry asks get() again whether its connector exists — a row the index cannot see reads as 'not a file-share row' and the plain replay imports an empty document (the SA lock's retry side, which no control measured — batch 9 review, P3)",
+        what="the DLQ retry asks get() again whether its connector exists — the index-free question the 9-6 review gave the retry is gone, and its answer depends on the index again (the SA lock's retry side, which no control measured — batch 9 review, P3)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/rest/ingest/IngestDlqController.java',
         find='                        exists = connectorDefinitionService.existsIndexFree(request.getConnectorId());\n',

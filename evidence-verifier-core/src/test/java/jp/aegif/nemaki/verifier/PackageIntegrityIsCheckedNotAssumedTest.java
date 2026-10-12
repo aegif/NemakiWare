@@ -2463,7 +2463,8 @@ class PackageIntegrityIsCheckedNotAssumedTest {
      * The two shapes only the duplicate checks see. In the fixtures above the tables also disagree
      * — a name only in one of them — so the archive is refused even with a duplicate check gone,
      * and those locks tell the arms apart only by the refusal's kind (batch 9 review, P3). Here
-     * the tables agree on every name and every byte: without its own check, each archive is read.
+     * the tables agree on the set of names and on the bytes a streaming read keeps (the last of a
+     * repeated local name): without its own check, each archive is read.
      */
     @Test
     @DisplayName("a name written twice in the local headers is refused when the central directory lists only the second")
