@@ -677,7 +677,14 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
 
         existingGroup.setName(ldapGroup.getGroupName());
         existingGroup.setUsers(users);
-        existingGroup.setGroups(subGroups);
+        // Nested groups are LDAP's to replace only when they are synced — the same condition
+        // hasGroupChanges compares them under. Writing the empty list otherwise removed every
+        // nested group an administrator had added, and every permission granted through them.
+        // Until 3.4.1 this method never reached the store: the groups it was handed came from
+        // the group list, which carried no revision, so every update was refused.
+        if (config.isSyncNestedGroups()) {
+            existingGroup.setGroups(subGroups);
+        }
         existingGroup.setModifier("system");
         existingGroup.setModified(new GregorianCalendar());
         

@@ -42,7 +42,6 @@ import com.ibm.cloud.cloudant.v1.model.ViewResultRow;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.model.GroupItem;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * The group lists read the documents the view emits, not a second copy (3.4.1).
@@ -51,8 +50,14 @@ import tools.jackson.databind.ObjectMapper;
  * {@code include_docs=true} on top, so CouchDB looked every group up again by id: 3.0 s for
  * 3,041 groups against 0.1 s for the values (nb33, 2026-10-12). The user list reads all groups
  * on every request to show memberships, so it took 3.3 s for a page of twenty — and the group
- * search and the permission screen paid the same. The decoded items must be the same, and the
- * fail-closed answers must stay: a row that carries no document, or will not decode, refuses.
+ * search and the permission screen paid the same. The fail-closed answers stay: a row that
+ * carries no document, or will not decode, refuses.
+ *
+ * <p>The items are NOT the same as before in one respect, on purpose: they now carry the
+ * document's {@code _id} and {@code _rev}. include_docs read the SDK Document's properties, which
+ * hold neither (measured on core's classpath), so every caller that updated a listed group was
+ * refused for want of a revision — on 3.4.0 the Jersey user API answered 500 for {@code groups},
+ * and the LDAP sync wrote no group update (3.4.1 batch 7, review round 1).
  *
  * <p>The fixture is a {@code groupItemsById} row value as nb33 emitted it.
  */
@@ -80,9 +85,10 @@ class GroupListsReadTheEmittedDocumentsTest {
         delegate = new UserGroupDaoDelegate(pool, new DaoHelper());
     }
 
+    /** Parsed the way production gets it: by the Cloudant SDK's own Gson, not by Jackson. */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> emitted() {
-        return new ObjectMapper().readValue(EMITTED, Map.class);
+        return com.ibm.cloud.sdk.core.util.GsonSingleton.getGson().fromJson(EMITTED, Map.class);
     }
 
     private static ViewResultRow rowWithValue(Object value) {
@@ -102,6 +108,9 @@ class GroupListsReadTheEmittedDocumentsTest {
 
     private void assertTheEmittedGroup(GroupItem group) {
         assertEquals("b2bddf46cd4a3d09ae678809f78bc404", group.getId());
+        // The revision too: callers update the groups they listed (the Jersey user API's
+        // memberships, the LDAP directory sync), and the DAO refuses an update without one.
+        assertEquals("2-1271aa5fc9afc5e48e71d198c7e72ebb", group.getRevision());
         assertEquals("c17082x55g21", group.getGroupId());
         assertEquals("c55-21", group.getName());
         assertEquals(List.of("alice"), group.getUsers());
