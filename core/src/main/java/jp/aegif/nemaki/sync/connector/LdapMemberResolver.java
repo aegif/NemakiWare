@@ -18,9 +18,7 @@
  ******************************************************************************/
 package jp.aegif.nemaki.sync.connector;
 
-import java.text.Normalizer;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -83,7 +81,10 @@ public final class LdapMemberResolver {
      * that it does (R151): the group of an entry both searches returned, a group id two group
      * entries share, and a group whose DN a value no search returned as written could still be —
      * {@link LdapName} does not take {@code commonName=} or {@code 2.5.4.3=} for {@code cn=}, nor
-     * a value written in hex for the same value written out, though the directory does.
+     * a value written in hex for the same value written out, though the directory does. Such a
+     * value is compared with the groups' DNs AVA by AVA ({@link #couldBeTheSame}), and a value no
+     * DN could be parsed from, in a group whose other values are DNs, could be any group
+     * ({@code anyGroupCouldBeNamed} — R153 (b)).
      */
     public static void resolve(List<LdapUser> users, List<LdapGroup> groups) {
         Map<LdapName, String> userByDn = new HashMap<>();
@@ -97,18 +98,23 @@ public final class LdapMemberResolver {
         }
         Map<LdapName, String> groupByDn = new HashMap<>();
         Map<String, Integer> groupIdCount = new HashMap<>();
-        // The groups by the shape of their DNs, for the values no search returned as written (R151).
+        // The groups by the shape of their DNs, for the values no search returned as written (R151, R153 (b)):
+        // the shapes compared value by value are indexed; the rest are compared one by one.
         Map<String, List<String>> groupsByShape = new HashMap<>();
-        List<Map.Entry<List<List<String>>, String>> groupShapes = new ArrayList<>();
+        List<Map.Entry<List<List<Ava>>, String>> groupShapes = new ArrayList<>();
+        List<Map.Entry<List<List<Ava>>, String>> unkeyedShapes = new ArrayList<>();
         for (LdapGroup group : groups) {
             LdapName dn = parse(group.getDn());
             if (dn != null) {
                 groupByDn.put(dn, group.getGroupId());
                 if (group.getGroupId() != null) {
-                    List<List<String>> shape = shape(dn);
+                    List<List<Ava>> shape = shape(dn);
                     groupShapes.add(Map.entry(shape, group.getGroupId()));
-                    if (!hasAnyValue(shape)) {
-                        groupsByShape.computeIfAbsent(key(shape), k -> new ArrayList<>()).add(group.getGroupId());
+                    String key = key(shape);
+                    if (key != null) {
+                        groupsByShape.computeIfAbsent(key, k -> new ArrayList<>()).add(group.getGroupId());
+                    } else {
+                        unkeyedShapes.add(Map.entry(shape, group.getGroupId()));
                     }
                 }
             }
@@ -123,9 +129,16 @@ public final class LdapMemberResolver {
             List<String> ambiguousGroups = new ArrayList<>();
             List<String> ambiguousGroupIds = new ArrayList<>();
             int writtenDifferently = 0;
+            boolean unparsedAmongDns = false;
+            boolean anyDn = false;
             List<String> values = group.getMemberDns() == null ? List.of() : group.getMemberDns();
             for (String value : values) {
                 LdapName dn = parse(value);
+                if (dn != null) {
+                    anyDn = true;
+                } else if (value != null && value.indexOf('=') >= 0) {
+                    unparsedAmongDns = true;
+                }
                 if (dn == null) {
                     // Not a DN: the member attribute holds ids (memberUid). It names a member only
                     // if this sync read a user with that id — and only one.
@@ -161,7 +174,7 @@ public final class LdapMemberResolver {
                     // No search returned this DN as written; the directory may still read it as one of
                     // the groups, written differently. Not named — the group is refused all the same —
                     // but a nesting of that group is not known to be gone.
-                    List<String> could = groupsItCouldBe(dn, groupsByShape, groupShapes);
+                    List<String> could = groupsItCouldBe(dn, groupsByShape, groupShapes, unkeyedShapes);
                     if (!could.isEmpty()) {
                         writtenDifferently++;
                         for (String id : could) {
@@ -177,6 +190,9 @@ public final class LdapMemberResolver {
             group.setAmbiguousGroupMembers(ambiguousGroups);
             group.setAmbiguousGroupIds(ambiguousGroupIds);
             group.setIdShared(groupIdCount.get(group.getGroupId()) > 1);
+            // A value that looks like a DN but could not be parsed as one, among values that are DNs, is not
+            // compared with anything: it could be any group (R153 (b)).
+            group.setAnyGroupCouldBeNamed(anyDn && unparsedAmongDns);
             if (!unresolved.isEmpty() || !ambiguous.isEmpty() || !ambiguousGroups.isEmpty()) {
                 log.info("Group " + group.getGroupId() + ": " + unresolved.size() + " member value(s) are not a "
                         + "user or group this sync read (" + writtenDifferently + " of them could be a group it "
@@ -205,18 +221,48 @@ public final class LdapMemberResolver {
         }
     }
 
-    /** The groups whose DNs the directory could take this DN for (see {@link #shape}). */
+    /**
+     * The attribute types whose values are compared here, by their names and OIDs: the RFC 4519 types a DN
+     * is written with, all matched by caseIgnoreMatch (dc by caseIgnoreIA5Match). The value of any other type
+     * is not compared — the type may be an alias or OID of one of these, or have a matching rule of its own
+     * (generalizedTime, objectIdentifier, integer, a server's own) — so it could be any value (R153 (b)).
+     */
+    private static final Map<String, String> CASE_IGNORE_TYPES = Map.ofEntries(
+            Map.entry("cn", "cn"), Map.entry("commonname", "cn"), Map.entry("2.5.4.3", "cn"),
+            Map.entry("uid", "uid"), Map.entry("userid", "uid"), Map.entry("0.9.2342.19200300.100.1.1", "uid"),
+            Map.entry("ou", "ou"), Map.entry("organizationalunitname", "ou"), Map.entry("2.5.4.11", "ou"),
+            Map.entry("o", "o"), Map.entry("organizationname", "o"), Map.entry("2.5.4.10", "o"),
+            Map.entry("dc", "dc"), Map.entry("domaincomponent", "dc"), Map.entry("0.9.2342.19200300.100.1.25", "dc"),
+            Map.entry("c", "c"), Map.entry("countryname", "c"), Map.entry("2.5.4.6", "c"),
+            Map.entry("l", "l"), Map.entry("localityname", "l"), Map.entry("2.5.4.7", "l"),
+            Map.entry("st", "st"), Map.entry("stateorprovincename", "st"), Map.entry("2.5.4.8", "st"),
+            Map.entry("sn", "sn"), Map.entry("surname", "sn"), Map.entry("2.5.4.4", "sn"));
+
+    /** One attribute value assertion of an RDN: the type from the table, or null; the folded value, or null (any). */
+    private static final class Ava {
+        final String type;
+        final String value;
+
+        Ava(String type, String value) {
+            this.type = type;
+            this.value = value;
+        }
+    }
+
+    /** The groups whose DNs the directory could take this DN for (see {@link #couldBeTheSame}). */
     private static List<String> groupsItCouldBe(LdapName dn, Map<String, List<String>> groupsByShape,
-            List<Map.Entry<List<List<String>>, String>> groupShapes) {
-        List<List<String>> shape = shape(dn);
+            List<Map.Entry<List<List<Ava>>, String>> groupShapes, List<Map.Entry<List<List<Ava>>, String>> unkeyedShapes) {
+        List<List<Ava>> shape = shape(dn);
+        String key = key(shape);
         List<String> could = new ArrayList<>();
-        if (!hasAnyValue(shape)) {
-            for (String id : groupsByShape.getOrDefault(key(shape), List.of())) {
+        if (key != null) {
+            // Two shapes compared value by value meet only on the same string; the others are paired one by one.
+            for (String id : groupsByShape.getOrDefault(key, List.of())) {
                 addOnce(could, id);
             }
         }
-        for (Map.Entry<List<List<String>>, String> group : groupShapes) {
-            if ((hasAnyValue(shape) || hasAnyValue(group.getKey())) && couldBeTheSame(shape, group.getKey())) {
+        for (Map.Entry<List<List<Ava>>, String> group : key != null ? unkeyedShapes : groupShapes) {
+            if (couldBeTheSame(shape, group.getKey())) {
                 addOnce(could, group.getValue());
             }
         }
@@ -224,83 +270,135 @@ public final class LdapMemberResolver {
     }
 
     /**
-     * A DN as the values of its RDNs, without the attribute names, each RDN's values folded and
-     * sorted: the same entry written with an attribute's alias or OID has the same shape. A value
-     * written in hex is null — it could be any value. Any two DNs the directory takes for the same
-     * entry have shapes that {@link #couldBeTheSame} matches; DNs it takes for different entries
-     * can match too, which is the side this errs on (R151).
+     * A DN as its RDNs (right to left), each as its AVAs: the type when it is in {@link #CASE_IGNORE_TYPES},
+     * by any of its names or OIDs (an {@code OID.} prefix ignored); the value, when the type is one of those
+     * and the value is ASCII, with its case folded and everything but letters and digits dropped — what
+     * caseIgnoreMatch compares, and more. Any other value is null: it could be any value.
      */
-    private static List<List<String>> shape(LdapName dn) {
-        List<List<String>> shape = new ArrayList<>(dn.size());
+    private static List<List<Ava>> shape(LdapName dn) {
+        List<List<Ava>> shape = new ArrayList<>(dn.size());
         for (Rdn rdn : dn.getRdns()) {
-            List<String> values = new ArrayList<>();
+            List<Ava> avas = new ArrayList<>();
             try {
                 NamingEnumeration<? extends Attribute> attributes = rdn.toAttributes().getAll();
                 while (attributes.hasMore()) {
-                    NamingEnumeration<?> each = attributes.next().getAll();
+                    Attribute attribute = attributes.next();
+                    String type = canonicalType(attribute.getID());
+                    NamingEnumeration<?> each = attribute.getAll();
                     while (each.hasMore()) {
                         Object value = each.next();
-                        values.add(value instanceof String ? fold((String) value) : null);
+                        avas.add(new Ava(type, type != null && value instanceof String ? fold((String) value) : null));
                     }
                 }
             } catch (NamingException unreadable) {
-                values.add(null);
+                avas.clear();
+                avas.add(new Ava(null, null));
             }
-            values.sort(Comparator.nullsFirst(Comparator.naturalOrder()));
-            shape.add(values);
+            shape.add(avas);
         }
         return shape;
     }
 
+    private static String canonicalType(String id) {
+        if (id == null) {
+            return null;
+        }
+        String name = id.trim().toLowerCase(Locale.ROOT);
+        if (name.startsWith("oid.")) {
+            name = name.substring(4);
+        }
+        return CASE_IGNORE_TYPES.get(name);
+    }
+
     /**
-     * A value as loosely as a directory's matching rules could compare it: compatibility forms and
-     * case folded (NFKC; lower, upper and lower case, so that ß and SS meet), and everything but
-     * letters and digits dropped — spaces, punctuation, characters a matching rule maps to nothing.
+     * An ASCII value as caseIgnoreMatch could take it: case folded, and everything but letters and digits
+     * dropped (more than the insignificant spaces the rule drops). A value with anything outside ASCII is
+     * null — what the directory's string preparation makes of it is not emulated here.
      */
     private static String fold(String value) {
-        String folded = Normalizer.normalize(value, Normalizer.Form.NFKC)
-                .toLowerCase(Locale.ROOT).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT);
-        folded = Normalizer.normalize(folded, Normalizer.Form.NFKC);
-        StringBuilder out = new StringBuilder(folded.length());
-        folded.codePoints().filter(Character::isLetterOrDigit).forEach(out::appendCodePoint);
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c > 0x7F) {
+                return null;
+            }
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                out.append(c);
+            } else if (c >= 'A' && c <= 'Z') {
+                out.append((char) (c - 'A' + 'a'));
+            }
+        }
         return out.toString();
     }
 
-    /** Whether the shape has a value that could be any value (written in hex). */
-    private static boolean hasAnyValue(List<List<String>> shape) {
-        for (List<String> values : shape) {
-            if (values.contains(null)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean couldBeTheSame(List<List<String>> a, List<List<String>> b) {
+    /**
+     * Whether the directory could take the two DNs for one entry: as many RDNs, and at each position an RDN
+     * whose AVAs can be paired, each pair of types not two different ones of the table, and each pair of values
+     * not two different folded ones. Every pair the directory takes for one entry is paired so; others can be too,
+     * which is the side this errs on (R153 (b)).
+     */
+    private static boolean couldBeTheSame(List<List<Ava>> a, List<List<Ava>> b) {
         if (a.size() != b.size()) {
             return false;
         }
         for (int i = 0; i < a.size(); i++) {
-            List<String> x = a.get(i);
-            List<String> y = b.get(i);
-            if (x.size() != y.size()) {
-                return false;
-            }
-            if (!x.contains(null) && !y.contains(null) && !x.equals(y)) {
+            if (!rdnsCouldBeTheSame(a.get(i), b.get(i))) {
                 return false;
             }
         }
         return true;
     }
 
-    /** A shape with no value written in hex, as one string (folded values hold letters and digits only). */
-    private static String key(List<List<String>> shape) {
-        StringBuilder key = new StringBuilder();
-        for (List<String> values : shape) {
-            key.append('\u0001');
-            for (String value : values) {
-                key.append(value).append('\u0000');
+    private static boolean rdnsCouldBeTheSame(List<Ava> x, List<Ava> y) {
+        if (x.size() != y.size()) {
+            return false;
+        }
+        if (x.size() > 6) {
+            return true;
+        }
+        return pairs(x, y, 0, new boolean[y.size()]);
+    }
+
+    /** Whether the AVAs of x from the i-th on can each be paired with a different, unused AVA of y. */
+    private static boolean pairs(List<Ava> x, List<Ava> y, int i, boolean[] used) {
+        if (i == x.size()) {
+            return true;
+        }
+        for (int j = 0; j < y.size(); j++) {
+            if (!used[j] && avasCouldBeTheSame(x.get(i), y.get(j))) {
+                used[j] = true;
+                if (pairs(x, y, i + 1, used)) {
+                    return true;
+                }
+                used[j] = false;
             }
+        }
+        return false;
+    }
+
+    private static boolean avasCouldBeTheSame(Ava p, Ava q) {
+        if (p.type != null && q.type != null && !p.type.equals(q.type)) {
+            return false;
+        }
+        return p.value == null || q.value == null || p.value.equals(q.value);
+    }
+
+    /**
+     * A shape whose every AVA has a type of the table and a folded value, as one string — two such shapes could
+     * be the same entry only when their strings are equal; null for any other shape.
+     */
+    private static String key(List<List<Ava>> shape) {
+        StringBuilder key = new StringBuilder();
+        for (List<Ava> rdn : shape) {
+            List<String> avas = new ArrayList<>();
+            for (Ava ava : rdn) {
+                if (ava.type == null || ava.value == null) {
+                    return null;
+                }
+                avas.add(ava.type + "=" + ava.value);
+            }
+            avas.sort(null);
+            key.append(String.join("+", avas)).append(',');
         }
         return key.toString();
     }

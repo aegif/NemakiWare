@@ -25,14 +25,19 @@ import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+
+import javax.naming.NamingException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +52,7 @@ import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.sync.connector.LdapDirectoryConnector;
 import jp.aegif.nemaki.sync.model.DirectorySyncConfig;
 import jp.aegif.nemaki.sync.model.DirectorySyncResult;
+import jp.aegif.nemaki.sync.model.DirectorySyncResult.SyncStatus;
 import jp.aegif.nemaki.sync.model.LdapGroup;
 import jp.aegif.nemaki.sync.model.LdapUser;
 import jp.aegif.nemaki.util.PropertyManager;
@@ -100,7 +106,16 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         when(properties.readValue(PropertyKey.DIRECTORY_SYNC_LDAP_BIND_PASSWORD)).thenReturn("secret");
         when(directory.searchUsers()).thenReturn(ldapUsers);
         when(directory.searchGroups()).thenReturn(ldapGroups);
-        when(contentService.getGroupItems(REPO)).thenReturn(stored);
+        // The list is read from the store as it is now — a sync reads it again after the user side has written
+        // (R153 (a)) — in the order the groups were stored.
+        when(contentService.getGroupItems(REPO)).thenAnswer(list -> {
+            List<GroupItem> now = new ArrayList<>();
+            for (GroupItem group : stored) {
+                GroupItem held = persisted.get(group.getGroupId());
+                now.add(held == null ? group : copy(held));
+            }
+            return now;
+        });
         // Every directory user already exists (user() says so), and users are not updated: this
         // measures groups. No other id is a user, so creating a group meets no user with its id.
         // Where a new group goes: .system/groups.
@@ -113,11 +128,12 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         systemChildren.add(groups);
         when(contentService.getChildren(REPO, "system-folder")).thenReturn(systemChildren);
 
-        // A write stores a copy, and a read past the cache answers what is stored (R151, R152).
+        // A write stores a copy — refused, as CouchDB refuses it, when it carries a revision the store no longer
+        // has — and a read past the cache answers what is stored (R151, R152, R153 (a)).
         doAnswer(write -> {
             Object content = write.getArgument(2);
             if (content instanceof GroupItem) {
-                persisted.put(((GroupItem) content).getGroupId(), copy((GroupItem) content));
+                store((GroupItem) content);
             }
             return content;
         }).when(contentService).update(any(), eq(REPO), any());
@@ -139,6 +155,20 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         };
         sync.setContentService(contentService);
         sync.setPropertyManager(properties);
+    }
+
+    /** Stores a copy of the group under the next revision — refused when it carries a revision that is not the store's. */
+    private void store(GroupItem group) {
+        GroupItem held = persisted.get(group.getGroupId());
+        if (held != null && held.getRevision() != null && !held.getRevision().equals(group.getRevision())) {
+            throw new IllegalStateException("conflict: " + group.getGroupId() + " is at " + held.getRevision()
+                    + ", the write carried " + group.getRevision());
+        }
+        GroupItem stored = copy(group);
+        String at = held == null ? group.getRevision() : held.getRevision();
+        int n = at == null ? 0 : Integer.parseInt(at.substring(0, at.indexOf('-')));
+        stored.setRevision((n + 1) + "-abc");
+        persisted.put(group.getGroupId(), stored);
     }
 
     private static GroupItem copy(GroupItem group) {
@@ -187,7 +217,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         doAnswer(write -> {
             GroupItem group = write.getArgument(2);
             if (afterStoring) {
-                persisted.put(group.getGroupId(), copy(group));
+                store(group);
             }
             throw new IllegalStateException(afterStoring ? "change log down" : "store down");
         }).when(contentService).update(any(), eq(REPO),
@@ -202,7 +232,21 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
             if (writes.getAndIncrement() < failing) {
                 throw new IllegalStateException("store down");
             }
-            persisted.put(group.getGroupId(), copy(group));
+            store(group);
+            return group;
+        }).when(contentService).update(any(), eq(REPO),
+                argThat(content -> content instanceof GroupItem && (PREFIX + id).equals(((GroupItem) content).getGroupId())));
+    }
+
+    /** The first writes of the group store it; the later ones fail before storing. */
+    private void failWritesAfter(String id, int storing) {
+        java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(write -> {
+            GroupItem group = write.getArgument(2);
+            if (writes.getAndIncrement() >= storing) {
+                throw new IllegalStateException("store down");
+            }
+            store(group);
             return group;
         }).when(contentService).update(any(), eq(REPO),
                 argThat(content -> content instanceof GroupItem && (PREFIX + id).equals(((GroupItem) content).getGroupId())));
@@ -1337,7 +1381,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         assertEquals(List.of("alice"), p.getUsers(),
                 "alice, whom LDAP names in p, lost p's permissions with the nesting (or dave, whom it does not, gained them)");
         assertEquals(List.of("alice", "dave"), the(writes(), "g").getUsers());
-        assertTrue(warningsOf(result, "p").contains("written into it"), "the member written in was not reported: "
+        assertTrue(warningsOf(result, "p").contains("put back"), "the member put back was not reported: "
                 + warnings(result));
     }
 
@@ -1405,6 +1449,369 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
                 "g gained dave, who reaches p");
         assertTrue(warningsOf(result, "g").contains(PREFIX + "p"), "the held-back member was not reported: "
+                + warnings(result));
+    }
+
+
+    // ---------------------------------------------------------------- R153 (a): the users this sync creates (batch 13)
+
+    private static final String CAROL = "uid=carol,ou=users,dc=example,dc=com";
+
+    /** carol is a directory user NemakiWare does not have: this sync creates her. */
+    private void carolIsNew() {
+        createdUsersGoIntoUsers();
+        user(CAROL, "carol");
+        when(contentService.getUserItemById(REPO, "carol")).thenReturn(null);
+    }
+
+    @Test
+    @DisplayName("a sync that cannot read the groups from the directory creates no one — it stops before writing any user")
+    void aGroupSearchThatFailsCreatesNoOne() throws Exception {
+        carolIsNew();
+        when(directory.searchGroups()).thenThrow(new NamingException("directory down"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(SyncStatus.FAILED, result.getStatus());
+        verify(contentService, never()).createUserItem(any(), any(), any(UserItem.class));
+    }
+
+    @Test
+    @DisplayName("a sync that cannot read NemakiWare's group list creates no one")
+    void anUnreadableGroupListCreatesNoOne() {
+        carolIsNew();
+        group(G_DN, "g", CAROL);
+        when(contentService.getGroupItems(REPO)).thenReturn(null);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(SyncStatus.FAILED, result.getStatus());
+        verify(contentService, never()).createUserItem(any(), any(), any(UserItem.class));
+    }
+
+    @Test
+    @DisplayName("before a user is created, her id is taken out of the groups of this sync that list it from before")
+    void anOldIdIsTakenOutBeforeTheUserIsCreated() {
+        carolIsNew();
+        user(ALICE, "alice");
+        group(G_DN, "g", ALICE, CONTRACTOR);
+        stored("g", List.of("alice", "carol"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), persisted.get(PREFIX + "g").getUsers(),
+                "carol, created now, was left in a group LDAP does not let the sync write");
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(contentService);
+        order.verify(contentService).update(any(), eq(REPO),
+                argThat(content -> content instanceof GroupItem && (PREFIX + "g").equals(((GroupItem) content).getGroupId())));
+        order.verify(contentService).createUserItem(any(), eq(REPO), any(UserItem.class));
+        assertTrue(warningsOf(result, "g").contains("taken out"), "the id taken out was not reported: " + warnings(result));
+    }
+
+    @Test
+    @DisplayName("a user whose old id cannot be taken out of a group is not created this sync")
+    void aUserWhoseOldIdCannotBeTakenOutIsNotCreated() {
+        carolIsNew();
+        user(ALICE, "alice");
+        group(G_DN, "g", ALICE, CONTRACTOR);
+        stored("g", List.of("alice", "carol"), List.of());
+        failWrites("g", false);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).createUserItem(any(), any(), any(UserItem.class));
+        assertTrue(errors(result).contains(PREFIX + "g") && errors(result).contains("could not be taken out"),
+                "the id left in the group was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a group write that fails after the user was created leaves no old id of hers in the group")
+    void aGroupWriteThatFailsLeavesNoOldIdOfACreatedUser() {
+        carolIsNew();
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        group(G_DN, "g", ALICE, DAVE);
+        stored("g", List.of("alice", "carol"), List.of());
+        // Taking carol out stores; writing g's members fails before storing.
+        failWritesAfter("g", 1);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), persisted.get(PREFIX + "g").getUsers(),
+                "carol's old id stayed in g after its write failed: she gains it though LDAP does not name her there");
+        assertTrue(errors(result).contains(PREFIX + "g"), "the failed write was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("the groups are read again after the users are synced — a write from the list read before carries a revision the store no longer has")
+    void theGroupsAreReadAgainAfterTheUsers() {
+        carolIsNew();
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        group(G_DN, "g", ALICE, DAVE);
+        stored("g", List.of("alice", "carol"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals("", errors(result));
+        assertEquals(List.of("alice", "dave"), persisted.get(PREFIX + "g").getUsers());
+    }
+
+    @Test
+    @DisplayName("a user stored before a later step of her creation failed is a member — read back, she is there")
+    void aUserStoredBeforeALaterStepFailedIsAMember() {
+        createdUsersGoIntoUsers();
+        user(CAROL, "carol");
+        Set<String> created = new HashSet<>();
+        when(contentService.getUserItemById(REPO, "carol"))
+                .thenAnswer(read -> created.contains("carol") ? mock(UserItem.class) : null);
+        doAnswer(create -> {
+            created.add("carol");
+            throw new IllegalStateException("change log down");
+        }).when(contentService).createUserItem(any(), eq(REPO), any(UserItem.class));
+        group(G_DN, "g", CAROL);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("carol"), the(creates(), "g").getUsers(), "a user who was stored was taken for one who was not");
+        assertTrue(result.getWarnings().stream().anyMatch(w -> w.getMessage().contains("was stored")),
+                "the later failure was not reported: " + warnings(result));
+    }
+
+    @Test
+    @DisplayName("a user whose creation failed and who is not there is no member — and the group naming her is still written")
+    void aUserNotStoredIsNoMemberAndRefusesNothing() {
+        createdUsersGoIntoUsers();
+        user(ALICE, "alice");
+        user(CAROL, "carol");
+        when(contentService.getUserItemById(REPO, "carol")).thenReturn(null);
+        doAnswer(create -> {
+            throw new IllegalStateException("store down");
+        }).when(contentService).createUserItem(any(), eq(REPO), any(UserItem.class));
+        group(G_DN, "g", ALICE, CAROL);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), the(creates(), "g").getUsers());
+        assertTrue(!errors(result).contains(PREFIX + "g"), "a member read as absent refused the group: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a second directory entry with an id already seen is not looked up or created again")
+    void aSecondEntryWithTheSameIdIsCreatedOnce() {
+        createdUsersGoIntoUsers();
+        user(CAROL, "carol");
+        user("uid=carol,ou=archive,dc=example,dc=com", "carol");
+        when(contentService.getUserItemById(REPO, "carol")).thenReturn(null);
+
+        sync.syncGroups(REPO, false);
+
+        verify(contentService, times(1)).createUserItem(any(), eq(REPO), any(UserItem.class));
+    }
+
+    // ---------------------------------------------------------------- R154: the members put back (batch 13)
+
+    private static final String X_DN = "cn=x,ou=groups,dc=example,dc=com";
+    private static final String Y_DN = "cn=y,ou=groups,dc=example,dc=com";
+    private static final String Z_DN = "cn=z,ou=groups,dc=example,dc=com";
+    private static final String BOB = "uid=bob,ou=users,dc=example,dc=com";
+
+    /** LDAP took y out of x and x out of p; p names alice itself (and someone outside the search). */
+    private void aliceReachesPThroughXAndY(boolean pFirst) {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        if (pFirst) {
+            group(P_DN, "p", ALICE, CONTRACTOR);
+        }
+        group(X_DN, "x", BOB);
+        if (!pFirst) {
+            group(P_DN, "p", ALICE, CONTRACTOR);
+        }
+        group(Y_DN, "y", ALICE);
+        stored("p", List.of(), List.of(PREFIX + "x"));
+        stored("x", List.of("bob"), List.of(PREFIX + "y"));
+        stored("y", List.of("alice"), List.of());
+    }
+
+    @Test
+    @DisplayName("the member LDAP names in a group is put back before the nesting she reached it through is removed — x read first")
+    void aMemberIsPutBackWhenTheGroupBelowIsReadFirst() {
+        aliceReachesPThroughXAndY(false);
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
+                "alice, whom LDAP names in p, lost p's permissions: p was written after x let go of y");
+        assertEquals(List.of(), persisted.get(PREFIX + "p").getGroups());
+    }
+
+    @Test
+    @DisplayName("the same when p is read first — the order the directory returns the groups in decides nothing")
+    void aMemberIsPutBackWhenTheGroupAboveIsReadFirst() {
+        aliceReachesPThroughXAndY(true);
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
+                "alice, whom LDAP names in p, lost p's permissions");
+    }
+
+    @Test
+    @DisplayName("a nesting removed further down puts back, in the group above, the members LDAP names there")
+    void aMemberIsPutBackInTheGroupAboveTheRemovedNesting() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // p still nests x in LDAP; LDAP took y out of x.
+        group(P_DN, "p", ALICE, CONTRACTOR, X_DN);
+        group(X_DN, "x", BOB);
+        group(Y_DN, "y", ALICE);
+        stored("p", List.of(), List.of(PREFIX + "x"));
+        stored("x", List.of("bob"), List.of(PREFIX + "y"));
+        stored("y", List.of("alice"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), persisted.get(PREFIX + "x").getGroups());
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
+                "alice, whom LDAP names in p, lost p when y was taken out of x");
+    }
+
+    @Test
+    @DisplayName("a member LDAP names in a group through a group it nests is put back too")
+    void aMemberNamedThroughANestedGroupIsPutBack() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // LDAP: p nests z, and z names bob; p no longer nests x, where bob is.
+        group(P_DN, "p", ALICE, CONTRACTOR, Z_DN);
+        group(Z_DN, "z", BOB);
+        group(X_DN, "x", BOB);
+        stored("p", List.of("alice"), List.of(PREFIX + "x"));
+        stored("x", List.of("bob"), List.of());
+        stored("z", List.of("bob"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("bob"),
+                "bob, whom LDAP names in p through z, lost p when x was taken out — p is refused, so it does not nest z");
+    }
+
+    @Test
+    @DisplayName("a member whose lookup failed is put back — she reached the group already")
+    void aMemberWhoseLookupFailedIsPutBack() {
+        aliceReachesPThroughXAndY(false);
+        when(contentService.getUserItemById(REPO, "alice")).thenThrow(new IllegalStateException("store down"));
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
+                "alice, whose lookup failed, lost p's permissions");
+    }
+
+    @Test
+    @DisplayName("a user the sync created is not put back — she reached nothing before she existed")
+    void aUserTheSyncCreatedIsNotPutBack() {
+        carolIsNew();
+        user(ALICE, "alice");
+        // A local group lists carol from before; p nested it, which LDAP cannot state.
+        local("team", List.of("carol"), List.of());
+        group(P_DN, "p", ALICE, CAROL, CONTRACTOR);
+        stored("p", List.of("alice"), List.of("team"));
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(!persisted.get(PREFIX + "p").getUsers().contains("carol"),
+                "carol, created now, was put into p, which the sync does not write");
+    }
+
+    @Test
+    @DisplayName("a nesting is kept when the members it would take a group above from cannot be put back there — and the groups below gain no one")
+    void aNestingIsKeptWhenItsMembersCannotBePutBack() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        group(P_DN, "p", ALICE, CONTRACTOR, X_DN);
+        group(X_DN, "x", BOB);
+        group(Y_DN, "y", ALICE, DAVE);
+        stored("p", List.of(), List.of(PREFIX + "x"));
+        stored("x", List.of("bob"), List.of(PREFIX + "y"));
+        stored("y", List.of("alice"), List.of());
+        failWrites("p", false);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "y"), persisted.get(PREFIX + "x").getGroups(),
+                "y was taken out of x though alice could not be put back in p: she lost p's permissions");
+        assertTrue(!persisted.get(PREFIX + "y").getUsers().contains("dave"),
+                "y gained dave through the nesting kept: he reaches p");
+        assertTrue(errors(result).contains(PREFIX + "p") && errors(result).contains("could not be put back"),
+                "the member that could not be put back was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a group whose id two entries share gets back only whom every entry names")
+    void aSharedIdGetsBackOnlyWhomEveryEntryNames() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // Which of the two entries NemakiWare's p is, is not known; x no longer nests y in LDAP.
+        group(P_DN, "p", ALICE, X_DN);
+        group("cn=p,ou=archive,dc=example,dc=com", "p", ALICE, BOB, X_DN);
+        group(X_DN, "x", CONTRACTOR);
+        group(Y_DN, "y", ALICE, BOB);
+        stored("p", List.of(), List.of(PREFIX + "x"));
+        stored("x", List.of(), List.of(PREFIX + "y"));
+        stored("y", List.of("alice", "bob"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        List<String> users = persisted.get(PREFIX + "p").getUsers();
+        assertTrue(users.contains("alice"), "alice, whom both of p's entries name, lost p when y was taken out of x");
+        assertTrue(!users.contains("bob"), "bob, whom only one of p's entries names, was put into p");
+    }
+
+    @Test
+    @DisplayName("an orphan's members LDAP names in a group above are put back before the orphan is deleted")
+    void anOrphansMembersArePutBackBeforeItIsDeleted() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        user(ALICE, "alice");
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of(), List.of(PREFIX + "o"));
+        stored("o", List.of("alice"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
+                "alice, whom LDAP names in p, lost p when the orphan was deleted");
+        verify(contentService).deleteGroup(REPO, PREFIX + "o");
+    }
+
+    @Test
+    @DisplayName("an orphan is kept when the members it would take a group above from cannot be put back there")
+    void anOrphanIsKeptWhenItsMembersCannotBePutBack() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        user(ALICE, "alice");
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of(), List.of(PREFIX + "o"));
+        stored("o", List.of("alice"), List.of());
+        failWrites("p", false);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).deleteGroup(REPO, PREFIX + "o");
+        assertTrue(errors(result).contains(PREFIX + "o"), "the orphan kept was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a value that looks like a DN but cannot be parsed, among DN values, could name any group — the nesting is kept")
+    void aValueThatCannotBeParsedKeepsTheNesting() {
+        gGainsDave();
+        group(P_DN, "p", ALICE, "cn=x,=y,dc=example,dc=com");
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "p").equals(w.getGroupId())),
+                "a nesting the unparsed value may still state was removed");
+        assertTrue(warningsOf(result, "p").contains("could not be checked"), "the unchecked nesting was not reported: "
                 + warnings(result));
     }
 

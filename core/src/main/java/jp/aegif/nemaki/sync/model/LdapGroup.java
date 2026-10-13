@@ -63,6 +63,11 @@ public class LdapGroup {
     /** Whether another group entry has this group's id, so which entry the group is is not known. */
     private boolean idShared;
     /**
+     * Whether a member value looks like a DN but could not be parsed as one, among values that are DNs: it is
+     * compared with nothing, so it could be any group (R153 (b)).
+     */
+    private boolean anyGroupCouldBeNamed;
+    /**
      * Whether the entry carried the member attribute at all. Absent is what an empty group looks
      * like — and what a group whose members the bind account may not read looks like too.
      */
@@ -165,6 +170,14 @@ public class LdapGroup {
 
     public boolean isIdShared() {
         return idShared;
+    }
+
+    public boolean isAnyGroupCouldBeNamed() {
+        return anyGroupCouldBeNamed;
+    }
+
+    public void setAnyGroupCouldBeNamed(boolean anyGroupCouldBeNamed) {
+        this.anyGroupCouldBeNamed = anyGroupCouldBeNamed;
     }
 
     public void setIdShared(boolean idShared) {

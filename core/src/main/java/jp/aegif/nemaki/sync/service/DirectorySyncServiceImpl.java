@@ -130,13 +130,26 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     connector.connect();
                     
                     List<LdapUser> ldapUsers = connector.searchUsers();
-                    Map<String, UserState> userStates = performUserSync(repositoryId, ldapUsers, config, result, dryRun);
-                    
+                    // The group side is read before any user is written (R153 (a)): a sync that stops on
+                    // the groups — the directory, an id attribute with two values, the group list — stops
+                    // before it has created anyone whose id a group of this sync listed from before.
                     List<LdapGroup> ldapGroups = connector.searchGroups();
                     // Members are looked up among the entries this sync read — their ids are the
                     // id attribute's values on those entries, not the DN's first RDN (R148).
                     LdapMemberResolver.resolve(ldapUsers, ldapGroups);
-                    performGroupSync(repositoryId, ldapGroups, config, result, dryRun, userStates);
+                    List<GroupItem> groupsBefore = contentService.getGroupItems(repositoryId);
+                    if (groupsBefore == null) {
+                        throw new IllegalStateException("the group list of '" + repositoryId + "' could not be "
+                                + "read, so which groups list the ids of the users this sync would create is not "
+                                + "known; nothing is synced");
+                    }
+                    UserSyncOutcome users = performUserSync(repositoryId, ldapUsers, ldapGroups, groupsBefore,
+                            config, result, dryRun);
+                    // The groups are read again: the user side changes them (it takes ids out, and deleting
+                    // an orphan user takes the id out of every group), and a copy from before would write
+                    // those ids back, or fail on its revision.
+                    performGroupSync(repositoryId, ldapGroups, config, result, dryRun, users.states, users.attempted,
+                            users.takenOut);
                     
                     if (result.getErrors().isEmpty()) {
                         result.complete(SyncStatus.SUCCESS);
@@ -221,9 +234,27 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         return state == UserState.EXISTS || state == UserState.CREATED;
     }
 
-    private Map<String, UserState> performUserSync(String repositoryId, List<LdapUser> ldapUsers,
-            DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun) {
-        Map<String, UserState> states = new HashMap<>();
+    /** What the user side of the sync leaves the group side (R153 (a)). */
+    static final class UserSyncOutcome {
+        final Map<String, UserState> states = new HashMap<>();
+        /** The ids whose creation this sync attempted (in a preview, would attempt) — whatever came of it. */
+        final Set<String> attempted = new HashSet<>();
+        /** Per group, the ids taken out of it before their users were created — what a preview projects. */
+        final Map<String, Set<String>> takenOut = new HashMap<>();
+    }
+
+    /**
+     * The users: looked up, then — before any is created — the ids of those to create are taken out of the groups of
+     * this sync that list them from before (R153 (a)): a group listing an id no user has lists nobody, and creating
+     * the user would give her that group, whatever LDAP says of her membership. A user whose id cannot be taken out
+     * is not created this sync. Then the users are created, and the existing ones updated. A second directory entry
+     * with an id already seen is not looked up, created, updated or counted again (the groups naming the id are
+     * refused as ambiguous — R148).
+     */
+    private UserSyncOutcome performUserSync(String repositoryId, List<LdapUser> ldapUsers, List<LdapGroup> ldapGroups,
+            List<GroupItem> groupsBefore, DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun) {
+        UserSyncOutcome outcome = new UserSyncOutcome();
+        Map<String, UserState> states = outcome.states;
         
         log.info("Syncing " + ldapUsers.size() + " users from LDAP");
 
@@ -234,44 +265,96 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 .map(u -> userPrefix + u.getUserId())
                 .collect(Collectors.toSet());
 
-        Map<String, LdapUser> ldapUserMap = new HashMap<>();
-        for (LdapUser user : ldapUsers) {
-            ldapUserMap.put(userPrefix + user.getUserId(), user);
-        }
-
+        // Which directory users NemakiWare has; nothing is written yet.
+        Map<String, UserItem> existing = new LinkedHashMap<>();
+        Map<String, LdapUser> entryOf = new LinkedHashMap<>();
+        List<String> toCreate = new ArrayList<>();
         for (LdapUser ldapUser : ldapUsers) {
             String nemakiUserId = userPrefix + ldapUser.getUserId();
+            if (entryOf.containsKey(nemakiUserId)) {
+                continue;
+            }
+            entryOf.put(nemakiUserId, ldapUser);
             states.put(nemakiUserId, UserState.UNKNOWN);
-            
             try {
                 UserItem existingUser = contentService.getUserItemById(repositoryId, nemakiUserId);
-                
-                if (existingUser == null) {
-                    if (config.isCreateMissingUsers()) {
-                        if (!dryRun) {
-                            createUser(repositoryId, ldapUser, userPrefix, config);
-                            log.info("AUDIT: User created via directory sync: " + nemakiUserId);
-                        }
-                        states.put(nemakiUserId, UserState.CREATED);
-                        result.incrementUsersAdded();
-                        log.debug("User created: " + nemakiUserId);
-                    } else {
-                        states.put(nemakiUserId, UserState.ABSENT);
-                        result.incrementUsersSkipped();
-                        log.debug("User skipped (createMissingUsers=false): " + nemakiUserId);
-                    }
-                } else {
+                if (existingUser != null) {
+                    existing.put(nemakiUserId, existingUser);
                     states.put(nemakiUserId, UserState.EXISTS);
-                    if (config.isUpdateExistingUsers() && hasUserChanges(existingUser, ldapUser)) {
-                        if (!dryRun) {
-                            updateUser(repositoryId, existingUser, ldapUser);
-                        }
-                        result.incrementUsersUpdated();
-                        log.debug("User updated: " + nemakiUserId);
-                    } else {
-                        result.incrementUsersSkipped();
-                        log.debug("User unchanged or update disabled: " + nemakiUserId);
+                } else if (config.isCreateMissingUsers()) {
+                    toCreate.add(nemakiUserId);
+                } else {
+                    states.put(nemakiUserId, UserState.ABSENT);
+                    result.incrementUsersSkipped();
+                    log.debug("User skipped (createMissingUsers=false): " + nemakiUserId);
+                }
+            } catch (Exception e) {
+                log.error("Error syncing user " + nemakiUserId + ": " + e.getMessage());
+                result.addWarning(nemakiUserId, "User sync failed: " + e.getMessage());
+            }
+        }
+
+        Set<String> blocked = takeOutIdsOfUsersToCreate(repositoryId, new LinkedHashSet<>(toCreate), ldapGroups,
+                groupsBefore, config, result, dryRun, outcome.takenOut);
+
+        for (String nemakiUserId : toCreate) {
+            if (blocked.contains(nemakiUserId)) {
+                states.put(nemakiUserId, UserState.ABSENT);
+                result.addError(nemakiUserId, "user " + nemakiUserId + ": a group of this sync lists the id from "
+                        + "before the user existed, and it could not be taken out, so the user is not created this "
+                        + "sync (it would gain that group)");
+                continue;
+            }
+            outcome.attempted.add(nemakiUserId);
+            if (dryRun) {
+                states.put(nemakiUserId, UserState.CREATED);
+                result.incrementUsersAdded();
+                continue;
+            }
+            try {
+                createUser(repositoryId, entryOf.get(nemakiUserId), userPrefix, config);
+                log.info("AUDIT: User created via directory sync: " + nemakiUserId);
+                states.put(nemakiUserId, UserState.CREATED);
+                result.incrementUsersAdded();
+                log.debug("User created: " + nemakiUserId);
+            } catch (Exception e) {
+                // The user is stored before the change log is written, and a failure there is thrown all the
+                // same: what is stored decides (R153 (a)).
+                UserItem stored;
+                try {
+                    stored = contentService.getUserItemById(repositoryId, nemakiUserId);
+                } catch (Exception unread) {
+                    log.error("Error syncing user " + nemakiUserId + ": " + e.getMessage() + "; reading it back: "
+                            + unread.getMessage());
+                    result.addWarning(nemakiUserId, "User sync failed: " + e.getMessage() + " (whether the user was "
+                            + "stored could not be read: " + unread.getMessage() + ")");
+                    continue;
+                }
+                if (stored != null) {
+                    states.put(nemakiUserId, UserState.CREATED);
+                    result.incrementUsersAdded();
+                    result.addWarning(nemakiUserId, "user " + nemakiUserId + ": the user was stored, but a step "
+                            + "after storing it failed (" + e.getMessage() + ")");
+                } else {
+                    states.put(nemakiUserId, UserState.ABSENT);
+                    log.error("Error syncing user " + nemakiUserId + ": " + e.getMessage());
+                    result.addWarning(nemakiUserId, "User sync failed: " + e.getMessage());
+                }
+            }
+        }
+
+        for (Map.Entry<String, UserItem> user : existing.entrySet()) {
+            String nemakiUserId = user.getKey();
+            try {
+                if (config.isUpdateExistingUsers() && hasUserChanges(user.getValue(), entryOf.get(nemakiUserId))) {
+                    if (!dryRun) {
+                        updateUser(repositoryId, user.getValue(), entryOf.get(nemakiUserId));
                     }
+                    result.incrementUsersUpdated();
+                    log.debug("User updated: " + nemakiUserId);
+                } else {
+                    result.incrementUsersSkipped();
+                    log.debug("User unchanged or update disabled: " + nemakiUserId);
                 }
             } catch (Exception e) {
                 log.error("Error syncing user " + nemakiUserId + ": " + e.getMessage());
@@ -306,7 +389,101 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 }
             }
         }
-        return states;
+        return outcome;
+    }
+
+    /**
+     * Takes the ids of the users this sync is about to create out of the groups of this sync that list them from
+     * before (R153 (a)): the groups the group search returned, and the orphans this sync deletes. One write per
+     * group, from the group read past the cache, checked by reading it back; a preview says what it would take out
+     * and projects it. Local groups and the orphans kept are not the sync's, and are not touched (an id an
+     * administrator listed there is given to the user created with it). Returns the ids still listed in a group
+     * after that — those users are not created this sync.
+     */
+    private Set<String> takeOutIdsOfUsersToCreate(String repositoryId, Set<String> toCreate, List<LdapGroup> ldapGroups,
+            List<GroupItem> groupsBefore, DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun,
+            Map<String, Set<String>> takenOut) {
+        Set<String> blocked = new HashSet<>();
+        if (toCreate.isEmpty()) {
+            return blocked;
+        }
+        String configPrefix = config.getGroupPrefix();
+        String groupPrefix = (configPrefix == null) ? DirectorySyncConfig.DEFAULT_GROUP_PREFIX : configPrefix;
+        Set<String> ldapGroupIds = new HashSet<>();
+        for (LdapGroup ldapGroup : ldapGroups) {
+            ldapGroupIds.add(groupPrefix + ldapGroup.getGroupId());
+        }
+        Set<String> seen = new HashSet<>();
+        for (GroupItem group : groupsBefore) {
+            String groupId = group.getGroupId();
+            if (groupId == null || !seen.add(groupId)) {
+                continue;
+            }
+            boolean ours = ldapGroupIds.contains(groupId)
+                    || (config.isDeleteOrphanGroups() && groupId.startsWith(groupPrefix));
+            if (!ours) {
+                continue;
+            }
+            Set<String> listed = new LinkedHashSet<>();
+            for (String id : group.getUsers() == null ? List.<String>of() : group.getUsers()) {
+                if (toCreate.contains(id)) {
+                    listed.add(id);
+                }
+            }
+            if (listed.isEmpty()) {
+                continue;
+            }
+            if (dryRun) {
+                takenOut.put(groupId, listed);
+                result.addWarning(groupId, "group " + groupId + ": " + listed.size() + " id(s) of users this sync "
+                        + "would create were listed in the group before the users existed, and would be taken out "
+                        + "first, for example " + sample(new ArrayList<>(listed)));
+                continue;
+            }
+            String failure = null;
+            GroupItem after = null;
+            try {
+                GroupItem fresh = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+                if (fresh == null) {
+                    failure = "the group could not be read";
+                } else {
+                    List<String> keep = new ArrayList<>(fresh.getUsers() == null ? List.of() : fresh.getUsers());
+                    keep.removeAll(listed);
+                    fresh.setUsers(keep);
+                    fresh.setModifier("system");
+                    fresh.setModified(new GregorianCalendar());
+                    try {
+                        contentService.update(new SystemCallContext(repositoryId), repositoryId, fresh);
+                    } catch (Exception e) {
+                        failure = e.getMessage();
+                    }
+                }
+                after = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+            } catch (Exception e) {
+                failure = (failure == null ? "" : failure + "; ") + e.getMessage();
+                after = null;
+            }
+            Set<String> left = new LinkedHashSet<>(listed);
+            if (after != null) {
+                left.retainAll(after.getUsers() == null ? List.of() : after.getUsers());
+            }
+            Set<String> out = new LinkedHashSet<>(listed);
+            out.removeAll(left);
+            if (!out.isEmpty()) {
+                takenOut.put(groupId, out);
+                result.addWarning(groupId, "group " + groupId + ": " + out.size() + " id(s) of users this sync creates "
+                        + "were listed in the group before the users existed, and were taken out first, for example "
+                        + sample(new ArrayList<>(out)));
+            }
+            if (!left.isEmpty()) {
+                blocked.addAll(left);
+                result.addError(groupId, "group " + groupId + ": " + left.size() + " id(s) of users this sync would "
+                        + "create are listed in the group from before the users existed and could not be taken out"
+                        + (failure == null ? "" : " (" + failure + ")") + ", so those users are not created this "
+                        + "sync, for example " + sample(new ArrayList<>(left)));
+            }
+        }
+        return blocked;
     }
 
 
@@ -558,6 +735,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     private void performGroupSync(String repositoryId, List<LdapGroup> ldapGroups, 
             DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun,
             Map<String, UserState> userStates) {
+        performGroupSync(repositoryId, ldapGroups, config, result, dryRun, userStates, Set.of(), Map.of());
+    }
+
+    private void performGroupSync(String repositoryId, List<LdapGroup> ldapGroups,
+            DirectorySyncConfig config, DirectorySyncResult result, boolean dryRun,
+            Map<String, UserState> userStates, Set<String> attempted, Map<String, Set<String>> takenOut) {
         
         String configPrefix = config.getGroupPrefix();
         final String groupPrefix = (configPrefix == null) ? DirectorySyncConfig.DEFAULT_GROUP_PREFIX : configPrefix;
@@ -570,6 +753,25 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             // naming no group: "no groups" is not what an unanswered list says.
             throw new IllegalStateException("the group list of '" + repositoryId + "' could not be read, "
                     + "so which groups exist is not known; the groups are not synced");
+        }
+        if (dryRun && !takenOut.isEmpty()) {
+            // The preview did not take the ids of the users it would create out of the groups: it sees the
+            // groups as the sync would (R153 (a)).
+            List<GroupItem> projected = new ArrayList<>();
+            for (GroupItem g : existingGroups) {
+                Set<String> out = g.getGroupId() == null ? null : takenOut.get(g.getGroupId());
+                if (out == null) {
+                    projected.add(g);
+                } else {
+                    List<String> users = new ArrayList<>(g.getUsers() == null ? List.of() : g.getUsers());
+                    users.removeAll(out);
+                    GroupItem copy = new GroupItem(g.getId(), g.getObjectType(), g.getGroupId(), g.getName(), users,
+                            g.getGroups() == null ? new ArrayList<>() : new ArrayList<>(g.getGroups()));
+                    copy.setRevision(g.getRevision());
+                    projected.add(copy);
+                }
+            }
+            existingGroups = projected;
         }
         Set<String> present = existingGroups.stream()
                 .map(GroupItem::getGroupId)
@@ -603,6 +805,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         Map<String, Set<String>> uncheckedEdges = new LinkedHashMap<>();
         Map<String, String> withheldBy = new HashMap<>();
         Set<String> firstStepWrote = new HashSet<>();
+        Set<String> orphansKept = new HashSet<>();
         if (syncNestedGroups) {
             // LDAP's nesting among the groups this sync writes. A group naming itself is no cycle:
             // it adds no one, and its write leaves that member out.
@@ -650,12 +853,20 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     storedNesting.put(g.getGroupId(), new ArrayList<>(g.getGroups() == null ? List.of() : g.getGroups()));
                 }
             }
-            Map<String, GroupItem> groupsById = new HashMap<>();
+            Map<String, Set<String>> usersBefore = new HashMap<>();
             for (GroupItem g : existingGroups) {
                 if (g.getGroupId() != null) {
-                    groupsById.put(g.getGroupId(), g);
+                    usersBefore.computeIfAbsent(g.getGroupId(), k -> new LinkedHashSet<>())
+                            .addAll(g.getUsers() == null ? List.of() : g.getUsers());
                 }
             }
+            Map<String, List<String>> nestingBefore = new HashMap<>();
+            for (Map.Entry<String, List<String>> e : storedNesting.entrySet()) {
+                nestingBefore.put(e.getKey(), new ArrayList<>(e.getValue()));
+            }
+            // Planned first, written after: the members a removal would take a group from are put back
+            // before it is made (R154).
+            Map<String, List<String>> plannedGone = new LinkedHashMap<>();
             Set<String> parents = new HashSet<>();
             for (LdapGroup ldapGroup : ldapGroups) {
                 String parentId = groupPrefix + ldapGroup.getGroupId();
@@ -679,6 +890,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     // among the groups a value could name (maybe) — never a group NemakiWare holds without
                     // the prefix.
                     if (!read || maybe.contains(nestedId)
+                            || (ldapGroup.isAnyGroupCouldBeNamed() && nestedId.startsWith(groupPrefix))
                             || (unnamed && nestedId.startsWith(groupPrefix) && !ldapGroupMap.containsKey(nestedId))) {
                         cannotCheck.add(nestedId);
                         uncheck(uncheckedEdges, parentId, nestedId);
@@ -692,27 +904,108 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                             + "could name them), so the groups below them are given no one new, for example "
                             + sample(cannotCheck));
                 }
-                List<String> regain = belongingOnlyThrough(gone, ldapGroup, syncedGroupMap.get(parentId), userPrefix,
-                        userStates, storedNesting, syncedGroupMap, groupsById);
                 if (!gone.isEmpty()) {
-                    firstStepWrote.add(parentId);
+                    plannedGone.put(parentId, gone);
                 }
-                removeGoneNesting(repositoryId, parentId, gone, regain, dryRun, result, syncedGroupMap, storedNesting,
-                        uncheckedEdges, refusals);
             }
+            Set<String> orphans = new LinkedHashSet<>();
             if (config.isDeleteOrphanGroups()) {
                 // An orphan is deleted after the groups are written; until then its nesting would carry
                 // whoever the groups below it gain.
-                for (String orphanId : new ArrayList<>(syncedGroupMap.keySet())) {
+                for (String orphanId : syncedGroupMap.keySet()) {
                     if (!ldapGroupMap.containsKey(orphanId)) {
-                        removeGoneNesting(repositoryId, orphanId,
-                                new ArrayList<>(storedNesting.getOrDefault(orphanId, List.of())), List.of(), dryRun,
-                                result, syncedGroupMap, storedNesting, uncheckedEdges, refusals);
-                        if (refusals.containsKey(orphanId)) {
-                            // No LDAP group reports it: the main loop does not see orphans (review round 1).
-                            result.addError(orphanId, refusals.get(orphanId));
+                        orphans.add(orphanId);
+                        List<String> all = new ArrayList<>(storedNesting.getOrDefault(orphanId, List.of()));
+                        if (!all.isEmpty()) {
+                            plannedGone.put(orphanId, all);
                         }
                     }
+                }
+            }
+
+            // The members each group loses through the removals (and the orphans' deletion, which strips the nesting
+            // of them) and that LDAP names in it are put back first, as direct members (R154).
+            Map<String, List<String>> nestingAfter = new HashMap<>();
+            for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
+                List<String> kept = new ArrayList<>(e.getValue());
+                kept.removeAll(plannedGone.getOrDefault(e.getKey(), List.of()));
+                kept.removeAll(orphans);
+                nestingAfter.put(e.getKey(), kept);
+            }
+            Map<String, List<LdapGroup>> entriesOf = new HashMap<>();
+            for (LdapGroup ldapGroup : ldapGroups) {
+                entriesOf.computeIfAbsent(groupPrefix + ldapGroup.getGroupId(), k -> new ArrayList<>()).add(ldapGroup);
+            }
+            Set<String> putBackFailed = new HashSet<>();
+            Set<String> sources = new HashSet<>(plannedGone.keySet());
+            for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
+                for (String child : e.getValue()) {
+                    if (orphans.contains(child)) {
+                        sources.add(e.getKey());
+                    }
+                }
+            }
+            for (String parentId : ancestorsOrSelf(sources, nestingBefore)) {
+                if (!syncedGroupMap.containsKey(parentId) || !entriesOf.containsKey(parentId) || orphans.contains(parentId)) {
+                    continue;
+                }
+                Set<String> lost = reach(parentId, nestingBefore, usersBefore);
+                lost.removeAll(reach(parentId, nestingAfter, usersBefore));
+                if (lost.isEmpty()) {
+                    continue;
+                }
+                Set<String> named = ldapNamed(entriesOf.get(parentId), entriesOf, groupPrefix, userPrefix);
+                List<String> putBack = new ArrayList<>();
+                for (String id : lost) {
+                    UserState state = userStates.get(id);
+                    if (named.contains(id) && !attempted.contains(id)
+                            && (state == UserState.EXISTS || state == UserState.UNKNOWN)) {
+                        putBack.add(id);
+                    }
+                }
+                if (!putBack.isEmpty() && !putBack(repositoryId, parentId, putBack, dryRun, result, syncedGroupMap)) {
+                    putBackFailed.add(parentId);
+                }
+            }
+
+            for (String orphanId : orphans) {
+                Set<String> above = ancestorsOrSelf(Set.of(orphanId), nestingBefore);
+                above.retainAll(putBackFailed);
+                if (!above.isEmpty()) {
+                    // Deleting it strips the nesting of it from the groups above, whose members LDAP names there
+                    // could not be put back first: it is kept this sync (R154).
+                    orphansKept.add(orphanId);
+                }
+            }
+            for (Map.Entry<String, List<String>> planned : plannedGone.entrySet()) {
+                String parentId = planned.getKey();
+                Set<String> above = ancestorsOrSelf(Set.of(parentId), nestingBefore);
+                above.retainAll(putBackFailed);
+                if (!above.isEmpty()) {
+                    // Removing it would take from a group above members LDAP names in it, who could not be put
+                    // back: it stays, and the groups below it are given no one new (R154).
+                    for (String nestedId : planned.getValue()) {
+                        uncheck(uncheckedEdges, parentId, nestedId);
+                    }
+                    String kept = "group " + parentId + ": " + planned.getValue().size() + " nested group(s) LDAP no "
+                            + "longer names under it are kept, because members LDAP names in a group above could not be "
+                            + "put back there first, for example " + sample(planned.getValue());
+                    if (ldapGroupMap.containsKey(parentId)) {
+                        // Writing the group would replace its nesting with LDAP's, and remove them all the same.
+                        refusals.merge(parentId, kept + "; the group is not written this sync",
+                                (first, then) -> first + "; " + then);
+                    } else {
+                        result.addWarning(parentId, kept);
+                    }
+                    continue;
+                }
+                if (removeGoneNesting(repositoryId, parentId, planned.getValue(), dryRun, result, syncedGroupMap,
+                        storedNesting, uncheckedEdges, refusals)) {
+                    firstStepWrote.add(parentId);
+                }
+                if (orphans.contains(parentId) && refusals.containsKey(parentId)) {
+                    // No LDAP group reports it: the main loop does not see orphans (review round 1).
+                    result.addError(parentId, refusals.get(parentId));
                 }
             }
             withheldBy = withheld(uncheckedEdges, storedNesting);
@@ -738,9 +1031,6 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     }
                     log.warn("AUDIT: Group not written by directory sync: " + unknown);
                     result.addError(nemakiGroupId, unknown);
-                    if (syncedGroupMap.containsKey(nemakiGroupId)) {
-                        leaveOutCreatedUsers(repositoryId, nemakiGroupId, userStates, dryRun, result);
-                    }
                     continue;
                 }
                 String uncheckedParent = withheldBy.get(nemakiGroupId);
@@ -775,15 +1065,14 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     }
                 }
                 // Below a nesting this sync could not check, whoever the group gains would reach the group
-                // above it: the members LDAP takes out are taken out, and none are added (R151) — nor a user
-                // this sync created, though the group listed the id: it was nobody until now (review round 1).
+                // above it: the members LDAP takes out are taken out, and none are added (R151). The ids of
+                // the users this sync created were taken out before they were created (R153 (a)).
                 List<String> heldUsers = new ArrayList<>();
                 if (uncheckedParent != null) {
                     Set<String> hadUsers = new HashSet<>(existingGroup.getUsers() == null ? List.of() : existingGroup.getUsers());
                     for (Iterator<String> named = users.iterator(); named.hasNext();) {
                         String userId = named.next();
-                        if (!hadUsers.contains(userPrefix + userId)
-                                || userStates.get(userPrefix + userId) == UserState.CREATED) {
+                        if (!hadUsers.contains(userPrefix + userId)) {
                             heldUsers.add(userId);
                             named.remove();
                         }
@@ -851,8 +1140,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     List<String> held = new ArrayList<>(heldUsers);
                     held.addAll(heldGroups);
                     result.addWarning(nemakiGroupId, "group " + nemakiGroupId + ": " + heldUsers.size() + " member(s) and "
-                            + heldGroups.size() + " nested group(s) LDAP adds (or users this sync created) were not added, "
-                            + "because " + uncheckedParent
+                            + heldGroups.size() + " nested group(s) LDAP adds were not added, because " + uncheckedParent
                             + " nests this group, directly or through other groups, by a nesting this sync could not "
                             + "check against LDAP, and whoever this group gains would gain that group's permissions; "
                             + "for example " + sample(held));
@@ -913,6 +1201,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         if (config.isDeleteOrphanGroups()) {
             for (GroupItem existingGroup : syncedGroupMap.values()) {
                 if (!ldapGroupMap.containsKey(existingGroup.getGroupId())) {
+                    if (orphansKept.contains(existingGroup.getGroupId())) {
+                        result.addError(existingGroup.getGroupId(), "group " + existingGroup.getGroupId() + ": the "
+                                + "orphan is not deleted this sync — a group above it could not first be given back the "
+                                + "members LDAP names in it, who reach it through the orphan");
+                        continue;
+                    }
                     try {
                         if (!dryRun) {
                             // deleteGroup, not a bare delete: the group side had NO nested
@@ -970,31 +1264,32 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     /**
-     * Removes from a stored group the nested ids LDAP is known to have taken out, and writes in the members
-     * LDAP names in the group who reached it through them ({@link #belongingOnlyThrough}) — nothing else: its
-     * other users, name and other nested groups stay as they are (R151). The preview projects the removal without
-     * writing. What the group holds afterwards is read back past the cache; a removal not seen there is tried
+     * Removes from a stored group the nested ids LDAP is known to have taken out — nothing else: its users, name and
+     * other nested groups stay as they are (R151; the members a removal takes a group above from are put back
+     * before it, by {@link #putBack}). The preview projects the removal without writing. Says whether a nested id
+     * was removed (or, in the preview, would be). What the group holds afterwards is read back past the cache; a removal not seen there is tried
      * once more, from the group as read back (a revision the listed group no longer has fails the first write),
      * and a nesting still there after that is held as unchecked. A group that cannot be read back is not written
      * by this sync.
      */
-    private void removeGoneNesting(String repositoryId, String groupId, List<String> gone, List<String> regain,
+    private boolean removeGoneNesting(String repositoryId, String groupId, List<String> gone,
             boolean dryRun, DirectorySyncResult result, Map<String, GroupItem> syncedGroupMap,
             Map<String, List<String>> storedNesting, Map<String, Set<String>> uncheckedEdges,
             Map<String, String> refusals) {
         if (gone.isEmpty()) {
-            return;
+            return false;
         }
         if (dryRun) {
             GroupItem stored = syncedGroupMap.get(groupId);
             List<String> keep = new ArrayList<>(storedNesting.get(groupId));
             keep.removeAll(gone);
             syncedGroupMap.put(groupId, new GroupItem(stored.getId(), stored.getObjectType(), stored.getGroupId(),
-                    stored.getName(), withMembers(stored.getUsers(), regain), new ArrayList<>(keep)));
+                    stored.getName(), stored.getUsers() == null ? new ArrayList<>() : new ArrayList<>(stored.getUsers()),
+                    new ArrayList<>(keep)));
             storedNesting.put(groupId, keep);
             result.addWarning(groupId, "group " + groupId + ": " + gone.size() + " nested group(s) LDAP no longer "
-                    + "names under it were removed, for example " + sample(gone) + regained(regain));
-            return;
+                    + "names under it were removed, for example " + sample(gone));
+            return true;
         }
         List<String> left = new ArrayList<>(gone);
         String failure = null;
@@ -1004,7 +1299,6 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             List<String> keep = new ArrayList<>(storedNesting.get(groupId));
             keep.removeAll(gone);
             stored.setGroups(new ArrayList<>(keep));
-            stored.setUsers(withMembers(stored.getUsers(), regain));
             stored.setModifier("system");
             stored.setModified(new GregorianCalendar());
             failure = null;
@@ -1027,7 +1321,7 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 for (String nestedId : storedNesting.get(groupId)) {
                     uncheck(uncheckedEdges, groupId, nestedId);
                 }
-                return;
+                return false;
             }
             syncedGroupMap.put(groupId, after);
             List<String> now = after.getGroups() == null ? new ArrayList<>() : new ArrayList<>(after.getGroups());
@@ -1039,21 +1333,11 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         }
         List<String> removed = new ArrayList<>(gone);
         removed.removeAll(left);
-        GroupItem now = syncedGroupMap.get(groupId);
-        List<String> notRegained = new ArrayList<>(regain);
-        notRegained.removeAll(now.getUsers() == null ? List.of() : now.getUsers());
-        List<String> written = new ArrayList<>(regain);
-        written.removeAll(notRegained);
         if (!removed.isEmpty()) {
             result.addWarning(groupId, "group " + groupId + ": " + removed.size() + " nested group(s) LDAP no longer "
-                    + "names under it were removed, for example " + sample(removed) + regained(written)
+                    + "names under it were removed, for example " + sample(removed)
                     + (failure != null && left.isEmpty() ? " (a step after storing the group failed: " + failure + ")" : "")
                     + (firstFailure != null && left.isEmpty() ? " (on a second try; the first failed: " + firstFailure + ")" : ""));
-        }
-        if (!notRegained.isEmpty() && left.isEmpty()) {
-            result.addError(groupId, "group " + groupId + ": " + notRegained.size() + " member(s) LDAP names in the group, "
-                    + "who belonged to it only through the nesting removed, could not be written into it, for example "
-                    + sample(notRegained));
         }
         if (!left.isEmpty()) {
             for (String nestedId : left) {
@@ -1063,129 +1347,158 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     + "under it could not be removed" + (failure == null ? "" : " (" + failure + ")") + ", so the "
                     + "groups below them are given no one new while the nesting stays, for example " + sample(left));
         }
-    }
-
-    /**
-     * A group the sync does not write keeps the ids it lists — and a user this sync created whom it listed before
-     * she existed would gain it now, and, through a nesting the sync could not check, the groups above it (review
-     * round 1). Those ids alone are taken out, from the group as stored; whom LDAP names in it is not known, so no
-     * one is added. The preview says what it would take out.
-     */
-    private void leaveOutCreatedUsers(String repositoryId, String groupId, Map<String, UserState> userStates,
-            boolean dryRun, DirectorySyncResult result) {
-        if (!userStates.containsValue(UserState.CREATED)) {
-            return;
-        }
-        GroupItem group;
-        try {
-            group = contentService.getGroupItemByIdFresh(repositoryId, groupId);
-        } catch (Exception e) {
-            group = null;
-        }
-        if (group == null) {
-            result.addError(groupId, "group " + groupId + ": the group could not be read, so whether it lists a user this "
-                    + "sync created is not known");
-            return;
-        }
-        List<String> created = new ArrayList<>();
-        for (String id : group.getUsers() == null ? List.<String>of() : group.getUsers()) {
-            if (userStates.get(id) == UserState.CREATED) {
-                created.add(id);
-            }
-        }
-        if (created.isEmpty()) {
-            return;
-        }
-        if (!dryRun) {
-            List<String> keep = new ArrayList<>(group.getUsers());
-            keep.removeAll(created);
-            group.setUsers(keep);
-            group.setModifier("system");
-            group.setModified(new GregorianCalendar());
-            String failure = null;
-            try {
-                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
-            } catch (Exception e) {
-                failure = e.getMessage();
-            }
-            List<String> left = new ArrayList<>(created);
-            try {
-                GroupItem after = contentService.getGroupItemByIdFresh(repositoryId, groupId);
-                if (after != null) {
-                    left.retainAll(after.getUsers() == null ? List.of() : after.getUsers());
-                }
-            } catch (Exception e) {
-                failure = (failure == null ? "" : failure + "; ") + e.getMessage();
-            }
-            if (!left.isEmpty()) {
-                result.addError(groupId, "group " + groupId + ": " + left.size() + " user(s) this sync created were listed "
-                        + "in the group before they existed and could not be taken out" + (failure == null ? "" : " ("
-                        + failure + ")") + ", so they gain the group's permissions, for example " + sample(left));
-                return;
-            }
-        }
-        result.addWarning(groupId, "group " + groupId + ": " + created.size() + " user(s) this sync created were listed in "
-                + "the group before they existed, and were taken out — the group is not written while its membership is "
-                + "not known, so it gains no one, for example " + sample(created));
+        return !removed.isEmpty();
     }
 
     private static void uncheck(Map<String, Set<String>> uncheckedEdges, String parentId, String nestedId) {
         uncheckedEdges.computeIfAbsent(parentId, k -> new LinkedHashSet<>()).add(nestedId);
     }
 
-    /**
-     * The members LDAP names in the group itself who reach it through the nesting about to be removed and are
-     * not in the group itself: NemakiWare users before this sync, listed in a group below that nesting (local
-     * groups between too). Removing the nesting would take the group's permissions from them, though LDAP names
-     * them in it — and keep them out while the group is not written (review round 1). The same write puts them
-     * in; no one else is added, and no one is taken out.
-     */
-    private static List<String> belongingOnlyThrough(List<String> gone, LdapGroup ldapGroup, GroupItem group,
-            String userPrefix, Map<String, UserState> userStates, Map<String, List<String>> storedNesting,
-            Map<String, GroupItem> syncedGroupMap, Map<String, GroupItem> groupsById) {
-        if (gone.isEmpty()) {
-            return List.of();
+    /** The groups and every group that nests them, directly or through others, in the stored nesting. */
+    private static Set<String> ancestorsOrSelf(Set<String> ids, Map<String, List<String>> nesting) {
+        Map<String, List<String>> parentsOf = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : nesting.entrySet()) {
+            for (String child : e.getValue()) {
+                parentsOf.computeIfAbsent(child, k -> new ArrayList<>()).add(e.getKey());
+            }
         }
-        Set<String> below = new HashSet<>();
+        Set<String> found = new LinkedHashSet<>();
+        Deque<String> todo = new ArrayDeque<>(ids);
+        while (!todo.isEmpty()) {
+            String id = todo.pop();
+            if (found.add(id)) {
+                for (String parent : parentsOf.getOrDefault(id, List.of())) {
+                    todo.push(parent);
+                }
+            }
+        }
+        return found;
+    }
+
+    /** The users a group reaches through the nesting given — its own and those of every group below it. */
+    private static Set<String> reach(String groupId, Map<String, List<String>> nesting,
+            Map<String, Set<String>> usersOf) {
+        Set<String> users = new LinkedHashSet<>();
         Set<String> seen = new HashSet<>();
-        Deque<String> todo = new ArrayDeque<>(gone);
+        Deque<String> todo = new ArrayDeque<>();
+        todo.push(groupId);
         while (!todo.isEmpty()) {
             String id = todo.pop();
             if (!seen.add(id)) {
                 continue;
             }
-            GroupItem item = syncedGroupMap.containsKey(id) ? syncedGroupMap.get(id) : groupsById.get(id);
-            if (item != null && item.getUsers() != null) {
-                below.addAll(item.getUsers());
-            }
-            for (String child : storedNesting.getOrDefault(id, List.of())) {
+            users.addAll(usersOf.getOrDefault(id, Set.of()));
+            for (String child : nesting.getOrDefault(id, List.of())) {
                 todo.push(child);
             }
         }
-        Set<String> has = new HashSet<>(group.getUsers() == null ? List.of() : group.getUsers());
-        List<String> regain = new ArrayList<>();
-        for (String userId : ldapGroup.getMemberUserIds() == null ? List.<String>of() : ldapGroup.getMemberUserIds()) {
-            String id = userPrefix + userId;
-            if (userStates.get(id) == UserState.EXISTS && below.contains(id) && !has.contains(id) && !regain.contains(id)) {
-                regain.add(id);
-            }
-        }
-        return regain;
+        return users;
     }
 
-    private static List<String> withMembers(List<String> users, List<String> regain) {
-        List<String> with = users == null ? new ArrayList<>() : new ArrayList<>(users);
-        for (String id : regain) {
-            if (!with.contains(id)) {
-                with.add(id);
+    /**
+     * The users LDAP names in a group: its own members the sync named, and those of the groups LDAP nests in it,
+     * down through the nesting — only groups whose members were read, and only what was named (R154). A group whose
+     * id two entries share names whom every entry names (which entry it is, is not known).
+     */
+    private static Set<String> ldapNamed(List<LdapGroup> entries, Map<String, List<LdapGroup>> entriesOf,
+            String groupPrefix, String userPrefix) {
+        Set<String> common = null;
+        for (LdapGroup entry : entries) {
+            Set<String> named = new LinkedHashSet<>();
+            Set<LdapGroup> seen = new HashSet<>();
+            Deque<LdapGroup> todo = new ArrayDeque<>();
+            todo.push(entry);
+            while (!todo.isEmpty()) {
+                LdapGroup group = todo.pop();
+                // Its values were read (whichever entry the id means is the caller's question).
+                if (!seen.add(group) || group.isMembersRanged() || !group.isMemberAttributePresent()) {
+                    continue;
+                }
+                for (String userId : group.getMemberUserIds() == null ? List.<String>of() : group.getMemberUserIds()) {
+                    named.add(userPrefix + userId);
+                }
+                for (String groupId : memberGroupIdsOf(group)) {
+                    List<LdapGroup> nested = entriesOf.getOrDefault(groupPrefix + groupId, List.of());
+                    if (nested.size() == 1) {
+                        todo.push(nested.get(0));
+                    }
+                }
+            }
+            if (common == null) {
+                common = named;
+            } else {
+                common.retainAll(named);
             }
         }
-        return with;
+        return common == null ? Set.of() : common;
     }
 
-    private static String regained(List<String> regain) {
-        return regain.isEmpty() ? "" : "; " + regain.size() + " member(s) LDAP names in the group, who belonged to it "
-                + "only through those, were written into it, for example " + sample(regain);
+    /**
+     * Writes into a group, as direct members, the users a removal below it would take it from and that LDAP names
+     * in it — before the removal, from the group read past the cache, checked by reading it back (R154). They
+     * reach it already, so no one gains anything; a group the sync does not write keeps them as it keeps its other
+     * members, until it can be written. The preview projects it. Says whether they are in the group now.
+     */
+    private boolean putBack(String repositoryId, String groupId, List<String> users, boolean dryRun,
+            DirectorySyncResult result, Map<String, GroupItem> syncedGroupMap) {
+        if (dryRun) {
+            GroupItem stored = syncedGroupMap.get(groupId);
+            List<String> with = new ArrayList<>(stored.getUsers() == null ? List.of() : stored.getUsers());
+            for (String id : users) {
+                if (!with.contains(id)) {
+                    with.add(id);
+                }
+            }
+            syncedGroupMap.put(groupId, new GroupItem(stored.getId(), stored.getObjectType(), stored.getGroupId(),
+                    stored.getName(), with, stored.getGroups() == null ? new ArrayList<>() : new ArrayList<>(stored.getGroups())));
+            result.addWarning(groupId, "group " + groupId + ": " + users.size() + " member(s) LDAP names in the group, "
+                    + "who reach it through a nesting removed below it, were put back as members first, for example "
+                    + sample(users));
+            return true;
+        }
+        String failure = null;
+        GroupItem after = null;
+        try {
+            GroupItem fresh = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+            if (fresh == null) {
+                failure = "the group could not be read";
+            } else {
+                List<String> with = new ArrayList<>(fresh.getUsers() == null ? List.of() : fresh.getUsers());
+                for (String id : users) {
+                    if (!with.contains(id)) {
+                        with.add(id);
+                    }
+                }
+                fresh.setUsers(with);
+                fresh.setModifier("system");
+                fresh.setModified(new GregorianCalendar());
+                try {
+                    contentService.update(new SystemCallContext(repositoryId), repositoryId, fresh);
+                } catch (Exception e) {
+                    failure = e.getMessage();
+                }
+            }
+            after = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+        } catch (Exception e) {
+            failure = (failure == null ? "" : failure + "; ") + e.getMessage();
+            after = null;
+        }
+        List<String> missing = new ArrayList<>(users);
+        if (after != null) {
+            missing.removeAll(after.getUsers() == null ? List.of() : after.getUsers());
+            syncedGroupMap.put(groupId, after);
+        }
+        if (after == null || !missing.isEmpty()) {
+            result.addError(groupId, "group " + groupId + ": " + (after == null ? users.size() : missing.size())
+                    + " member(s) LDAP names in the group, who reach it through a nesting below it that LDAP no longer "
+                    + "states, could not be put back as members" + (failure == null ? "" : " (" + failure + ")")
+                    + ", so that nesting is kept, for example " + sample(after == null ? users : missing));
+            return false;
+        }
+        result.addWarning(groupId, "group " + groupId + ": " + users.size() + " member(s) LDAP names in the group, "
+                + "who reach it through a nesting removed below it, were put back as members first, for example "
+                + sample(users) + (failure == null ? "" : " (a step after storing the group failed: " + failure + ")"));
+        return true;
     }
 
     /**

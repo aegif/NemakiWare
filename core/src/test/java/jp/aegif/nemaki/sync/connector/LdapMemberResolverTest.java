@@ -231,6 +231,57 @@ class LdapMemberResolverTest {
         assertEquals(List.of("g"), p.getAmbiguousGroupIds(), "the group the value could be was not marked");
     }
 
+    /** The ids of the groups an unresolved value of p could name, p in its own container. */
+    private static List<String> couldName(String groupDn, String value) {
+        LdapGroup g = group(groupDn, "g");
+        LdapGroup p = group("cn=p,ou=teams,dc=x", "p", value);
+        LdapMemberResolver.resolve(List.of(), List.of(g, p));
+        return p.getAmbiguousGroupIds();
+    }
+
+    @Test
+    @DisplayName("the value of a type outside the table is not compared — a time written two ways could be the group (R153 (b))")
+    void aValueOfATypeOutsideTheTableCouldBeAnyValue() {
+        assertEquals(List.of("g"), couldName("modifyTimestamp=20261014000000Z,ou=groups,dc=x",
+                "modifyTimestamp=20261014090000\\+0900,ou=groups,dc=x"));
+    }
+
+    @Test
+    @DisplayName("a descriptor and an OID are not compared — objectClass=groupOfNames could be 2.5.4.0=2.5.6.9 (R153 (b))")
+    void aDescriptorAndAnOidCouldBeTheSameValue() {
+        assertEquals(List.of("g"), couldName("objectClass=groupOfNames,ou=groups,dc=x", "2.5.4.0=2.5.6.9,ou=groups,dc=x"));
+    }
+
+    @Test
+    @DisplayName("two different types of the table are not the same — uid=ab is not cn=ab (R153 (b))")
+    void twoTypesOfTheTableAreNotTheSame() {
+        assertEquals(List.of(), couldName("cn=ab,ou=groups,dc=x", "uid=ab,ou=groups,dc=x"));
+    }
+
+    @Test
+    @DisplayName("a value outside ASCII is not compared — the directory's string preparation is not emulated (R153 (b))")
+    void aValueOutsideAsciiCouldBeAnyValue() {
+        assertEquals(List.of("g"), couldName("cn=\u1FB3,ou=groups,dc=x", "commonName=\u03B1\u03B9,ou=groups,dc=x"));
+    }
+
+    @Test
+    @DisplayName("the AVAs of a multi-valued RDN are paired in any order (R153 (b))")
+    void aMultiValuedRdnIsPairedInAnyOrder() {
+        assertEquals(List.of("g"), couldName("cn=g+ou=x,dc=y", "organizationalUnitName=X+commonName=G,dc=y"));
+        assertEquals(List.of(), couldName("cn=g+ou=x,dc=y", "organizationalUnitName=Z+commonName=G,dc=y"));
+    }
+
+    @Test
+    @DisplayName("a value that looks like a DN but cannot be parsed, among DN values, could be any group (R153 (b))")
+    void aValueThatCannotBeParsedCouldBeAnyGroup() {
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "uid=alice,ou=users,dc=x", "cn=x,=y,dc=x");
+        LdapGroup devs = group("cn=devs,ou=groups,dc=x", "devs", "alice", "ghost");
+        LdapMemberResolver.resolve(List.of(user("uid=alice,ou=users,dc=x", "alice")), List.of(p, devs));
+
+        assertTrue(p.isAnyGroupCouldBeNamed(), "an unparsed value among DNs was compared with nothing and dropped");
+        assertFalse(devs.isAnyGroupCouldBeNamed(), "memberUid values were taken for unparsed DNs");
+    }
+
     @Test
     @DisplayName("the same member written twice is one member")
     void aRepeatedMemberIsOneMember() {
