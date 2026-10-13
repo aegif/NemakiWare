@@ -1801,6 +1801,93 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
+    @DisplayName("the preview puts the member back on paper only: it says so, and writes nothing")
+    void thePreviewPutsBackOnPaperOnly() {
+        aliceReachesPThroughXAndY(false);
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        verify(contentService, never()).update(any(), any(), any());
+        assertTrue(warningsOf(preview, "p").contains("put back"), "the preview did not say it: " + warnings(preview));
+    }
+
+    @Test
+    @DisplayName("the preview sees the groups as the sync leaves them after taking out the ids of the users it creates")
+    void thePreviewSeesTheGroupsAsTheSyncLeavesThem() {
+        carolIsNew();
+        user(ALICE, "alice");
+        group(G_DN, "g", ALICE, CAROL);
+        stored("g", List.of("alice", "carol"), List.of());
+        ranged(P_DN, "p");
+        stored("p", List.of("bob"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        assertTrue(warningsOf(preview, "g").contains(PREFIX + "p"),
+                "the preview kept carol in g as if her old id were still there; the sync holds her back: " + warnings(preview));
+    }
+
+    @Test
+    @DisplayName("a user whose creation was attempted and cannot be read back is not put back — she may have been nobody until now")
+    void aUserWhoseCreationCannotBeReadBackIsNotPutBack() {
+        createdUsersGoIntoUsers();
+        user(ALICE, "alice");
+        user(CAROL, "carol");
+        java.util.concurrent.atomic.AtomicBoolean tried = new java.util.concurrent.atomic.AtomicBoolean();
+        when(contentService.getUserItemById(REPO, "carol")).thenAnswer(read -> {
+            if (tried.get()) {
+                throw new IllegalStateException("store down");
+            }
+            return null;
+        });
+        doAnswer(create -> {
+            tried.set(true);
+            throw new IllegalStateException("change log down");
+        }).when(contentService).createUserItem(any(), eq(REPO), any(UserItem.class));
+        // A local group lists carol from before; p nested it, which LDAP cannot state.
+        local("team", List.of("carol"), List.of());
+        group(P_DN, "p", ALICE, CAROL, CONTRACTOR);
+        stored("p", List.of("alice"), List.of("team"));
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(!persisted.get(PREFIX + "p").getUsers().contains("carol"),
+                "carol, whose creation was attempted, was put into p, which the sync does not write");
+    }
+
+    @Test
+    @DisplayName("a directory user who is not a NemakiWare user is not put back — an id no user has is nobody's")
+    void aUserWhoIsNotANemakiWareUserIsNotPutBack() {
+        user(ALICE, "alice");
+        user("uid=erin,ou=users,dc=example,dc=com", "erin");
+        when(contentService.getUserItemById(REPO, "erin")).thenReturn(null);
+        local("team", List.of("erin"), List.of());
+        group(P_DN, "p", ALICE, "uid=erin,ou=users,dc=example,dc=com", CONTRACTOR);
+        stored("p", List.of("alice"), List.of("team"));
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(!persisted.get(PREFIX + "p").getUsers().contains("erin"),
+                "erin, no NemakiWare user, was put into p: whoever takes the id later gets p");
+    }
+
+    @Test
+    @DisplayName("an orphan to be deleted loses the old id of a user created now first — it stays if its deletion fails")
+    void anOrphanToBeDeletedLosesTheOldIdFirst() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        carolIsNew();
+        stored("o", List.of("carol"), List.of());
+        doAnswer(delete -> {
+            throw new IllegalStateException("store down");
+        }).when(contentService).deleteGroup(REPO, PREFIX + "o");
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), persisted.get(PREFIX + "o").getUsers(),
+                "carol, created now, is in the orphan that could not be deleted");
+    }
+
+    @Test
     @DisplayName("a value that looks like a DN but cannot be parsed, among DN values, could name any group — the nesting is kept")
     void aValueThatCannotBeParsedKeepsTheNesting() {
         gGainsDave();
