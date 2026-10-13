@@ -87,14 +87,19 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
 
     /** A group as the member resolver leaves it: its members already looked up (R148). */
     private static LdapGroup ldap(List<String> users, List<String> groups) {
-        LdapGroup group = new LdapGroup("cn=eng,ou=groups,dc=example", "eng", "Engineering");
+        return ldap("eng", "Engineering", users, groups);
+    }
+
+    private static LdapGroup ldap(String id, String name, List<String> users, List<String> groups) {
+        LdapGroup group = new LdapGroup("cn=" + id + ",ou=groups,dc=example", id, name);
         group.setMemberAttributePresent(true);
         group.setMemberUserIds(new ArrayList<>(users));
         group.setMemberGroupIds(new ArrayList<>(groups));
         return group;
     }
 
-    private DirectorySyncResult performGroupSync(LdapGroup ldapGroup, boolean syncNestedGroups) throws Exception {
+    private DirectorySyncResult performGroupSync(LdapGroup ldapGroup, boolean syncNestedGroups,
+            LdapGroup... alsoInLdap) throws Exception {
         DirectorySyncConfig config = new DirectorySyncConfig();
         config.setSyncNestedGroups(syncNestedGroups);
         Method step = DirectorySyncServiceImpl.class.getDeclaredMethod("performGroupSync", String.class,
@@ -106,7 +111,9 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         for (String userId : ldapGroup.getMemberUserIds()) {
             users.put(userId, DirectorySyncServiceImpl.UserState.EXISTS);
         }
-        step.invoke(sync, REPO, List.of(ldapGroup), config, result, false, users);
+        List<LdapGroup> groups = new ArrayList<>(List.of(ldapGroup));
+        groups.addAll(List.of(alsoInLdap));
+        step.invoke(sync, REPO, groups, config, result, false, users);
         return result;
     }
 
@@ -132,7 +139,11 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
     @DisplayName("syncing nested groups, a changed group takes LDAP's nested groups")
     void aSyncedNestingIsReplaced() throws Exception {
         existing(List.of("alice"));
-        performGroupSync(ldap(List.of("alice", "bob"), List.of("qa")), true);
+        // qa is one of this sync's LDAP groups too, unchanged. Handed only eng, the nesting named a
+        // group only NemakiWare had, which reaches the parent through the groups NemakiWare has alone —
+        // the half of the nesting decision that R149 (a) records as a defect (review round 3).
+        performGroupSync(ldap(List.of("alice", "bob"), List.of("qa")), true,
+                ldap("qa", "QA", List.of(), List.of()));
 
         GroupItem group = written();
         assertEquals(List.of("alice", "bob"), group.getUsers());

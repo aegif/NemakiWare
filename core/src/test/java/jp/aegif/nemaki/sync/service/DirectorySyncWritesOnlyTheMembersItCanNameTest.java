@@ -144,6 +144,11 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         return written.getAllValues();
     }
 
+    private static String warnings(DirectorySyncResult result) {
+        return result.getWarnings().stream().map(w -> w.getGroupId() + ": " + w.getMessage())
+                .collect(Collectors.joining("; "));
+    }
+
     private static String errors(DirectorySyncResult result) {
         return result.getErrors().stream().map(e -> e.getGroupId() + ": " + e.getMessage())
                 .collect(Collectors.joining("; "));
@@ -305,6 +310,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         assertEquals(1, preview.getGroupsCreated(),
                 "the preview refused the group of a user it would create: " + errors(preview));
         assertEquals("", errors(preview));
+        assertEquals("", warnings(preview), "the preview counted a user it would create as one it would not write");
     }
 
     /** Missing users are created (as the shipped settings say), into .system/users. */
@@ -382,7 +388,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
     @Test
     @DisplayName("a nested group that NemakiWare does not have and the sync will not create is not named by its parent, and the parent is written")
-    void aNestedGroupThatWillNotExistIsNotNested() {
+    void aRefusedGroupNemakiWareDoesNotHaveIsNotNested() {
         user("uid=alice,ou=users,dc=example,dc=com", "alice");
         LdapGroup big = group("cn=big,ou=groups,dc=example,dc=com", "big");
         big.setMemberAttributePresent(true);
