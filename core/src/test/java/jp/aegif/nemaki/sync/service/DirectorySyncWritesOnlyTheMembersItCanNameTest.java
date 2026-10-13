@@ -381,7 +381,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
-    @DisplayName("a nested group the sync is not writing is not named by its parent, and the parent is written")
+    @DisplayName("a nested group that NemakiWare does not have and the sync will not create is not named by its parent, and the parent is written")
     void aNestedGroupThatWillNotExistIsNotNested() {
         user("uid=alice,ou=users,dc=example,dc=com", "alice");
         LdapGroup big = group("cn=big,ou=groups,dc=example,dc=com", "big");
