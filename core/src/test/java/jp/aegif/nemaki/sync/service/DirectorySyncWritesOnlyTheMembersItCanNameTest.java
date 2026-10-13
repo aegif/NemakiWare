@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Folder;
 import jp.aegif.nemaki.model.GroupItem;
 import jp.aegif.nemaki.model.UserItem;
@@ -78,6 +79,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     private final List<LdapUser> ldapUsers = new ArrayList<>();
     private final List<LdapGroup> ldapGroups = new ArrayList<>();
     private final List<GroupItem> stored = new ArrayList<>();
+    private final List<Content> systemChildren = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -102,7 +104,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         when(groups.getId()).thenReturn("groups-folder");
         when(groups.getName()).thenReturn("groups");
         when(contentService.getSystemFolder(REPO)).thenReturn(system);
-        when(contentService.getChildren(REPO, "system-folder")).thenReturn(new ArrayList<>(List.of(groups)));
+        systemChildren.add(groups);
+        when(contentService.getChildren(REPO, "system-folder")).thenReturn(systemChildren);
 
         sync = new DirectorySyncServiceImpl() {
             @Override
@@ -269,6 +272,54 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "an id no NemakiWare user has was written — whoever takes it later gets the group");
         assertTrue(result.getWarnings().stream().anyMatch(w -> w.getMessage().contains("bjones")),
                 "the member that was not written was not reported");
+    }
+
+    @Test
+    @DisplayName("a user this sync creates is a member it writes — the shipped settings create users, so the first sync after upgrading takes this path")
+    void aUserTheSyncCreatesIsAMemberItWrites() {
+        createdUsersGoIntoUsers();
+        user("CN=Carol Doe,OU=Users,DC=example,DC=com", "cdoe");
+        when(contentService.getUserItemById(REPO, "cdoe")).thenReturn(null);
+        group("CN=Engineering,OU=Groups,DC=example,DC=com", "eng", "CN=Carol Doe,OU=Users,DC=example,DC=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService).createUserItem(any(), eq(REPO), any());
+        List<GroupItem> created = creates();
+        assertEquals(1, created.size(), "the group of a user this sync created was not written: " + errors(result));
+        assertEquals(List.of("cdoe"), created.get(0).getUsers());
+        assertEquals("", errors(result));
+    }
+
+    @Test
+    @DisplayName("the preview counts a user it would create as a member, as the sync does")
+    void aUserThePreviewWouldCreateIsAMemberToo() {
+        createdUsersGoIntoUsers();
+        user("CN=Carol Doe,OU=Users,DC=example,DC=com", "cdoe");
+        when(contentService.getUserItemById(REPO, "cdoe")).thenReturn(null);
+        group("CN=Engineering,OU=Groups,DC=example,DC=com", "eng", "CN=Carol Doe,OU=Users,DC=example,DC=com");
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        verify(contentService, never()).createUserItem(any(), any(), any());
+        assertEquals(1, preview.getGroupsCreated(),
+                "the preview refused the group of a user it would create: " + errors(preview));
+        assertEquals("", errors(preview));
+    }
+
+    /** Missing users are created (as the shipped settings say), into .system/users. */
+    private void createdUsersGoIntoUsers() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_CREATE_MISSING_USERS)).thenReturn(true);
+        Folder users = mock(Folder.class);
+        when(users.getId()).thenReturn("users-folder");
+        when(users.getName()).thenReturn("users");
+        systemChildren.add(users);
+    }
+
+    private List<GroupItem> creates() {
+        ArgumentCaptor<GroupItem> created = ArgumentCaptor.forClass(GroupItem.class);
+        verify(contentService, atLeast(0)).createGroupItem(any(), eq(REPO), created.capture());
+        return created.getAllValues();
     }
 
     @Test
