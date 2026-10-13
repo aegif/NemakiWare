@@ -738,6 +738,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     }
                     log.warn("AUDIT: Group not written by directory sync: " + unknown);
                     result.addError(nemakiGroupId, unknown);
+                    if (syncedGroupMap.containsKey(nemakiGroupId)) {
+                        leaveOutCreatedUsers(repositoryId, nemakiGroupId, userStates, dryRun, result);
+                    }
                     continue;
                 }
                 String uncheckedParent = withheldBy.get(nemakiGroupId);
@@ -1060,6 +1063,70 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     + "under it could not be removed" + (failure == null ? "" : " (" + failure + ")") + ", so the "
                     + "groups below them are given no one new while the nesting stays, for example " + sample(left));
         }
+    }
+
+    /**
+     * A group the sync does not write keeps the ids it lists — and a user this sync created whom it listed before
+     * she existed would gain it now, and, through a nesting the sync could not check, the groups above it (review
+     * round 1). Those ids alone are taken out, from the group as stored; whom LDAP names in it is not known, so no
+     * one is added. The preview says what it would take out.
+     */
+    private void leaveOutCreatedUsers(String repositoryId, String groupId, Map<String, UserState> userStates,
+            boolean dryRun, DirectorySyncResult result) {
+        if (!userStates.containsValue(UserState.CREATED)) {
+            return;
+        }
+        GroupItem group;
+        try {
+            group = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+        } catch (Exception e) {
+            group = null;
+        }
+        if (group == null) {
+            result.addError(groupId, "group " + groupId + ": the group could not be read, so whether it lists a user this "
+                    + "sync created is not known");
+            return;
+        }
+        List<String> created = new ArrayList<>();
+        for (String id : group.getUsers() == null ? List.<String>of() : group.getUsers()) {
+            if (userStates.get(id) == UserState.CREATED) {
+                created.add(id);
+            }
+        }
+        if (created.isEmpty()) {
+            return;
+        }
+        if (!dryRun) {
+            List<String> keep = new ArrayList<>(group.getUsers());
+            keep.removeAll(created);
+            group.setUsers(keep);
+            group.setModifier("system");
+            group.setModified(new GregorianCalendar());
+            String failure = null;
+            try {
+                contentService.update(new SystemCallContext(repositoryId), repositoryId, group);
+            } catch (Exception e) {
+                failure = e.getMessage();
+            }
+            List<String> left = new ArrayList<>(created);
+            try {
+                GroupItem after = contentService.getGroupItemByIdFresh(repositoryId, groupId);
+                if (after != null) {
+                    left.retainAll(after.getUsers() == null ? List.of() : after.getUsers());
+                }
+            } catch (Exception e) {
+                failure = (failure == null ? "" : failure + "; ") + e.getMessage();
+            }
+            if (!left.isEmpty()) {
+                result.addError(groupId, "group " + groupId + ": " + left.size() + " user(s) this sync created were listed "
+                        + "in the group before they existed and could not be taken out" + (failure == null ? "" : " ("
+                        + failure + ")") + ", so they gain the group's permissions, for example " + sample(left));
+                return;
+            }
+        }
+        result.addWarning(groupId, "group " + groupId + ": " + created.size() + " user(s) this sync created were listed in "
+                + "the group before they existed, and were taken out — the group is not written while its membership is "
+                + "not known, so it gains no one, for example " + sample(created));
     }
 
     private static void uncheck(Map<String, Set<String>> uncheckedEdges, String parentId, String nestedId) {

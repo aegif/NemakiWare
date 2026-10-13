@@ -1281,6 +1281,43 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 + warnings(result));
     }
 
+    /** g is refused (a member outside the search) and lists carol from before she was a user; p's members cannot be read. */
+    private void carolListedInARefusedGroup() {
+        createdUsersGoIntoUsers();
+        user(ALICE, "alice");
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        when(contentService.getUserItemById(REPO, "carol")).thenReturn(null);
+        group(G_DN, "g", ALICE, CONTRACTOR);
+        stored("g", List.of("alice", "carol"), List.of());
+        ranged(P_DN, "p");
+        stored("p", List.of("bob"), List.of(PREFIX + "g"));
+    }
+
+    @Test
+    @DisplayName("a user the sync created is taken out of a group it does not write that listed her before she existed — the group gains no one, nor the group above it")
+    void aUserTheSyncCreatedIsTakenOutOfAGroupItDoesNotWrite() {
+        carolListedInARefusedGroup();
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), persisted.get(PREFIX + "g").getUsers(),
+                "carol, created now and listed in a group the sync does not write, gains it — and p above it (or alice was taken out)");
+        assertTrue(warningsOf(result, "g").contains("taken out"), "the created user taken out was not reported: "
+                + warnings(result));
+        assertTrue(errors(result).contains(PREFIX + "g"), "g is no longer reported as refused: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("the preview says which created users it would take out of a group it does not write, and writes nothing")
+    void thePreviewSaysWhichCreatedUsersItWouldTakeOut() {
+        carolListedInARefusedGroup();
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        verify(contentService, never()).update(any(), any(), any());
+        assertTrue(warningsOf(preview, "g").contains("taken out"), "the preview did not say it: " + warnings(preview));
+    }
+
     @Test
     @DisplayName("removing a nesting from a group the sync does not write puts in the members LDAP names in it who belonged to it only through that nesting")
     void aMemberLdapNamesInTheGroupKeepsItWhenTheNestingIsRemoved() {
