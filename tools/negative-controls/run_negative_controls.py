@@ -9766,8 +9766,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9886,8 +9886,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 213 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 214 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10888,7 +10888,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10902,7 +10902,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10958,8 +10958,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 213 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 214 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10972,8 +10972,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **213 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **213 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **214 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **214 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11809,7 +11809,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **213 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **214 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13794,8 +13794,8 @@ CONTROLS = [
         # Re-pointed when controls sit above the boundary again (QK4〜QQ4, 2026-10-06): the
         # empty-range form of this control (a count stated for no range) comes back when the
         # next full sweep empties the range. Here the count is wrong by one.
-        find='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
-        replace='**9 回目以後に足した control は 213 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
+        find='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 0 ある。',
+        replace='**9 回目以後に足した control は 214 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13866,7 +13866,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 1936 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 1937 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13952,7 +13952,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **213 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **214 本**（通し未実施）。',
         # A count far below any the runner will have again: 213 was this control's stale value, and
         # on 2026-10-13 the real count became 213, so find and replace were the same and it did not fire.
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **100 本**（通し未実施）。',
@@ -13964,7 +13964,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **1936**（2026-10-13 時点）',
+        find='- コントロール **1937**（2026-10-13 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -19256,41 +19256,41 @@ CONTROLS = [
     ),
     dict(
         id='OH4',
-        what="a P1 row stands in the RC gate's table while condition 11 is declared met, so the declaration reads over a table that contradicts it (pointed back 2026-10-13: R148 was fixed and the declaration returned; 2026-10-12 to 13 it measured the withdrawn direction)",
+        what="a P1 row stands in the RC gate's table while its introduction declares condition 11 met (re-pointed 2026-10-13: R149 is P1 and the declaration was withdrawn, so the sabotage writes the declaration back over it — the same turn as for R148 on 2026-10-12)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| R62 | **P2**（2026-09-29 に分類。開いてはいない） |',
-        replace='| R62 | **P1**（2026-09-29 に分類。開いてはいない） |',
+        find='**条件 11 はいま満たしていない — open P1 は 1 件（R149、2026-10-13）。**',
+        replace='**条件 11 は 2026-10-13 に満たした — open P0/P1 は 0 件。**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
     dict(
         id='OK4',
-        what="a residual stands in the RC gate's table with no severity (as the frozen three did until 2026-09-29) while condition 11 is declared met (pointed back 2026-10-13: R148 was fixed and the declaration returned; 2026-10-12 to 13 it measured the withdrawn direction)",
+        what="the RC gate's table allows condition 11 through 「設計判断待ち」 (R149 reclassified so, as R67 is) while its introduction withholds it (re-pointed 2026-10-13: with the declaration withdrawn, the unclassified-row arm cannot be made by one edit of the document)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| R63 | **P2**（2026-09-29 に分類。開いてはいない） |',
-        replace='| R63 | 凍結 |',
+        find='| R149 | **P1** |',
+        replace='| R149 | 設計判断待ち |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
     dict(
         id='OI4',
-        what="the RC gate's introduction stops declaring condition 11 met while every row allows it, so the readiness document reads as further from release than the work is (pointed back 2026-10-13: R148 was fixed and the declaration returned; 2026-10-12 to 13 it measured the withdrawn direction)",
+        what="the RC gate's table allows condition 11 (R149 reclassified P2) while its introduction withholds it, so the readiness document reads as further from release than the work is (re-pointed 2026-10-13, when R149 went back to P1)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**条件 11 は 2026-10-13 に満たした — open P0/P1 は 0 件。**',
-        replace='**条件 11 はまだ宣言していない。**',
+        find='| R149 | **P1** |',
+        replace='| R149 | **P2** |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
     dict(
         id='OJ4',
-        what="§0 drops condition 11 from the met conditions while the gate's table allows it — the declaration's second exit (pointed back 2026-10-13: R148 was fixed and the declaration returned; 2026-10-12 to 13 it measured the withdrawn direction)",
+        what="§0 lists condition 11 among the met conditions while a P1 row stands in the gate's table — the declaration's second exit (re-pointed 2026-10-13: R149 is P1 and §0 lists it as unmet, so the sabotage puts it back in the met list)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='/ 11 open P0/P1 = 0（2026-09-29 に宣言',
-        replace='/ 11 open P0/P1 は未宣言（2026-09-29 に宣言',
+        find='）。**未達 1 — 11 open P0/P1 = 0**（2026-09-29 に宣言し',
+        replace='/ 11 open P0/P1 = 0（2026-09-29 に宣言し',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
@@ -21668,7 +21668,7 @@ CONTROLS = [
         find='                    LdapMemberResolver.resolve(ldapUsers, ldapGroups);\n',
         replace='',
         test='DirectorySyncWritesOnlyTheMembersItCanNameTest',
-        expect_fail=['anActiveDirectoryMemberIsItsAccountName', 'aCorrectMembershipIsNotRewritten', 'aMemberItCannotNameRefusesTheGroup', 'aDirectoryUserWhoIsNotANemakiWareUserIsNotWritten', 'aNestedGroupIsANestedGroup', 'aLocalNestedGroupIsNotTheLdapGroup', 'aNestedGroupThatWillNotExistIsNotNested', 'aUserTheSyncCreatesIsAMemberItWrites', 'aUserThePreviewWouldCreateIsAMemberToo'],
+        expect_fail=['anActiveDirectoryMemberIsItsAccountName', 'aCorrectMembershipIsNotRewritten', 'aMemberItCannotNameRefusesTheGroup', 'aDirectoryUserWhoIsNotANemakiWareUserIsNotWritten', 'aNestedGroupIsANestedGroup', 'aLocalNestedGroupIsNotTheLdapGroup', 'aRefusedGroupNemakiWareDoesNotHaveIsNotNested', 'aUserTheSyncCreatesIsAMemberItWrites', 'aUserThePreviewWouldCreateIsAMemberToo'],
     ),
     dict(
         id='XN4',
@@ -21678,7 +21678,7 @@ CONTROLS = [
         find='        if (ldapGroup.isMembersRanged()) {\n',
         replace='        if (false) {\n',
         test='DirectorySyncWritesOnlyTheMembersItCanNameTest',
-        expect_fail=['aRangedGroupIsNotWritten', 'thePreviewReportsTheSameRefusals', 'aNestedGroupThatWillNotExistIsNotNested'],
+        expect_fail=['aRangedGroupIsNotWritten', 'thePreviewReportsTheSameRefusals', 'aRefusedGroupNemakiWareDoesNotHaveIsNotNested'],
     ),
     dict(
         id='XO4',
@@ -21808,7 +21808,7 @@ CONTROLS = [
         find='                    if (willExist.contains(groupPrefix + groupId)) {\n',
         replace='                    if (true) {\n',
         test='DirectorySyncWritesOnlyTheMembersItCanNameTest',
-        expect_fail=['aNestedGroupThatWillNotExistIsNotNested'],
+        expect_fail=['aRefusedGroupNemakiWareDoesNotHaveIsNotNested'],
     ),
     dict(
         id='YB4',
@@ -21947,11 +21947,23 @@ CONTROLS = [
         file='core/src/main/java/jp/aegif/nemaki/sync/service/DirectorySyncServiceImpl.java',
         # The other half of willExist — it starts from the groups NemakiWare has — gets no control.
         # The only input that reaches that half on its own is R149 (a): a group this sync refuses
-        # but NemakiWare has, nested by its parent. A lock there would fix the defect in place.
+        # but NemakiWare has, nested by its parent. A lock there would fix the defect in place —
+        # and one did, until review round 3: aSyncedNestingIsReplaced handed the sync only eng, so
+        # its nested qa came from that half alone. It now hands qa over as an LDAP group too.
         find='                willExist.add(nemakiGroupId);\n',
         replace='',
         test='DirectorySyncWritesOnlyTheMembersItCanNameTest',
         expect_fail=['aNestedGroupIsANestedGroup'],
+    ),
+    dict(
+        id='YP4',
+        what="the preview reads a user it would create as one that is not a NemakiWare user, so it warns that the member is not written while the sync writes it — the preview and the sync disagree (R148, review round 3: the preview's lock saw only that the group was not refused)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/sync/service/DirectorySyncServiceImpl.java',
+        find='                        states.put(nemakiUserId, UserState.EXISTS);\n                        result.incrementUsersAdded();\n',
+        replace='                        states.put(nemakiUserId, dryRun ? UserState.ABSENT : UserState.EXISTS);\n                        result.incrementUsersAdded();\n',
+        test='DirectorySyncWritesOnlyTheMembersItCanNameTest',
+        expect_fail=['aUserThePreviewWouldCreateIsAMemberToo'],
     ),
 ]
 
