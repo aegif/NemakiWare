@@ -53,6 +53,12 @@ public class LdapGroup {
      * only where nested groups are synced.
      */
     private List<String> ambiguousGroupMembers = new ArrayList<>();
+    /**
+     * The ids of the group entries an ambiguous member value could name: the group entry of a DN both
+     * searches returned, and the id two group entries share (R151). A nesting of one of these is not known
+     * to be gone from LDAP, though it is not among the nested groups the sync could name.
+     */
+    private List<String> ambiguousGroupIds = new ArrayList<>();
     /** Whether another group entry has this group's id, so which entry the group is is not known. */
     private boolean idShared;
     /**
@@ -146,6 +152,14 @@ public class LdapGroup {
 
     public void setAmbiguousGroupMembers(List<String> ambiguousGroupMembers) {
         this.ambiguousGroupMembers = ambiguousGroupMembers;
+    }
+
+    public List<String> getAmbiguousGroupIds() {
+        return ambiguousGroupIds;
+    }
+
+    public void setAmbiguousGroupIds(List<String> ambiguousGroupIds) {
+        this.ambiguousGroupIds = ambiguousGroupIds;
     }
 
     public boolean isIdShared() {

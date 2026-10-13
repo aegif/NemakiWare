@@ -99,6 +99,7 @@ public final class LdapMemberResolver {
             List<String> unresolved = new ArrayList<>();
             List<String> ambiguous = new ArrayList<>();
             List<String> ambiguousGroups = new ArrayList<>();
+            List<String> ambiguousGroupIds = new ArrayList<>();
             List<String> values = group.getMemberDns() == null ? List.of() : group.getMemberDns();
             for (String value : values) {
                 LdapName dn = parse(value);
@@ -114,6 +115,7 @@ public final class LdapMemberResolver {
                     }
                 } else if (userByDn.containsKey(dn) && groupByDn.containsKey(dn)) {
                     ambiguous.add(value);
+                    addOnce(ambiguousGroupIds, groupByDn.get(dn));
                 } else if (userByDn.containsKey(dn)) {
                     String id = userByDn.get(dn);
                     if (userIdCount.get(id) > 1) {
@@ -127,6 +129,7 @@ public final class LdapMemberResolver {
                         // Only the group search returned this entry, so it is a nested group whichever
                         // entry the id means: ambiguous only where nested groups are synced (R149 (c)).
                         ambiguousGroups.add(value);
+                        addOnce(ambiguousGroupIds, id);
                     } else {
                         addOnce(groupMembers, id);
                     }
@@ -139,6 +142,7 @@ public final class LdapMemberResolver {
             group.setUnresolvedMembers(unresolved);
             group.setAmbiguousMembers(ambiguous);
             group.setAmbiguousGroupMembers(ambiguousGroups);
+            group.setAmbiguousGroupIds(ambiguousGroupIds);
             group.setIdShared(groupIdCount.get(group.getGroupId()) > 1);
             if (!unresolved.isEmpty() || !ambiguous.isEmpty() || !ambiguousGroups.isEmpty()) {
                 log.info("Group " + group.getGroupId() + ": " + unresolved.size() + " member value(s) are not a "

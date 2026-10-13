@@ -36,6 +36,8 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -63,11 +65,25 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
     private ContentService contentService;
     private DirectorySyncServiceImpl sync;
 
+    /** What the store holds after each write, read back past the cache. */
+    private final Map<String, GroupItem> persisted = new HashMap<>();
+
     @BeforeEach
     void setUp() {
         contentService = mock(ContentService.class);
         sync = new DirectorySyncServiceImpl();
         sync.setContentService(contentService);
+        doAnswer(write -> {
+            Object content = write.getArgument(2);
+            if (content instanceof GroupItem) {
+                GroupItem group = (GroupItem) content;
+                persisted.put(group.getGroupId(), new GroupItem(group.getId(), group.getObjectType(),
+                        group.getGroupId(), group.getName(), new ArrayList<>(group.getUsers()),
+                        new ArrayList<>(group.getGroups())));
+            }
+            return content;
+        }).when(contentService).update(any(), eq(REPO), any());
+        when(contentService.getGroupItemByIdFresh(eq(REPO), any())).thenAnswer(read -> persisted.get(read.getArgument(1)));
     }
 
     /**
@@ -117,10 +133,12 @@ class DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest {
         return result;
     }
 
+    /** The last write: what the group holds when the step is done. */
     private GroupItem written() {
         ArgumentCaptor<GroupItem> group = ArgumentCaptor.forClass(GroupItem.class);
-        verify(contentService).update(any(), eq(REPO), group.capture());
-        return group.getValue();
+        verify(contentService, atLeastOnce()).update(any(), eq(REPO), group.capture());
+        List<GroupItem> writes = group.getAllValues();
+        return writes.get(writes.size() - 1);
     }
 
     @Test
