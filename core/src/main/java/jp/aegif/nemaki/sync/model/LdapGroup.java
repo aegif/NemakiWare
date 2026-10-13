@@ -54,9 +54,10 @@ public class LdapGroup {
      */
     private List<String> ambiguousGroupMembers = new ArrayList<>();
     /**
-     * The ids of the group entries an ambiguous member value could name: the group entry of a DN both
-     * searches returned, and the id two group entries share (R151). A nesting of one of these is not known
-     * to be gone from LDAP, though it is not among the nested groups the sync could name.
+     * The ids of the groups a member value could name though the sync cannot tell that it does: the group
+     * entry of a DN both searches returned, the id two group entries share, and a group whose DN a value no
+     * search returned as written could still be, written differently (R151). A nesting of one of these is not
+     * known to be gone from LDAP, though it is not among the nested groups the sync could name.
      */
     private List<String> ambiguousGroupIds = new ArrayList<>();
     /** Whether another group entry has this group's id, so which entry the group is is not known. */

@@ -129,6 +129,7 @@ class LdapMemberResolverTest {
         assertEquals(List.of(), eng.getMemberUserIds(), "the entry was taken for the user");
         assertEquals(List.of(), eng.getMemberGroupIds(), "the entry was taken for the group");
         assertEquals(List.of("cn=ops,ou=people,dc=x"), eng.getAmbiguousMembers());
+        assertEquals(List.of("ops"), eng.getAmbiguousGroupIds(), "the group the entry could be was not marked (R151)");
     }
 
     @Test
@@ -168,6 +169,66 @@ class LdapMemberResolverTest {
         assertEquals(List.of("cn=eng,ou=archive,dc=x"), all.getAmbiguousGroupMembers());
         // Only the group search returned it: it is a nested group whichever entry it is (R149 (c)).
         assertEquals(List.of(), all.getAmbiguousMembers(), "a group-only ambiguity was counted as one that could be a user");
+        assertEquals(List.of("eng"), all.getAmbiguousGroupIds(), "the group the value could name was not marked (R151)");
+    }
+
+    @Test
+    @DisplayName("a DN written with an attribute's long name is not named, but marked as one the group could be (R151)")
+    void aDnWrittenWithAnAliasCouldBeTheGroup() {
+        assertCouldBeG("commonName=G,ou=groups,dc=x");
+    }
+
+    @Test
+    @DisplayName("a DN written with an attribute's OID is not named, but marked as one the group could be (R151)")
+    void aDnWrittenWithAnOidCouldBeTheGroup() {
+        assertCouldBeG("2.5.4.3=g,2.5.4.11=groups,0.9.2342.19200300.100.1.25=x");
+    }
+
+    @Test
+    @DisplayName("a DN with a value written in hex is not named, but marked as one the group could be (R151)")
+    void aDnWithAHexValueCouldBeTheGroup() {
+        assertCouldBeG("cn=#0c0167,ou=groups,dc=x");
+    }
+
+    @Test
+    @DisplayName("a DN whose value is spaced differently — the directory does not count the extra spaces — could be the group (R151)")
+    void aDnSpacedDifferentlyCouldBeTheGroup() {
+        LdapGroup rnd = group("cn=r and d,ou=groups,dc=x", "rnd");
+        LdapGroup p = group("cn=p,ou=teams,dc=x", "p", "commonName=r  and  d,ou=groups,dc=x");
+        LdapMemberResolver.resolve(List.of(), List.of(rnd, p));
+
+        assertEquals(List.of("rnd"), p.getAmbiguousGroupIds(), "the group the value could be was not marked");
+    }
+
+    @Test
+    @DisplayName("a DN whose value is written in a compatibility form (full-width) could be the group (R151)")
+    void aDnInACompatibilityFormCouldBeTheGroup() {
+        assertCouldBeG("commonName=\uFF47,ou=groups,dc=x");
+    }
+
+    @Test
+    @DisplayName("a DN of another entry is not marked as one the group could be — its nesting can be checked (R151)")
+    void aDnOfAnotherEntryIsNotTheGroup() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g");
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "uid=g,ou=contractors,dc=x", "cn=g,ou=archive,dc=x");
+        LdapMemberResolver.resolve(List.of(), List.of(g, p));
+
+        assertEquals(2, p.getUnresolvedMembers().size());
+        assertEquals(List.of(), p.getAmbiguousGroupIds(), "a DN of another entry was taken for one g could be");
+    }
+
+    /**
+     * The value names no entry as written — the group is refused as before (R148) — and g is the group it
+     * could name (p sits in another container: a value in hex could be p's name too).
+     */
+    private static void assertCouldBeG(String value) {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g");
+        LdapGroup p = group("cn=p,ou=teams,dc=x", "p", value);
+        LdapMemberResolver.resolve(List.of(), List.of(g, p));
+
+        assertEquals(List.of(value), p.getUnresolvedMembers(), "the value was named");
+        assertEquals(List.of(), p.getMemberGroupIds());
+        assertEquals(List.of("g"), p.getAmbiguousGroupIds(), "the group the value could be was not marked");
     }
 
     @Test

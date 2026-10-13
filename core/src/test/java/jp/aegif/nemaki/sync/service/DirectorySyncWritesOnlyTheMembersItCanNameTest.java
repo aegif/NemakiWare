@@ -194,6 +194,20 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 argThat(content -> content instanceof GroupItem && (PREFIX + id).equals(((GroupItem) content).getGroupId())));
     }
 
+    /** The first writes of the group fail before storing it; the later ones store it. */
+    private void failFirstWrites(String id, int failing) {
+        java.util.concurrent.atomic.AtomicInteger writes = new java.util.concurrent.atomic.AtomicInteger();
+        doAnswer(write -> {
+            GroupItem group = write.getArgument(2);
+            if (writes.getAndIncrement() < failing) {
+                throw new IllegalStateException("store down");
+            }
+            persisted.put(group.getGroupId(), copy(group));
+            return group;
+        }).when(contentService).update(any(), eq(REPO),
+                argThat(content -> content instanceof GroupItem && (PREFIX + id).equals(((GroupItem) content).getGroupId())));
+    }
+
     private void failCreate(String id, boolean afterStoring) {
         doAnswer(create -> {
             GroupItem group = create.getArgument(2);
@@ -532,17 +546,9 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "uid=alice,ou=users,dc=example,dc=com", "cn=qa,ou=groups,dc=example,dc=com");
         stored("qa", List.of("alice"), List.of());
         stored("eng", List.of("alice"), List.of("qa"));
-        // The first write of eng — removing the local "qa" — fails before storing; the later one does not.
-        java.util.concurrent.atomic.AtomicBoolean failed = new java.util.concurrent.atomic.AtomicBoolean();
-        doAnswer(write -> {
-            GroupItem group = write.getArgument(2);
-            if (failed.compareAndSet(false, true)) {
-                throw new IllegalStateException("store down");
-            }
-            persisted.put(group.getGroupId(), copy(group));
-            return group;
-        }).when(contentService).update(any(), eq(REPO),
-                argThat(content -> content instanceof GroupItem && (PREFIX + "eng").equals(((GroupItem) content).getGroupId())));
+        // The first step's writes of eng — removing the local "qa", and the one more try — fail before storing;
+        // the later one does not.
+        failFirstWrites("eng", 2);
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
 
@@ -1161,6 +1167,191 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "g gained dave, though whether p still nests it is not known");
         assertTrue(errors(result).contains(PREFIX + "p: group " + PREFIX + "p: removing the nested groups"),
                 "p was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a nesting a value written differently could name is kept — commonName=g is cn=g to the directory, though not as written")
+    void aNestingAValueWrittenDifferentlyCouldNameIsKept() {
+        gGainsDave();
+        // LDAP still nests g in p, written with the attribute's long name; the group search returns cn=g.
+        group(P_DN, "p", ALICE, "commonName=g,ou=groups,dc=example,dc=com");
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "p").equals(w.getGroupId())),
+                "a nesting LDAP still has was removed: g's members lose p's permissions");
+        assertTrue(warningsOf(result, "p").contains("could not be checked"), "the unchecked nesting was not reported: "
+                + warnings(result));
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained dave through a nesting the sync could not check");
+    }
+
+    @Test
+    @DisplayName("a removal that failed before storing is tried once more, and the group below is written as usual")
+    void aRemovalThatFailedOnceIsTriedAgain() {
+        gGainsDave();
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+        failFirstWrites("p", 1);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), persisted.get(PREFIX + "p").getGroups(), "the removal was not tried again");
+        assertEquals(List.of("alice", "dave"), the(writes(), "g").getUsers(), "g was held back by a nesting that is gone");
+        assertTrue(warningsOf(result, "p").contains("on a second try"), "the first failure was not reported: "
+                + warnings(result));
+        assertTrue(!errors(result).contains("could not be removed"), "a removal that was done was reported as failed: "
+                + errors(result));
+    }
+
+    @Test
+    @DisplayName("once the group above is written and lets go of the nesting the first step could not remove, the groups written after it are not held back")
+    void aGroupBelowIsLetGoOnceTheGroupAboveIsWritten() {
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        // p is written by the sync and no longer nests g; the first step cannot remove the nesting (both tries
+        // fail before storing), writing p later succeeds, and g comes after p.
+        group(P_DN, "p", ALICE);
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+        group(G_DN, "g", ALICE, DAVE);
+        stored("g", List.of("alice"), List.of());
+        failFirstWrites("p", 2);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "p", PREFIX + "p", PREFIX + "p", PREFIX + "g"), writeOrder());
+        assertEquals(List.of(), persisted.get(PREFIX + "p").getGroups());
+        assertEquals(List.of("alice", "dave"), the(writes(), "g").getUsers(),
+                "g stayed held back after p let go of it: dave is not added until the next sync");
+        assertTrue(errors(result).contains("could not be removed"), "the failed first step was not reported: "
+                + errors(result));
+    }
+
+    @Test
+    @DisplayName("the nesting of a group whose id two entries share is not checked, though the entry read first names it — which entry the group is, is not known")
+    void aNestingOfAGroupWhoseIdTwoEntriesShareIsNotCheckedWhenTheFirstNamesIt() {
+        gGainsDave();
+        group(P_DN, "p", ALICE, G_DN);
+        group("cn=p,ou=archive,dc=example,dc=com", "p", ALICE);
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained dave, who reaches p — though which entry p is, is not known");
+        assertTrue(warningsOf(result, "g").contains(PREFIX + "p"), "the held-back member was not reported: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("the same when the entry read first does not name it — the order the directory returns them in decides nothing")
+    void aNestingOfAGroupWhoseIdTwoEntriesShareIsNotCheckedWhenTheSecondNamesIt() {
+        gGainsDave();
+        group("cn=p,ou=archive,dc=example,dc=com", "p", ALICE);
+        group(P_DN, "p", ALICE, G_DN);
+        stored("p", List.of("alice"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained dave, who reaches p — though which entry p is, is not known");
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "p").equals(w.getGroupId())),
+                "the nesting of a group whose entry is not known was removed");
+    }
+
+    @Test
+    @DisplayName("below a nesting the sync cannot check, a user the sync created is not let in, though the group listed the id before")
+    void aUserTheSyncCreatedIsNotLetInBelowAnUncheckedNesting() {
+        createdUsersGoIntoUsers();
+        user(ALICE, "alice");
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        when(contentService.getUserItemById(REPO, "carol")).thenReturn(null);
+        group(G_DN, "g", ALICE, "uid=carol,ou=users,dc=example,dc=com");
+        // 3.4.0 wrote carol's id into g before she was a NemakiWare user.
+        stored("g", List.of("alice", "carol"), List.of());
+        ranged(P_DN, "p");
+        stored("p", List.of("bob"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), the(writes(), "g").getUsers(),
+                "carol, whom this sync created, was let into g — and through the unchecked nesting into p");
+        assertTrue(warningsOf(result, "g").contains(PREFIX + "p"), "the held-back member was not reported: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("removing a nesting from a group the sync does not write puts in the members LDAP names in it who belonged to it only through that nesting")
+    void aMemberLdapNamesInTheGroupKeepsItWhenTheNestingIsRemoved() {
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        group(G_DN, "g", ALICE, DAVE);
+        stored("g", List.of("alice"), List.of());
+        // p names alice and someone outside the search (it is refused), and no longer nests g; NemakiWare's p
+        // has alice only through g.
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of(), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        GroupItem p = persisted.get(PREFIX + "p");
+        assertEquals(List.of(), p.getGroups());
+        assertEquals(List.of("alice"), p.getUsers(),
+                "alice, whom LDAP names in p, lost p's permissions with the nesting (or dave, whom it does not, gained them)");
+        assertEquals(List.of("alice", "dave"), the(writes(), "g").getUsers());
+        assertTrue(warningsOf(result, "p").contains("written into it"), "the member written in was not reported: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("a write that failed before storing is not taken for stored because the read-back shows the same members — the new name was not stored")
+    void aNameThatWasNotStoredIsNotTakenForStored() {
+        user(ALICE, "alice");
+        LdapGroup g = group(G_DN, "g", ALICE);
+        g.setGroupName("Engineering");
+        stored("g", List.of("alice"), List.of());
+        failWrites("g", false);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(errors(result).contains(PREFIX + "g"), "a write that stored nothing was taken for one that stored: "
+                + errors(result));
+        assertTrue(!warningsOf(result, "g").contains("was stored"), "a write that stored nothing was reported as stored: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("an orphan that cannot be read back after the first step is reported — no LDAP group reports it")
+    void anOrphanThatCannotBeReadBackIsReported() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        gGainsDave();
+        stored("o", List.of("carol"), List.of(PREFIX + "g"));
+        when(contentService.getGroupItemByIdFresh(REPO, PREFIX + "o")).thenThrow(new IllegalStateException("store down"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(errors(result).contains(PREFIX + "o: group " + PREFIX + "o: removing the nested groups"),
+                "the orphan that could not be read back was not reported: " + errors(result));
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained dave, though whether the orphan still nests it is not known");
+    }
+
+    @Test
+    @DisplayName("below a group returned without its member attribute, a group gains no one — the nesting is not known to be gone")
+    void aGroupBelowAGroupReturnedWithoutMembersGainsNoOne() {
+        gGainsDave();
+        group(P_DN, "p");
+        stored("p", List.of("carol"), List.of(PREFIX + "g"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "p").equals(w.getGroupId())),
+                "the nesting of a group returned without its members was removed");
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained dave, who reaches p");
+        assertTrue(warningsOf(result, "g").contains(PREFIX + "p"), "the held-back member was not reported: "
+                + warnings(result));
     }
 
     // ---------------------------------------------------------------- R152: a write that threw after storing
