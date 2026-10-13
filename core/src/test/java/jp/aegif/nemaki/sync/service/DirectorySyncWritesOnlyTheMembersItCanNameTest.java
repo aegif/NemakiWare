@@ -616,6 +616,26 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
+    @DisplayName("every cycle is refused, of two groups or of three, and a group nesting one is still written")
+    void everyNestingCycleIsRefusedWhateverItsLength() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        // a and b nest each other; c, d and e nest in a ring; f nests the ring.
+        for (String[] g : new String[][] {{"a", "b"}, {"b", "a"}, {"c", "d"}, {"d", "e"}, {"e", "c"}, {"f", "c"}}) {
+            group("cn=" + g[0] + ",ou=groups,dc=example,dc=com", g[0], "uid=alice,ou=users,dc=example,dc=com",
+                    "cn=" + g[1] + ",ou=groups,dc=example,dc=com");
+        }
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "f"), ids(creates()), "a group in a cycle was written");
+        assertEquals(List.of(), the(creates(), "f").getGroups(), "a group in a cycle was nested");
+        for (String id : List.of("a", "b", "c", "d", "e")) {
+            assertTrue(errors(result).contains(PREFIX + id + ": group " + PREFIX + id + ": LDAP nests it in a cycle"),
+                    PREFIX + id + " was not reported as in a cycle: " + errors(result));
+        }
+    }
+
+    @Test
     @DisplayName("a group naming itself as a member is written without that member — it adds no one")
     void aGroupNamingItselfIsWrittenWithoutThatMember() {
         user("uid=alice,ou=users,dc=example,dc=com", "alice");
