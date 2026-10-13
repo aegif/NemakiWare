@@ -19,6 +19,7 @@ package jp.aegif.nemaki.sync.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
@@ -95,8 +96,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         when(directory.searchUsers()).thenReturn(ldapUsers);
         when(directory.searchGroups()).thenReturn(ldapGroups);
         when(contentService.getGroupItems(REPO)).thenReturn(stored);
-        // Every directory user already exists, and users are not updated: this measures groups.
-        when(contentService.getUserItemById(eq(REPO), any())).thenReturn(mock(UserItem.class));
+        // Every directory user already exists (user() says so), and users are not updated: this
+        // measures groups. No other id is a user, so creating a group meets no user with its id.
         // Where a new group goes: .system/groups.
         Folder system = mock(Folder.class);
         when(system.getId()).thenReturn("system-folder");
@@ -119,6 +120,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
     private void user(String dn, String id) {
         ldapUsers.add(new LdapUser(dn, id, id));
+        when(contentService.getUserItemById(REPO, id)).thenReturn(mock(UserItem.class));
     }
 
     /** A group as the connector returns it: the member values as the directory gave them. */
@@ -453,5 +455,296 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
         verify(contentService, never()).update(any(), any(), any());
         assertTrue(errors(result).contains(PREFIX + "everyone"), "the preview did not report the group");
+    }
+
+    // ---------------------------------------------------------------- R149: which groups a parent may nest
+
+    private static final String G_DN = "cn=g,ou=groups,dc=example,dc=com";
+    private static final String P_DN = "cn=p,ou=groups,dc=example,dc=com";
+
+    /** G, which this sync refuses: one of its members is outside the user search. */
+    private void refusedG() {
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        group(G_DN, "g", "uid=bob,ou=users,dc=example,dc=com", "uid=x,ou=contractors,dc=example,dc=com");
+    }
+
+    private static List<String> ids(List<GroupItem> groups) {
+        return groups.stream().map(GroupItem::getGroupId).collect(Collectors.toList());
+    }
+
+    private static GroupItem the(List<GroupItem> groups, String id) {
+        return groups.stream().filter(g -> (PREFIX + id).equals(g.getGroupId())).findFirst()
+                .orElseThrow(() -> new AssertionError(PREFIX + id + " was not written: " + ids(groups)));
+    }
+
+    private static String warningsOf(DirectorySyncResult result, String id) {
+        return result.getWarnings().stream().filter(w -> (PREFIX + id).equals(w.getGroupId()))
+                .map(w -> w.getMessage()).collect(Collectors.joining("; "));
+    }
+
+    @Test
+    @DisplayName("a group the sync refuses is not newly nested — whoever its old membership names would gain the parent's permissions")
+    void aGroupItRefusesIsNotNewlyNested() {
+        refusedG();
+        // NemakiWare's g still names alice, whom LDAP took out of it.
+        stored("g", List.of("alice"), List.of());
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        group(P_DN, "p", "uid=carol,ou=users,dc=example,dc=com", G_DN);
+        stored("p", List.of(), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        GroupItem p = the(writes(), "p");
+        assertEquals(List.of("carol"), p.getUsers(), "the parent's own members were not written");
+        assertEquals(List.of(), p.getGroups(), "a group whose membership the sync refused was nested: alice gains p");
+        assertTrue(warningsOf(result, "p").contains(PREFIX + "g"), "the nesting left out was not reported: "
+                + warnings(result));
+        assertTrue(errors(result).contains(PREFIX + "g"), "the refused group was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("the preview leaves the refused group out of the parent too, and writes nothing")
+    void thePreviewDoesNotNestARefusedGroupEither() {
+        refusedG();
+        stored("g", List.of("alice"), List.of());
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        group(P_DN, "p", "uid=carol,ou=users,dc=example,dc=com", G_DN);
+        stored("p", List.of(), List.of());
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        verify(contentService, never()).update(any(), any(), any());
+        assertEquals(1, preview.getGroupsUpdated(), "the parent was not counted as written: " + errors(preview));
+        assertTrue(warningsOf(preview, "p").contains(PREFIX + "g"), "the preview did not report the nesting left out: "
+                + warnings(preview));
+    }
+
+    @Test
+    @DisplayName("a nesting the parent already has is kept, but the parent then vouches for nobody: a group newly nesting it does not")
+    void aNestingAlreadyInPlaceIsKeptButVouchesForNothing() {
+        refusedG();
+        stored("g", List.of("alice"), List.of());
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        group(P_DN, "p", "uid=carol,ou=users,dc=example,dc=com", G_DN);
+        // p already nests g, as LDAP still says: removing it would take p from bob, whom LDAP names.
+        stored("p", List.of("carol"), List.of(PREFIX + "g"));
+        group("cn=q,ou=groups,dc=example,dc=com", "q", P_DN);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(g -> (PREFIX + "p").equals(g.getGroupId())),
+                "p's nesting of g was rewritten: " + ids(writes()));
+        assertTrue(warningsOf(result, "p").contains(PREFIX + "g"), "the kept nesting was not reported: " + warnings(result));
+        assertEquals(List.of(), the(creates(), "q").getGroups(),
+                "q newly nests p, and through it the alice that g still names");
+    }
+
+    @Test
+    @DisplayName("a group whose write failed is not nested, though LDAP lists its parent first")
+    void aGroupWhoseWriteFailedIsNotNested() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        group(P_DN, "p", "uid=alice,ou=users,dc=example,dc=com", G_DN);
+        group(G_DN, "g", "uid=bob,ou=users,dc=example,dc=com");
+        when(contentService.createGroupItem(any(), eq(REPO), argThat((GroupItem g) -> g != null
+                && (PREFIX + "g").equals(g.getGroupId())))).thenThrow(new IllegalStateException("store down"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "g", PREFIX + "p"), ids(creates()), "the parent was written before its child");
+        assertEquals(List.of(), the(creates(), "p").getGroups(), "a group that was not written was nested");
+        assertTrue(errors(result).contains(PREFIX + "g"), "the failed write was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a group is written before the groups that nest it, so they can nest it")
+    void aGroupIsWrittenBeforeTheGroupsThatNestIt() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        group(P_DN, "p", "uid=alice,ou=users,dc=example,dc=com", G_DN);
+        group(G_DN, "g", "uid=bob,ou=users,dc=example,dc=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "g", PREFIX + "p"), ids(creates()), "the parent was written before its child");
+        assertEquals(List.of(PREFIX + "g"), the(creates(), "p").getGroups(), "the nesting LDAP names was left out");
+        assertEquals("", errors(result));
+    }
+
+    @Test
+    @DisplayName("a nesting LDAP reversed is written child first: the old nesting goes before the new one is added")
+    void aReversedNestingIsWrittenChildFirst() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        // NemakiWare: a nests b. LDAP now: b nests a.
+        stored("a", List.of("alice"), List.of(PREFIX + "b"));
+        stored("b", List.of("bob"), List.of());
+        group("cn=b,ou=groups,dc=example,dc=com", "b", "uid=bob,ou=users,dc=example,dc=com",
+                "cn=a,ou=groups,dc=example,dc=com");
+        group("cn=a,ou=groups,dc=example,dc=com", "a", "uid=alice,ou=users,dc=example,dc=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "a", PREFIX + "b"), ids(writes()),
+                "b was written before a let go of it — the cycle check refuses that");
+        assertEquals(List.of(), the(writes(), "a").getGroups());
+        assertEquals(List.of(PREFIX + "a"), the(writes(), "b").getGroups());
+        assertEquals("", errors(result));
+    }
+
+    @Test
+    @DisplayName("groups LDAP nests in a cycle are none of them written, and no parent newly nests them")
+    void aNestingCycleWritesNoneOfItsGroups() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        group("cn=a,ou=groups,dc=example,dc=com", "a", "uid=alice,ou=users,dc=example,dc=com",
+                "cn=b,ou=groups,dc=example,dc=com");
+        group("cn=b,ou=groups,dc=example,dc=com", "b", "uid=bob,ou=users,dc=example,dc=com",
+                "cn=a,ou=groups,dc=example,dc=com");
+        group("cn=c,ou=groups,dc=example,dc=com", "c", "uid=carol,ou=users,dc=example,dc=com",
+                "cn=a,ou=groups,dc=example,dc=com");
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "c"), ids(creates()), "a group in the cycle was written");
+        assertEquals(List.of(), the(creates(), "c").getGroups(), "a group in the cycle was nested");
+        String errors = errors(result);
+        assertTrue(errors.contains(PREFIX + "a: group " + PREFIX + "a: LDAP nests it in a cycle")
+                && errors.contains(PREFIX + "b: group " + PREFIX + "b: LDAP nests it in a cycle"),
+                "the cycle was not reported for both groups: " + errors);
+    }
+
+    @Test
+    @DisplayName("a group naming itself as a member is written without that member — it adds no one")
+    void aGroupNamingItselfIsWrittenWithoutThatMember() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group(G_DN, "g", "uid=alice,ou=users,dc=example,dc=com", G_DN);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        GroupItem g = the(creates(), "g");
+        assertEquals(List.of("alice"), g.getUsers());
+        assertEquals(List.of(), g.getGroups());
+        assertTrue(warningsOf(result, "g").contains("names itself"), "the left-out member was not reported: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("a nesting that names no group in NemakiWare is removed — whoever later took the id would gain the parent")
+    void aNestingThatNamesNoGroupIsRemoved() {
+        user("uid=carol,ou=users,dc=example,dc=com", "carol");
+        user("uid=bob,ou=users,dc=example,dc=com", "bob");
+        group(P_DN, "p", "uid=carol,ou=users,dc=example,dc=com", G_DN);
+        group(G_DN, "g", "uid=bob,ou=users,dc=example,dc=com");
+        // p names ldap_g, which NemakiWare does not have — and this sync cannot create it.
+        stored("p", List.of("carol"), List.of(PREFIX + "g"));
+        when(contentService.createGroupItem(any(), eq(REPO), argThat((GroupItem g) -> g != null
+                && (PREFIX + "g").equals(g.getGroupId())))).thenThrow(new IllegalStateException("store down"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), the(writes(), "p").getGroups(), "a nesting naming no group was kept");
+        assertTrue(warningsOf(result, "p").contains("named no group"), "the removal was not reported: "
+                + warnings(result));
+    }
+
+    @Test
+    @DisplayName("a group whose id a NemakiWare user has is not created, the preview says so too, and no parent nests it")
+    void aGroupWhoseIdAUserHasIsNotCreated() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group(G_DN, "g", "uid=alice,ou=users,dc=example,dc=com");
+        group(P_DN, "p", "uid=alice,ou=users,dc=example,dc=com", G_DN);
+        when(contentService.getUserItemById(REPO, PREFIX + "g")).thenReturn(mock(UserItem.class));
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+        assertTrue(errors(preview).contains(PREFIX + "g: group " + PREFIX + "g: a NemakiWare user has this id"),
+                "the preview did not report the clash: " + errors(preview));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "p"), ids(creates()), "the group was created over the user's id");
+        assertEquals(List.of(), the(creates(), "p").getGroups(), "a group that could not be created was nested");
+        assertTrue(errors(result).contains(PREFIX + "g: group " + PREFIX + "g: a NemakiWare user has this id"),
+                "the clash was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("where users and groups share a prefix, the preview sees the clash with a user it would create")
+    void thePreviewSeesAUserItWouldCreateWithTheGroupsId() {
+        when(properties.readValue(PropertyKey.DIRECTORY_SYNC_USER_PREFIX)).thenReturn(PREFIX);
+        createdUsersGoIntoUsers();
+        // The user g does not exist yet: the preview would create it as ldap_g, the group's id.
+        ldapUsers.add(new LdapUser("uid=g,ou=users,dc=example,dc=com", "g", "g"));
+        group(G_DN, "g", "uid=g,ou=users,dc=example,dc=com");
+
+        DirectorySyncResult preview = sync.previewSync(REPO);
+
+        assertTrue(errors(preview).contains(PREFIX + "g: group " + PREFIX + "g: a NemakiWare user has this id"),
+                "the preview did not see the clash with the user it would create: " + errors(preview));
+    }
+
+    @Test
+    @DisplayName("not syncing nested groups, a member naming a group whose id two group entries have does not refuse the parent")
+    void aSharedGroupIdDoesNotRefuseAParentWhereNestingIsNotSynced() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_NESTED_GROUPS)).thenReturn(false);
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+        group("cn=eng,ou=archive,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+        // p's only member is the group: its direct members are none. NemakiWare still names alice.
+        group(P_DN, "p", "cn=eng,ou=archive,dc=example,dc=com");
+        stored("p", List.of("alice"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(), the(writes(), "p").getUsers(), "p kept a member LDAP does not name");
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "p").equals(e.getGroupId())),
+                "p was refused for a member that is a group whichever entry it is: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("syncing nested groups, the same member refuses the parent — which group it nests is not known")
+    void aSharedGroupIdRefusesAParentWhereNestingIsSynced() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+        group("cn=eng,ou=archive,dc=example,dc=com", "eng", "uid=alice,ou=users,dc=example,dc=com");
+        group(P_DN, "p", "cn=eng,ou=archive,dc=example,dc=com");
+        stored("p", List.of("alice"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(g -> (PREFIX + "p").equals(g.getGroupId())), "p was written");
+        assertTrue(errors(result).contains(PREFIX + "p: group " + PREFIX + "p: 1 nested group value(s)"),
+                "p was not refused for its ambiguous nested group: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("not syncing nested groups, an entry both searches returned still refuses the group — it could be a user")
+    void anEntryBothSearchesReturnedRefusesTheGroupWhereNestingIsNotSynced() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_NESTED_GROUPS)).thenReturn(false);
+        user("cn=ops,ou=people,dc=example,dc=com", "ops");
+        group("cn=ops,ou=people,dc=example,dc=com", "ops", "cn=ops,ou=people,dc=example,dc=com");
+        group(P_DN, "p", "cn=ops,ou=people,dc=example,dc=com");
+        stored("p", List.of("ops"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(g -> (PREFIX + "p").equals(g.getGroupId())), "p was written");
+        assertTrue(errors(result).contains(PREFIX + "p: group " + PREFIX + "p: 1 member value(s) could name more than one entry"),
+                "p was not refused: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("a group list that answers nothing syncs no group — which groups exist decides what is kept")
+    void anUnansweredGroupListSyncsNoGroup() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group(G_DN, "g", "uid=alice,ou=users,dc=example,dc=com");
+        when(contentService.getGroupItems(REPO)).thenReturn(null);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).createGroupItem(any(), any(), any());
+        verify(contentService, never()).update(any(), any(), any());
+        assertEquals(DirectorySyncResult.SyncStatus.FAILED, result.getStatus(), errors(result));
     }
 }

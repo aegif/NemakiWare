@@ -42,10 +42,17 @@ public class LdapGroup {
     /** Member values that are neither a user nor a group this sync read. */
     private List<String> unresolvedMembers = new ArrayList<>();
     /**
-     * Member values that could name more than one entry: an entry both searches returned, or an id
-     * that more than one entry has.
+     * Member values that could name more than one entry, a user among them: an entry both searches
+     * returned, or the id of more than one user entry. Whatever the group writes, such a value could
+     * be one of its users.
      */
     private List<String> ambiguousMembers = new ArrayList<>();
+    /**
+     * Member values that name a group entry whose id another group entry also has (R149 (c)). Only the
+     * group search returned the entry, so the value is a nested group whichever entry it is: it matters
+     * only where nested groups are synced.
+     */
+    private List<String> ambiguousGroupMembers = new ArrayList<>();
     /** Whether another group entry has this group's id, so which entry the group is is not known. */
     private boolean idShared;
     /**
@@ -131,6 +138,14 @@ public class LdapGroup {
 
     public void setAmbiguousMembers(List<String> ambiguousMembers) {
         this.ambiguousMembers = ambiguousMembers;
+    }
+
+    public List<String> getAmbiguousGroupMembers() {
+        return ambiguousGroupMembers;
+    }
+
+    public void setAmbiguousGroupMembers(List<String> ambiguousGroupMembers) {
+        this.ambiguousGroupMembers = ambiguousGroupMembers;
     }
 
     public boolean isIdShared() {

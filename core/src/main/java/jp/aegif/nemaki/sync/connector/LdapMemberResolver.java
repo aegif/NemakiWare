@@ -63,13 +63,15 @@ public final class LdapMemberResolver {
     }
 
     /**
-     * Fills each group's {@code memberUserIds}, {@code memberGroupIds}, {@code unresolvedMembers}
-     * and {@code ambiguousMembers} from its {@code memberDns}, replacing whatever they held, and
-     * marks a group whose id another group entry also has.
+     * Fills each group's {@code memberUserIds}, {@code memberGroupIds}, {@code unresolvedMembers},
+     * {@code ambiguousMembers} and {@code ambiguousGroupMembers} from its {@code memberDns},
+     * replacing whatever they held, and marks a group whose id another group entry also has.
      *
      * <p>A value is ambiguous — never written — when its entry is returned by both searches, or
      * its id is the id of more than one entry: whichever were chosen, the membership could go to a
-     * different principal than the directory meant.
+     * different principal than the directory meant. A value naming a group entry whose id another
+     * group entry has is kept apart: it is a nested group either way, so it matters only where
+     * nested groups are synced (R149 (c)).
      */
     public static void resolve(List<LdapUser> users, List<LdapGroup> groups) {
         Map<LdapName, String> userByDn = new HashMap<>();
@@ -96,6 +98,7 @@ public final class LdapMemberResolver {
             List<String> groupMembers = new ArrayList<>();
             List<String> unresolved = new ArrayList<>();
             List<String> ambiguous = new ArrayList<>();
+            List<String> ambiguousGroups = new ArrayList<>();
             List<String> values = group.getMemberDns() == null ? List.of() : group.getMemberDns();
             for (String value : values) {
                 LdapName dn = parse(value);
@@ -121,7 +124,9 @@ public final class LdapMemberResolver {
                 } else if (groupByDn.containsKey(dn)) {
                     String id = groupByDn.get(dn);
                     if (groupIdCount.get(id) > 1) {
-                        ambiguous.add(value);
+                        // Only the group search returned this entry, so it is a nested group whichever
+                        // entry the id means: ambiguous only where nested groups are synced (R149 (c)).
+                        ambiguousGroups.add(value);
                     } else {
                         addOnce(groupMembers, id);
                     }
@@ -133,10 +138,12 @@ public final class LdapMemberResolver {
             group.setMemberGroupIds(groupMembers);
             group.setUnresolvedMembers(unresolved);
             group.setAmbiguousMembers(ambiguous);
+            group.setAmbiguousGroupMembers(ambiguousGroups);
             group.setIdShared(groupIdCount.get(group.getGroupId()) > 1);
-            if (!unresolved.isEmpty() || !ambiguous.isEmpty()) {
+            if (!unresolved.isEmpty() || !ambiguous.isEmpty() || !ambiguousGroups.isEmpty()) {
                 log.info("Group " + group.getGroupId() + ": " + unresolved.size() + " member value(s) are not a "
-                        + "user or group this sync read, " + ambiguous.size() + " name more than one entry");
+                        + "user or group this sync read, " + ambiguous.size() + " name more than one entry, "
+                        + ambiguousGroups.size() + " name a group whose id more than one group entry has");
             }
         }
     }

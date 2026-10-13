@@ -155,7 +155,7 @@ class LdapMemberResolverTest {
     }
 
     @Test
-    @DisplayName("a group whose id another group entry has is marked, and naming it as a member is ambiguous")
+    @DisplayName("a group whose id another group entry has is marked, and naming it as a member is ambiguous among groups")
     void aGroupIdTwoEntriesHaveIsMarked() {
         LdapGroup eng1 = group("cn=eng,ou=groups,dc=x", "eng");
         LdapGroup eng2 = group("cn=eng,ou=archive,dc=x", "eng");
@@ -165,7 +165,9 @@ class LdapMemberResolverTest {
         assertTrue(eng1.isIdShared() && eng2.isIdShared(), "two entries with one group id were not marked");
         assertFalse(all.isIdShared());
         assertEquals(List.of(), all.getMemberGroupIds());
-        assertEquals(List.of("cn=eng,ou=archive,dc=x"), all.getAmbiguousMembers());
+        assertEquals(List.of("cn=eng,ou=archive,dc=x"), all.getAmbiguousGroupMembers());
+        // Only the group search returned it: it is a nested group whichever entry it is (R149 (c)).
+        assertEquals(List.of(), all.getAmbiguousMembers(), "a group-only ambiguity was counted as one that could be a user");
     }
 
     @Test
