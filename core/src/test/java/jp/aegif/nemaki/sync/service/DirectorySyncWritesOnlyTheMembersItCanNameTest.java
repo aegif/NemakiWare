@@ -1342,6 +1342,23 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
+    @DisplayName("only the members LDAP names in the group are written in with the removal — not everyone below the nesting")
+    void onlyMembersLdapNamesAreWrittenInWithTheRemoval() {
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        group(G_DN, "g", ALICE, DAVE);
+        // NemakiWare's g still lists bob; LDAP names neither him nor dave in p.
+        stored("g", List.of("alice", "bob"), List.of());
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of(), List.of(PREFIX + "g"));
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("alice"), persisted.get(PREFIX + "p").getUsers(),
+                "bob, whom LDAP does not name in p, was written into it with the removal");
+    }
+
+    @Test
     @DisplayName("a write that failed before storing is not taken for stored because the read-back shows the same members — the new name was not stored")
     void aNameThatWasNotStoredIsNotTakenForStored() {
         user(ALICE, "alice");
