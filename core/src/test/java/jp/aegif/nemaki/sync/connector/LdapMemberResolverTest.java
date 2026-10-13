@@ -259,6 +259,13 @@ class LdapMemberResolverTest {
     }
 
     @Test
+    @DisplayName("two different types of the table are not the same where a value of the DN is not compared — uid=ab is not cn=ab where another RDN holds a value outside ASCII (R153 (b))")
+    void twoTypesOfTheTableAreNotTheSameWhereAValueIsNotCompared() {
+        // A value outside ASCII is not compared, so the DN has no key and its AVAs are paired one by one.
+        assertEquals(List.of(), couldName("cn=ab,ou=\u00C7elik,dc=x", "uid=ab,ou=\u00C7elik,dc=x"));
+    }
+
+    @Test
     @DisplayName("a value outside ASCII is not compared — the directory's string preparation is not emulated (R153 (b))")
     void aValueOutsideAsciiCouldBeAnyValue() {
         assertEquals(List.of("g"), couldName("cn=\u1FB3,ou=groups,dc=x", "commonName=\u03B1\u03B9,ou=groups,dc=x"));
@@ -269,6 +276,14 @@ class LdapMemberResolverTest {
     void aMultiValuedRdnIsPairedInAnyOrder() {
         assertEquals(List.of("g"), couldName("cn=g+ou=x,dc=y", "organizationalUnitName=X+commonName=G,dc=y"));
         assertEquals(List.of(), couldName("cn=g+ou=x,dc=y", "organizationalUnitName=Z+commonName=G,dc=y"));
+    }
+
+    @Test
+    @DisplayName("the AVAs of a multi-valued RDN are paired in any order where a value of the DN is not compared (R153 (b))")
+    void aMultiValuedRdnIsPairedInAnyOrderWhereAValueIsNotCompared() {
+        // A value outside ASCII is not compared, so the DN has no key and its AVAs are paired one by one.
+        assertEquals(List.of("g"), couldName("cn=g+ou=x,dc=\u00C7elik", "organizationalUnitName=X+commonName=G,dc=\u00C7elik"));
+        assertEquals(List.of(), couldName("cn=g+ou=x,dc=\u00C7elik", "organizationalUnitName=Z+commonName=G,dc=\u00C7elik"));
     }
 
     @Test

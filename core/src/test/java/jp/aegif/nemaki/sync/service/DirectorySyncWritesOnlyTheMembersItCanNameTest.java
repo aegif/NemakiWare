@@ -928,6 +928,22 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         assertEquals(DirectorySyncResult.SyncStatus.FAILED, result.getStatus(), errors(result));
     }
 
+    @Test
+    @DisplayName("a group list read before the users but not after them syncs no group — the second read decides as the first does (R153 (a))")
+    void aGroupListThatCannotBeReadAgainSyncsNoGroup() {
+        user("uid=alice,ou=users,dc=example,dc=com", "alice");
+        group(G_DN, "g", "uid=alice,ou=users,dc=example,dc=com");
+        int[] reads = {0};
+        when(contentService.getGroupItems(REPO)).thenAnswer(list -> reads[0]++ == 0 ? new ArrayList<GroupItem>() : null);
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(2, reads[0], "the group list was not read again after the users");
+        verify(contentService, never()).createGroupItem(any(), any(), any());
+        verify(contentService, never()).update(any(), any(), any());
+        assertEquals(DirectorySyncResult.SyncStatus.FAILED, result.getStatus(), errors(result));
+    }
+
     // ---------------------------------------------------------------- R151: a nesting kept by a group the sync does not write
 
     private static final String ALICE = "uid=alice,ou=users,dc=example,dc=com";
@@ -1391,15 +1407,16 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         user(ALICE, "alice");
         user(DAVE, "dave");
         group(G_DN, "g", ALICE, DAVE);
-        // NemakiWare's g still lists bob; LDAP names neither him nor dave in p.
-        stored("g", List.of("alice", "bob"), List.of());
+        // NemakiWare's g lists bob and dave; LDAP names neither in p. Dave is a NemakiWare user the sync looked up, so
+        // only LDAP's naming keeps him out (bob is no directory user, and his state alone would).
+        stored("g", List.of("alice", "bob", "dave"), List.of());
         group(P_DN, "p", ALICE, CONTRACTOR);
         stored("p", List.of(), List.of(PREFIX + "g"));
 
         sync.syncGroups(REPO, false);
 
         assertEquals(List.of("alice"), persisted.get(PREFIX + "p").getUsers(),
-                "bob, whom LDAP does not name in p, was written into it with the removal");
+                "dave or bob, whom LDAP does not name in p, was put back into it before the removal");
     }
 
     @Test
