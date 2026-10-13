@@ -512,15 +512,16 @@ class ReleaseReadinessIsMeasuredTest {
         }
         // The boundary the canon names — the highest id when the last full sweep ran. It was
         // "境界 LM3" written into this lock, which the sixth sweep (to JP4) left behind.
-        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
+        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[3-9])").matcher(canon);
         assertTrue(boundary.find(), "the canon no longer names the sweep boundary");
         String last = boundary.group(1);
 
         // The three-letter sequence the ids run through, from the boundary to the newest: the
-        // "3" generation AA3…ZZ3 and then the "4" generation AA4… that follows it (the first id
-        // after ZZ3 was AA4; a sequence that stopped at ZZ3 would count no gap past it).
+        // "3" generation AA3…ZZ3, then the "4" generation AA4…ZZ4 that follows it, and so on (the
+        // first id after ZZ3 was AA4, and after ZZ4 AA5, 2026-10-13; a sequence that stopped at
+        // a generation would count no gap past it).
         List<String> sequence = new ArrayList<>();
-        for (char generation = '3'; generation <= '4'; generation++) {
+        for (char generation = '3'; generation <= '9'; generation++) {
             for (char first = 'A'; first <= 'Z'; first++) {
                 for (char second = 'A'; second <= 'Z'; second++) {
                     sequence.add("" + first + second + generation);

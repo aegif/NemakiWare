@@ -227,7 +227,7 @@ class EverySupportedCouchDbIsMeasuredTest {
                 "the canon records a sweep round twice with different numbers");
         // EVERY statement of the boundary. It is written in §1 and in §5, and reading only the
         // first let the second drift unread — the same one-arm defect as the counts.
-        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[34])").matcher(canon);
+        Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[3-9])").matcher(canon);
         String from = null;
         int boundaries = 0;
         while (boundary.find()) {
@@ -240,16 +240,17 @@ class EverySupportedCouchDbIsMeasuredTest {
         }
         assertTrue(boundaries >= 2, "the canon used to name the sweep boundary in more than one "
                 + "place and now names it " + boundaries + " time(s)");
-        // Ids of the "3" and "4" generations, ordered the generation digit first, then the
-        // letters (AA4 came after ZZ3; every "4" id is newer than any "3" id, whatever the letters
-        // say). Unswept is everything above the boundary in that order, whichever generation the
+        // Ids of the "3" generation onward, ordered the generation digit first, then the
+        // letters (AA4 came after ZZ3, AA5 after ZZ4; every id of a later generation is newer than
+        // any of an earlier one, whatever the letters say — the "5" generation began on 2026-10-13,
+        // and a filter that knew only "3" and "4" counted none of it as unswept). Unswept is everything above the boundary in that order, whichever generation the
         // boundary is in: the sixth sweep ran everything up to JP4, and the filter that took every
         // "4" id as unswept would have counted all of them (2026-09-26).
         java.util.Comparator<String> byGeneration = java.util.Comparator
                 .comparing((String id) -> id.charAt(2)).thenComparing(id -> id.substring(0, 2));
         java.util.SortedSet<String> unswept = new java.util.TreeSet<>(byGeneration);
         for (String id : seen) {
-            if (id.matches("[A-Z]{2}[34]") && byGeneration.compare(id, from) > 0) {
+            if (id.matches("[A-Z]{2}[3-9]") && byGeneration.compare(id, from) > 0) {
                 unswept.add(id);
             }
         }
@@ -364,11 +365,11 @@ class EverySupportedCouchDbIsMeasuredTest {
             assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
             String ledger = canon.substring(listStart, listEnd);
             java.util.Set<String> named = new java.util.LinkedHashSet<>();
-            Matcher single = Pattern.compile("\\b([A-Z]{2}[34])\\b").matcher(ledger);
+            Matcher single = Pattern.compile("\\b([A-Z]{2}[3-9])\\b").matcher(ledger);
             while (single.find()) {
                 named.add(single.group(1));
             }
-            Matcher range = Pattern.compile("([A-Z]{2}[34])〜([A-Z]{2}[34])").matcher(ledger);
+            Matcher range = Pattern.compile("([A-Z]{2}[3-9])〜([A-Z]{2}[3-9])").matcher(ledger);
             while (range.find()) {
                 for (String id : unswept) {
                     if (byGeneration.compare(id, range.group(1)) >= 0 && byGeneration.compare(id, range.group(2)) <= 0) {
