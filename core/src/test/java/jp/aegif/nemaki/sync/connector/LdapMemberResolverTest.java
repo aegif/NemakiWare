@@ -266,6 +266,114 @@ class LdapMemberResolverTest {
     }
 
     @Test
+    @DisplayName("the dotless \u0131 is not i: the directory keeps uid=\u0131lgaz and uid=ilgaz apart, whichever the search returns first (R155)")
+    void aDotlessIIsNotTheDottedI() {
+        for (boolean dottedFirst : new boolean[] {false, true}) {
+            LdapUser dotless = user("uid=\u0131lgaz,ou=users,dc=x", "\u0131lgaz");
+            LdapUser dotted = user("uid=ilgaz,ou=users,dc=x", "ilgaz");
+            LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "uid=\u0131lgaz,ou=users,dc=x");
+            LdapMemberResolver.resolve(dottedFirst ? List.of(dotted, dotless) : List.of(dotless, dotted), List.of(g));
+
+            assertEquals(List.of("\u0131lgaz"), g.getMemberUserIds(), "the member was another user (dotted first: "
+                    + dottedFirst + ")");
+        }
+    }
+
+    @Test
+    @DisplayName("a DN with i names no one when the search returned only the user with the dotless \u0131 (R155)")
+    void aDottedIIsNotTheOnlyDotlessUser() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "uid=ilgaz,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("uid=\u0131lgaz,ou=users,dc=x", "\u0131lgaz")), List.of(g));
+
+        assertEquals(List.of(), g.getMemberUserIds(), "the member outside the search was taken for the user in it");
+        assertEquals(List.of("uid=ilgaz,ou=users,dc=x"), g.getUnresolvedMembers());
+    }
+
+    @Test
+    @DisplayName("the dotless \u0131 is not i between group entries either (R155)")
+    void aDotlessIGroupIsNotTheDottedIGroup() {
+        LdapGroup dotless = group("cn=\u0131lgaz-team,ou=groups,dc=x", "\u0131lgaz-team");
+        LdapGroup dotted = group("cn=ilgaz-team,ou=groups,dc=x", "ilgaz-team");
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "cn=\u0131lgaz-team,ou=groups,dc=x");
+        LdapMemberResolver.resolve(List.of(), List.of(dotless, dotted, p));
+
+        assertEquals(List.of("\u0131lgaz-team"), p.getMemberGroupIds(), "the nested group was another group");
+    }
+
+    @Test
+    @DisplayName("two user entries of one key are two entries to the directory: a member naming the key is ambiguous (R155)")
+    void twoEntriesOfOneKeyAreAmbiguous() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "uid=bob,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("uid=bob,ou=users,dc=x", "bob1"), user("uid=BOB,ou=users,dc=x", "bob2")),
+                List.of(g));
+
+        assertEquals(List.of(), g.getMemberUserIds(), "the member was written as one of two entries");
+        assertEquals(List.of("uid=bob,ou=users,dc=x"), g.getAmbiguousMembers());
+        assertEquals(List.of("bob1", "bob2"), g.getPossibleUserIds(), "the users the value could be were not marked");
+    }
+
+    @Test
+    @DisplayName("the value of a type outside the table keeps its case in the key: employeeNumber=AB1 names no entry employeeNumber=ab1 (R155)")
+    void aValueOfATypeOutsideTheTableKeepsItsCase() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "employeeNumber=AB1,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("employeeNumber=ab1,ou=users,dc=x", "e1")), List.of(g));
+
+        assertEquals(List.of(), g.getMemberUserIds(), "a value whose case the type may count was taken for the entry");
+    }
+
+    @Test
+    @DisplayName("a DN differing from its entry only in the case of a letter outside ASCII names no one, but could be the user (R155)")
+    void anotherCaseOutsideAsciiIsNotNamedButCouldBeTheUser() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "cn=\u00E7elik,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("cn=\u00C7elik,ou=users,dc=x", "celik")), List.of(g));
+
+        assertEquals(List.of(), g.getMemberUserIds());
+        assertEquals(List.of("celik"), g.getPossibleUserIds(), "the user the value could be was not marked");
+        assertTrue(g.isOutsideCouldBeNamed(), "a DN no search returned as written was not marked as possibly outside");
+    }
+
+    @Test
+    @DisplayName("a user DN written with an alias of its type names no one, but could be the user (batch 13 review round 1)")
+    void aUserDnWrittenWithAnAliasCouldBeTheUser() {
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "userid=bob,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("uid=bob,ou=users,dc=x", "bob")), List.of(p));
+
+        assertEquals(List.of(), p.getMemberUserIds());
+        assertEquals(List.of("bob"), p.getPossibleUserIds(), "the user the value could be was not marked");
+    }
+
+    @Test
+    @DisplayName("a memberUid value no user this sync read has could be a NemakiWare user it did not look up (batch 13 review round 1)")
+    void anUnknownMemberUidCouldBeAUserNotLookedUp() {
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "ghost");
+        LdapMemberResolver.resolve(List.of(user("uid=bob,ou=users,dc=x", "bob")), List.of(p));
+
+        assertEquals(List.of("ghost"), p.getPossibleUserIds());
+    }
+
+    @Test
+    @DisplayName("an entry both searches returned could be the user (batch 13 review round 1)")
+    void anEntryBothSearchesReturnedCouldBeTheUser() {
+        LdapGroup both = group("cn=both,ou=x,dc=x", "both");
+        LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "cn=both,ou=x,dc=x");
+        LdapMemberResolver.resolve(List.of(user("cn=both,ou=x,dc=x", "bothuser")), List.of(both, p));
+
+        assertEquals(List.of("bothuser"), p.getPossibleUserIds());
+    }
+
+    @Test
+    @DisplayName("a hyphen counts: cn=a-b could not be cn=ab, as caseIgnoreMatch does not take it for nothing (batch 13 review round 1)")
+    void aHyphenMakesAnotherValue() {
+        assertEquals(List.of(), couldName("cn=ab,ou=groups,dc=x", "commonName=a-b,ou=groups,dc=x"));
+    }
+
+    @Test
+    @DisplayName("a TAB is a space to caseIgnoreMatch: commonName=a<TAB>b could be cn=a b (RFC 4518)")
+    void aTabIsASpace() {
+        assertEquals(List.of("g"), couldName("cn=a b,ou=groups,dc=x", "commonName=a\tb,ou=groups,dc=x"));
+    }
+
+    @Test
     @DisplayName("a value outside ASCII is not compared — the directory's string preparation is not emulated (R153 (b))")
     void aValueOutsideAsciiCouldBeAnyValue() {
         assertEquals(List.of("g"), couldName("cn=\u1FB3,ou=groups,dc=x", "commonName=\u03B1\u03B9,ou=groups,dc=x"));

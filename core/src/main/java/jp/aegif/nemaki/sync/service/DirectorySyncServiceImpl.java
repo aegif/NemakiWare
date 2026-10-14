@@ -783,9 +783,11 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 .collect(Collectors.toMap(GroupItem::getGroupId, g -> g));
 
         Map<String, LdapGroup> ldapGroupMap = new HashMap<>();
+        Map<String, List<LdapGroup>> entriesOf = new HashMap<>();
         for (LdapGroup lg : ldapGroups) {
             String nemakiGroupId = groupPrefix + lg.getGroupId();
             ldapGroupMap.put(nemakiGroupId, lg);
+            entriesOf.computeIfAbsent(nemakiGroupId, k -> new ArrayList<>()).add(lg);
         }
 
         // Which groups' memberships are known at all (R148).
@@ -932,10 +934,8 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 kept.removeAll(orphans);
                 nestingAfter.put(e.getKey(), kept);
             }
-            Map<String, List<LdapGroup>> entriesOf = new HashMap<>();
-            for (LdapGroup ldapGroup : ldapGroups) {
-                entriesOf.computeIfAbsent(groupPrefix + ldapGroup.getGroupId(), k -> new ArrayList<>()).add(ldapGroup);
-            }
+            // The groups whose members a removal below them would take, and who could not be put back first — or whom
+            // LDAP may still name there: the removals below them are not made (R154).
             Set<String> putBackFailed = new HashSet<>();
             Set<String> sources = new HashSet<>(plannedGone.keySet());
             for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
@@ -946,7 +946,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 }
             }
             for (String parentId : ancestorsOrSelf(sources, nestingBefore)) {
-                if (!syncedGroupMap.containsKey(parentId) || !entriesOf.containsKey(parentId) || orphans.contains(parentId)) {
+                // Every group met here is stored, so one this search returned is a synced group, and an orphan is not
+                // one this search returned (batch 13 review round 1: the two other conditions decided nothing).
+                if (!entriesOf.containsKey(parentId)) {
                     continue;
                 }
                 Set<String> lost = reach(parentId, nestingBefore, usersBefore);
@@ -954,14 +956,33 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (lost.isEmpty()) {
                     continue;
                 }
-                Set<String> named = ldapNamed(entriesOf.get(parentId), entriesOf, groupPrefix, userPrefix);
+                Naming named = naming(parentId, entriesOf, groupPrefix, userPrefix);
                 List<String> putBack = new ArrayList<>();
+                List<String> unsure = new ArrayList<>();
                 for (String id : lost) {
                     UserState state = userStates.get(id);
-                    if (named.contains(id) && !attempted.contains(id)
-                            && (state == UserState.EXISTS || state == UserState.UNKNOWN)) {
-                        putBack.add(id);
+                    if (attempted.contains(id) || state == UserState.ABSENT) {
+                        // No NemakiWare user had the id before this sync, so the removal takes nothing anyone had
+                        // (batch 13 review round 1: Codex P1, answered).
+                        continue;
                     }
+                    if (named.surely.contains(id)) {
+                        putBack.add(id);
+                    } else if (state != null ? named.anyone || named.possibly.contains(id)
+                            : (named.anyone || named.possibly.contains(id) || named.outside)
+                                    && couldBeAUser(repositoryId, id)) {
+                        unsure.add(id);
+                    }
+                }
+                if (!unsure.isEmpty()) {
+                    // Whom LDAP names in the group is not all known, and they may be among them: what is not known is
+                    // not taken for "not named" (batch 13 review round 1: Codex P1, subagent P2).
+                    putBackFailed.add(parentId);
+                    result.addError(parentId, "group " + parentId + ": whom LDAP names in the group is not all known "
+                            + "(a member value it could not name or read, or an id two entries share), and "
+                            + unsure.size() + " member(s) who reach the group through a nesting LDAP no longer states "
+                            + "below it could be among them, so that nesting is kept, for example " + sample(unsure));
+                    continue;
                 }
                 if (!putBack.isEmpty() && !putBack(repositoryId, parentId, putBack, dryRun, result, syncedGroupMap)) {
                     putBackFailed.add(parentId);
@@ -972,8 +993,8 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 Set<String> above = ancestorsOrSelf(Set.of(orphanId), nestingBefore);
                 above.retainAll(putBackFailed);
                 if (!above.isEmpty()) {
-                    // Deleting it strips the nesting of it from the groups above, whose members LDAP names there
-                    // could not be put back first: it is kept this sync (R154).
+                    // Deleting it strips the nesting of it from the groups above, whose members LDAP names — or may
+                    // name — there were not put back first: it is kept this sync (R154).
                     orphansKept.add(orphanId);
                 }
             }
@@ -982,14 +1003,14 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 Set<String> above = ancestorsOrSelf(Set.of(parentId), nestingBefore);
                 above.retainAll(putBackFailed);
                 if (!above.isEmpty()) {
-                    // Removing it would take from a group above members LDAP names in it, who could not be put
-                    // back: it stays, and the groups below it are given no one new (R154).
+                    // Removing it would take from a group above members LDAP names — or may name — in it, who were not
+                    // put back: it stays, and the groups below it are given no one new (R154).
                     for (String nestedId : planned.getValue()) {
                         uncheck(uncheckedEdges, parentId, nestedId);
                     }
                     String kept = "group " + parentId + ": " + planned.getValue().size() + " nested group(s) LDAP no "
-                            + "longer names under it are kept, because members LDAP names in a group above could not be "
-                            + "put back there first, for example " + sample(planned.getValue());
+                            + "longer names under it are kept, because members LDAP names — or may name — in a group "
+                            + "above were not put back there first, for example " + sample(planned.getValue());
                     if (ldapGroupMap.containsKey(parentId)) {
                         // Writing the group would replace its nesting with LDAP's, and remove them all the same.
                         refusals.merge(parentId, kept + "; the group is not written this sync",
@@ -1012,6 +1033,25 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         }
 
         Set<String> established = new HashSet<>();
+        // What the groups hold as the loop writes them — after the first step, then each write — for the members a
+        // group reaches through the groups it nests (batch 13 review round 1).
+        Map<String, Set<String>> usersNow = new HashMap<>();
+        Map<String, List<String>> nestingNow = new HashMap<>();
+        for (GroupItem g : existingGroups) {
+            if (g.getGroupId() != null) {
+                GroupItem now = syncedGroupMap.getOrDefault(g.getGroupId(), g);
+                usersNow.put(g.getGroupId(), new HashSet<>(now.getUsers() == null ? List.of() : now.getUsers()));
+                nestingNow.put(g.getGroupId(), new ArrayList<>(now.getGroups() == null ? List.of() : now.getGroups()));
+            }
+        }
+        // Whom LDAP surely names in each group, read before the loop rewrites the entries' member lists.
+        Map<String, Set<String>> namedSurely = new HashMap<>();
+        if (syncNestedGroups) {
+            Map<String, Set<String>> done = new HashMap<>();
+            for (String groupId : entriesOf.keySet()) {
+                namedSurely.put(groupId, surely(groupId, entriesOf, groupPrefix, userPrefix, new HashSet<>(), done));
+            }
+        }
         for (LdapGroup ldapGroup : order) {
             String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
             boolean writing = false;
@@ -1135,6 +1175,29 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                                 + sample(namingNoGroup));
                     }
                     isEstablished = kept.isEmpty();
+                    // A member the group had, whom LDAP surely names in it through a group it nests and who does not
+                    // reach it through the groups this write nests (as they hold them now), stays a member: writing
+                    // LDAP's direct members alone would take the group from them — the members a removal below put
+                    // back among them too (batch 13 review round 1: subagent P2). They had the group, so no one gains it.
+                    if (existingGroup != null) {
+                        Set<String> reached = new HashSet<>();
+                        for (String groupId : nested) {
+                            reached.addAll(reach(groupPrefix + groupId, nestingNow, usersNow));
+                        }
+                        Set<String> direct = prefixed(userPrefix, users);
+                        List<String> keptUsers = new ArrayList<>(users);
+                        Set<String> namedThrough = namedSurely.getOrDefault(nemakiGroupId, Set.of());
+                        for (String id : existingGroup.getUsers() == null ? List.<String>of() : existingGroup.getUsers()) {
+                            UserState state = userStates.get(id);
+                            if (namedThrough.contains(id) && !direct.contains(id) && !reached.contains(id)
+                                    && (state == UserState.EXISTS || state == UserState.UNKNOWN) && id.startsWith(userPrefix)) {
+                                keptUsers.add(id.substring(userPrefix.length()));
+                            }
+                        }
+                        if (keptUsers.size() > users.size()) {
+                            ldapGroup.setMemberUserIds(keptUsers);
+                        }
+                    }
                 }
                 if (!heldUsers.isEmpty() || !heldGroups.isEmpty()) {
                     List<String> held = new ArrayList<>(heldUsers);
@@ -1176,6 +1239,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (isEstablished) {
                     established.add(nemakiGroupId);
                 }
+                if (writtenUsers != null) {
+                    usersNow.put(nemakiGroupId, new HashSet<>(writtenUsers));
+                    if (writtenGroups != null) {
+                        nestingNow.put(nemakiGroupId, new ArrayList<>(writtenGroups));
+                    }
+                }
             } catch (Exception e) {
                 // The group is stored before the change log and the index are written, and a failure there
                 // is thrown all the same: what was stored decides, read back past the cache (R152).
@@ -1191,6 +1260,10 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     if (isEstablished) {
                         established.add(nemakiGroupId);
                     }
+                    usersNow.put(nemakiGroupId, new HashSet<>(writtenUsers));
+                    if (writtenGroups != null) {
+                        nestingNow.put(nemakiGroupId, new ArrayList<>(writtenGroups));
+                    }
                 } else {
                     log.error("Error syncing group " + nemakiGroupId + ": " + e.getMessage());
                     result.addError(nemakiGroupId, e.getMessage());
@@ -1203,8 +1276,8 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 if (!ldapGroupMap.containsKey(existingGroup.getGroupId())) {
                     if (orphansKept.contains(existingGroup.getGroupId())) {
                         result.addError(existingGroup.getGroupId(), "group " + existingGroup.getGroupId() + ": the "
-                                + "orphan is not deleted this sync — a group above it could not first be given back the "
-                                + "members LDAP names in it, who reach it through the orphan");
+                                + "orphan is not deleted this sync — a group above it was not first given back the "
+                                + "members LDAP names (or may name) in it, who reach it through the orphan");
                         continue;
                     }
                     try {
@@ -1395,33 +1468,83 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         return users;
     }
 
+    /** Whom LDAP names in a group, by what the sync read (R154): surely, possibly, and whether anyone else could be. */
+    static final class Naming {
+        /** Named by every entry of the id, directly or through the groups LDAP nests in it, named surely the same way. */
+        final Set<String> surely = new HashSet<>();
+        /** Named by any entry, or what a member value could name — users, and the members of groups — down through. */
+        final Set<String> possibly = new HashSet<>();
+        /** A member value is a DN no search returned: a NemakiWare user this sync did not look up could be named. */
+        boolean outside;
+        /** The members of a group down through were not read, or a value could not be parsed: anyone could be named. */
+        boolean anyone;
+    }
+
     /**
-     * The users LDAP names in a group: its own members the sync named, and those of the groups LDAP nests in it,
-     * down through the nesting — only groups whose members were read, and only what was named (R154). A group whose
-     * id two entries share names whom every entry names (which entry it is, is not known).
+     * Whom LDAP names in a group: its own members, and those of the groups LDAP nests in it, down through the nesting
+     * (R154). What the sync could not name or read is not taken for "no one" (batch 13 review round 1: Codex P1,
+     * subagent P2): it makes the members possibly named — the users a value could name, the groups a value could
+     * name, any entry of an id two entries share — or anyone at all, where a group's members were not read.
      */
-    private static Set<String> ldapNamed(List<LdapGroup> entries, Map<String, List<LdapGroup>> entriesOf,
-            String groupPrefix, String userPrefix) {
-        Set<String> common = null;
-        for (LdapGroup entry : entries) {
-            Set<String> named = new LinkedHashSet<>();
-            Set<LdapGroup> seen = new HashSet<>();
-            Deque<LdapGroup> todo = new ArrayDeque<>();
-            todo.push(entry);
-            while (!todo.isEmpty()) {
-                LdapGroup group = todo.pop();
-                // Its values were read (whichever entry the id means is the caller's question).
-                if (!seen.add(group) || group.isMembersRanged() || !group.isMemberAttributePresent()) {
+    private static Naming naming(String groupId, Map<String, List<LdapGroup>> entriesOf, String groupPrefix,
+            String userPrefix) {
+        Naming naming = new Naming();
+        naming.surely.addAll(surely(groupId, entriesOf, groupPrefix, userPrefix, new HashSet<>(), new HashMap<>()));
+        Set<String> seen = new HashSet<>();
+        Deque<String> todo = new ArrayDeque<>();
+        todo.push(groupId);
+        while (!todo.isEmpty()) {
+            String id = todo.pop();
+            if (!seen.add(id)) {
+                continue;
+            }
+            for (LdapGroup entry : entriesOf.getOrDefault(id, List.of())) {
+                if (entry.isMembersRanged() || !entry.isMemberAttributePresent()) {
+                    naming.anyone = true;
                     continue;
                 }
-                for (String userId : group.getMemberUserIds() == null ? List.<String>of() : group.getMemberUserIds()) {
+                for (String userId : entry.getMemberUserIds() == null ? List.<String>of() : entry.getMemberUserIds()) {
+                    naming.possibly.add(userPrefix + userId);
+                }
+                for (String userId : entry.getPossibleUserIds() == null ? List.<String>of() : entry.getPossibleUserIds()) {
+                    naming.possibly.add(userPrefix + userId);
+                }
+                naming.outside |= entry.isOutsideCouldBeNamed();
+                naming.anyone |= entry.isAnyGroupCouldBeNamed();
+                for (String nestedId : memberGroupIdsOf(entry)) {
+                    todo.push(groupPrefix + nestedId);
+                }
+                for (String nestedId : entry.getAmbiguousGroupIds() == null ? List.<String>of() : entry.getAmbiguousGroupIds()) {
+                    todo.push(groupPrefix + nestedId);
+                }
+            }
+        }
+        return naming;
+    }
+
+    /**
+     * Whom LDAP surely names in a group: whom every entry of the id names — its members the sync named, and those
+     * of the groups it nests, named surely the same way. A group whose members were not read names no one surely; a
+     * cycle adds no one.
+     */
+    private static Set<String> surely(String groupId, Map<String, List<LdapGroup>> entriesOf, String groupPrefix,
+            String userPrefix, Set<String> path, Map<String, Set<String>> done) {
+        Set<String> known = done.get(groupId);
+        if (known != null) {
+            return known;
+        }
+        if (!path.add(groupId)) {
+            return Set.of();
+        }
+        Set<String> common = null;
+        for (LdapGroup entry : entriesOf.getOrDefault(groupId, List.of())) {
+            Set<String> named = new HashSet<>();
+            if (!entry.isMembersRanged() && entry.isMemberAttributePresent()) {
+                for (String userId : entry.getMemberUserIds() == null ? List.<String>of() : entry.getMemberUserIds()) {
                     named.add(userPrefix + userId);
                 }
-                for (String groupId : memberGroupIdsOf(group)) {
-                    List<LdapGroup> nested = entriesOf.getOrDefault(groupPrefix + groupId, List.of());
-                    if (nested.size() == 1) {
-                        todo.push(nested.get(0));
-                    }
+                for (String nestedId : memberGroupIdsOf(entry)) {
+                    named.addAll(surely(groupPrefix + nestedId, entriesOf, groupPrefix, userPrefix, path, done));
                 }
             }
             if (common == null) {
@@ -1430,7 +1553,19 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 common.retainAll(named);
             }
         }
-        return common == null ? Set.of() : common;
+        path.remove(groupId);
+        Set<String> result = common == null ? Set.of() : common;
+        done.put(groupId, result);
+        return result;
+    }
+
+    /** Whether a NemakiWare user may have the id: one does, or whether one does could not be read. */
+    private boolean couldBeAUser(String repositoryId, String id) {
+        try {
+            return contentService.getUserItemById(repositoryId, id) != null;
+        } catch (Exception unread) {
+            return true;
+        }
     }
 
     /**

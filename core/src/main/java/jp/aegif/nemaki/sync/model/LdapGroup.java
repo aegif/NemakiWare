@@ -60,6 +60,18 @@ public class LdapGroup {
      * known to be gone from LDAP, though it is not among the nested groups the sync could name.
      */
     private List<String> ambiguousGroupIds = new ArrayList<>();
+    /**
+     * The ids of the users a member value could name though the sync cannot tell that it does: the user of an
+     * ambiguous value, an id a {@code memberUid} value holds that no user this sync read has, and a user whose DN
+     * a value no search returned as written could still be, written differently (R154, batch 13 review round 1).
+     * A removal that would take one of them from the group is not made: LDAP may still name them in it.
+     */
+    private List<String> possibleUserIds = new ArrayList<>();
+    /**
+     * Whether a member value is a DN no search returned as written: it could be an entry outside the searches,
+     * whose NemakiWare principal — if any — the sync does not know (R154, batch 13 review round 1).
+     */
+    private boolean outsideCouldBeNamed;
     /** Whether another group entry has this group's id, so which entry the group is is not known. */
     private boolean idShared;
     /**
@@ -166,6 +178,22 @@ public class LdapGroup {
 
     public void setAmbiguousGroupIds(List<String> ambiguousGroupIds) {
         this.ambiguousGroupIds = ambiguousGroupIds;
+    }
+
+    public List<String> getPossibleUserIds() {
+        return possibleUserIds;
+    }
+
+    public void setPossibleUserIds(List<String> possibleUserIds) {
+        this.possibleUserIds = possibleUserIds;
+    }
+
+    public boolean isOutsideCouldBeNamed() {
+        return outsideCouldBeNamed;
+    }
+
+    public void setOutsideCouldBeNamed(boolean outsideCouldBeNamed) {
+        this.outsideCouldBeNamed = outsideCouldBeNamed;
     }
 
     public boolean isIdShared() {
