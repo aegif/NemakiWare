@@ -1469,6 +1469,26 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 + warnings(result));
     }
 
+    @Test
+    @DisplayName("an empty group below a group returned without its members gains no one — the nesting is not checked, though no one reaches the group above through it yet")
+    void anEmptyGroupBelowAGroupReturnedWithoutMembersGainsNoOne() {
+        user(ALICE, "alice");
+        user(DAVE, "dave");
+        // No one reaches p through g yet, so nothing would hold a removal of the nesting back: only the check of p's
+        // members does (batch 13 review round 1: the hold on members whom LDAP may name covered the other lock).
+        group(G_DN, "g", ALICE, DAVE);
+        stored("g", List.of(), List.of());
+        group(P_DN, "p");
+        stored("p", List.of("carol"), List.of(PREFIX + "g"));
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "p").equals(w.getGroupId())),
+                "the nesting of a group returned without its members was removed");
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "g").equals(w.getGroupId())),
+                "g gained alice and dave, who reach p");
+    }
+
 
     // ---------------------------------------------------------------- R153 (a): the users this sync creates (batch 13)
 
