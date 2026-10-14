@@ -153,6 +153,7 @@ class LdapMemberResolverTest {
 
         assertEquals(List.of(), devs.getMemberUserIds());
         assertEquals(List.of("sato"), devs.getAmbiguousMembers());
+        assertEquals(List.of("sato"), devs.getPossibleUserIds(), "the user the value could be was not marked (R158 (d))");
     }
 
     @Test
@@ -313,6 +314,48 @@ class LdapMemberResolverTest {
     }
 
     @Test
+    @DisplayName("two group entries of one key are two entries to the directory: a member naming the key is ambiguous among groups (R155, R158 (d))")
+    void twoGroupEntriesOfOneKeyAreAmbiguous() {
+        LdapGroup g1 = group("cn=g,ou=groups,dc=x", "g1");
+        LdapGroup g2 = group("cn=G,ou=groups,dc=x", "g2");
+        LdapGroup all = group("cn=all,ou=groups,dc=x", "all", "cn=g,ou=groups,dc=x");
+        LdapMemberResolver.resolve(List.of(), List.of(g1, g2, all));
+
+        assertEquals(List.of(), all.getMemberGroupIds(), "the member was written as one of two entries");
+        assertEquals(List.of("cn=g,ou=groups,dc=x"), all.getAmbiguousGroupMembers());
+        assertEquals(List.of("g1", "g2"), all.getAmbiguousGroupIds(), "the groups the value could be were not marked");
+    }
+
+    @Test
+    @DisplayName("a member DN whose types are written in capitals names the entry (R155, R158 (d))")
+    void typesInCapitalsNameTheEntry() {
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "UID=bob,OU=users,DC=x");
+        LdapMemberResolver.resolve(List.of(user("uid=bob,ou=users,dc=x", "bob")), List.of(g));
+
+        assertEquals(List.of("bob"), g.getMemberUserIds(), "a type written in capitals was taken for another type");
+    }
+
+    @Test
+    @DisplayName("a member DN with a value written in hex names the entry whose DN has the same bytes (R155, R158 (d))")
+    void aHexValueNamesTheEntryOfTheSameBytes() {
+        // #04036a6f65 is the BER encoding of the string "joe"; the hex digits' case does not change the bytes.
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "uid=#04036A6F65,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("uid=#04036a6f65,ou=users,dc=x", "joe")), List.of(g));
+
+        assertEquals(List.of("joe"), g.getMemberUserIds(), "a value in hex was not taken for the same bytes");
+    }
+
+    @Test
+    @DisplayName("a multi-valued RDN names its entry whichever order its values are written in — also where they differ only outside ASCII (R155, R158 (d))")
+    void aMultiValuedRdnNamesTheEntryInEitherOrder() {
+        // LdapName orders the two values as written: they are the same letter to its comparison, not to the directory's.
+        LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "cn=I+cn=\u0131,ou=users,dc=x");
+        LdapMemberResolver.resolve(List.of(user("cn=\u0131+cn=I,ou=users,dc=x", "u1")), List.of(g));
+
+        assertEquals(List.of("u1"), g.getMemberUserIds(), "the RDN written in the other order was taken for another entry");
+    }
+
+    @Test
     @DisplayName("the value of a type outside the table keeps its case in the key: employeeNumber=AB1 names no entry employeeNumber=ab1 (R155)")
     void aValueOfATypeOutsideTheTableKeepsItsCase() {
         LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "employeeNumber=AB1,ou=users,dc=x");
@@ -322,24 +365,23 @@ class LdapMemberResolverTest {
     }
 
     @Test
-    @DisplayName("a DN differing from its entry only in the case of a letter outside ASCII names no one, but could be the user (R155)")
+    @DisplayName("a DN differing from its entry only in the case of a letter outside ASCII names no one, but could be the user — as it could be anyone (R155, R157)")
     void anotherCaseOutsideAsciiIsNotNamedButCouldBeTheUser() {
         LdapGroup g = group("cn=g,ou=groups,dc=x", "g", "cn=\u00E7elik,ou=users,dc=x");
         LdapMemberResolver.resolve(List.of(user("cn=\u00C7elik,ou=users,dc=x", "celik")), List.of(g));
 
         assertEquals(List.of(), g.getMemberUserIds());
-        assertEquals(List.of("celik"), g.getPossibleUserIds(), "the user the value could be was not marked");
         assertTrue(g.isOutsideCouldBeNamed(), "a DN no search returned as written was not marked as possibly outside");
     }
 
     @Test
-    @DisplayName("a user DN written with an alias of its type names no one, but could be the user (batch 13 review round 1)")
+    @DisplayName("a user DN written with an alias of its type names no one, but could be the user — as it could be anyone (batch 13 review round 1, R157)")
     void aUserDnWrittenWithAnAliasCouldBeTheUser() {
         LdapGroup p = group("cn=p,ou=groups,dc=x", "p", "userid=bob,ou=users,dc=x");
         LdapMemberResolver.resolve(List.of(user("uid=bob,ou=users,dc=x", "bob")), List.of(p));
 
         assertEquals(List.of(), p.getMemberUserIds());
-        assertEquals(List.of("bob"), p.getPossibleUserIds(), "the user the value could be was not marked");
+        assertTrue(p.isOutsideCouldBeNamed(), "a DN no search returned as written was not marked as possibly anyone's");
     }
 
     @Test

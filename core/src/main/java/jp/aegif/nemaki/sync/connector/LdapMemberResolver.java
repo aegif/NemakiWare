@@ -88,19 +88,18 @@ public final class LdapMemberResolver {
      * ({@code anyGroupCouldBeNamed} — R153 (b)).
      *
      * <p>{@code possibleUserIds} lists, the same way, the users a value could name though the sync cannot
-     * tell that it does — the user of an ambiguous value, an id a {@code memberUid} value holds that no user
-     * this sync read has, and a user whose DN a value no search returned as written could be — and
-     * {@code outsideCouldBeNamed} says a value is a DN no search returned as written, which could be an entry
-     * outside the searches: whom the directory names in the group is then not all known (R154, batch 13
-     * review round 1).
+     * tell that it does — the user of an ambiguous value, and an id a {@code memberUid} value holds that no user
+     * this sync read has — and {@code outsideCouldBeNamed} says a value is a DN no search returned as written:
+     * an entry outside the searches, or one of the entries written differently. Such a value could name anyone —
+     * a group outside the searches may name any user — so it is not compared with the users' DNs (R154, batch 13
+     * review round 1; R157, batch 14).
      */
     public static void resolve(List<LdapUser> users, List<LdapGroup> groups) {
         // The entries by the key of their DNs (R155) — two entries of one key are the directory's two entries
-        // all the same, and a value naming that key is ambiguous — and by the shapes of their DNs, for the
-        // values no search returned as written (R151, R153 (b)).
+        // all the same, and a value naming that key is ambiguous — and the groups by the shapes of their DNs, for
+        // the values no search returned as written (R151, R153 (b)).
         Map<List<List<String>>, List<String>> usersByKey = new HashMap<>();
         Map<String, Integer> userIdCount = new HashMap<>();
-        Shapes userShapes = new Shapes();
         for (LdapUser user : users) {
             LdapName dn = parse(user.getDn());
             if (dn != null) {
@@ -108,7 +107,6 @@ public final class LdapMemberResolver {
                 if (key != null) {
                     usersByKey.computeIfAbsent(key, k -> new ArrayList<>()).add(user.getUserId());
                 }
-                userShapes.add(dn, user.getUserId());
             }
             userIdCount.merge(user.getUserId(), 1, Integer::sum);
         }
@@ -203,7 +201,8 @@ public final class LdapMemberResolver {
                     // No search returned this DN as written; the directory may still read it as one of
                     // the entries, written differently, or it is an entry outside the searches. Not named —
                     // the group is refused all the same — but a nesting of that group is not known to be
-                    // gone, nor whom the group names.
+                    // gone, nor whom the group names: anyone, a group outside the searches being able to name
+                    // any user (R157), so which user's DN it could be is not asked.
                     outside = true;
                     List<String> could = groupShapes.itCouldBe(dn);
                     if (!could.isEmpty()) {
@@ -211,9 +210,6 @@ public final class LdapMemberResolver {
                         for (String id : could) {
                             addOnce(ambiguousGroupIds, id);
                         }
-                    }
-                    for (String id : userShapes.itCouldBe(dn)) {
-                        addOnce(possibleUserIds, id);
                     }
                 }
             }

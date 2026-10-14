@@ -808,6 +808,8 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         Map<String, String> withheldBy = new HashMap<>();
         Set<String> firstStepWrote = new HashSet<>();
         Set<String> orphansKept = new HashSet<>();
+        Set<String> orphans = new LinkedHashSet<>();
+        Map<String, List<String>> plannedGone = new LinkedHashMap<>();
         if (syncNestedGroups) {
             // LDAP's nesting among the groups this sync writes. A group naming itself is no cycle:
             // it adds no one, and its write leaves that member out.
@@ -855,20 +857,8 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     storedNesting.put(g.getGroupId(), new ArrayList<>(g.getGroups() == null ? List.of() : g.getGroups()));
                 }
             }
-            Map<String, Set<String>> usersBefore = new HashMap<>();
-            for (GroupItem g : existingGroups) {
-                if (g.getGroupId() != null) {
-                    usersBefore.computeIfAbsent(g.getGroupId(), k -> new LinkedHashSet<>())
-                            .addAll(g.getUsers() == null ? List.of() : g.getUsers());
-                }
-            }
-            Map<String, List<String>> nestingBefore = new HashMap<>();
-            for (Map.Entry<String, List<String>> e : storedNesting.entrySet()) {
-                nestingBefore.put(e.getKey(), new ArrayList<>(e.getValue()));
-            }
             // Planned first, written after: the members a removal would take a group from are put back
             // before it is made (R154).
-            Map<String, List<String>> plannedGone = new LinkedHashMap<>();
             Set<String> parents = new HashSet<>();
             for (LdapGroup ldapGroup : ldapGroups) {
                 String parentId = groupPrefix + ldapGroup.getGroupId();
@@ -910,127 +900,217 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     plannedGone.put(parentId, gone);
                 }
             }
-            Set<String> orphans = new LinkedHashSet<>();
-            if (config.isDeleteOrphanGroups()) {
-                // An orphan is deleted after the groups are written; until then its nesting would carry
-                // whoever the groups below it gain.
-                for (String orphanId : syncedGroupMap.keySet()) {
-                    if (!ldapGroupMap.containsKey(orphanId)) {
-                        orphans.add(orphanId);
-                        List<String> all = new ArrayList<>(storedNesting.getOrDefault(orphanId, List.of()));
-                        if (!all.isEmpty()) {
-                            plannedGone.put(orphanId, all);
+        }
+        if (config.isDeleteOrphanGroups()) {
+            // An orphan is deleted after the groups are written, and its deletion strips the nesting of it from the
+            // groups above: their members are put back first, where nested groups are not synced as well (R154, R156).
+            // Where they are, its own nesting is removed before any group is written — until then it would carry
+            // whoever the groups below it gain (R151); where they are not, no nesting was read, and none is removed.
+            for (String orphanId : syncedGroupMap.keySet()) {
+                if (!ldapGroupMap.containsKey(orphanId)) {
+                    orphans.add(orphanId);
+                    List<String> all = new ArrayList<>(storedNesting.getOrDefault(orphanId, List.of()));
+                    if (!all.isEmpty()) {
+                        plannedGone.put(orphanId, all);
+                    }
+                }
+            }
+        }
+
+        // R154 / R156 (both settings): the groups as stored, whom LDAP names in each group of this sync — counted once,
+        // for this step and the main loop alike — and what the main loop leaves each group holding of those it held:
+        // the members LDAP names in it directly and, where nested groups are synced, those it names surely through the
+        // groups it nests (the main loop keeps those it would not reach otherwise). A group refused now keeps what it
+        // holds; one refused later keeps it too, so this can take more than the loop does, never less (batch 14).
+        Map<String, List<String>> nestingBefore = new HashMap<>();
+        Map<String, Set<String>> usersBefore = new HashMap<>();
+        for (GroupItem g : existingGroups) {
+            if (g.getGroupId() != null) {
+                nestingBefore.put(g.getGroupId(), new ArrayList<>(g.getGroups() == null ? List.of() : g.getGroups()));
+                usersBefore.computeIfAbsent(g.getGroupId(), k -> new LinkedHashSet<>())
+                        .addAll(g.getUsers() == null ? List.of() : g.getUsers());
+            }
+        }
+        Map<String, Naming> namings = namings(entriesOf, groupPrefix, userPrefix, syncNestedGroups);
+        Map<String, Set<String>> usersAfter = new HashMap<>();
+        Set<String> sources = new LinkedHashSet<>(plannedGone.keySet());
+        for (Map.Entry<String, Set<String>> e : usersBefore.entrySet()) {
+            String groupId = e.getKey();
+            Set<String> kept = new LinkedHashSet<>(e.getValue());
+            LdapGroup entry = ldapGroupMap.get(groupId);
+            if (entry != null && !refusals.containsKey(groupId)) {
+                Set<String> stays = prefixed(userPrefix, entry.getMemberUserIds());
+                if (syncNestedGroups) {
+                    stays.addAll(namings.get(groupId).surely);
+                }
+                kept.retainAll(stays);
+                if (kept.size() < e.getValue().size()) {
+                    sources.add(groupId);
+                }
+            }
+            usersAfter.put(groupId, kept);
+        }
+        for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
+            for (String child : e.getValue()) {
+                if (orphans.contains(child)) {
+                    sources.add(e.getKey());
+                }
+            }
+        }
+        // The nesting the removals leave; a removal kept below puts its nesting back before the groups above count.
+        Map<String, List<String>> nestingAfter = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
+            List<String> kept = new ArrayList<>(e.getValue());
+            kept.removeAll(plannedGone.getOrDefault(e.getKey(), List.of()));
+            kept.removeAll(orphans);
+            nestingAfter.put(e.getKey(), kept);
+        }
+        Map<String, Set<String>> putBackDone = new HashMap<>();
+        Map<String, Set<String>> heldEdges = new HashMap<>();
+        Map<String, Boolean> couldBeUsers = new HashMap<>();
+        for (String groupId : childrenFirstAmong(ancestorsOrSelf(sources, nestingBefore), nestingBefore)) {
+            // Every group met here is stored, so one this search returned is a synced group, and an orphan is not
+            // one this search returned (batch 13 review round 1: the two other conditions decided nothing).
+            if (!entriesOf.containsKey(groupId)) {
+                continue;
+            }
+            Naming named = namings.get(groupId);
+            // Whom the group stops reaching through the removals or the main loop's writes below it, but those put back
+            // below (R154, R156). They reached it before as the store holds it: a write below that is not made, or that
+            // fails, leaves them there (batch 14 design review — so the hold below counts them all).
+            Set<String> lost = reach(groupId, nestingBefore, usersBefore);
+            lost.removeAll(reach(groupId, nestingAfter, usersAfter, putBackDone));
+            List<String> putBack = new ArrayList<>();
+            List<String> unsure = new ArrayList<>();
+            for (String id : lost) {
+                UserState state = userStates.get(id);
+                if (attempted.contains(id) || state == UserState.ABSENT) {
+                    // No NemakiWare user had the id before this sync, so nothing anyone had is taken (batch 13 review
+                    // round 1: Codex P1, answered).
+                    continue;
+                }
+                if (named.surely.contains(id)) {
+                    putBack.add(id);
+                } else if (couldBeNamed(id, state, named, userPrefix, repositoryId, couldBeUsers)) {
+                    unsure.add(id);
+                }
+            }
+            Set<String> keep = new LinkedHashSet<>(unsure);
+            if (!putBack.isEmpty()) {
+                List<String> missing = putBack(repositoryId, groupId, putBack, dryRun, result, syncedGroupMap);
+                Set<String> done = new LinkedHashSet<>(putBack);
+                done.removeAll(missing);
+                if (!done.isEmpty()) {
+                    putBackDone.computeIfAbsent(groupId, k -> new LinkedHashSet<>()).addAll(done);
+                    firstStepWrote.add(groupId);
+                }
+                if (!missing.isEmpty()) {
+                    keep.addAll(missing);
+                    // The main loop's writes below that would take the group from them are not made either: a member
+                    // they drop is kept where it is, so the next sync can put them back (batch 14 design review).
+                    for (String below : descendantsOrSelf(groupId, nestingBefore)) {
+                        Set<String> dropped = new HashSet<>(usersBefore.getOrDefault(below, Set.of()));
+                        dropped.removeAll(usersAfter.getOrDefault(below, Set.of()));
+                        dropped.retainAll(missing);
+                        if (!dropped.isEmpty()) {
+                            refusals.merge(below, "group " + below + ": writing LDAP's members would take " + groupId
+                                    + " from members LDAP names in it, who could not be put back there first, for "
+                                    + "example " + sample(new ArrayList<>(dropped)) + "; the group is not written this "
+                                    + "sync", (first, then) -> first + "; " + then);
                         }
                     }
                 }
             }
-
-            // The members each group loses through the removals (and the orphans' deletion, which strips the nesting
-            // of them) and that LDAP names in it are put back first, as direct members (R154).
-            Map<String, List<String>> nestingAfter = new HashMap<>();
-            for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
-                List<String> kept = new ArrayList<>(e.getValue());
-                kept.removeAll(plannedGone.getOrDefault(e.getKey(), List.of()));
-                kept.removeAll(orphans);
-                nestingAfter.put(e.getKey(), kept);
-            }
-            // The groups whose members a removal below them would take, and who could not be put back first — or whom
-            // LDAP may still name there: the removals below them are not made (R154).
-            Set<String> putBackFailed = new HashSet<>();
-            Set<String> sources = new HashSet<>(plannedGone.keySet());
-            for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
-                for (String child : e.getValue()) {
-                    if (orphans.contains(child)) {
-                        sources.add(e.getKey());
+            // Only the removals and orphans below that would take the group from them are kept (batch 14 design review);
+            // kept, they count for the groups above.
+            Set<String> carried = new HashSet<>();
+            if (!keep.isEmpty()) {
+                for (String below : descendantsOrSelf(groupId, nestingBefore)) {
+                    for (String child : plannedGone.getOrDefault(below, List.of())) {
+                        Set<String> through = reach(child, nestingBefore, usersBefore);
+                        through.retainAll(keep);
+                        if (!through.isEmpty()) {
+                            carried.addAll(through);
+                            if (heldEdges.computeIfAbsent(below, k -> new LinkedHashSet<>()).add(child)) {
+                                nestingAfter.get(below).add(child);
+                            }
+                        }
+                    }
+                    if (orphans.contains(below)) {
+                        Set<String> through = reach(below, nestingBefore, usersBefore);
+                        through.retainAll(keep);
+                        if (!through.isEmpty()) {
+                            // Deleting it strips the nesting of it from the groups above, whose members LDAP names —
+                            // or may name — there were not put back first: it is kept this sync (R154).
+                            carried.addAll(through);
+                            if (orphansKept.add(below)) {
+                                for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
+                                    if (e.getValue().contains(below)) {
+                                        nestingAfter.get(e.getKey()).add(below);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            for (String parentId : ancestorsOrSelf(sources, nestingBefore)) {
-                // Every group met here is stored, so one this search returned is a synced group, and an orphan is not
-                // one this search returned (batch 13 review round 1: the two other conditions decided nothing).
-                if (!entriesOf.containsKey(parentId)) {
-                    continue;
-                }
-                Set<String> lost = reach(parentId, nestingBefore, usersBefore);
-                lost.removeAll(reach(parentId, nestingAfter, usersBefore));
-                if (lost.isEmpty()) {
-                    continue;
-                }
-                Naming named = naming(parentId, entriesOf, groupPrefix, userPrefix);
-                List<String> putBack = new ArrayList<>();
-                List<String> unsure = new ArrayList<>();
-                for (String id : lost) {
-                    UserState state = userStates.get(id);
-                    if (attempted.contains(id) || state == UserState.ABSENT) {
-                        // No NemakiWare user had the id before this sync, so the removal takes nothing anyone had
-                        // (batch 13 review round 1: Codex P1, answered).
-                        continue;
-                    }
-                    if (named.surely.contains(id)) {
-                        putBack.add(id);
-                    } else if (state != null ? named.anyone || named.possibly.contains(id)
-                            : (named.anyone || named.possibly.contains(id) || named.outside)
-                                    && couldBeAUser(repositoryId, id)) {
-                        unsure.add(id);
-                    }
-                }
-                if (!unsure.isEmpty()) {
-                    // Whom LDAP names in the group is not all known, and they may be among them: what is not known is
-                    // not taken for "not named" (batch 13 review round 1: Codex P1, subagent P2).
-                    putBackFailed.add(parentId);
-                    result.addError(parentId, "group " + parentId + ": whom LDAP names in the group is not all known "
-                            + "(a member value it could not name or read, or an id two entries share), and "
-                            + unsure.size() + " member(s) who reach the group through a nesting LDAP no longer states "
-                            + "below it could be among them, so that nesting is kept, for example " + sample(unsure));
-                    continue;
-                }
-                if (!putBack.isEmpty() && !putBack(repositoryId, parentId, putBack, dryRun, result, syncedGroupMap)) {
-                    putBackFailed.add(parentId);
-                }
+            // Whom LDAP names in the group is not all known, and they may be among them: what is not known is not taken
+            // for "not named" (batch 13 review round 1: Codex P1, subagent P2; R157 — a DN outside the searches may be a
+            // group that names a user this sync looked up). Through a removal, the removal is kept; only through a write
+            // below, that group is written as LDAP states it — keeping them there would keep whom LDAP took out of it —
+            // and it is said (R156).
+            List<String> held = new ArrayList<>(unsure);
+            held.retainAll(carried);
+            List<String> unheld = new ArrayList<>(unsure);
+            unheld.removeAll(carried);
+            if (!held.isEmpty()) {
+                result.addError(groupId, "group " + groupId + ": whom LDAP names in the group is not all known "
+                        + "(a member value it could not name or read, or an id two entries share), and "
+                        + held.size() + " member(s) who reach the group through a nesting LDAP no longer states "
+                        + "below it could be among them, so that nesting is kept, for example " + sample(held));
             }
-
-            for (String orphanId : orphans) {
-                Set<String> above = ancestorsOrSelf(Set.of(orphanId), nestingBefore);
-                above.retainAll(putBackFailed);
-                if (!above.isEmpty()) {
-                    // Deleting it strips the nesting of it from the groups above, whose members LDAP names — or may
-                    // name — there were not put back first: it is kept this sync (R154).
-                    orphansKept.add(orphanId);
-                }
+            if (!unheld.isEmpty()) {
+                result.addWarning(groupId, "group " + groupId + ": whom LDAP names in the group is not all known (a member "
+                        + "value it could not name or read, or an id two entries share), and " + unheld.size()
+                        + " member(s) who reach the group only through a group below it that this sync writes as LDAP "
+                        + "states it could be among them: they lose the group when that group is written, for example "
+                        + sample(unheld));
             }
-            for (Map.Entry<String, List<String>> planned : plannedGone.entrySet()) {
-                String parentId = planned.getKey();
-                Set<String> above = ancestorsOrSelf(Set.of(parentId), nestingBefore);
-                above.retainAll(putBackFailed);
-                if (!above.isEmpty()) {
-                    // Removing it would take from a group above members LDAP names — or may name — in it, who were not
-                    // put back: it stays, and the groups below it are given no one new (R154).
-                    for (String nestedId : planned.getValue()) {
-                        uncheck(uncheckedEdges, parentId, nestedId);
-                    }
-                    String kept = "group " + parentId + ": " + planned.getValue().size() + " nested group(s) LDAP no "
-                            + "longer names under it are kept, because members LDAP names — or may name — in a group "
-                            + "above were not put back there first, for example " + sample(planned.getValue());
-                    if (ldapGroupMap.containsKey(parentId)) {
-                        // Writing the group would replace its nesting with LDAP's, and remove them all the same.
-                        refusals.merge(parentId, kept + "; the group is not written this sync",
-                                (first, then) -> first + "; " + then);
-                    } else {
-                        result.addWarning(parentId, kept);
-                    }
-                    continue;
-                }
-                if (removeGoneNesting(repositoryId, parentId, planned.getValue(), dryRun, result, syncedGroupMap,
-                        storedNesting, uncheckedEdges, refusals)) {
-                    firstStepWrote.add(parentId);
-                }
-                if (orphans.contains(parentId) && refusals.containsKey(parentId)) {
-                    // No LDAP group reports it: the main loop does not see orphans (review round 1).
-                    result.addError(parentId, refusals.get(parentId));
-                }
-            }
-            withheldBy = withheld(uncheckedEdges, storedNesting);
         }
+
+        // The removals planned above, but those kept: none where nested groups are not synced, where nothing is planned.
+        for (Map.Entry<String, List<String>> planned : plannedGone.entrySet()) {
+            String parentId = planned.getKey();
+            List<String> held = new ArrayList<>(heldEdges.getOrDefault(parentId, Set.of()));
+            List<String> gone = new ArrayList<>(planned.getValue());
+            gone.removeAll(held);
+            if (!held.isEmpty()) {
+                // Removing it would take from a group above members LDAP names — or may name — in it, who were not
+                // put back: it stays, and the groups below it are given no one new (R154).
+                for (String nestedId : held) {
+                    uncheck(uncheckedEdges, parentId, nestedId);
+                }
+                String kept = "group " + parentId + ": " + held.size() + " nested group(s) LDAP no "
+                        + "longer names under it are kept, because members LDAP names — or may name — in a group "
+                        + "above were not put back there first, for example " + sample(held);
+                if (ldapGroupMap.containsKey(parentId)) {
+                    // Writing the group would replace its nesting with LDAP's, and remove them all the same.
+                    refusals.merge(parentId, kept + "; the group is not written this sync",
+                            (first, then) -> first + "; " + then);
+                } else {
+                    result.addWarning(parentId, kept);
+                }
+            }
+            if (removeGoneNesting(repositoryId, parentId, gone, dryRun, result, syncedGroupMap, storedNesting,
+                    uncheckedEdges, refusals)) {
+                firstStepWrote.add(parentId);
+            }
+            if (orphans.contains(parentId) && refusals.containsKey(parentId)) {
+                // No LDAP group reports it: the main loop does not see orphans (review round 1).
+                result.addError(parentId, refusals.get(parentId));
+            }
+        }
+        withheldBy = withheld(uncheckedEdges, storedNesting);
 
         Set<String> established = new HashSet<>();
         // What the groups hold as the loop writes them — after the first step, then each write — for the members a
@@ -1044,16 +1124,11 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 nestingNow.put(g.getGroupId(), new ArrayList<>(now.getGroups() == null ? List.of() : now.getGroups()));
             }
         }
-        // Whom LDAP surely names in each group, read before the loop rewrites the entries' member lists.
-        Map<String, Set<String>> namedSurely = new HashMap<>();
-        if (syncNestedGroups) {
-            Map<String, Set<String>> done = new HashMap<>();
-            for (String groupId : entriesOf.keySet()) {
-                namedSurely.put(groupId, surely(groupId, entriesOf, groupPrefix, userPrefix, new HashSet<>(), done));
-            }
-        }
+        // The groups the loop has met: their state is settled for this sync, as is that of the groups it does not write.
+        Set<String> processed = new HashSet<>();
         for (LdapGroup ldapGroup : order) {
             String nemakiGroupId = groupPrefix + ldapGroup.getGroupId();
+            processed.add(nemakiGroupId);
             boolean writing = false;
             boolean creating = false;
             boolean isEstablished = true;
@@ -1066,8 +1141,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 String unknown = refusals.get(nemakiGroupId);
                 if (unknown != null) {
                     if (firstStepWrote.contains(nemakiGroupId)) {
-                        unknown = unknown + " (before any group was written, the nesting LDAP no longer names under it "
-                                + "was removed — see the warning)";
+                        unknown = unknown + " (before any group was written, this sync changed it first — the nesting "
+                                + "LDAP no longer names under it removed, or members LDAP names in it put back; see the "
+                                + "warning)";
                     }
                     log.warn("AUDIT: Group not written by directory sync: " + unknown);
                     result.addError(nemakiGroupId, unknown);
@@ -1180,17 +1256,21 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     // LDAP's direct members alone would take the group from them — the members a removal below put
                     // back among them too (batch 13 review round 1: subagent P2). They had the group, so no one gains it.
                     if (existingGroup != null) {
+                        // Only through groups whose state is settled: one the loop writes later may still drop them,
+                        // and an orphan takes its members along when it is deleted — this sync, or the next where a
+                        // nesting kept it this once (batch 14 — R158 (a)).
                         Set<String> reached = new HashSet<>();
                         for (String groupId : nested) {
-                            reached.addAll(reach(groupPrefix + groupId, nestingNow, usersNow));
+                            reached.addAll(reachSettled(groupPrefix + groupId, nestingNow, usersNow,
+                                    id -> orphans.contains(id) || (ldapGroupMap.containsKey(id) && !processed.contains(id))));
                         }
                         Set<String> direct = prefixed(userPrefix, users);
                         List<String> keptUsers = new ArrayList<>(users);
-                        Set<String> namedThrough = namedSurely.getOrDefault(nemakiGroupId, Set.of());
+                        Set<String> namedThrough = namings.get(nemakiGroupId).surely;
                         for (String id : existingGroup.getUsers() == null ? List.<String>of() : existingGroup.getUsers()) {
                             UserState state = userStates.get(id);
                             if (namedThrough.contains(id) && !direct.contains(id) && !reached.contains(id)
-                                    && (state == UserState.EXISTS || state == UserState.UNKNOWN) && id.startsWith(userPrefix)) {
+                                    && (state == UserState.EXISTS || state == UserState.UNKNOWN)) {
                                 keptUsers.add(id.substring(userPrefix.length()));
                             }
                         }
@@ -1448,6 +1528,93 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         return found;
     }
 
+    /** The users a group reaches through the nesting given, with the members put back in each group as well. */
+    private static Set<String> reach(String groupId, Map<String, List<String>> nesting,
+            Map<String, Set<String>> usersOf, Map<String, Set<String>> putBack) {
+        Set<String> users = reach(groupId, nesting, usersOf);
+        Set<String> seen = new HashSet<>();
+        Deque<String> todo = new ArrayDeque<>();
+        todo.push(groupId);
+        while (!todo.isEmpty()) {
+            String id = todo.pop();
+            if (!seen.add(id)) {
+                continue;
+            }
+            users.addAll(putBack.getOrDefault(id, Set.of()));
+            for (String child : nesting.getOrDefault(id, List.of())) {
+                todo.push(child);
+            }
+        }
+        return users;
+    }
+
+    /** The users a group reaches through the nesting given, not through the groups the test skips. */
+    private static Set<String> reachSettled(String groupId, Map<String, List<String>> nesting,
+            Map<String, Set<String>> usersOf, java.util.function.Predicate<String> skip) {
+        Set<String> users = new LinkedHashSet<>();
+        Set<String> seen = new HashSet<>();
+        Deque<String> todo = new ArrayDeque<>();
+        todo.push(groupId);
+        while (!todo.isEmpty()) {
+            String id = todo.pop();
+            if (!seen.add(id) || skip.test(id)) {
+                continue;
+            }
+            users.addAll(usersOf.getOrDefault(id, Set.of()));
+            for (String child : nesting.getOrDefault(id, List.of())) {
+                todo.push(child);
+            }
+        }
+        return users;
+    }
+
+    /** The group and every group below it in the nesting given. */
+    private static Set<String> descendantsOrSelf(String groupId, Map<String, List<String>> nesting) {
+        Set<String> found = new LinkedHashSet<>();
+        Deque<String> todo = new ArrayDeque<>();
+        todo.push(groupId);
+        while (!todo.isEmpty()) {
+            String id = todo.pop();
+            if (found.add(id)) {
+                for (String child : nesting.getOrDefault(id, List.of())) {
+                    todo.push(child);
+                }
+            }
+        }
+        return found;
+    }
+
+    /** The groups given, each after the groups given below it in the nesting (a cycle in any order). */
+    private static List<String> childrenFirstAmong(Set<String> ids, Map<String, List<String>> nesting) {
+        List<String> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String root : ids) {
+            Deque<Object[]> work = new ArrayDeque<>();
+            if (!seen.add(root)) {
+                continue;
+            }
+            work.push(new Object[] {root, nesting.getOrDefault(root, List.of()).iterator()});
+            while (!work.isEmpty()) {
+                Object[] frame = work.peek();
+                @SuppressWarnings("unchecked")
+                Iterator<String> it = (Iterator<String>) frame[1];
+                if (it.hasNext()) {
+                    String child = it.next();
+                    if (seen.add(child)) {
+                        work.push(new Object[] {child, nesting.getOrDefault(child, List.of()).iterator()});
+                    }
+                } else {
+                    work.pop();
+                    String id = (String) frame[0];
+                    if (ids.contains(id)) {
+                        out.add(id);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
     /** The users a group reaches through the nesting given — its own and those of every group below it. */
     private static Set<String> reach(String groupId, Map<String, List<String>> nesting,
             Map<String, Set<String>> usersOf) {
@@ -1474,34 +1641,33 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
         final Set<String> surely = new HashSet<>();
         /** Named by any entry, or what a member value could name — users, and the members of groups — down through. */
         final Set<String> possibly = new HashSet<>();
-        /** A member value is a DN no search returned: a NemakiWare user this sync did not look up could be named. */
+        /** A member value down through is a DN no search returned: it may be anyone's, or a group that names anyone. */
         boolean outside;
         /** The members of a group down through were not read, or a value could not be parsed: anyone could be named. */
         boolean anyone;
     }
 
     /**
-     * Whom LDAP names in a group: its own members, and those of the groups LDAP nests in it, down through the nesting
-     * (R154). What the sync could not name or read is not taken for "no one" (batch 13 review round 1: Codex P1,
-     * subagent P2): it makes the members possibly named — the users a value could name, the groups a value could
-     * name, any entry of an id two entries share — or anyone at all, where a group's members were not read.
+     * Whom LDAP names in each group of this sync, counted once for the first step and the main loop alike (batch 14 —
+     * one table, where each used its own and the main loop's memo kept what a cut cycle left half done). Surely: whom
+     * every entry of the id names, its members the sync named and those the groups it nests name surely — the least
+     * fixpoint, so a nesting cycle names no one it would not name otherwise; an entry whose members were not read names
+     * surely none but those it returned (none, as the connector reads them). Possibly: any entry's members, the users a
+     * value could name ({@code possibleUserIds}), and the same of every group a value names or could name
+     * ({@code ambiguousGroupIds}), down through; outside and anyone likewise. What the sync could not name or read is not
+     * taken for "no one" (batch 13 review round 1). Where nested groups are not synced, a group's membership is its
+     * direct members alone, and nothing is followed down.
      */
-    private static Naming naming(String groupId, Map<String, List<LdapGroup>> entriesOf, String groupPrefix,
-            String userPrefix) {
-        Naming naming = new Naming();
-        naming.surely.addAll(surely(groupId, entriesOf, groupPrefix, userPrefix, new HashSet<>(), new HashMap<>()));
-        Set<String> seen = new HashSet<>();
-        Deque<String> todo = new ArrayDeque<>();
-        todo.push(groupId);
-        while (!todo.isEmpty()) {
-            String id = todo.pop();
-            if (!seen.add(id)) {
-                continue;
-            }
-            for (LdapGroup entry : entriesOf.getOrDefault(id, List.of())) {
+    private static Map<String, Naming> namings(Map<String, List<LdapGroup>> entriesOf, String groupPrefix,
+            String userPrefix, boolean followNesting) {
+        Map<String, Naming> own = new HashMap<>();
+        Map<String, Set<String>> down = new HashMap<>();
+        for (Map.Entry<String, List<LdapGroup>> e : entriesOf.entrySet()) {
+            Naming naming = new Naming();
+            Set<String> next = new LinkedHashSet<>();
+            for (LdapGroup entry : e.getValue()) {
                 if (entry.isMembersRanged() || !entry.isMemberAttributePresent()) {
                     naming.anyone = true;
-                    continue;
                 }
                 for (String userId : entry.getMemberUserIds() == null ? List.<String>of() : entry.getMemberUserIds()) {
                     naming.possibly.add(userPrefix + userId);
@@ -1511,52 +1677,153 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                 }
                 naming.outside |= entry.isOutsideCouldBeNamed();
                 naming.anyone |= entry.isAnyGroupCouldBeNamed();
-                for (String nestedId : memberGroupIdsOf(entry)) {
-                    todo.push(groupPrefix + nestedId);
+                if (followNesting) {
+                    for (String nestedId : memberGroupIdsOf(entry)) {
+                        next.add(groupPrefix + nestedId);
+                    }
+                    for (String nestedId : entry.getAmbiguousGroupIds() == null ? List.<String>of() : entry.getAmbiguousGroupIds()) {
+                        next.add(groupPrefix + nestedId);
+                    }
                 }
-                for (String nestedId : entry.getAmbiguousGroupIds() == null ? List.<String>of() : entry.getAmbiguousGroupIds()) {
-                    todo.push(groupPrefix + nestedId);
+            }
+            own.put(e.getKey(), naming);
+            down.put(e.getKey(), next);
+        }
+        // The groups as strongly connected components, the ones below first: a component is counted once, after every
+        // component it reaches.
+        List<List<String>> components = components(down);
+        Map<String, Naming> namings = new HashMap<>();
+        for (List<String> component : components) {
+            Naming merged = new Naming();
+            for (String groupId : component) {
+                Naming mine = own.get(groupId);
+                merged.possibly.addAll(mine.possibly);
+                merged.outside |= mine.outside;
+                merged.anyone |= mine.anyone;
+                for (String d : down.get(groupId)) {
+                    Naming below = namings.get(d);
+                    if (below != null) {
+                        merged.possibly.addAll(below.possibly);
+                        merged.outside |= below.outside;
+                        merged.anyone |= below.anyone;
+                    }
+                }
+            }
+            for (String groupId : component) {
+                Naming naming = new Naming();
+                naming.possibly.addAll(merged.possibly);
+                naming.outside = merged.outside;
+                naming.anyone = merged.anyone;
+                namings.put(groupId, naming);
+            }
+            // Surely: from nothing, within the component, until nothing changes — each step only adds.
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (String groupId : component) {
+                    Set<String> common = null;
+                    for (LdapGroup entry : entriesOf.get(groupId)) {
+                        Set<String> named = new HashSet<>();
+                        for (String userId : entry.getMemberUserIds() == null ? List.<String>of() : entry.getMemberUserIds()) {
+                            named.add(userPrefix + userId);
+                        }
+                        if (followNesting) {
+                            for (String nestedId : memberGroupIdsOf(entry)) {
+                                named.addAll(namings.get(groupPrefix + nestedId).surely);
+                            }
+                        }
+                        if (common == null) {
+                            common = named;
+                        } else {
+                            common.retainAll(named);
+                        }
+                    }
+                    if (common != null && namings.get(groupId).surely.addAll(common)) {
+                        changed = true;
+                    }
                 }
             }
         }
-        return naming;
+        return namings;
+    }
+
+    /** Tarjan's strongly connected components of the graph, each after every component it reaches. */
+    private static List<List<String>> components(Map<String, Set<String>> edges) {
+        List<List<String>> out = new ArrayList<>();
+        Map<String, Integer> index = new HashMap<>();
+        Map<String, Integer> low = new HashMap<>();
+        Deque<String> stack = new ArrayDeque<>();
+        Set<String> onStack = new HashSet<>();
+        int[] counter = {0};
+        for (String root : edges.keySet()) {
+            if (index.containsKey(root)) {
+                continue;
+            }
+            // Iterative, so a deep nesting does not overflow the call stack.
+            Deque<Object[]> work = new ArrayDeque<>();
+            work.push(new Object[] {root, edges.getOrDefault(root, Set.of()).iterator()});
+            index.put(root, counter[0]);
+            low.put(root, counter[0]);
+            counter[0]++;
+            stack.push(root);
+            onStack.add(root);
+            while (!work.isEmpty()) {
+                Object[] frame = work.peek();
+                String v = (String) frame[0];
+                @SuppressWarnings("unchecked")
+                Iterator<String> it = (Iterator<String>) frame[1];
+                if (it.hasNext()) {
+                    String w = it.next();
+                    if (!index.containsKey(w)) {
+                        index.put(w, counter[0]);
+                        low.put(w, counter[0]);
+                        counter[0]++;
+                        stack.push(w);
+                        onStack.add(w);
+                        work.push(new Object[] {w, edges.getOrDefault(w, Set.of()).iterator()});
+                    } else if (onStack.contains(w)) {
+                        low.put(v, Math.min(low.get(v), index.get(w)));
+                    }
+                } else {
+                    work.pop();
+                    if (!work.isEmpty()) {
+                        String parent = (String) work.peek()[0];
+                        low.put(parent, Math.min(low.get(parent), low.get(v)));
+                    }
+                    if (low.get(v).equals(index.get(v))) {
+                        List<String> component = new ArrayList<>();
+                        String w;
+                        do {
+                            w = stack.pop();
+                            onStack.remove(w);
+                            component.add(w);
+                        } while (!w.equals(v));
+                        out.add(component);
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /**
-     * Whom LDAP surely names in a group: whom every entry of the id names — its members the sync named, and those
-     * of the groups it nests, named surely the same way. A group whose members were not read names no one surely; a
-     * cycle adds no one.
+     * Whether LDAP may name the user in the group, though not surely (R157, batch 14): a member value the sync could not
+     * name or read could be anyone — a DN outside the searches may be a group that names a user this sync looked up — or
+     * could be her, written differently. Where there is a user prefix, an id without it is no directory user's; an id
+     * no NemakiWare user has loses nothing.
      */
-    private static Set<String> surely(String groupId, Map<String, List<LdapGroup>> entriesOf, String groupPrefix,
-            String userPrefix, Set<String> path, Map<String, Set<String>> done) {
-        Set<String> known = done.get(groupId);
-        if (known != null) {
-            return known;
+    private boolean couldBeNamed(String id, UserState state, Naming named, String userPrefix, String repositoryId,
+            Map<String, Boolean> couldBeUsers) {
+        if (!named.anyone && !named.outside && !named.possibly.contains(id)) {
+            return false;
         }
-        if (!path.add(groupId)) {
-            return Set.of();
+        if (state != null) {
+            return true;
         }
-        Set<String> common = null;
-        for (LdapGroup entry : entriesOf.getOrDefault(groupId, List.of())) {
-            Set<String> named = new HashSet<>();
-            if (!entry.isMembersRanged() && entry.isMemberAttributePresent()) {
-                for (String userId : entry.getMemberUserIds() == null ? List.<String>of() : entry.getMemberUserIds()) {
-                    named.add(userPrefix + userId);
-                }
-                for (String nestedId : memberGroupIdsOf(entry)) {
-                    named.addAll(surely(groupPrefix + nestedId, entriesOf, groupPrefix, userPrefix, path, done));
-                }
-            }
-            if (common == null) {
-                common = named;
-            } else {
-                common.retainAll(named);
-            }
+        if (!userPrefix.isEmpty() && !id.startsWith(userPrefix)) {
+            return false;
         }
-        path.remove(groupId);
-        Set<String> result = common == null ? Set.of() : common;
-        done.put(groupId, result);
-        return result;
+        return couldBeUsers.computeIfAbsent(id, k -> couldBeAUser(repositoryId, k));
     }
 
     /** Whether a NemakiWare user may have the id: one does, or whether one does could not be read. */
@@ -1569,12 +1836,12 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
     }
 
     /**
-     * Writes into a group, as direct members, the users a removal below it would take it from and that LDAP names
-     * in it — before the removal, from the group read past the cache, checked by reading it back (R154). They
-     * reach it already, so no one gains anything; a group the sync does not write keeps them as it keeps its other
-     * members, until it can be written. The preview projects it. Says whether they are in the group now.
+     * Writes into a group, as direct members, the users a removal or a write below it would take it from and that LDAP
+     * surely names in it — before either, from the group read past the cache, checked by reading it back (R154, R156).
+     * They reach it already, so no one gains anything; a group the sync does not write keeps them as it keeps its other
+     * members, until it can be written. The preview projects it. Answers whom it could not put back (none, when done).
      */
-    private boolean putBack(String repositoryId, String groupId, List<String> users, boolean dryRun,
+    private List<String> putBack(String repositoryId, String groupId, List<String> users, boolean dryRun,
             DirectorySyncResult result, Map<String, GroupItem> syncedGroupMap) {
         if (dryRun) {
             GroupItem stored = syncedGroupMap.get(groupId);
@@ -1587,9 +1854,9 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             syncedGroupMap.put(groupId, new GroupItem(stored.getId(), stored.getObjectType(), stored.getGroupId(),
                     stored.getName(), with, stored.getGroups() == null ? new ArrayList<>() : new ArrayList<>(stored.getGroups())));
             result.addWarning(groupId, "group " + groupId + ": " + users.size() + " member(s) LDAP names in the group, "
-                    + "who reach it through a nesting removed below it, were put back as members first, for example "
-                    + sample(users));
-            return true;
+                    + "who reach it through a group below it that this sync changes, were put back as members first, "
+                    + "for example " + sample(users));
+            return List.of();
         }
         String failure = null;
         GroupItem after = null;
@@ -1624,16 +1891,18 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
             syncedGroupMap.put(groupId, after);
         }
         if (after == null || !missing.isEmpty()) {
-            result.addError(groupId, "group " + groupId + ": " + (after == null ? users.size() : missing.size())
-                    + " member(s) LDAP names in the group, who reach it through a nesting below it that LDAP no longer "
-                    + "states, could not be put back as members" + (failure == null ? "" : " (" + failure + ")")
-                    + ", so that nesting is kept, for example " + sample(after == null ? users : missing));
-            return false;
+            List<String> notPutBack = after == null ? new ArrayList<>(users) : missing;
+            result.addError(groupId, "group " + groupId + ": " + notPutBack.size() + " member(s) LDAP names in the group, "
+                    + "who reach it through a group below it that this sync changes, could not be put back as members"
+                    + (failure == null ? "" : " (" + failure + ")") + ", so the changes below that would take the group "
+                    + "from them are not made, for example " + sample(notPutBack));
+            return notPutBack;
         }
         result.addWarning(groupId, "group " + groupId + ": " + users.size() + " member(s) LDAP names in the group, "
-                + "who reach it through a nesting removed below it, were put back as members first, for example "
-                + sample(users) + (failure == null ? "" : " (a step after storing the group failed: " + failure + ")"));
-        return true;
+                + "who reach it through a group below it that this sync changes, were put back as members first, "
+                + "for example " + sample(users) + (failure == null ? "" : " (a step after storing the group failed: "
+                + failure + ")"));
+        return List.of();
     }
 
     /**
