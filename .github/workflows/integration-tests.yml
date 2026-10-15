@@ -144,7 +144,10 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The whole suite, not 81 classes: locally 3m20s on 10 cores, and this runner has 2 — plus the
+    # sibling modules' install and the verifier's own tests in the same job. Raised with the exclusion
+    # list; the first real run is what settles it (round-3 review, P3).
+    timeout-minutes: 45
     env:
       MAVEN_USERNAME: ${{ github.actor }}
       MAVEN_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -167,50 +170,86 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-      # A shell step, not a Java test. Every Java version of this check was self-referential:
-      # remove a class from the list and the test that would have complained is the one that no
-      # longer runs. It used to assert that a hand-written list of locks was a subset of a
-      # hand-written -Dtest allow-list. The allow-list is gone (the job runs the whole suite by
-      # exclusion), so the thing to guard is the opposite: that nobody quietly brings it back.
+      # A shell step, not a Java test, and it must stay that way: a Java lock cannot observe its own
+      # exclusion — exclude the class and the test that would have complained is the one that no longer
+      # runs (both round-4 reviews, P1).
       #
-      # It does NOT protect against deleting the step itself — that is visible in the diff and is
-      # where review has to do the work.
+      # It asserts the unit job's -Dtest is EXACTLY the documented list. Checking "every entry starts
+      # with !" was not enough: `-Dtest='!jp.aegif.nemaki.**'` is all exclusions, selects no core test at
+      # all, and with failIfNoSpecifiedTests=false the job then SUCCEEDS with zero tests — every lock in
+      # the suite gone, CI green (round-3 review, P1). An exact match means widening the exclusions is a
+      # deliberate edit here as well as there, which is where review can see it.
+      #
+      # It does NOT protect against deleting the step itself — that is visible in the diff.
       - name: The unit job runs the whole suite, not a chosen list
         run: |
           set -eu
-          # Scoped to THIS job by name, not by position (a job inserted above used to be read
-          # instead). The sed range ends at the next two-space key, where the next job starts.
-          # Anchored to the start of a line so this step's own text is not what gets read.
+          EXPECTED="!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader"
+          # Scoped to THIS job by name, not by position, and anchored to the start of a line so this
+          # step's own text is not what gets read. The range ends at the next two-space key.
           LIST=$(sed -n '/^  unit-tests:/,/^  [a-z]/p' .github/workflows/integration-tests.yml \
                  | grep -oE "^ +-Dtest='[^']*'" | head -1)
           if [ -z "$LIST" ]; then
             echo "::error::no -Dtest list found inside the unit-tests job"; exit 1
           fi
-          NAMES=$(printf '%s' "$LIST" | sed "s/^ *-Dtest='//; s/'$//")
-          # Every entry must be an exclusion. One bare class name means someone narrowed the job
-          # back to a chosen set, which is how the locks added with a batch stopped running here.
-          printf '%s' "$NAMES" | tr ',' '\n' | while IFS= read -r entry; do
-            [ -n "$entry" ] || continue
-            case "$entry" in
-              !*) ;;
-              *) echo "::error::the unit job names a class to RUN ($entry). This job must run the"
-                 echo "::error::whole suite by exclusion, so a lock added with a batch runs without"
-                 echo "::error::being listed. Exclude what cannot run here; do not allow-list."
-                 exit 1 ;;
-            esac
+          ACTUAL=$(printf '%s' "$LIST" | sed "s/^ *-Dtest='//; s/'$//")
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::the unit job's -Dtest is not the documented whole-suite list."
+            echo "::error::expected: $EXPECTED"
+            echo "::error::actual:   $ACTUAL"
+            echo "::error::This job must run the whole suite so a lock added with a batch runs without"
+            echo "::error::being listed. Do not allow-list, and do not widen the exclusions (a package"
+            echo "::error::exclusion such as !jp.aegif.nemaki.** selects nothing and would pass green)."
+            echo "::error::If an exclusion really has to change, change EXPECTED here in the same commit."
+            exit 1
+          fi
+          echo "the unit job runs the whole suite; exclusions exactly as documented: $ACTUAL"
+
+          # Named-and-not-running, the two ways the old allow-list step also checked. They still apply
+          # under an exclusion list: a class runs without being named, but a RENAME or a @Disabled takes
+          # it out silently and neither the exact-list check above nor a Java lock can see it (the Java
+          # lock is in the suite; @Disabled on it is exactly how it stops running — round-3 review, P2).
+          LOCKS="EverySupportedCouchDbIsMeasuredTest
+                 CanonicalImportServiceTest
+                 ReleaseReadinessIsMeasuredTest
+                 NoForbiddenClaimShipsTest
+                 CredentialsEndWithTheAccountTest
+                 TheAssertedNameIsNotTheAuthenticatedOneTest
+                 OidcLoginTest
+                 OidcLoginEntryPointsTest
+                 IsNullNamesTheSolrFieldTest
+                 SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest"
+          for lock in $LOCKS; do
+            FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
+            if [ -z "$FILE" ]; then
+              echo "::error::$lock does not exist — renamed or deleted, so nothing in it runs here"
+              exit 1
+            fi
+            # Both spellings, and an indented one: the pattern inherited from the old step was
+            # '^@Disabled', which @org.junit.jupiter.api.Disabled slipped straight past (measured).
+            if grep -qE '^[[:space:]]*@(org\.junit\.jupiter\.api\.)?Disabled' "$FILE"; then
+              echo "::error::$lock exists but the class is @Disabled, so nothing in it runs here"
+              exit 1
+            fi
           done
-          echo "the unit job runs the whole suite; exclusions only: $NAMES"
+          echo "all $(printf '%s\n' $LOCKS | wc -l | tr -d ' ') named locks exist and none is @Disabled"
 
       - name: Run unit tests
         run: |
-          # THE WHOLE SUITE, by exclusion. This was a positive allow-list of ~125 class names out of
-          # 637, so a lock added with a batch did not run here until someone remembered to add its
-          # name — and the locks this release added for the authentication fixes were not in it
-          # (external review T1, and our own review raised the same gap). An exclusion list cannot
-          # go stale that way: a new test class runs unless it is named here.
+          # THE WHOLE SUITE, by exclusion. This was a positive allow-list naming 81 classes (measured:
+          # the old -Dtest split on "," and de-duplicated) against 662 *Test.java files, so a lock added
+          # with a batch did not run here until someone remembered to add its name — and the locks this
+          # release added for the authentication fixes were not in it (external review T1, and our own
+          # review raised the same gap). An exclusion list cannot go stale that way: a new test class runs
+          # unless it is named here. (The external review said "~125 of 637"; both figures are measured
+          # above as 81 and 662 — round-3 review, P3.)
           #
           # What is excluded and why:
-          #   MultiThreadTest, InheritedFlagTest  — run in the integration jobs below, against a server
+          #   InheritedFlagTest                   — run in the integration job below, against a server
+          #   MultiThreadTest                     — needs a running server, and NO job runs it today
+          #                                         (round-3 review, P2: the comment used to say it ran
+          #                                         below; it appears only in this exclusion). Recorded
+          #                                         as a residual rather than wired up unmeasured.
           #   *IT, jp.aegif.nemaki.cmis.tck.**    — integration / TCK, need a running stack
           #   AtlasManualDataLoader               — a manual data loader, not a test
           # This is the same list the release gate runs locally (CLAUDE.md).
@@ -224,6 +263,29 @@ jobs:
             -Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader' \
             -Dsurefire.failIfNoSpecifiedTests=false \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
+      # Zero tests is not a pass. failIfNoSpecifiedTests=false (above) is there so an exclusion-only
+      # -Dtest does not fail the plugin, but it also means a selection that matches NOTHING succeeds.
+      # This reads what actually ran, so it holds however the selection was edited — and it does not
+      # depend on any particular lock having been selected (round-3 review, P1).
+      - name: The suite actually ran
+        run: |
+          set -eu
+          REPORTS=core/target/surefire-reports
+          if [ ! -d "$REPORTS" ]; then
+            echo "::error::no surefire reports at $REPORTS — the unit job selected no tests at all"; exit 1
+          fi
+          RAN=$(grep -ho 'tests="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
+                | grep -oE '[0-9]+' | awk '{n+=$1} END {print n+0}')
+          # A FLOOR, far below the real total (8,140 at 3.4.1) and far above zero. It is not the total:
+          # a figure that has to be bumped with every added test is a figure that goes stale, and the
+          # readiness document is where the real count is recorded and locked.
+          FLOOR=7000
+          if [ "$RAN" -lt "$FLOOR" ]; then
+            echo "::error::only $RAN unit tests ran (floor $FLOOR). The selection matched almost nothing,"
+            echo "::error::which succeeds silently with failIfNoSpecifiedTests=false. Check the -Dtest list."
+            exit 1
+          fi
+          echo "unit tests that ran: $RAN (floor $FLOOR)"
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a
       # green build that never ran it would be asserting exactly nothing about that claim.
