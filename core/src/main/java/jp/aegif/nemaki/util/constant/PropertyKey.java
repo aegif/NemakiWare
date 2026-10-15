@@ -390,6 +390,11 @@ public interface PropertyKey {
 	//OIDC configuration
 	/** OIDC issuer URL (e.g. http://keycloak:8080/realms/nemakiware). Used for token validation. */
 	final String OIDC_ISSUER = "oidc.issuer";
+	/**
+	 * This application's OIDC client id at the issuer (the setup wizard writes it). An OIDC login is accepted only on an ID
+	 * token issued to it — its audience — so a token the issuer gave another application does not log in (3.4.1).
+	 */
+	final String OIDC_CLIENT_ID = "oidc.clientId";
 
 	//Thread
 	final String THREAD_MAX = "thread.max";

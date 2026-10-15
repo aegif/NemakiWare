@@ -1,0 +1,278 @@
+/**
+ * This file is part of NemakiWare.
+ *
+ * NemakiWare is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * NemakiWare is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NemakiWare. If not, see <http://www.gnu.org/licenses/>.
+ */
+package jp.aegif.nemaki.rest;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.context.WebApplicationContext;
+
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
+import com.sun.net.httpserver.HttpServer;
+
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.Response;
+import jp.aegif.nemaki.api.v1.exception.ApiException;
+import jp.aegif.nemaki.businesslogic.ContentService;
+import jp.aegif.nemaki.cmis.factory.auth.Token;
+import jp.aegif.nemaki.cmis.factory.auth.TokenService;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.PropertyManager;
+import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.spring.SpringContext;
+
+/**
+ * The two generic OIDC logins, through their own entry points (3.4.1, zero-trust P0): the REST
+ * {@code /repo/{repositoryId}/authtoken/oidc/convert} and the API v1 {@code /auth/repositories/{repositoryId}/oidc}.
+ *
+ * <p>The provider is a local server: its discovery document, its keys, and a UserInfo endpoint that answers alice for
+ * any access token — as a provider answers for a token it issued to any of its applications. Both logins used to send
+ * the body's access token there, with OIDC enabled or not, and to log in — and create — whoever the answer named. What
+ * logs in now is the ID token the provider issued to this application, verified through the discovery the server reads
+ * itself; otherwise nothing logs in, no user is looked up or created, and the UserInfo endpoint is never called.
+ */
+public class OidcLoginEntryPointsTest {
+
+    private static final String CLIENT = "nemakiware-ui";
+
+    private HttpServer provider;
+    private String issuer;
+    private final AtomicInteger userInfoCalls = new AtomicInteger();
+    private RSAKey key;
+    private PropertyManager properties;
+    private ContentService contentService;
+    private TokenService tokenService;
+    private ApplicationContext previousSpring;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        key = new RSAKeyGenerator(2048).keyID("k1").generate();
+        provider = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        issuer = "http://127.0.0.1:" + provider.getAddress().getPort() + "/realms/r";
+        serve("/realms/r/.well-known/openid-configuration", "{\"issuer\":\"" + issuer + "\",\"jwks_uri\":\"" + issuer
+                + "/certs\",\"userinfo_endpoint\":\"" + issuer + "/userinfo\"}");
+        serve("/realms/r/certs", new JWKSet(key.toPublicJWK()).toString());
+        provider.createContext("/realms/r/userinfo", exchange -> {
+            userInfoCalls.incrementAndGet();
+            byte[] body = "{\"sub\":\"sub-123\",\"preferred_username\":\"alice\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        provider.start();
+
+        properties = mock(PropertyManager.class);
+        when(properties.readValue("bedroom", PropertyKey.SSO_OIDC_ENABLED)).thenReturn("true");
+        when(properties.readValue("bedroom", PropertyKey.OIDC_ISSUER)).thenReturn(issuer);
+        when(properties.readValue("bedroom", "oidc.clientId")).thenReturn(CLIENT);
+        contentService = mock(ContentService.class);
+        UserItem alice = mock(UserItem.class);
+        when(alice.getUserId()).thenReturn("alice");
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(alice);
+        tokenService = mock(TokenService.class);
+        when(tokenService.setToken(anyString(), eq("bedroom"), anyString()))
+                .thenAnswer(set -> new Token(set.getArgument(2), "t-" + set.getArgument(2), System.currentTimeMillis() + 60_000));
+        // The API v1 resource reads the properties through the application context.
+        previousSpring = SpringContext.getApplicationContext();
+        ApplicationContext spring = mock(ApplicationContext.class);
+        when(spring.getBean("propertyManager", PropertyManager.class)).thenReturn(properties);
+        new SpringContext().setApplicationContext(spring);
+    }
+
+    @AfterEach
+    void tearDown() {
+        new SpringContext().setApplicationContext(previousSpring);
+        provider.stop(0);
+    }
+
+    private void serve(String path, String json) {
+        provider.createContext(path, exchange -> {
+            byte[] body = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+    }
+
+    /** The REST conversion's answer to the body, as the client reads it. */
+    private JSONObject rest(String body) throws Exception {
+        AuthTokenResource resource = new AuthTokenResource();
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("X-Requested-With")).thenReturn("XMLHttpRequest");
+        ServletContext servletContext = mock(ServletContext.class);
+        WebApplicationContext web = mock(WebApplicationContext.class);
+        when(request.getServletContext()).thenReturn(servletContext);
+        when(servletContext.getAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE)).thenReturn(web);
+        when(web.getBean("propertyManager", PropertyManager.class)).thenReturn(properties);
+        when(web.getBean("ContentService", ContentService.class)).thenReturn(contentService);
+        set(resource, "request", request);
+        set(resource, "response", mock(HttpServletResponse.class));
+        resource.setTokenService(tokenService);
+        return (JSONObject) new JSONParser().parse(resource.convertOIDCToken("bedroom", body));
+    }
+
+    /** The API v1 login's answer to the body: the user it logged in, or the refusal's status. */
+    private String apiV1(Map<String, Object> body) throws Exception {
+        jp.aegif.nemaki.api.v1.resource.AuthResource resource = new jp.aegif.nemaki.api.v1.resource.AuthResource();
+        set(resource, "contentService", contentService);
+        set(resource, "tokenService", tokenService);
+        try {
+            Response response = resource.oidcAuth("bedroom", body);
+            return "logged in: " + ((jp.aegif.nemaki.api.v1.model.response.AuthResponse) response.getEntity()).getUser().getUserId();
+        } catch (ApiException refused) {
+            return "refused: " + refused.getStatus();
+        }
+    }
+
+    private static void set(Object target, String name, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    /** An ID token the provider's key signs: this issuer, the audience given, alice, valid for five minutes. */
+    private String idToken(String audience) throws Exception {
+        com.nimbusds.jwt.JWTClaimsSet claims = new com.nimbusds.jwt.JWTClaimsSet.Builder().issuer(issuer).subject("sub-123")
+                .audience(audience).claim("preferred_username", "alice").issueTime(new java.util.Date())
+                .expirationTime(new java.util.Date(System.currentTimeMillis() + 300_000)).build();
+        com.nimbusds.jwt.SignedJWT jwt = new com.nimbusds.jwt.SignedJWT(new com.nimbusds.jose.JWSHeader.Builder(
+                com.nimbusds.jose.JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
+        jwt.sign(new com.nimbusds.jose.crypto.RSASSASigner(key));
+        return jwt.serialize();
+    }
+
+    private void nothingLoggedIn() {
+        verify(contentService, never()).getUserItemById(any(), any());
+        verify(tokenService, never()).setToken(any(), any(), any());
+        assertEquals(0, userInfoCalls.get(), "the UserInfo endpoint was called with the body's access token");
+    }
+
+    @Test
+    @DisplayName("REST: an access token, with the provider's UserInfo endpoint named or not, does not log in — the endpoint is not called")
+    void restAnAccessTokenDoesNotLogIn() throws Exception {
+        JSONObject named = rest("{\"access_token\":\"another-apps\",\"userinfo_endpoint\":\"" + issuer + "/userinfo\"}");
+        JSONObject discovered = rest("{\"access_token\":\"another-apps\",\"oidc_token\":\"another-apps\"}");
+        assertEquals("failure", named.get("status"), named.toJSONString());
+        assertEquals("failure", discovered.get("status"), discovered.toJSONString());
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("REST: nothing logs in where OIDC is not enabled for the repository")
+    void restNothingLogsInWhereOidcIsNotEnabled() throws Exception {
+        when(properties.readValue("bedroom", PropertyKey.SSO_OIDC_ENABLED)).thenReturn("false");
+        JSONObject answer = rest("{\"id_token\":\"" + idToken(CLIENT) + "\",\"access_token\":\"opaque\"}");
+        assertEquals("failure", answer.get("status"), answer.toJSONString());
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("REST: an ID token the provider issued to another of its applications does not log in")
+    void restAnIdTokenForAnotherApplicationDoesNotLogIn() throws Exception {
+        JSONObject answer = rest("{\"id_token\":\"" + idToken("nemakiware-oidc-client") + "\",\"access_token\":\"opaque\"}");
+        assertEquals("failure", answer.get("status"), answer.toJSONString());
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("REST: the ID token issued to this application logs in as the user it names")
+    void restTheIdTokenIssuedToThisApplicationLogsIn() throws Exception {
+        JSONObject answer = rest("{\"id_token\":\"" + idToken(CLIENT) + "\",\"access_token\":\"opaque\"}");
+        assertEquals("success", answer.get("status"), answer.toJSONString());
+        assertEquals("alice", ((JSONObject) answer.get("value")).get("userName"));
+    }
+
+    @Test
+    @DisplayName("API v1: an access token, with the provider's UserInfo endpoint named or not, does not log in — the endpoint is not called")
+    void apiV1AnAccessTokenDoesNotLogIn() throws Exception {
+        String named = apiV1(Map.of("access_token", "another-apps", "userinfo_endpoint", issuer + "/userinfo"));
+        String discovered = apiV1(Map.of("access_token", "another-apps"));
+        assertTrue(named.startsWith("refused: "), named);
+        assertTrue(discovered.startsWith("refused: "), discovered);
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("API v1: nothing logs in where OIDC is not enabled for the repository")
+    void apiV1NothingLogsInWhereOidcIsNotEnabled() throws Exception {
+        when(properties.readValue("bedroom", PropertyKey.SSO_OIDC_ENABLED)).thenReturn("false");
+        String answer = apiV1(Map.of("id_token", idToken(CLIENT), "access_token", "opaque"));
+        assertTrue(answer.startsWith("refused: "), answer);
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("API v1: an ID token the provider issued to another of its applications does not log in")
+    void apiV1AnIdTokenForAnotherApplicationDoesNotLogIn() throws Exception {
+        String answer = apiV1(Map.of("id_token", idToken("nemakiware-oidc-client"), "access_token", "opaque"));
+        assertTrue(answer.startsWith("refused: "), answer);
+        nothingLoggedIn();
+    }
+
+    @Test
+    @DisplayName("behind split host names, the ID token carrying the issuer the provider's document names logs in — read at the configured address")
+    void behindSplitHostNamesTheDocumentsIssuerLogsIn() throws Exception {
+        // The server reads the provider at its own address; browsers reach it — and it signs — under a public name.
+        provider.removeContext("/realms/r/.well-known/openid-configuration");
+        String publicName = "https://idp.example/realms/r";
+        serve("/realms/r/.well-known/openid-configuration", "{\"issuer\":\"" + publicName + "\",\"jwks_uri\":\"" + issuer
+                + "/certs\"}");
+        String configured = issuer;
+        issuer = publicName;
+        try {
+            JSONObject answer = rest("{\"id_token\":\"" + idToken(CLIENT) + "\"}");
+            assertEquals("success", answer.get("status"), answer.toJSONString());
+        } finally {
+            issuer = configured;
+        }
+    }
+
+    @Test
+    @DisplayName("API v1: the ID token issued to this application logs in as the user it names")
+    void apiV1TheIdTokenIssuedToThisApplicationLogsIn() throws Exception {
+        assertEquals("logged in: alice", apiV1(Map.of("id_token", idToken(CLIENT), "access_token", "opaque")));
+    }
+}
