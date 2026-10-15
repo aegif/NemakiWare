@@ -864,11 +864,11 @@ private ContentService getContentServiceSafe() {
 		if (allowedAuthMethods == null || allowedAuthMethods.isEmpty() || "null".equals(allowedAuthMethods)) {
 			return true;
 		}
-		if ("disabled".equals(allowedAuthMethods)) {
+		if (jp.aegif.nemaki.util.AuthenticationUtil.isDisabledValue(allowedAuthMethods)) {
 			return false;
 		}
 		for (String method : allowedAuthMethods.split(",")) {
-			if ("password".equals(method.trim())) {
+			if ("password".equalsIgnoreCase(method.trim())) {
 				return true;
 			}
 		}

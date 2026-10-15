@@ -203,7 +203,7 @@ public class WebAuthnResource extends ResourceBase {
 					// "null" string = not set in DB (all methods allowed, same as null/empty)
 					if (allowedAuthMethods != null && !allowedAuthMethods.isEmpty()
 							&& !"null".equals(allowedAuthMethods)) {
-						if ("disabled".equalsIgnoreCase(allowedAuthMethods.trim())) {
+						if (jp.aegif.nemaki.util.AuthenticationUtil.isDisabledValue(allowedAuthMethods)) {
 							addErrMsg(errMsg, "registration", "Authentication is disabled for this user");
 							return makeResult(false, result, errMsg).toString();
 						}
@@ -496,7 +496,7 @@ public class WebAuthnResource extends ResourceBase {
 						}
 					}
 					// "disabled" means no authentication allowed at all
-					if (allowedAuthMethods != null && "disabled".equalsIgnoreCase(allowedAuthMethods.trim())) {
+					if (jp.aegif.nemaki.util.AuthenticationUtil.isDisabledValue(allowedAuthMethods)) {
 						log.warn("WebAuthn authentication rejected: user " + userId + " has authentication disabled");
 						addErrMsg(errMsg, "authentication", "accountDisabled");
 						return makeResult(false, result, errMsg).toString();

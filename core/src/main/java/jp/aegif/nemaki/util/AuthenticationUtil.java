@@ -31,7 +31,7 @@ public class AuthenticationUtil {
 	 * {@code AuthenticationServiceImpl} implementation):
 	 * <ul>
 	 *   <li>null/empty/{@code "null"} &rarr; all methods allowed (backward compatibility)</li>
-	 *   <li>{@code "disabled"} &rarr; no authentication allowed (account disabled)</li>
+	 *   <li>{@code "disabled"} anywhere in the list &rarr; no authentication allowed (account disabled — {@link #isDisabledValue})</li>
 	 *   <li>otherwise &rarr; comma-separated case-insensitive allow-list</li>
 	 * </ul>
 	 *
@@ -60,8 +60,8 @@ public class AuthenticationUtil {
 			return true;
 		}
 
-		// "disabled" means no authentication allowed
-		if ("disabled".equalsIgnoreCase(allowedMethods.trim())) {
+		// "disabled" means no authentication allowed, wherever it appears in the list (isDisabledValue).
+		if (isDisabledValue(allowedMethods)) {
 			if (log.isDebugEnabled()) {
 				log.debug("User " + user.getUserId() + " has authentication disabled");
 			}
@@ -83,9 +83,10 @@ public class AuthenticationUtil {
 	/**
 	 * Whether the account may still be acting through a credential it was issued earlier — a session token, an API key,
 	 * an MCP session (3.4.1, zero-trust P0): it exists, and its {@code nemaki:allowedAuthMethods} is not
-	 * {@code disabled}. Those credentials were checked against the token store alone, so deleting or disabling an account
-	 * left them working until they expired (a session token after 24 hours; an API key never). Which method issued the
-	 * credential is not recorded with it, so an account narrowed to other methods keeps it until it expires.
+	 * {@code disabled} ({@link #isDisabledValue}). Those credentials were checked against the token store alone, so deleting
+	 * or disabling an account left them working until they expired (a session token after 24 hours; an API key at its own
+	 * expiry, if it has one). Which method issued the credential is not recorded with it, so an account narrowed to other
+	 * methods keeps it until it expires.
 	 */
 	public static boolean mayStillAct(UserItem user) {
 		if (user == null) {
@@ -101,7 +102,26 @@ public class AuthenticationUtil {
 				}
 			}
 		}
-		return allowedMethods == null || !"disabled".equalsIgnoreCase(allowedMethods.trim());
+		return !isDisabledValue(allowedMethods);
+	}
+
+	/**
+	 * Whether an {@code nemaki:allowedAuthMethods} value disables the account: {@code disabled} anywhere in the
+	 * comma-separated list, in any case and with any surrounding blanks (3.4.1, batch 17 review round 1). A compound value
+	 * such as {@code password,disabled} is disabled too — the admin API stores any string, and it used to be read as a
+	 * list that allows passwords. Every reader of the value asks this, so the rule has one place: the login, the
+	 * credentials issued earlier ({@link #mayStillAct}), passkeys, and the password change.
+	 */
+	public static boolean isDisabledValue(String allowedMethods) {
+		if (allowedMethods == null) {
+			return false;
+		}
+		for (String m : allowedMethods.split(",")) {
+			if ("disabled".equalsIgnoreCase(m.trim())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

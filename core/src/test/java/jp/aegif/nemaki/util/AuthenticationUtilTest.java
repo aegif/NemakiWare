@@ -138,4 +138,17 @@ class AuthenticationUtilTest {
         assertTrue(AuthenticationUtil.isAuthMethodAllowed(userWithPolicy("password,cloud"), "password"));
         assertTrue(AuthenticationUtil.isAuthMethodAllowed(userWithPolicy("password, cloud"), "cloud"));
     }
+
+    @Test
+    void disabledAnywhereInTheList_disablesTheAccount() {
+        // 3.4.1, batch 17 review round 1 (Codex P1): "password,disabled" was read as a list that allows passwords.
+        for (String value : new String[] {"disabled", " Disabled ", "password,disabled", "cloud, DISABLED", "disabled,password"}) {
+            assertTrue(AuthenticationUtil.isDisabledValue(value), value);
+            assertFalse(AuthenticationUtil.isAuthMethodAllowed(userWithPolicy(value), "password"), value);
+            assertFalse(AuthenticationUtil.isAuthMethodAllowed(userWithPolicy(value), "cloud"), value);
+        }
+        for (String value : new String[] {null, "", "null", "password", "cloud", "password,cloud", "disabledx", "not-disabled"}) {
+            assertFalse(AuthenticationUtil.isDisabledValue(value), String.valueOf(value));
+        }
+    }
 }

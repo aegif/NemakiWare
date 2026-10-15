@@ -139,4 +139,45 @@ class CredentialsEndWithTheAccountTest {
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(a4);
         assertFalse(withApiKey());
     }
+
+    private static UserItem passwordAccount(String allowedAuthMethods, String hash) {
+        UserItem user = account(allowedAuthMethods);
+        when(user.getPassowrd()).thenReturn(hash);
+        return user;
+    }
+
+    private boolean withPassword(String password) {
+        CallContextImpl context = new CallContextImpl(null, CmisVersion.CMIS_1_1, "bedroom", null, null, null, null, null);
+        context.put(org.apache.chemistry.opencmis.commons.server.CallContext.USERNAME, "alice");
+        context.put(org.apache.chemistry.opencmis.commons.server.CallContext.PASSWORD, password);
+        return service.login(context);
+    }
+
+    @Test
+    @DisplayName("\"disabled\" anywhere in the list disables the account — its session token, its API key and its password (batch 17 review round 1: Codex P1)")
+    void aCompoundDisabledValueDisablesTheAccount() {
+        String hash = org.mindrot.jbcrypt.BCrypt.hashpw("pw-1", org.mindrot.jbcrypt.BCrypt.gensalt(4));
+        // The password logs in where the account allows it: a refusal below is the value's, not the harness's.
+        UserItem allowed = passwordAccount("password", hash);
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(allowed);
+        assertTrue(withPassword("pw-1"), "the password did not log in where the account allows it — the lock would measure nothing");
+        for (String compound : List.of("password,disabled", "cloud, Disabled ")) {
+            UserItem held = passwordAccount(compound, hash);
+            when(contentService.getUserItemById("bedroom", "alice")).thenReturn(held);
+            assertFalse(withSession(), compound + ": the session token still logged in");
+            assertFalse(withApiKey(), compound + ": the API key still logged in");
+            assertFalse(withPassword("pw-1"), compound + ": the password still logged in");
+        }
+    }
+
+    @Test
+    @DisplayName("an account limited to one method keeps its session token and its API key — only \"disabled\" ends them (batch 17 review round 1: subagent P2-2)")
+    void anAccountLimitedToOneMethodKeepsItsCredentials() {
+        for (String only : List.of("cloud", "password")) {
+            UserItem limited = account(only);
+            when(contentService.getUserItemById("bedroom", "alice")).thenReturn(limited);
+            assertTrue(withSession(), only + ": the session token of an account limited to it was refused");
+            assertTrue(withApiKey(), only + ": the API key of an account limited to it was refused");
+        }
+    }
 }

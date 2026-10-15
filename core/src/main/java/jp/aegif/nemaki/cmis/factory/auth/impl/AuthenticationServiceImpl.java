@@ -262,8 +262,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 	/**
 	 * Authenticate using an API key.
-	 * API keys bypass allowedAuthMethods restrictions, allowing cloud-only users
-	 * to authenticate via MCP clients and other programmatic access.
+	 * API keys bypass the method allow-list of allowedAuthMethods, allowing cloud-only users
+	 * to authenticate via MCP clients and other programmatic access — but not "disabled", and not
+	 * an account that no longer exists (3.4.1, AuthenticationUtil.mayStillAct).
 	 */
 	private boolean loginWithApiKey(CallContext callContext) {
 		if (apiKeyService == null) {
@@ -374,7 +375,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 * - "password": Only password authentication
 	 * - "cloud": Only cloud/OIDC authentication
 	 * - "password,cloud": Both methods allowed
-	 * - "disabled": No authentication allowed (account disabled)
+	 * - "disabled" anywhere in the list: No authentication allowed (account disabled)
 	 *
 	 * @param user The user to check
 	 * @param method The authentication method to check ("password" or "cloud")
