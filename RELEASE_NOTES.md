@@ -48,6 +48,40 @@ only repository gotchas.
 - RSS のフィードをトークンだけで読む URL（`…/rss/…?token=…`）には、このフィルタが先に 401 を返します。直す前も同じで、
   ログインしていない単体のフィードリーダーからは読めません（残件 R162 — 3.4.1 では直していません）。
 
+## 汎用 OIDC のログインは、この製品に宛てた ID トークンだけを受けるようになりました（セキュリティ・挙動の変更）
+
+`/core/rest/repo/{repositoryId}/authtoken/oidc/convert` と API v1 の `/core/api/v1/cmis/auth/repositories/{repositoryId}/oidc` は、
+本文のアクセストークンで UserInfo エンドポイントを呼び、その答えが名指す利用者でログインさせていました（3.0.0 から 3.4.0 まで）。
+答えの利用者が NemakiWare に居なければ作っていました。
+
+- **OIDC を有効にしていない配備でも受けていました。** `sso.oidc.enabled` を見ず、本文の `userinfo_endpoint` を固定の許可一覧で
+  受け、その一覧に Google と Microsoft の UserInfo が入っていました。読む限り、Google や Microsoft の利用者は自分のアクセス
+  トークンで、その名前（メールアドレスなど）の利用者を作ってログインでき、Microsoft の UserInfo が返す `email` はそのテナントの
+  管理者が書ける値です（実際の Google・Microsoft では測っていません）。
+- **設定した IdP の、別のアプリケーション宛てのトークンでもログインできました。** UserInfo は、その IdP のどのアプリケーションの
+  アクセストークンにも答えるからです。どれも、手元の試験用の IdP（発見文書・鍵・UserInfo を返すサーバ）を相手に、直す前の版で
+  OIDC を無効にしたまま、別のアプリケーション宛ての ID トークンと、アクセストークンだけでログインできることを錠の形で測りました。
+- いまは、リポジトリで OIDC を有効にし（`sso.oidc.enabled=true`）、IdP（`oidc.issuer`）とこの製品のクライアント ID
+  （`oidc.clientId` — セットアップウィザードが書く値）を設定したときだけ受け、本文の `id_token` を検証します — IdP が公開する鍵の
+  署名（非対称の署名だけ）、IdP の発行者、宛先（`aud` にこのクライアント ID。ほかの宛先も並ぶか `azp` があるときは `azp` がこの
+  クライアント ID）、有効期限。`access_token` と `userinfo_endpoint` は読みません。
+- 利用者の名前は ID トークンの `preferred_username`、無ければ IdP が確かめたと言う（`email_verified` が true の）`email`、無ければ
+  `sub` です。確かめていないメールアドレスは使いません。
+- IdP の発見文書（`{oidc.issuer}/.well-known/openid-configuration`）を読み（リダイレクトには従わず、10 分持ちます）、その `issuer` を
+  ID トークンの発行者と照らし、その `jwks_uri` の鍵で署名を確かめます。サーバが内部のアドレスで IdP を読み、ブラウザが公開の名前で
+  IdP に届く配置（Docker の構成など）では、IdP は公開の名前で署名し発見文書もそう名乗るので、`oidc.issuer` は内部のアドレスの
+  ままで構いません。
+
+**挙動の変更**: API v1 の OIDC ログインにアクセストークンだけを送っていたクライアントは、`id_token` を送る必要があります。
+画面のログイン（Keycloak）は `id_token` を送っています。`oidc.clientId` が設定されていない配備では、OIDC のログインは拒否されます。
+
+### 主張しないこと
+
+- Google と Microsoft の専用のログイン（`/authtoken/google/convert`・`/authtoken/microsoft/convert`）は以前から ID トークンを
+  検証していて、この節の変更はそこに及びません。
+- この経路で作られた利用者がこれまでに居たかは、この版では調べません。利用者の一覧で、作成者がその利用者自身で
+  `allowedAuthMethods` が `cloud` の利用者（SSO が作った利用者）を確かめてください — 正当な SSO が作った利用者も同じ形です。
+
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
 3.3.1 と 3.4.0 は、CMIS の repositoryInfo（と REST の `/api/v1/cmis/repositories/{id}`）の
