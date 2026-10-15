@@ -112,7 +112,9 @@ public class AuthenticationUtil {
 	 * list that allows passwords. The readers that ask this: the login ({@link #isAuthMethodAllowed}), the credentials
 	 * issued earlier ({@link #mayStillAct}), the passkey registration and authentication, the password change
 	 * ({@code UserItemResource.isPasswordAuthAllowed}) and the generic OIDC eligibility ({@code OidcLogin.refusal}).
-	 * The user interface still reads the value as one word — a compound value shows there as the raw string.
+	 * The user interface does NOT read it this way (residual R174): the account screen splits the value and looks
+	 * for {@code password}, so {@code password,disabled} still shows the password field, and the user list falls
+	 * through its exact-match tags and prints the raw value.
 	 */
 	public static boolean isDisabledValue(String allowedMethods) {
 		if (allowedMethods == null) {

@@ -503,7 +503,10 @@ public class AuthResource {
         }
 
         // Only a principal the container itself authenticated; never a name the request merely asserts.
-        if (httpRequest != null && httpRequest.getUserPrincipal() != null) {
+        // Blank is not an identity here either — the check below used to apply to the CallContext arm alone,
+        // so a container handing back an empty name would have been acted on (round 2, Codex P3).
+        if (httpRequest != null && httpRequest.getUserPrincipal() != null
+                && StringUtils.isNotBlank(httpRequest.getUserPrincipal().getName())) {
             return httpRequest.getUserPrincipal().getName();
         }
 
