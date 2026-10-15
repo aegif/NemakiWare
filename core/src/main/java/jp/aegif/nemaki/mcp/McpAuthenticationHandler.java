@@ -250,11 +250,28 @@ public class McpAuthenticationHandler {
 
         String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
         if (userId != null) {
+            if (!mayStillAct(repositoryId, userId)) {
+                log.info("MCP API key refused: the account no longer exists or is disabled");
+                return McpAuthResult.failure("Invalid API key");
+            }
             log.debug("API key authenticated for user: {}", userId);
             return McpAuthResult.success(userId, repositoryId);
         }
 
         return McpAuthResult.failure("Invalid API key");
+    }
+
+    /**
+     * Whether the account a session or an API key acts for is still there, and not disabled (3.4.1, zero-trust P0): a
+     * session lived out its 24 hours, and a key never expired, after the account was deleted or disabled. Without the
+     * content service the account's state cannot be read, and nothing acts for it.
+     */
+    private boolean mayStillAct(String repositoryId, String userId) {
+        if (contentService == null) {
+            log.warn("MCP: the account's state cannot be read (no content service), so its session or key is refused");
+            return false;
+        }
+        return AuthenticationUtil.mayStillAct(contentService.getUserItemById(repositoryId, userId));
     }
 
     /**
@@ -331,6 +348,12 @@ public class McpAuthenticationHandler {
         if (!repositoryId.equals(session.getRepositoryId())) {
             log.error("Session token repository mismatch (potential security issue): expected {}, got {}",
                     repositoryId, session.getRepositoryId());
+            return McpAuthResult.failure("Invalid or expired token");
+        }
+
+        if (!mayStillAct(repositoryId, session.getUserId())) {
+            sessionTokens.remove(token);
+            log.info("MCP session ended: the account no longer exists or is disabled");
             return McpAuthResult.failure("Invalid or expired token");
         }
 
@@ -477,6 +500,10 @@ public class McpAuthenticationHandler {
 
         String userId = apiKeyService.validateApiKey(repositoryId, apiKey);
         if (userId == null) {
+            return McpLoginResult.failure("Invalid API key");
+        }
+        if (!mayStillAct(repositoryId, userId)) {
+            log.info("MCP API key login refused: the account no longer exists or is disabled");
             return McpLoginResult.failure("Invalid API key");
         }
 

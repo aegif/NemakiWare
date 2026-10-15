@@ -191,6 +191,11 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
+			// The account the token was issued to must still be there, and not disabled (3.4.1, zero-trust P0).
+			if (!AuthenticationUtil.mayStillAct(contentService.getUserItemById(callContext.getRepositoryId(), userName))) {
+				log.info("Token authentication refused: the account no longer exists or is disabled");
+				return false;
+			}
 			if (authenticateAdminByToken(callContext.getRepositoryId(), userName)) {
 				setAdminFlagInContext(callContext, true);
 			} else {
@@ -284,15 +289,17 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			return false;
 		}
 
+		// The account the key belongs to must still be there, and not disabled: an API key does not expire, and it used to
+		// authenticate an account that had been deleted or disabled (3.4.1, zero-trust P0).
+		UserItem user = contentService.getUserItemById(repositoryId, userId);
+		if (!AuthenticationUtil.mayStillAct(user)) {
+			log.info("API key authentication refused in repository " + repositoryId + ": the account no longer exists or is disabled");
+			return false;
+		}
+
 		// Set the username in the call context
 		((CallContextImpl) callContext).put(CallContext.USERNAME, userId);
-
-		// Get user info and set admin flag
-		UserItem user = contentService.getUserItemById(repositoryId, userId);
-		if (user != null) {
-			boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
-			setAdminFlagInContext(callContext, isAdmin);
-		}
+		setAdminFlagInContext(callContext, Boolean.TRUE.equals(user.isAdmin()));
 
 		log.info("API key authentication successful for user: " + userId + " in repository: " + repositoryId);
 		return true;

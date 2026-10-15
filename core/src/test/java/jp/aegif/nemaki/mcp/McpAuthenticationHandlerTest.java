@@ -59,6 +59,10 @@ public class McpAuthenticationHandlerTest {
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
+        // As in production: the account a session or key acts for is read (3.4.1 — it must still be there, not disabled).
+        authHandler.setContentService(contentService);
+        when(contentService.getUserItemById(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(mock(jp.aegif.nemaki.model.UserItem.class));
     }
 
     // ========== Basic Authentication Tests ==========
@@ -211,6 +215,70 @@ public class McpAuthenticationHandlerTest {
         assertTrue(result.isSuccess());
         assertEquals(username, result.getUserId());
         assertEquals(repositoryId, result.getRepositoryId());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("an MCP session ends when its account is disabled — and is dropped, so re-enabling the account does not revive it (3.4.1, zero-trust P0)")
+    public void anMcpSessionEndsWhenItsAccountIsDisabled() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-MCP-Session-Token", VALID_TOKEN_4);
+        authHandler.registerSessionToken(VALID_TOKEN_4, "testuser", "bedroom");
+        jp.aegif.nemaki.model.UserItem disabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(disabled.getSubTypeProperties()).thenReturn(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "disabled")));
+        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(disabled);
+
+        assertFalse(authHandler.authenticate("bedroom", headers).isSuccess(), "the session of a disabled account still acted");
+
+        jp.aegif.nemaki.model.UserItem enabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(enabled);
+        assertFalse(authHandler.authenticate("bedroom", headers).isSuccess(), "the dropped session came back with the account");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("an MCP API key stops when its account is deleted — a key never expires (3.4.1, zero-trust P0)")
+    public void anMcpApiKeyStopsWhenItsAccountIsDeleted() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-API-Key", "nk_key-1");
+        when(apiKeyService.validateApiKey("bedroom", "nk_key-1")).thenReturn("gone");
+        when(contentService.getUserItemById("bedroom", "gone")).thenReturn(null);
+
+        assertFalse(authHandler.authenticate("bedroom", headers).isSuccess(), "the key of a deleted account still acted");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("where the account's state cannot be read, neither an MCP session nor an API key acts for it (3.4.1, zero-trust P0)")
+    public void nothingActsForAnAccountWhoseStateCannotBeRead() {
+        McpAuthenticationHandler unwired = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
+        unwired.registerSessionToken(VALID_TOKEN_4, "testuser", "bedroom");
+        when(apiKeyService.validateApiKey("bedroom", "nk_key-2")).thenReturn("testuser");
+        Map<String, String> session = new HashMap<>();
+        session.put("X-MCP-Session-Token", VALID_TOKEN_4);
+        Map<String, String> key = new HashMap<>();
+        key.put("X-API-Key", "nk_key-2");
+
+        assertFalse(unwired.authenticate("bedroom", session).isSuccess(), "a session acted for an account no one could read");
+        assertFalse(unwired.authenticate("bedroom", key).isSuccess(), "a key acted for an account no one could read");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("an MCP login with the API key of a deleted or disabled account opens no session (3.4.1, zero-trust P0)")
+    public void anApiKeyLoginOpensNoSessionForAnAccountThatCannotAct() {
+        when(apiKeyService.validateApiKey("bedroom", "nk_key-3")).thenReturn("testuser");
+        jp.aegif.nemaki.model.UserItem disabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(disabled.getSubTypeProperties()).thenReturn(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "disabled")));
+        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(disabled);
+        assertFalse(authHandler.loginWithApiKey("bedroom", "nk_key-3").isSuccess(),
+                "the API key of a disabled account opened an MCP session");
+
+        when(apiKeyService.validateApiKey("bedroom", "nk_key-4")).thenReturn("gone");
+        when(contentService.getUserItemById("bedroom", "gone")).thenReturn(null);
+        assertFalse(authHandler.loginWithApiKey("bedroom", "nk_key-4").isSuccess(),
+                "the API key of a deleted account opened an MCP session");
+
+        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(mock(jp.aegif.nemaki.model.UserItem.class));
+        assertTrue(authHandler.loginWithApiKey("bedroom", "nk_key-3").isSuccess(), "the key of an account that can act was refused");
     }
 
     @Test

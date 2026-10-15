@@ -81,6 +81,30 @@ public class AuthenticationUtil {
 		return false;
 	}
 	/**
+	 * Whether the account may still be acting through a credential it was issued earlier — a session token, an API key,
+	 * an MCP session (3.4.1, zero-trust P0): it exists, and its {@code nemaki:allowedAuthMethods} is not
+	 * {@code disabled}. Those credentials were checked against the token store alone, so deleting or disabling an account
+	 * left them working until they expired (a session token after 24 hours; an API key never). Which method issued the
+	 * credential is not recorded with it, so an account narrowed to other methods keeps it until it expires.
+	 */
+	public static boolean mayStillAct(UserItem user) {
+		if (user == null) {
+			return false;
+		}
+		String allowedMethods = null;
+		List<Property> subTypeProperties = user.getSubTypeProperties();
+		if (subTypeProperties != null) {
+			for (Property prop : subTypeProperties) {
+				if (ALLOWED_AUTH_METHODS_KEY.equals(prop.getKey())) {
+					allowedMethods = prop.getValue() == null ? null : String.valueOf(prop.getValue());
+					break;
+				}
+			}
+		}
+		return allowedMethods == null || !"disabled".equalsIgnoreCase(allowedMethods.trim());
+	}
+
+	/**
 	 * Check whether a password matches a hash.
 	 * Supports both legacy MD5 hashes (32 hex chars) and modern BCrypt hashes.
 	 */
