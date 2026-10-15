@@ -317,6 +317,11 @@ public class AuthTokenResource extends ResourceBase{
 				org.apache.chemistry.opencmis.commons.server.CallContext.USERNAME, userName);
 			((org.apache.chemistry.opencmis.server.impl.CallContextImpl) ctxt).put(
 				org.apache.chemistry.opencmis.commons.server.CallContext.PASSWORD, password);
+			// The brute-force throttle keys on the client IP, and it reads it from here. Without this the
+			// key was "<repo>:<user>:unknown" for every caller, so 15 failures against a name — anyone's,
+			// from anywhere — locked that account out for everyone (external review S5, 3.4.1).
+			((org.apache.chemistry.opencmis.server.impl.CallContextImpl) ctxt).put(
+				"httpServletRequest", request);
 
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService == null) {

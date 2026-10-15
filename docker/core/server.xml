@@ -20,7 +20,13 @@
      Documentation at /docs/config/server.html
  -->
 <Server port="8005" shutdown="SHUTDOWN">
-  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <!-- logArgs="false": the compose files pass secrets as JVM arguments
+       (-Ddb.couchdb.auth.password, -Ddirectory.sync.ldap.bind.password), and this listener's default
+       is to log every argument at startup — so the CouchDB and LDAP passwords were printed in the
+       container's log in plain text (external review S8, 3.4.1). The arguments are still visible to
+       anything that can read the process table in the container or run `docker inspect`; moving the
+       secrets out of the command line is a separate change (recorded as a residual). -->
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" logArgs="false" />
   <!-- Security listener. Documentation at /docs/config/listeners.html
   <Listener className="org.apache.catalina.security.SecurityListener" />
   -->

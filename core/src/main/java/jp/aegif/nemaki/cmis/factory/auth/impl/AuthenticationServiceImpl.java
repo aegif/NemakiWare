@@ -240,7 +240,18 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return true;
 	}
 
-	/** Best-effort client IP for throttle keying; "unknown" if unavailable. */
+	/**
+	 * Client IP for throttle keying; {@code "unknown"} if unavailable.
+	 *
+	 * <p>Resolved through {@link jp.aegif.nemaki.util.TrustedProxyResolver}, the same helper
+	 * {@code AuditLogger.getClientIp} uses, so a forwarded-for header counts only from a configured
+	 * proxy. Behind a reverse proxy {@code getRemoteAddr()} is the proxy for every caller, which makes
+	 * one throttle key for the whole internet (external review S5, 3.4.1).
+	 *
+	 * <p>{@code "unknown"} is still possible — a caller with no request in the context at all — and every
+	 * such attempt shares one key. That is a lockout of the named account by anyone who can reach the
+	 * endpoint, so the callers that HAVE a request must put it in the context; the REST login does.
+	 */
 	private String resolveClientIpForThrottle(CallContext callContext) {
 		try {
 			Object ra = callContext.get("remoteAddress");
@@ -249,6 +260,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			}
 			Object req = callContext.get("httpServletRequest");
 			if (req instanceof jakarta.servlet.http.HttpServletRequest r) {
+				String resolved = jp.aegif.nemaki.util.TrustedProxyResolver.resolveClientIp(r, propertyManager);
+				if (StringUtils.isNotBlank(resolved)) {
+					return resolved;
+				}
 				String addr = r.getRemoteAddr();
 				if (StringUtils.isNotBlank(addr)) {
 					return addr;

@@ -76,6 +76,10 @@ public class McpAuthenticationHandler {
     @Autowired(required = false)
     private ContentService contentService;
 
+    /** Per-JVM, like the CMIS path's: with N replicas the effective allowance is N times the configured one. */
+    private final jp.aegif.nemaki.security.LoginThrottle loginThrottle =
+            new jp.aegif.nemaki.security.LoginThrottle();
+
     private final Map<String, McpSession> sessionTokens = new ConcurrentHashMap<>();
     private final Map<String, CloudLoginRequest> pendingCloudLogins = new ConcurrentHashMap<>();
     private final long sessionTtlSeconds;
@@ -366,16 +370,37 @@ public class McpAuthenticationHandler {
      * to prevent user enumeration attacks.
      */
     private McpAuthResult validateCredentials(String repositoryId, String username, String password) {
+        // Guessing over MCP costs the same as guessing over CMIS, so it is counted the same way
+        // (external review S6, 3.4.1). Before this, the password login here went through no throttle at
+        // all: an MCP client could try a name's passwords without limit while the same guesses over
+        // REST or CMIS were locked out after the configured few.
+        //
+        // Keyed on repository + name only. MCP arrives through this handler without the servlet request,
+        // so there is no client address to key on here — which means these failures are shared across
+        // callers and a lockout of the name is reachable by anyone who can speak MCP. That is the same
+        // trade the CMIS path makes when it has no address ("unknown"), and it is the fail-closed side:
+        // the alternative measured here was no limit at all. Recorded as a residual.
+        String throttleKey = "mcp:" + repositoryId + ":" + username;
+        if (loginThrottle.isBlocked(throttleKey)) {
+            log.warn("MCP login temporarily locked (too many failed attempts) for a user in repository '"
+                    + repositoryId + "'");
+            return McpAuthResult.failure("Invalid credentials");
+        }
+
         User user = principalService.getUserById(repositoryId, username);
 
         if (user == null) {
-            // Don't reveal whether user exists - use same message as wrong password
+            // Don't reveal whether user exists - use same message as wrong password.
+            // Not counted: an unknown name has no account to lock out, and counting it would let a
+            // caller lock a name BEFORE it exists (the CMIS path counts only genuine attempts too).
             return McpAuthResult.failure("Invalid credentials");
         }
 
         if (!AuthenticationUtil.passwordMatches(password, user.getPasswordHash())) {
+            loginThrottle.recordFailure(throttleKey);
             return McpAuthResult.failure("Invalid credentials");
         }
+        loginThrottle.recordSuccess(throttleKey);
 
         // Enforce the account's allowedAuthMethods policy: a disabled or
         // cloud-only account must not authenticate via password over MCP either
