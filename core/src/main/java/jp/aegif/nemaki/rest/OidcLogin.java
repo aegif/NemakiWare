@@ -65,29 +65,52 @@ public class OidcLogin {
 			JWSAlgorithm.PS256, JWSAlgorithm.PS384, JWSAlgorithm.PS512, JWSAlgorithm.ES256, JWSAlgorithm.ES384,
 			JWSAlgorithm.ES512);
 
-	/** The repository's OIDC settings, as {@link PropertyManager} reads them (the stored values first — admin-managed). */
-	public record Settings(boolean enabled, String issuer, String clientId) {
+	/**
+	 * The repository's OIDC settings, as {@link PropertyManager} reads them (the stored values first — admin-managed). The
+	 * client ids are this application's at the issuer: {@code oidc.clientId}, a comma-separated list where more than one
+	 * client of the issuer logs in to it (the screen's, an API client's).
+	 */
+	public record Settings(boolean enabled, String issuer, Set<String> clientIds) {
+		public Settings {
+			clientIds = clientIds == null ? Set.of() : Set.copyOf(clientIds);
+		}
+
 		public static Settings read(PropertyManager propertyManager, String repositoryId) {
 			if (propertyManager == null) {
-				return new Settings(false, null, null);
+				return new Settings(false, null, Set.of());
 			}
 			String enabled = propertyManager.readValue(repositoryId, PropertyKey.SSO_OIDC_ENABLED);
+			Set<String> clientIds = new java.util.LinkedHashSet<>();
+			String listed = propertyManager.readValue(repositoryId, PropertyKey.OIDC_CLIENT_ID);
+			if (listed != null) {
+				for (String clientId : listed.split(",")) {
+					if (!clientId.isBlank()) {
+						clientIds.add(clientId.trim());
+					}
+				}
+			}
 			return new Settings(enabled != null && "true".equalsIgnoreCase(enabled.trim()),
-					trimmed(propertyManager.readValue(repositoryId, PropertyKey.OIDC_ISSUER)),
-					trimmed(propertyManager.readValue(repositoryId, PropertyKey.OIDC_CLIENT_ID)));
+					trimmed(propertyManager.readValue(repositoryId, PropertyKey.OIDC_ISSUER)), clientIds);
 		}
 	}
 
-	/** The user name a verified ID token names, or why the login is refused — never both. */
-	public record Outcome(String userName, String refusal) {
+	/** The user a verified ID token names — with the issuer and subject that identify them there — or why it is refused. */
+	public record Outcome(String userName, String issuer, String subject, String refusal) {
 		static Outcome refused(String why) {
-			return new Outcome(null, why);
+			return new Outcome(null, null, null, why);
 		}
 
 		public boolean verified() {
 			return userName != null;
 		}
 	}
+
+	/**
+	 * Where an account keeps the OIDC subject it is linked to — the issuer and the subject, as the ID token names them. A
+	 * name the token carries ({@code preferred_username}) is the IdP's to give and may be anyone's to choose, so it finds the
+	 * account; the subject, stable at the issuer, decides whether this token may act as it (3.4.1 — batch 16 review round 1).
+	 */
+	public static final String SUBJECT_KEY = "nemaki:oidcSubject";
 
 	/** The issuer the provider signs as, and its keys — from its discovery document. */
 	public record Provider(String issuer, JWKSource<SecurityContext> keys) {
@@ -100,8 +123,11 @@ public class OidcLogin {
 
 	private final Discovery discovery;
 
+	/** One discovery cache for every login: the resources are made per request. */
+	private static final Discovery SHARED = new CachedDiscovery();
+
 	public OidcLogin() {
-		this(new CachedDiscovery());
+		this(SHARED);
 	}
 
 	public OidcLogin(Discovery discovery) {
@@ -113,7 +139,7 @@ public class OidcLogin {
 		if (!settings.enabled()) {
 			return Outcome.refused("OIDC login is not enabled for this repository (sso.oidc.enabled)");
 		}
-		if (settings.issuer() == null || settings.clientId() == null) {
+		if (settings.issuer() == null || settings.clientIds().isEmpty()) {
 			return Outcome.refused("OIDC login is not configured for this repository (oidc.issuer and oidc.clientId)");
 		}
 		if (idToken == null || idToken.isBlank()) {
@@ -130,7 +156,7 @@ public class OidcLogin {
 		try {
 			DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
 			processor.setJWSKeySelector(new JWSVerificationKeySelector<>(ALGORITHMS, provider.keys()));
-			processor.setJWTClaimsSetVerifier(claimsVerifier(provider.issuer(), settings.clientId()));
+			processor.setJWTClaimsSetVerifier(claimsVerifier(provider.issuer(), settings.clientIds()));
 			claims = processor.process(idToken, null);
 		} catch (Exception e) {
 			logger.info("OIDC: an ID token was refused: {}", e.getMessage());
@@ -138,21 +164,23 @@ public class OidcLogin {
 		}
 		String userName = userName(claims);
 		if (userName == null) {
-			return Outcome.refused("the ID token names no user (preferred_username, a verified email, or sub)");
+			return Outcome.refused("the ID token names no user, or names one in a form this login does not read "
+					+ "(preferred_username, a verified email, or sub)");
 		}
-		return new Outcome(userName, null);
+		return new Outcome(userName, provider.issuer(), claims.getSubject(), null);
 	}
 
 	/** The issuer, this application as the audience (and as the authorised party where there are others), the times. */
-	DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier(String issuer, String clientId) {
-		return new DefaultJWTClaimsVerifier<>(clientId, new JWTClaimsSet.Builder().issuer(issuer).build(),
-				Set.of("sub", "iat", "exp")) {
+	DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier(String issuer, Set<String> clientIds) {
+		// A set that answers contains(null) — the verifier asks it whether a token naming no audience is accepted (no).
+		return new DefaultJWTClaimsVerifier<>(new java.util.HashSet<>(clientIds), new JWTClaimsSet.Builder().issuer(issuer).build(),
+				new java.util.HashSet<>(Set.of("sub", "iat", "exp")), null) {
 			@Override
 			public void verify(JWTClaimsSet claimsSet, SecurityContext context) throws BadJWTException {
 				super.verify(claimsSet, context);
 				List<String> audience = claimsSet.getAudience();
 				Object azp = claimsSet.getClaim("azp");
-				if ((audience.size() > 1 || azp != null) && !clientId.equals(azp)) {
+				if ((audience.size() > 1 || azp != null) && (!(azp instanceof String) || !clientIds.contains(azp))) {
 					throw new BadJWTException("the ID token's authorised party is not this application");
 				}
 			}
@@ -174,16 +202,69 @@ public class OidcLogin {
 	 * subject. An email the provider has not verified is anyone's to write (2023's "nOAuth"), so it names no one.
 	 */
 	static String userName(JWTClaimsSet claims) {
+		// A claim in a form this does not read is not taken for an absent one: it would name another user (the subject).
 		Object preferred = claims.getClaim("preferred_username");
+		Object email = claims.getClaim("email");
+		Object verified = claims.getClaim("email_verified");
+		if ((preferred != null && !(preferred instanceof String)) || (email != null && !(email instanceof String))
+				|| (verified != null && !(verified instanceof Boolean))) {
+			return null;
+		}
 		if (preferred instanceof String s && !s.isBlank()) {
 			return s;
 		}
-		Object email = claims.getClaim("email");
-		if (email instanceof String s && !s.isBlank() && Boolean.TRUE.equals(claims.getClaim("email_verified"))) {
+		if (email instanceof String s && !s.isBlank() && Boolean.TRUE.equals(verified)) {
 			return s;
 		}
 		String subject = claims.getSubject();
 		return subject == null || subject.isBlank() ? null : subject;
+	}
+
+	/** What an account linked to this login's subject keeps under {@link #SUBJECT_KEY}. */
+	public static String binding(Outcome outcome) {
+		return outcome.issuer() + " " + outcome.subject();
+	}
+
+	/**
+	 * Why the token may not act as the existing account it names, or null. An account linked to an OIDC subject is this
+	 * token's only if the subject is the token's. An account not linked yet is the token's only where an administrator
+	 * allowed SSO for it — {@code cloud} listed in {@code nemaki:allowedAuthMethods}, as the accounts SSO creates have it —
+	 * and is linked by this login; an account that allows every method by listing none (the built-in {@code admin}, the
+	 * service accounts, accounts made with a password) is not, whatever name the IdP gives (batch 16 review round 1: both
+	 * reviewers — the name was trusted, and the built-in admin was anyone's whom the IdP let choose it).
+	 */
+	public static String refusal(jp.aegif.nemaki.model.UserItem account, Outcome outcome) {
+		String linked = property(account, SUBJECT_KEY);
+		if (linked != null) {
+			return linked.equals(binding(outcome)) ? null : "the account is linked to another OIDC subject";
+		}
+		String methods = property(account, "nemaki:allowedAuthMethods");
+		if (methods != null) {
+			for (String method : methods.split(",")) {
+				if ("cloud".equalsIgnoreCase(method.trim())) {
+					return null;
+				}
+			}
+		}
+		return "the account is not linked to this OIDC subject and does not allow SSO (cloud) — an administrator allows it";
+	}
+
+	/** Whether the account is linked to no OIDC subject yet. */
+	public static boolean unlinked(jp.aegif.nemaki.model.UserItem account) {
+		return property(account, SUBJECT_KEY) == null;
+	}
+
+	private static String property(jp.aegif.nemaki.model.UserItem account, String key) {
+		if (account.getSubTypeProperties() == null) {
+			return null;
+		}
+		for (jp.aegif.nemaki.model.Property property : account.getSubTypeProperties()) {
+			if (key.equals(property.getKey())) {
+				Object value = property.getValue();
+				return value == null || String.valueOf(value).isBlank() ? null : String.valueOf(value);
+			}
+		}
+		return null;
 	}
 
 	private static String trimmed(String value) {

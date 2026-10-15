@@ -425,13 +425,32 @@ public class AuthResource {
             }
             String username = outcome.userName();
 
-            UserItem user = getOrCreateUser(repositoryId, username);
+            // The account the token may act as: created for it, linked to its subject, or one an administrator allowed SSO
+            // for — linked now (batch 16 review round 1). The name alone was enough, the built-in admin included.
+            UserItem user = contentService.getUserItemById(repositoryId, username);
+            if (user == null) {
+                user = getOrCreateUser(repositoryId, username, jp.aegif.nemaki.rest.OidcLogin.binding(outcome));
+            } else {
+                String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);
+                if (refused != null) {
+                    logger.info("API v1: OIDC login refused for an existing account: " + refused);
+                    throw ApiException.permissionDenied(refused);
+                }
+                if (jp.aegif.nemaki.rest.OidcLogin.unlinked(user)) {
+                    List<jp.aegif.nemaki.model.Property> properties = new java.util.ArrayList<>(
+                            user.getSubTypeProperties() == null ? List.of() : user.getSubTypeProperties());
+                    properties.add(new jp.aegif.nemaki.model.Property(jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY,
+                            jp.aegif.nemaki.rest.OidcLogin.binding(outcome)));
+                    user.setSubTypeProperties(properties);
+                    contentService.applyUserUpdate(repositoryId, user, username);
+                }
+            }
             if (user == null) {
                 throw ApiException.internalError("Failed to create or find user");
             }
 
-            // Check if cloud/OIDC authentication is allowed for this user
-            if (authenticationService != null && !authenticationService.isAuthMethodAllowed(user, "cloud")) {
+            // Whether SSO is allowed for the account, read from the account itself (no service lookup to fall through).
+            if (!jp.aegif.nemaki.util.AuthenticationUtil.isAuthMethodAllowed(user, "cloud")) {
                 logger.info("API v1: OIDC authentication denied for user " + username + " (not in allowedAuthMethods)");
                 throw ApiException.permissionDenied("Authentication method not allowed for this user");
             }
@@ -560,6 +579,11 @@ public class AuthResource {
     }
 
     private UserItem getOrCreateUser(String repositoryId, String userName) {
+        return getOrCreateUser(repositoryId, userName, null);
+    }
+
+    /** As {@link #getOrCreateUser(String, String)}; a user it creates is linked to the OIDC subject given, if any. */
+    private UserItem getOrCreateUser(String repositoryId, String userName, String oidcSubject) {
         try {
             UserItem userItem = contentService.getUserItemById(repositoryId, userName);
             if (userItem != null) {
@@ -593,6 +617,9 @@ public class AuthResource {
             // Set allowedAuthMethods to "cloud" for SSO-provisioned users
             List<jp.aegif.nemaki.model.Property> subTypeProperties = new java.util.ArrayList<>();
             subTypeProperties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud"));
+            if (oidcSubject != null) {
+                subTypeProperties.add(new jp.aegif.nemaki.model.Property(jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY, oidcSubject));
+            }
             newUser.setSubTypeProperties(subTypeProperties);
             
             contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);

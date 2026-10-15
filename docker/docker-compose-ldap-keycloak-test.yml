@@ -124,7 +124,8 @@ services:
       # underscores). This used to say OIDC_ISSUER_URL, which maps to nothing — the stack
       # only worked when the wizard had already written the issuer into nemaki_conf.
       OIDC_ISSUER: "http://keycloak:8080/realms/nemakiware"
-      OIDC_CLIENTID: "nemakiware-ui"
+      # The realm's clients that log in to NemakiWare (3.4.1: an ID token must name one of them as its audience).
+      OIDC_CLIENTID: "nemakiware-ui,nemakiware-oidc-client"
       SAML_ENABLED: "true"
       # Password encryption key (for LDAP bind password encryption)
       # WARNING: Change this in production!

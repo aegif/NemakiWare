@@ -56,7 +56,7 @@ public class OidcLoginTest {
     private RSAKey key;
     private AtomicInteger discoveries;
     private OidcLogin login;
-    private final OidcLogin.Settings enabled = new OidcLogin.Settings(true, CONFIGURED, CLIENT);
+    private final OidcLogin.Settings enabled = new OidcLogin.Settings(true, CONFIGURED, java.util.Set.of(CLIENT));
 
     @BeforeEach
     void setUp() throws Exception {
@@ -93,12 +93,53 @@ public class OidcLoginTest {
     void anIdTokenIssuedToThisApplicationLogsIn() throws Exception {
         OidcLogin.Outcome outcome = login.verify(enabled, token(key, ISSUER, CLIENT, "preferred_username", "alice"));
         assertEquals("alice", outcome.userName(), outcome.refusal());
+        // The subject the account is linked to: the issuer the provider signs as, and the token's subject.
+        assertEquals(ISSUER + " sub-123", OidcLogin.binding(outcome));
+    }
+
+    @Test
+    @DisplayName("each client listed in oidc.clientId logs in — the screen's and an API client's — and no other (batch 16 review round 1)")
+    void eachListedClientLogsIn() throws Exception {
+        OidcLogin.Settings two = new OidcLogin.Settings(true, CONFIGURED, java.util.Set.of(CLIENT, "nemakiware-oidc-client"));
+        assertEquals("alice", login.verify(two, token(key, ISSUER, "nemakiware-oidc-client", "preferred_username", "alice")).userName());
+        assertEquals("alice", login.verify(two, token(key, ISSUER, CLIENT, "preferred_username", "alice")).userName());
+        assertNull(login.verify(two, token(key, ISSUER, "another-app", "preferred_username", "alice")).userName());
+        assertEquals("alice", login.verify(two, token(key, ISSUER, List.of(CLIENT, "nemakiware-oidc-client"),
+                "preferred_username", "alice", "azp", "nemakiware-oidc-client")).userName());
+    }
+
+    @Test
+    @DisplayName("an ID token without its subject, its issue time or its expiry does not log in (batch 16 review round 1)")
+    void anIdTokenWithoutTheRequiredClaimsDoesNotLogIn() throws Exception {
+        for (String missing : new String[] {"sub", "iat", "exp"}) {
+            JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder().issuer(ISSUER).audience(CLIENT).claim("preferred_username", "alice");
+            if (!missing.equals("sub")) {
+                claims.subject("sub-123");
+            }
+            if (!missing.equals("iat")) {
+                claims.issueTime(new Date());
+            }
+            if (!missing.equals("exp")) {
+                claims.expirationTime(new Date(System.currentTimeMillis() + 300_000));
+            }
+            SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("k1").build(), claims.build());
+            jwt.sign(new RSASSASigner(key));
+            assertNull(login.verify(enabled, jwt.serialize()).userName(), "an ID token without " + missing + " logged in");
+        }
+    }
+
+    @Test
+    @DisplayName("an identity claim in a form this does not read is refused — not taken for absent, which would name the subject (batch 16 review round 1)")
+    void aMalformedIdentityClaimIsRefused() throws Exception {
+        assertNull(login.verify(enabled, token(key, ISSUER, CLIENT, "preferred_username", 42)).userName());
+        assertNull(login.verify(enabled, token(key, ISSUER, CLIENT, "email", "admin@example.com", "email_verified", "true")).userName());
+        assertNull(login.verify(enabled, token(key, ISSUER, CLIENT, "email", List.of("admin@example.com"))).userName());
     }
 
     @Test
     @DisplayName("nothing logs in where OIDC is not enabled — the provider is not even asked (it was: any token logged in)")
     void nothingLogsInWhereOidcIsNotEnabled() throws Exception {
-        OidcLogin.Outcome outcome = login.verify(new OidcLogin.Settings(false, CONFIGURED, CLIENT),
+        OidcLogin.Outcome outcome = login.verify(new OidcLogin.Settings(false, CONFIGURED, java.util.Set.of(CLIENT)),
                 token(key, ISSUER, CLIENT, "preferred_username", "alice"));
         assertNull(outcome.userName());
         assertEquals(0, discoveries.get(), "the provider was asked though OIDC is not enabled");
@@ -108,8 +149,8 @@ public class OidcLoginTest {
     @DisplayName("nothing logs in where the issuer or this application's client id is not configured")
     void nothingLogsInWithoutTheIssuerOrTheClientId() throws Exception {
         String alice = token(key, ISSUER, CLIENT, "preferred_username", "alice");
-        assertNull(login.verify(new OidcLogin.Settings(true, null, CLIENT), alice).userName());
-        assertNull(login.verify(new OidcLogin.Settings(true, CONFIGURED, null), alice).userName());
+        assertNull(login.verify(new OidcLogin.Settings(true, null, java.util.Set.of(CLIENT)), alice).userName());
+        assertNull(login.verify(new OidcLogin.Settings(true, CONFIGURED, java.util.Set.of()), alice).userName());
         assertEquals(0, discoveries.get());
     }
 

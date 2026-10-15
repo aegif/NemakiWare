@@ -78,6 +78,7 @@ public class OidcLoginEntryPointsTest {
     private String issuer;
     private final AtomicInteger userInfoCalls = new AtomicInteger();
     private RSAKey key;
+    private UserItem alice;
     private PropertyManager properties;
     private ContentService contentService;
     private TokenService tokenService;
@@ -107,8 +108,8 @@ public class OidcLoginEntryPointsTest {
         when(properties.readValue("bedroom", PropertyKey.OIDC_ISSUER)).thenReturn(issuer);
         when(properties.readValue("bedroom", "oidc.clientId")).thenReturn(CLIENT);
         contentService = mock(ContentService.class);
-        UserItem alice = mock(UserItem.class);
-        when(alice.getUserId()).thenReturn("alice");
+        // alice: an account SSO is allowed for (as SSO creates them), not linked to an OIDC subject yet.
+        alice = account("alice", "cloud", null);
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(alice);
         tokenService = mock(TokenService.class);
         when(tokenService.setToken(anyString(), eq("bedroom"), anyString()))
@@ -165,6 +166,30 @@ public class OidcLoginEntryPointsTest {
         } catch (ApiException refused) {
             return "refused: " + refused.getStatus();
         }
+    }
+
+    /** An account as the store holds it: the authentication methods it allows, and the OIDC subject it is linked to. */
+    private static UserItem account(String userId, String allowedAuthMethods, String linkedTo) {
+        UserItem user = new UserItem("doc-" + userId, "nemaki:user", userId, userId, "$2a$10$x", false, "users");
+        java.util.List<jp.aegif.nemaki.model.Property> properties = new java.util.ArrayList<>();
+        if (allowedAuthMethods != null) {
+            properties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", allowedAuthMethods));
+        }
+        if (linkedTo != null) {
+            properties.add(new jp.aegif.nemaki.model.Property("nemaki:oidcSubject", linkedTo));
+        }
+        user.setSubTypeProperties(properties);
+        return user;
+    }
+
+    private String idTokenFor(String preferredUsername, String subject) throws Exception {
+        com.nimbusds.jwt.JWTClaimsSet claims = new com.nimbusds.jwt.JWTClaimsSet.Builder().issuer(issuer).subject(subject)
+                .audience(CLIENT).claim("preferred_username", preferredUsername).issueTime(new java.util.Date())
+                .expirationTime(new java.util.Date(System.currentTimeMillis() + 300_000)).build();
+        com.nimbusds.jwt.SignedJWT jwt = new com.nimbusds.jwt.SignedJWT(new com.nimbusds.jose.JWSHeader.Builder(
+                com.nimbusds.jose.JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
+        jwt.sign(new com.nimbusds.jose.crypto.RSASSASigner(key));
+        return jwt.serialize();
     }
 
     private static void set(Object target, String name, Object value) throws Exception {
@@ -268,6 +293,69 @@ public class OidcLoginEntryPointsTest {
         } finally {
             issuer = configured;
         }
+    }
+
+    @Test
+    @DisplayName("REST and API v1: a token naming the built-in admin does not log in as it — the name is the IdP's to give (batch 16 review round 1: both reviewers)")
+    void aTokenNamingTheBuiltInAdminDoesNotLogInAsIt() throws Exception {
+        UserItem admin = account("admin", null, null);
+        when(contentService.getUserItemById("bedroom", "admin")).thenReturn(admin);
+        // A legacy account whose methods read "null" — every method, as the policy reads it — is not SSO's either.
+        UserItem legacy = account("legacy", "null", null);
+        when(contentService.getUserItemById("bedroom", "legacy")).thenReturn(legacy);
+        assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("legacy", "someone") + "\"}").get("status"));
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("admin", "someone") + "\"}");
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("admin", "someone")));
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        assertTrue(apiV1.startsWith("refused: "), apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+        verify(contentService, never()).applyUserUpdate(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("REST and API v1: an account linked to one subject is not logged into with another's token of the same name (batch 16 review round 1)")
+    void anAccountLinkedToAnotherSubjectIsNotLoggedInto() throws Exception {
+        UserItem bob = account("bob", "cloud", issuer + " sub-bob");
+        when(contentService.getUserItemById("bedroom", "bob")).thenReturn(bob);
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("bob", "sub-mallory") + "\"}");
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("bob", "sub-mallory")));
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        assertTrue(apiV1.startsWith("refused: "), apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+        assertEquals("success", rest("{\"id_token\":\"" + idTokenFor("bob", "sub-bob") + "\"}").get("status"));
+    }
+
+    @Test
+    @DisplayName("REST: the first login links an account SSO is allowed for to the token's subject, and the link is kept (batch 16 review round 1)")
+    void theFirstLoginLinksTheAccount() throws Exception {
+        assertEquals("success", rest("{\"id_token\":\"" + idToken(CLIENT) + "\"}").get("status"));
+        verify(contentService).applyUserUpdate(eq("bedroom"), eq(alice), eq("alice"));
+        assertTrue(alice.getSubTypeProperties().stream().anyMatch(p -> "nemaki:oidcSubject".equals(p.getKey())
+                && (issuer + " sub-123").equals(p.getValue())), "alice was not linked to the token's subject");
+        assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("alice", "sub-other") + "\"}").get("status"),
+                "another subject logged in as alice after she was linked");
+    }
+
+    @Test
+    @DisplayName("REST and API v1: an account that allows only passwords, or is disabled, is not logged into — read from the account, not through a service that may be missing (batch 16 review round 1: Codex P1)")
+    void anAccountThatDoesNotAllowSsoIsNotLoggedInto() throws Exception {
+        UserItem carol = account("carol", "password", issuer + " sub-carol");
+        UserItem dave = account("dave", "disabled", issuer + " sub-dave");
+        when(contentService.getUserItemById("bedroom", "carol")).thenReturn(carol);
+        when(contentService.getUserItemById("bedroom", "dave")).thenReturn(dave);
+        assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("carol", "sub-carol") + "\"}").get("status"));
+        assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("dave", "sub-dave") + "\"}").get("status"));
+        assertTrue(apiV1(Map.of("id_token", idTokenFor("carol", "sub-carol"))).startsWith("refused: "));
+        assertTrue(apiV1(Map.of("id_token", idTokenFor("dave", "sub-dave"))).startsWith("refused: "));
+        verify(tokenService, never()).setToken(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("REST and API v1: a second client listed in oidc.clientId logs in — the setting is read as a list (batch 16 review round 1: subagent P2)")
+    void aSecondListedClientLogsIn() throws Exception {
+        when(properties.readValue("bedroom", "oidc.clientId")).thenReturn("nemakiware-ui, nemakiware-oidc-client");
+        assertEquals("success", rest("{\"id_token\":\"" + idToken("nemakiware-oidc-client") + "\"}").get("status"));
+        assertEquals("logged in: alice", apiV1(Map.of("id_token", idToken("nemakiware-oidc-client"))));
     }
 
     @Test
