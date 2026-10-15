@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# The declaration is REQUIRED, not decorative: a control whose find/replace carries several document
+# rows puts thousands of non-ASCII bytes on one line, and without it CPython's tokenizer splits that
+# line mid-character and dies with "Non-UTF-8 code starting with '\xe3' ... but no encoding declared".
+# Measured 2026-10-16: the five-P1-row form of OK4/OI4 (2,556 bytes on one line) did exactly that,
+# while the four-row form had been fine — so the failure arrives with the next long row, not with the
+# edit that causes it.
 """Re-runnable negative controls: sabotage a protection, expect its lock to go RED.
 
 Why this file exists
@@ -9583,10 +9590,10 @@ CONTROLS = [
     ),
     dict(
         id='FV3',
-        what="the A-7 structural lock is dropped from the list CI runs, so every assertion in it goes back to running only on someone's laptop",
+        what="the A-7 structural lock is excluded from the suite CI runs, so every assertion in it goes back to running only on someone's laptop (re-pointed 2026-10-16: the unit job runs the whole suite by exclusion, so dropping a name from an allow-list is no longer the way to stop a lock — excluding it is)",
         file='.github/workflows/integration-tests.yml',
-        find='EverySupportedCouchDbIsMeasuredTest,',
-        replace='',
+        find="-Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader'",
+        replace="-Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader,!EverySupportedCouchDbIsMeasuredTest'",
         test='CanonicalImportServiceTest',
         expect_fail=['everyLockThisBatchAddedIsOnAListCiActuallyRuns'],
     ),
@@ -13906,7 +13913,7 @@ CONTROLS = [
         what="the readiness document's unit total drops below what the sources declare and no lock notices, so a figure left behind while the suite grew reads as a measurement",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**8,137 本 green**',
+        find='**8,140 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
@@ -13970,7 +13977,7 @@ CONTROLS = [
         what="the readiness document's summary line repeats the open-residual breakdown and stops being compared with it, so the two can disagree two lines apart",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='（うち意図した設計 3・3.4.0 に入れない 6・実際に開いている 48）',
+        find='（うち意図した設計 3・3.4.0 に入れない 6・実際に開いている 49）',
         replace='（うち意図した設計 3・3.4.0 に入れない 6・実際に開いている 10）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['everyOpenResidualIsInExactlyOneGroup'],
@@ -13980,7 +13987,7 @@ CONTROLS = [
         what="the RC gate's heading stops being compared with the rows of its own classification table, so the gate can announce more residuals classified than it classified",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、その確認 2 巡目の R168・R169 を足し、バッチ 17 の確認 1 巡目の R170 を足し、バッチ 18 の R172 を足し（R171 は同じ日に処置済み）、その確認 1 巡目の R174 を足し（R173 は同じ日に処置済み）、48 件を分類した',
+        find='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、その確認 2 巡目の R168・R169 を足し、バッチ 17 の確認 1 巡目の R170 を足し、バッチ 18 の R172 を足し（R171 は同じ日に処置済み）、その確認 1 巡目の R174 を足し（R173 は同じ日に処置済み）、その確認 2 巡目の R175 を足し、49 件を分類した',
         replace='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、10 件を分類した',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['everyOpenResidualIsClassifiedForTheGate'],
@@ -13990,7 +13997,7 @@ CONTROLS = [
         what="the sentence under the RC gate's heading stops being compared with the rows, so the count the gate reasons from can drift from the table it reasons over",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='開いている 48 件を\n1 つずつ読んで分類した結果',
+        find='開いている 49 件を\n1 つずつ読んで分類した結果',
         replace='開いている 10 件を\n1 つずつ読んで分類した結果',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['everyOpenResidualIsClassifiedForTheGate'],
@@ -19255,28 +19262,28 @@ CONTROLS = [
         what="a P1 row stands in the RC gate's table while its introduction declares condition 11 met (re-pointed 2026-10-15 a ninth time: R160, R163, R168 and R170 are P1 and the declaration was withdrawn, so the sabotage writes the declaration back over it)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**条件 11 はいま満たしていない — open P1 は 4 件（R160・R163・R168・R170、2026-10-15）。**',
+        find='**条件 11 はいま満たしていない — open P1 は 5 件（R160・R163・R168・R170・R175、2026-10-16）。**',
         replace='**条件 11 は 2026-10-14 に満たした — open P0/P1 は 0 件。**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
     dict(
         id='OK4',
-        what="the RC gate's table allows condition 11 through 「設計判断待ち」 (all four open P1 rows — R170, R168, R163 and R160 — reclassified so, as R67 is) while its introduction withholds it (re-pointed 2026-10-15 again: with several P1 rows, reclassifying one leaves the table forbidding the declaration, and the control does not fire)",
+        what="the RC gate's table allows condition 11 through 「設計判断待ち」 (all five open P1 rows — R175, R170, R168, R163 and R160 — reclassified so, as R67 is) while its introduction withholds it (re-pointed 2026-10-15 again: with several P1 rows, reclassifying one leaves the table forbidding the declaration, and the control does not fire)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| R170 | **P1** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P1** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P1** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P1** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
-        replace='| R170 | 設計判断待ち | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | 設計判断待ち | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | 設計判断待ち | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | 設計判断待ち | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
+        find='| R175 | **P1** | SAML・Google・Microsoft のログインは IdP が名乗る利用者名で既存の利用者に入れる。唯一の扉が `isAuthMethodAllowed(user,"cloud")` で、認証方式が未設定なら true になるため、組み込みの `admin`・サービスアカウント・パスワードで作った利用者に入れる（汎用 OIDC がバッチ 16 で P1 として直した機序そのもの。正典 R175、2026-10-16 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R170 | **P1** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P1** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P1** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P1** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
+        replace='| R175 | 設計判断待ち | SAML・Google・Microsoft のログインは IdP が名乗る利用者名で既存の利用者に入れる。唯一の扉が `isAuthMethodAllowed(user,"cloud")` で、認証方式が未設定なら true になるため、組み込みの `admin`・サービスアカウント・パスワードで作った利用者に入れる（汎用 OIDC がバッチ 16 で P1 として直した機序そのもの。正典 R175、2026-10-16 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R170 | 設計判断待ち | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | 設計判断待ち | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | 設計判断待ち | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | 設計判断待ち | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),
     dict(
         id='OI4',
-        what="the RC gate's table allows condition 11 (all four open P1 rows — R170, R168, R163 and R160 — reclassified P2) while its introduction withholds it, so the readiness document reads as further from release than the work is (re-pointed 2026-10-15 again: with several P1 rows, reclassifying one does not fire)",
+        what="the RC gate's table allows condition 11 (all five open P1 rows — R175, R170, R168, R163 and R160 — reclassified P2) while its introduction withholds it, so the readiness document reads as further from release than the work is (re-pointed 2026-10-15 again: with several P1 rows, reclassifying one does not fire)",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| R170 | **P1** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P1** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P1** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P1** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
-        replace='| R170 | **P2** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P2** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P2** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P2** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
+        find='| R175 | **P1** | SAML・Google・Microsoft のログインは IdP が名乗る利用者名で既存の利用者に入れる。唯一の扉が `isAuthMethodAllowed(user,"cloud")` で、認証方式が未設定なら true になるため、組み込みの `admin`・サービスアカウント・パスワードで作った利用者に入れる（汎用 OIDC がバッチ 16 で P1 として直した機序そのもの。正典 R175、2026-10-16 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R170 | **P1** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P1** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P1** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P1** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
+        replace='| R175 | **P2** | SAML・Google・Microsoft のログインは IdP が名乗る利用者名で既存の利用者に入れる。唯一の扉が `isAuthMethodAllowed(user,"cloud")` で、認証方式が未設定なら true になるため、組み込みの `admin`・サービスアカウント・パスワードで作った利用者に入れる（汎用 OIDC がバッチ 16 で P1 として直した機序そのもの。正典 R175、2026-10-16 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R170 | **P2** | 資格情報が利用者の名前にだけ結ばれ、削除が API キーを取り消さないので、消した利用者と同じ利用者 ID を作り直すと古い資格情報が新しい利用者として通る。パスワード変更でも止まらない（正典 R170、2026-10-15 — オーナーが完全修正を選び、バッチ 19 で直す。設計レビューから） |\n| R168 | **P2** | 汎用 OIDC のログインは、結んでいない `cloud` の利用者を最初にその名前でログインした人の `iss`・`sub` に結ぶ — `cloud` は Google・Microsoft・SAML のログインとクラウドディレクトリ同期が作る利用者にも自動で書かれ、それらの経路は結ばないので、汎用 IdP で名前を選べる人が、ほかの経路が作った同じ名前の利用者に入れる。結ぶ読み書きは原子的でなく、空の結びは結んでいないとみなす（正典 R168、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R163 | **P2** | REST の認証フィルタは正規化した経路で対応を選び、Jersey は正規化の前の経路で振り分けるので、経路に `..` を含む要求（`/rest/repo/../group/list`）はフィルタを通らずに資源に届く — リポジトリ ID が `..` になり、測った GET では資源の側の確かめか不正なリポジトリ ID で止まった（正典 R163、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n| R160 | **P2** | LDAP 同期の孤児の止め（バッチ 14 の確認 1 巡目の処置）は、孤児を残すとき上のグループの入れ子を全部残ったとみなす — LDAP の上のグループが 2 つあると、後で数えた方からの入れ子は外れ、そのグループで名指しうる人がエラーに出ずに権限を失う（正典 R160、2026-10-15 — 同じ領域の確認 2 巡目の P1 なので記録して止めた） |\n',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['conditionElevenIsDeclaredExactlyWhenTheTableAllowsIt'],
     ),

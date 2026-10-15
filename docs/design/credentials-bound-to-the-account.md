@@ -83,8 +83,10 @@ boundToThisAccount(credential, account):
 - `Token` に `accountId`・`issuedAt` を足す。
 - **`TokenServiceImpl` には既に `contentService` が注入されている**（`serviceContext.xml`）ので、`set()` の中で
   利用者を読んで `accountId` を書ける。**`setToken` の呼び出し側を 1 つも変えなくてよい** — 実測した内訳は
-  `AuthResource` 3・`AuthTokenResource` 6・`SamlSignatureVerifier` 2・`WebAuthnResource` 1 の **12 か所**
-  （探索語 `tokenService.setToken`・`ts.setToken(`、`core/src/main/java` 配下、interface と実装を除く）。
+  `AuthResource` 3・`AuthTokenResource` 6・`WebAuthnResource` 1 の **10 か所**（探索語 `tokenService.setToken`・`ts.setToken(`、
+  `core/src/main/java` 配下、interface と実装を除く）。**訂正**: 最初に書いた 12 か所には `SamlSignatureVerifier` の 2 件を
+  数えていたが、あれは**コメント**で呼び出しではない（grep の件数をそのまま書いた誤り）。SAML のトークンは
+  `AuthTokenResource` の 6 件のうちの 1 つで出る。
 - 判定は `AuthenticationServiceImpl.loginWithToken`（バッチ 17 で利用者を読んでいる場所）。
 
 ### 4.3 MCP のセッション
@@ -105,8 +107,15 @@ boundToThisAccount(credential, account):
   利用者が変えたのではないので、`credentialsNotBefore` を書いてはいけない** — 書くと、ログインした本人の
   トークンがその場で無効になる）
 
-**書く場所は 5 ファイルに散っているので、1 か所（`ContentService` の保存の手前か専用のヘルパー）に集めて、
-そこを通らないパスワード変更が無いことを錠で測る。**
+**探索語の盲点（この棚卸しの限界）**: `setPassowrd(` だけで数えると、**利用者文書に BCrypt のハッシュを直接書く 2 つの経路が
+落ちる** — `api/setup/resource/SetupAdminResource.java:108`（`POST /api/v1/setup/admin/change-password`。主リポジトリの admin 文書を
+更新する）と `api/setup/resource/SetupApplyResource.java:484`（`changeAdminPassword`）。どちらも `UserItem.setPassowrd` を通らない。
+`BCrypt.hashpw` で数えると 9 件が出て、そのうちこの 2 件が `setPassowrd` の外にある。**到達性**: `SetupModeGuardFilter` が
+Normal Mode では 403 を返すので Setup Mode 限定。
+
+**書く場所は 5 ファイルに散っており、さらに上の 2 つが別の語彙で書くので、1 か所（`ContentService` の保存の手前か専用の
+ヘルパー）に集めて、そこを通らないパスワード変更が無いことを錠で測る。錠は `setPassowrd` と `BCrypt.hashpw` の両方の語彙で
+数えること** — 片方だけで数えた棚卸しから書いた錠は、偽の保証になる（確認 2 巡目の subagent P2）。
 
 **API キーはパスワード変更で取り消さない**（自動処理が黙って止まる）。トークンと MCP のセッションだけを失効させ、
 「API キーは別の資格情報で、明示的に取り消す」と RELEASE_NOTES に書く — これは §6 の未決 3（外部レビュー S3 は
