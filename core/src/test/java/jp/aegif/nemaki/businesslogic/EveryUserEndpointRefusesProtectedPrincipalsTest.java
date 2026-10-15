@@ -180,13 +180,13 @@ class EveryUserEndpointRefusesProtectedPrincipalsTest {
     @DisplayName("legacy /rest refuses to remove the admin flag of the built-in accounts and of the acting user")
     void legacyRefusesToDemoteProtectedUsers() throws Exception {
         for (String id : List.of("admin", "solr", ACTOR)) {
-            String answer = legacy().update(REPO, id, null, null, null, null, null, null, null, null, null,
+            String answer = legacy().update(REPO, id, null, null, null, null, null, null, null, null, null, null,
                     "false", request);
             assertTrue(answer.contains("\"failure\"") && answer.contains("is never demoted"), id + ": " + answer);
             assertTrue(users.get(id).isAdmin(), id + " lost its admin flag");
             verify(service, never()).update(any(), eq(REPO), eq(users.get(id)));
         }
-        String answer = legacy().update(REPO, "alice", null, null, null, null, null, null, null, null, null,
+        String answer = legacy().update(REPO, "alice", null, null, null, null, null, null, null, null, null, null,
                 "false", request);
         assertTrue(answer.contains("\"success\""), answer);
         assertFalse(users.get("alice").isAdmin(), "alice kept the admin flag the request removed");

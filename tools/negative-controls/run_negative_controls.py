@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# The declaration is REQUIRED, not decorative: a control whose find/replace carries several document
-# rows puts thousands of non-ASCII bytes on one line, and without it CPython's tokenizer splits that
-# line mid-character and dies with "Non-UTF-8 code starting with '\xe3' ... but no encoding declared".
-# Measured 2026-10-16: the five-P1-row form of OK4/OI4 (2,556 bytes on one line) did exactly that,
-# while the four-row form had been fine — so the failure arrives with the next long row, not with the
-# edit that causes it.
+# The declaration is REQUIRED for this file, not decorative. Measured 2026-10-16, both directions:
+# without it, running this file dies with "Non-UTF-8 code starting with '\xe3' ... but no encoding
+# declared" at the OK4 find= line (2,556 bytes, non-ASCII from byte 36); adding it back runs.
+# What is NOT the explanation: line length alone. The same file carried a 3,625-byte non-ASCII line
+# (non-ASCII from byte 459) with no declaration and ran fine for weeks. The exact condition in
+# CPython's tokenizer was not identified — so treat the declaration as required here rather than
+# reasoning about which line is "safe". `ast.parse` and `py_compile` on the decoded text BOTH pass
+# either way, so only running the file shows it.
 """Re-runnable negative controls: sabotage a protection, expect its lock to go RED.
 
 Why this file exists
@@ -9773,8 +9775,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9893,8 +9895,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 417 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 419 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10895,7 +10897,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10909,7 +10911,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10965,8 +10967,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 417 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 419 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10979,8 +10981,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **417 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **417 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **419 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **419 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11816,7 +11818,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **417 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **419 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13798,8 +13800,8 @@ CONTROLS = [
         what="the canon states a gap count above the sweep boundary that is not the runner's — a retired or resurrected id reads as a measurement",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 2 ある（',
-        replace='**9 回目以後に足した control は 417 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
+        find='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 2 ある（',
+        replace='**9 回目以後に足した control は 419 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13870,7 +13872,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 2140 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 2142 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13913,7 +13915,7 @@ CONTROLS = [
         what="the readiness document's unit total drops below what the sources declare and no lock notices, so a figure left behind while the suite grew reads as a measurement",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**8,140 本 green**',
+        find='**8,147 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
@@ -13955,7 +13957,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **417 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **419 本**（通し未実施）。',
         # A count far below any the runner will have again: 213 was this control's stale value, and
         # on 2026-10-13 the real count became 213, so find and replace were the same and it did not fire.
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **100 本**（通し未実施）。',
@@ -13967,7 +13969,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **2140**（2026-10-16 時点）',
+        find='- コントロール **2142**（2026-10-16 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13987,7 +13989,7 @@ CONTROLS = [
         what="the RC gate's heading stops being compared with the rows of its own classification table, so the gate can announce more residuals classified than it classified",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、その確認 2 巡目の R168・R169 を足し、バッチ 17 の確認 1 巡目の R170 を足し、バッチ 18 の R172 を足し（R171 は同じ日に処置済み）、その確認 1 巡目の R174 を足し（R173 は同じ日に処置済み）、その確認 2 巡目の R175 を足し、49 件を分類した',
+        find='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、その確認 2 巡目の R168・R169 を足し、バッチ 17 の確認 1 巡目の R170 を足し、バッチ 18 の R172 を足し（R171 は同じ日に処置済み）、その確認 1 巡目の R174 を足し（R173 は同じ日に処置済み）、その確認 2 巡目の R175 を足し（R176・R177・R178 は同じ日に処置済み）、49 件を分類した',
         replace='### RC 条件 11（open P0/P1 = 0）の現在地 — 2026-09-23 に分類し、2026-09-24 に R114 を足して R107 を処置済みで外し、2026-09-28 に C-1 の限界 R115〜R119 と自発封入の限界 R120〜R125、R128 を足し、2026-09-29 に凍結 3 件に severity を付けて R61 を処置済みで外し、c41 の R130 を足し、2026-09-30 に c47 の R137 / R138 と c50 の R139 を足し、2026-10-02 に UI の R140 / R141 と lint の R142 を足し、2026-10-05 にリリースの道具の R143 と CI の R144 を足し、2026-10-06 に e2e の R145 を足し、2026-10-07 に incident のログの R146 を足し、2026-10-09 に R146・R125・R143・R144・R115 を処置済みで外して（3.4.1 のバッチ 2・3・5・4）、2026-10-11 に R115 の判定と実行の残りの R147 を足し、2026-10-12 に一覧の書き戻しで動き出した LDAP 同期の所属の R148 を足し、2026-10-13 にそれを処置済みで外し、同じ日にその確認 2 巡目の R149・R150 を足し、R149 を処置済みで外し、その確認 1 巡目の R151・R152 を足し、それを処置済みで外し、その確認 2 巡目の R153・R154 を足し、2026-10-14 にそれを処置済みで外し、バッチ 13 の文書を書いているときに見つけた R155 を足し、その確認 1 巡目で R155 を処置済みで外して R156 を足し、その確認 2 巡目の R157・R158 を足し、バッチ 14 で R156・R157・R158 を処置済みで外して R159 を足し、2026-10-15 にその確認 2 巡目の R160 を足し、バッチ 15 の確認 1 巡目の R162 を足し、その確認 2 巡目の R163・R164 を足し、バッチ 16 の確認 1 巡目の R167 を足し、10 件を分類した',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['everyOpenResidualIsClassifiedForTheGate'],
@@ -23996,6 +23998,27 @@ CONTROLS = [
         replace='',
         test='OidcLoginEntryPointsTest',
         expect_fail=['aDisabledAccountIsNeitherLoggedIntoNorBound'],
+    ),
+    dict(
+        id='GN5',
+        what="the Solr field of an IS NULL / IS NOT NULL column is escaped a second time — getPropertyNameInSolr already escaped a custom property's colon, so the query names a field nothing is indexed under and IS NULL matches every document the type and ACL filters leave (external review C1, round-3 review P1/P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\tColumnReference colRef = getColumnReference(colNode);\n\t\treturn solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName());\n',
+        replace='\t\tColumnReference colRef = getColumnReference(colNode);\n\t\treturn ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));\n',
+        test='IsNullNamesTheSolrFieldTest',
+        expect_fail=['aCustomPropertyIsNotEscapedTwice'],
+    ),
+    dict(
+        id='GO5',
+        what="the column of an IS NULL / IS NOT NULL is read by joining the node's children with a dot instead of through the query object — a table-qualified column (d.cmis:name) is in no property map, so IS NULL matches every document and IS NOT NULL none (external review C1, round-3 review P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\tColumnReference colRef = getColumnReference(colNode);\n\t\treturn solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName());\n',
+        replace='\t\treturn solrUtil.getPropertyNameInSolr(repositoryId, solrUtil.convertToString(colNode));\n',
+        test='IsNullNamesTheSolrFieldTest',
+        expect_fail=['aQualifiedColumnResolvesToItsProperty', 'aCustomPropertyIsNotEscapedTwice',
+                     'isNotNullAsksForAnyValueOfTheSolrField', 'isNullExcludesAnyValueOfTheSolrField'],
     ),
 ]
 
