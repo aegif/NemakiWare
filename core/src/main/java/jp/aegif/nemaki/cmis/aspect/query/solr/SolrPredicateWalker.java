@@ -464,22 +464,32 @@ public class SolrPredicateWalker{
 	}
 
 	/**
-	 * The Solr field a CMIS column refers to — the same translation every other predicate uses
-	 * ({@code walkCompareInternal}): the column name through {@link SolrUtil#getPropertyNameInSolr},
-	 * escaped, because the caller turns this query into the Solr query string with
-	 * {@code toString()}.
+	 * The Solr field a CMIS column refers to, resolved the way {@code walkIn} and {@code walkInAny} already
+	 * resolve one: through the query object's own {@link ColumnReference}, then
+	 * {@link SolrUtil#getPropertyNameInSolr}. Two things this does NOT do, both measured as wrong:
 	 *
-	 * <p>{@code IS NULL} and {@code IS NOT NULL} used to read the column with
-	 * {@code safeWalkExprToString}, which walks to {@code walkCol} — and that returns {@code null}
-	 * for every column. The field name was therefore always null and {@code TermRangeQuery} threw
-	 * {@code "field must not be null"} (measured, 3.4.1: a NullPointerException, not an empty
-	 * result), so neither operator could be used at all. The CMIS name was also never translated to
-	 * the Solr name.
+	 * <ul>
+	 * <li>It does not read the column with {@code safeWalkExprToString}, which walks to {@code walkCol} —
+	 *     and that returns {@code null} for every column, so the field name was always null and
+	 *     {@code TermRangeQuery} threw {@code "field must not be null"}. From the entry point that
+	 *     exception was caught in {@code SolrQueryProcessor} and the statement fell back to the manual
+	 *     parser, which answered these two operators correctly for properties outside {@code cmis:} — so
+	 *     the operators were broken here, not unusable everywhere.</li>
+	 * <li>It does not escape the result again. {@code getPropertyNameInSolr} already escapes the colon of
+	 *     a custom property, and running {@code escapeQueryChars} over
+	 *     {@code dynamic.property.nemaki\:foo} escapes that backslash too, naming a field nothing is
+	 *     indexed under — which for {@code IS NULL} matched EVERY document the type and ACL filters left.
+	 *     {@code walkIn} and {@code walkInAny} do not escape either; {@code walkCompareInternal} does, and
+	 *     that is the same defect on a path this batch did not open (recorded as a residual).</li>
+	 * </ul>
+	 *
+	 * <p>Using the query object's reference also means a qualified column ({@code WHERE t.cmis:name IS
+	 * NULL}) resolves to the property, where joining the node's children with a dot gave
+	 * {@code t.cmis:name} — in no property map, and so the same match-everything break.
 	 */
 	private String solrFieldOfColumn(CmisTree colNode) {
-		String cmisColName = solrUtil.convertToString(colNode);
-		return ClientUtils.escapeQueryChars(
-				solrUtil.getPropertyNameInSolr(repositoryId, cmisColName));
+		ColumnReference colRef = getColumnReference(colNode);
+		return solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName());
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

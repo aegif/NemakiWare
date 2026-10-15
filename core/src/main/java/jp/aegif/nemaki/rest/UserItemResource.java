@@ -682,6 +682,7 @@ private ContentService getContentServiceSafe() {
 			String lastName = (String) userJson.get("lastName");
 			String email = (String) userJson.get("email");
 			String password = (String) userJson.get("password");
+			String oldPassword = (String) userJson.get("oldPassword");
 
 			// Existing user
 			UserItem user = getContentServiceSafe().getUserItemById(repositoryId, userId);
@@ -720,6 +721,16 @@ private ContentService getContentServiceSafe() {
 
 					// Update password if provided
 					if (StringUtils.isNotBlank(password)) {
+						// The same rule as changePassword and /update (external review S4, 3.4.1): a
+						// self-change proves knowledge of the current password, so a stolen token cannot
+						// be turned into a permanent takeover through this path.
+						if (!callerMayResetWithoutTheOldPassword(httpRequest, userId)
+								&& !AuthenticationUtil.passwordMatches(oldPassword, user.getPassowrd())) {
+							status = false;
+							addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
+							makeResult(status, result, errMsg);
+							return result.toJSONString();
+						}
 						// Enforce the configured password policy on update (parity with create).
 						PasswordPolicyService ppsUpdate = getPasswordPolicyService();
 						if (ppsUpdate != null) {
@@ -883,7 +894,8 @@ private ContentService getContentServiceSafe() {
 			@FormParam(FORM_USERNAME) String name, @FormParam(FORM_FIRSTNAME) String firstName,
 			@FormParam(FORM_LASTNAME) String lastName, @FormParam(FORM_EMAIL) String email,
 			@FormParam("addFavorites") String addFavorites, @FormParam("removeFavorites") String removeFavorites,
-			@FormParam(FORM_PASSWORD) String password, @FormParam("groups") String groupsJson,
+			@FormParam(FORM_PASSWORD) String password, @FormParam(FORM_OLDPASSWORD) String oldPassword,
+			@FormParam("groups") String groupsJson,
 			@FormParam("allowedAuthMethods") String allowedAuthMethods,
 			@FormParam("isAdmin") String isAdminStr,
 			@Context HttpServletRequest httpRequest) {
@@ -910,6 +922,23 @@ private ContentService getContentServiceSafe() {
 		// Edit & Update
 		if (status) {
 			ContentService service = getContentService();
+
+			// The fields that GRANT something are the administrator's, even on one's own account
+			// (external review S1, 3.4.1). checkAuthorityForUser above lets a non-administrator through
+			// for their OWN id, and these three were inside that: a user could add themselves to any
+			// group — taking that group's ACL rights — and could rewrite their own
+			// nemaki:allowedAuthMethods, undoing an administrator's "SSO only" or "disabled".
+			if (groupsJson != null || allowedAuthMethods != null || isAdminStr != null) {
+				CallContext privileged = (CallContext) httpRequest.getAttribute("CallContext");
+				Boolean privilegedFlag = privileged == null ? null
+						: (Boolean) privileged.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+				if (!Boolean.TRUE.equals(privilegedFlag)) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
+			}
 
 			// Handle isAdmin flag change (admin-only operation)
 			if (isAdminStr != null) {
@@ -1001,6 +1030,17 @@ private ContentService getContentServiceSafe() {
 
 			// Set password if provided (on the same user object to preserve subTypeProperties)
 			if (StringUtils.isNotBlank(password)) {
+				// The same rule changePassword applies (external review S4, 3.4.1): changing one's OWN
+				// password proves knowledge of the current one. Without this, a stolen session token —
+				// good for 24 hours — could be turned into a permanent takeover through this path, while
+				// the dedicated endpoint next to it refused exactly that.
+				if (!callerMayResetWithoutTheOldPassword(httpRequest, userId)
+						&& !AuthenticationUtil.passwordMatches(oldPassword, user.getPassowrd())) {
+					status = false;
+					addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_WRONGPASSWORD);
+					makeResult(status, result, errMsg);
+					return result.toJSONString();
+				}
 				// Enforce the configured password policy on update (parity with create);
 				// otherwise this path is a policy bypass.
 				PasswordPolicyService ppsUpdate = getPasswordPolicyService();
@@ -1341,6 +1381,23 @@ private ContentService getContentServiceSafe() {
 			addErrMsg(errMsg, ITEM_USER, ErrorCode.ERR_ONLY_ALLOWED_FOR_ADMIN);
 		}
 		return status;
+	}
+
+	/**
+	 * Whether this caller may set {@code userId}'s password without presenting the current one: an
+	 * administrator resetting SOMEONE ELSE's password, which is the one case {@code changePassword} also
+	 * allows (3.4.1, external review S4). A self-change — and any change by a non-administrator — has to
+	 * prove knowledge of the current password, so a stolen token cannot become a permanent takeover.
+	 */
+	private boolean callerMayResetWithoutTheOldPassword(HttpServletRequest httpRequest, String userId) {
+		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");
+		if (callContext == null) {
+			return false;
+		}
+		Boolean isAdminFlag = (Boolean) callContext.get(jp.aegif.nemaki.util.constant.CallContextKey.IS_ADMIN);
+		boolean isCallerAdmin = Boolean.TRUE.equals(isAdminFlag);
+		boolean isSelfChange = userId != null && userId.equals(callContext.getUsername());
+		return isCallerAdmin && !isSelfChange;
 	}
 
 	private boolean isSystemUser(String repositoryId, String userId){
