@@ -73,16 +73,11 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
 
         logger.fine("ApiAuthenticationFilter: checking path = " + path);
 
-        // Allow access to OpenAPI spec without authentication
-        if (path.equals("openapi.json") || path.equals("openapi.yaml") ||
-            path.endsWith("/openapi.json") || path.endsWith("/openapi.yaml")) {
-            logger.fine("ApiAuthenticationFilter: allowing OpenAPI access for path: " + path);
-            return;
-        }
-
-        // Allow access to auth endpoints without authentication
-        if (path.startsWith("auth/") && (path.endsWith("/login") || path.contains("/saml") || path.contains("/oidc"))) {
-            logger.fine("ApiAuthenticationFilter: allowing auth endpoint access");
+        // The OpenAPI document and the logins answer before anyone has logged in — by the REST filter's table, matched
+        // whole (3.4.1, zero-trust P0). Parts of the path were enough here: ".../openapi.json" or "auth/x/oidc/y" anywhere.
+        String publicEndpoint = jp.aegif.nemaki.rest.AuthenticationFilter.publicPath("/api/v1/cmis/" + path);
+        if (publicEndpoint != null) {
+            logger.fine("ApiAuthenticationFilter: allowing " + publicEndpoint + ": " + path);
             return;
         }
 

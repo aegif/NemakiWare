@@ -161,11 +161,16 @@ public class AuthenticationFilter implements Filter {
 	 * the servlet path and the path info, decoded and normalised, without the context path, the query, or path
 	 * parameters — each matched as a whole. A request whose path is not one of these is authenticated.
 	 *
-	 * <p>{@code /rest/all/readiness} (the load-balancer probe) is not here and must not be: web.xml does not map this
-	 * filter onto it. {@code /rest/all/repositories} and {@code /rest/auth/config} are not mapped either; they stay
-	 * listed so that mapping them would not lock out the login page. The ingest webhook receivers verify the
-	 * webhook's HMAC themselves; their {@code /subscribe} routes are an administrator's and are not public (connector
-	 * ids may be e.g. {@code subscribe-slack}, so the route is matched by its segments, not by a substring).
+	 * <p>Only the paths web.xml maps this filter onto reach it; which REST resources that leaves outside is read by
+	 * {@code RestResourcesAreBehindTheFilterTest}. {@code /rest/all/readiness} (the load-balancer probe) is outside and
+	 * must stay so. {@code /rest/all/repositories} and {@code /rest/auth/config} are outside too; they stay listed so that
+	 * mapping them would not lock out the login page. The ingest webhook receivers verify the webhook's HMAC themselves —
+	 * but for the two handshakes a provider sends before any signature exists (Microsoft Graph's validationToken, Dropbox's
+	 * challenge), which the controller bounds instead. Their {@code /subscribe} routes are an administrator's and are not
+	 * public (connector ids may be e.g. {@code subscribe-slack}, so the route is matched by its segments, not by a
+	 * substring). A trailing slash is not matched: {@code /api/v1/cmis/openapi.json/} is authenticated.
+	 *
+	 * <p>The API v1 application's own filter ({@code ApiAuthenticationFilter}) reads this table too.
 	 */
 	private static final java.util.Map<java.util.regex.Pattern, String> PUBLIC_ENDPOINTS;
 	static {
@@ -184,8 +189,12 @@ public class AuthenticationFilter implements Filter {
 
 	/** What the request reaches without logging in — one of {@link #PUBLIC_ENDPOINTS}, named — or null. */
 	static String publicEndpoint(HttpServletRequest request) {
-		String path = (request.getServletPath() == null ? "" : request.getServletPath())
-				+ (request.getPathInfo() == null ? "" : request.getPathInfo());
+		return publicPath((request.getServletPath() == null ? "" : request.getServletPath())
+				+ (request.getPathInfo() == null ? "" : request.getPathInfo()));
+	}
+
+	/** The public endpoint a path within the application is — matched whole — or null. */
+	public static String publicPath(String path) {
 		for (java.util.Map.Entry<java.util.regex.Pattern, String> endpoint : PUBLIC_ENDPOINTS.entrySet()) {
 			if (endpoint.getKey().matcher(path).matches()) {
 				return endpoint.getValue();

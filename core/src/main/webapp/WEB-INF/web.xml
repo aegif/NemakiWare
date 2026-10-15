@@ -241,7 +241,11 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/solr/*</url-pattern>
 	</filter-mapping>
-	<!-- /rest/all/log/* and /rest/all/build-info require authentication for security -->
+	<!-- /rest/all/* is mapped path by path, never as a whole: the load balancer's readiness probe under it must stay
+	     outside the filter (ReadinessProbeWiringTest). /rest/all/build-info is mapped and answers before login (the filter's list of public
+	     endpoints). The administrators' /rest/all/audit/* and /rest/all/search-engine/* were not mapped until 3.4.1:
+	     no CallContext reached them, so they refused administrators too, and anyone's request reached them
+	     (RestResourcesAreBehindTheFilterTest reads every REST resource's path against these patterns). -->
 	<filter-mapping>
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/all/log/*</url-pattern>
@@ -250,7 +254,15 @@
 		<filter-name>restAuthenticationFilter</filter-name>
 		<url-pattern>/rest/all/build-info</url-pattern>
 	</filter-mapping>
-	<!-- Note: /rest/all/repositories bypasses authentication (needed for login page) -->
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/audit/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restAuthenticationFilter</filter-name>
+		<url-pattern>/rest/all/search-engine/*</url-pattern>
+	</filter-mapping>
+	<!-- Note: /rest/all/repositories and the readiness probe are not mapped (the login page, the load balancer) -->
 	
 	<!-- Apply authentication to /rest/type-register/* (was missing) -->
 	<filter-mapping>
