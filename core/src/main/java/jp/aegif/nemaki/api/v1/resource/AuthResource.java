@@ -49,7 +49,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -479,37 +478,30 @@ public class AuthResource {
         }
     }
     
+    /**
+     * Who the request is authenticated as — the identity {@code ApiAuthenticationFilter} established and put in the
+     * {@code CallContext}, which is the only one that was verified (3.4.1, zero-trust P0).
+     *
+     * <p>This used to read the raw {@code Authorization} header instead, taking the name out of a {@code Basic} value
+     * <em>without checking its password</em>. The filter authenticates a request by its {@code AUTH_TOKEN} / API key
+     * <em>before</em> it looks at {@code Authorization}, so a caller holding any valid token of their own could add
+     * {@code Authorization: Basic admin:anything} and be read here as {@code admin} — {@code /token/refresh} then minted
+     * an admin token (measured on a development server: a non-admin's token plus a bogus admin header returned a token
+     * for {@code admin}). The name a caller asserts is not the name they authenticated as.
+     */
     private String getAuthenticatedUsername(String repositoryId) {
+        Object callContextObj = httpRequest != null ? httpRequest.getAttribute("CallContext") : null;
+        if (callContextObj instanceof org.apache.chemistry.opencmis.commons.server.CallContext callContext
+                && StringUtils.isNotBlank(callContext.getUsername())) {
+            return callContext.getUsername();
+        }
+
+        // Only a principal the container itself authenticated; never a name the request merely asserts.
         if (httpRequest != null && httpRequest.getUserPrincipal() != null) {
             return httpRequest.getUserPrincipal().getName();
         }
-        
-        String authHeader = httpRequest != null ? httpRequest.getHeader("Authorization") : null;
-        if (authHeader != null) {
-            if (authHeader.startsWith("Basic ")) {
-                try {
-                    String credentials = new String(Base64.getDecoder().decode(authHeader.substring(6)), java.nio.charset.StandardCharsets.UTF_8);
-                    int colonIndex = credentials.indexOf(':');
-                    if (colonIndex > 0) {
-                        return credentials.substring(0, colonIndex);
-                    }
-                } catch (Exception e) {
-                    logger.warning("Failed to decode Basic auth header: " + e.getMessage());
-                }
-            } else if (authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                return getUsernameFromBearerToken(repositoryId, token);
-            }
-        }
-        
+
         return null;
-    }
-    
-    private String getUsernameFromBearerToken(String repositoryId, String token) {
-        if (tokenService == null || StringUtils.isBlank(token)) {
-            return null;
-        }
-        return tokenService.validateToken("", repositoryId, token);
     }
     
     private UserResponse convertToUserResponse(UserItem user, String repositoryId) {
