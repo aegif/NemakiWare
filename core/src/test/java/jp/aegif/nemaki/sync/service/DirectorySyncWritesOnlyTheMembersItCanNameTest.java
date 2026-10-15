@@ -92,6 +92,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     private final List<Content> systemChildren = new ArrayList<>();
     /** What the store holds after each write — copies, so that a later change to an argument is not stored. */
     private final Map<String, GroupItem> persisted = new HashMap<>();
+    /** Every state an update left in the store, in order: a write that takes a nesting out and one that puts it back both show. */
+    private final List<GroupItem> updated = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -169,6 +171,12 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         int n = at == null ? 0 : Integer.parseInt(at.substring(0, at.indexOf('-')));
         stored.setRevision((n + 1) + "-abc");
         persisted.put(group.getGroupId(), stored);
+        updated.add(copy(stored));
+    }
+
+    /** Each state an update left of the group, in order. */
+    private List<GroupItem> updatesOf(String id) {
+        return updated.stream().filter(g -> (PREFIX + id).equals(g.getGroupId())).collect(Collectors.toList());
     }
 
     private static GroupItem copy(GroupItem group) {
@@ -491,8 +499,11 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     @DisplayName("a member entry both searches returned refuses the group")
     void anEntryBothSearchesReturnedRefusesTheGroup() {
         user("cn=ops,ou=people,dc=example,dc=com", "ops");
+        user(BOB, "bob");
         group("cn=ops,ou=people,dc=example,dc=com", "ops", "cn=ops,ou=people,dc=example,dc=com");
-        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "cn=ops,ou=people,dc=example,dc=com");
+        // LDAP adds bob: written without the value, eng would gain him (batch 14 review round 1 — with the value alone,
+        // keeping ops as the store has her wrote nothing either way).
+        group("cn=eng,ou=groups,dc=example,dc=com", "eng", "cn=ops,ou=people,dc=example,dc=com", BOB);
         stored("eng", List.of("ops"), List.of());
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
@@ -1727,12 +1738,15 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     @Test
     @DisplayName("the same when p is read first — the order the directory returns the groups in decides nothing")
     void aMemberIsPutBackWhenTheGroupAboveIsReadFirst() {
-        aliceReachesPThroughXAndY(true);
+        // The same input as the lock above, in the other order (batch 14 review round 1: subagent P3).
+        twoSatos();
+        aliceReachesPThroughXAndY(true, SATO_ALUMNI);
 
         sync.syncGroups(REPO, false);
 
         assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"),
                 "alice, whom LDAP names in p, lost p's permissions");
+        assertEquals(List.of(), persisted.get(PREFIX + "p").getGroups());
     }
 
     @Test
@@ -1824,6 +1838,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "y gained dave through the nesting kept: he reaches p");
         assertTrue(errors(result).contains(PREFIX + "p") && errors(result).contains("could not be put back"),
                 "the member that could not be put back was not reported: " + errors(result));
+        assertTrue(updatesOf("x").stream().allMatch(g -> g.getGroups().contains(PREFIX + "y")),
+                "y was taken out of x before it was written back: alice was without p in between");
     }
 
     @Test
@@ -1923,6 +1939,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "y was taken out of x, though q may name bob: he lost q");
         assertTrue(errors(result).contains(PREFIX + "q") && errors(result).contains("not all known"),
                 "the nesting kept was not reported: " + errors(result));
+        assertTrue(writes().stream().noneMatch(w -> (PREFIX + "x").equals(w.getGroupId())),
+                "x was written again, though it holds what LDAP states and the nesting kept (batch 14 review round 1)");
     }
 
     @Test
@@ -1955,10 +1973,12 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         group(Z_DN, "z", BOB, CONTRACTOR);
         stored("p", List.of("dave", "bob"), List.of());
 
-        sync.syncGroups(REPO, false);
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
 
         assertTrue(persisted.get(PREFIX + "p").getUsers().contains("bob"),
                 "bob, whom LDAP names in p through z, lost p when it was written with its direct members alone");
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "p").equals(e.getGroupId())),
+                "p was reported as not all known, though LDAP names bob in it surely, through z: " + errors(result));
     }
 
     @Test
@@ -2109,8 +2129,8 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
-    @DisplayName("a member LDAP may name in a group the sync does not write, who loses it only through the group below written as LDAP states it, is said — not put back, not held (R156)")
-    void aMemberLdapMayNameWhoLosesTheGroupThroughAWriteBelowIsSaid() {
+    @DisplayName("a member LDAP may name in a group the sync does not write stays in the group below whose write would take her out — LDAP's taking-out is held this sync (R159 (a), batch 14 review round 1)")
+    void aMemberLdapMayNameStaysInTheGroupBelowThatWouldTakeHerOut() {
         user(ALICE, "alice");
         user(BOB, "bob");
         user(DAVE, "dave");
@@ -2122,11 +2142,12 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
 
-        assertEquals(List.of("dave"), persisted.get(PREFIX + "g").getUsers(), "g was not written as LDAP states it");
+        assertEquals(Set.of("bob", "dave"), new HashSet<>(persisted.get(PREFIX + "g").getUsers()),
+                "bob, whom LDAP may name in p, was taken out of g and lost p — or alice, put back in p, was kept in g");
         assertEquals(List.of("alice"), persisted.get(PREFIX + "p").getUsers(), "a member LDAP may not name was put back in p");
-        assertTrue(warningsOf(result, "p").contains("they lose the group when that group is written"),
-                "bob's loss of p was not said: " + warnings(result));
-        assertTrue(!errors(result).contains("so that nesting is kept"), "a nesting was said to be kept: " + errors(result));
+        assertTrue(warningsOf(result, "g").contains("kept this sync"), "bob kept in g was not said: " + warnings(result));
+        assertTrue(errors(result).contains(PREFIX + "p: group " + PREFIX + "p: whom LDAP names in the group is not all known"),
+                "the change not made for bob was not reported on p: " + errors(result));
     }
 
     @Test
@@ -2211,15 +2232,16 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
-    @DisplayName("the group below is not written when the member it would take a group above from cannot be put back there (R156)")
-    void theGroupBelowIsNotWrittenWhenTheMemberCannotBePutBackAbove() {
+    @DisplayName("a member who cannot be put back in a group above stays in the group below whose write would take her out; the group is written with LDAP's other changes (R156, batch 14 review round 1)")
+    void aMemberWhoCannotBePutBackAboveStaysInTheGroupBelow() {
         user(ALICE, "alice");
         user(BOB, "bob");
         user(DAVE, "dave");
-        // p nests m, m nests g: the group whose write would take p from alice is two levels down.
+        user("uid=frank,ou=users,dc=example,dc=com", "frank");
+        // p nests m, m nests g: the group whose write would take p from alice is two levels down. LDAP adds frank to g.
         group(P_DN, "p", ALICE, CONTRACTOR, M_DN);
         group(M_DN, "m", BOB, G_DN);
-        group(G_DN, "g", DAVE);
+        group(G_DN, "g", DAVE, "uid=frank,ou=users,dc=example,dc=com");
         stored("p", List.of(), List.of(PREFIX + "m"));
         stored("m", List.of("bob"), List.of(PREFIX + "g"));
         stored("g", List.of("alice", "dave"), List.of());
@@ -2227,10 +2249,10 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
         DirectorySyncResult result = sync.syncGroups(REPO, false);
 
-        assertEquals(List.of("alice", "dave"), persisted.get(PREFIX + "g").getUsers(),
-                "g was written without alice, who could not be put back in p: she lost p");
-        assertTrue(errors(result).contains(PREFIX + "g: group " + PREFIX + "g: writing LDAP's members would take"),
-                "the group not written was not reported: " + errors(result));
+        assertEquals(Set.of("alice", "dave", "frank"), new HashSet<>(persisted.get(PREFIX + "g").getUsers()),
+                "alice, who could not be put back in p, was taken out of g — or g was not written with frank");
+        assertTrue(warningsOf(result, "g").contains("kept this sync"), "alice kept in g was not said: " + warnings(result));
+        assertTrue(!errors(result).contains(PREFIX + "g: "), "g was refused: " + errors(result));
     }
 
     @Test
@@ -2257,13 +2279,13 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     }
 
     @Test
-    @DisplayName("a nesting is kept for a member a group above may name who loses it through that nesting and through a write below together (batch 14)")
-    void aNestingIsKeptForAMemberWhoLosesTheGroupThroughItAndAWriteBelow() {
+    @DisplayName("a member kept in the group below that would take her out reaches the group above through it: the nesting LDAP took out elsewhere is removed (batch 14 review round 1)")
+    void aMemberKeptInTheGroupBelowNeedsNoNestingKept() {
         user(ALICE, "alice");
         user(BOB, "bob");
         user(DAVE, "dave");
         // u came back in ranges: whom it names is not known. alice reaches u through m twice — through g1, which LDAP
-        // took out of m, and through g2, which LDAP keeps in m but no longer names her in. Either alone leaves her u.
+        // took out of m, and through g2, which LDAP keeps in m but no longer names her in. She stays in g2, so g1 goes.
         ranged(U_DN, "u");
         group(M_DN, "m", BOB, G2_DN);
         group(G1_DN, "g1", ALICE);
@@ -2275,9 +2297,167 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
 
         sync.syncGroups(REPO, false);
 
-        assertEquals(List.of("dave"), persisted.get(PREFIX + "g2").getUsers());
-        assertTrue(persisted.get(PREFIX + "m").getGroups().contains(PREFIX + "g1"),
-                "g1 was taken out of m because alice still reached u through g2 — which was then written without her");
+        assertEquals(Set.of("alice", "dave"), new HashSet<>(persisted.get(PREFIX + "g2").getUsers()),
+                "alice, whom u may name, was taken out of g2: she lost u");
+        assertEquals(List.of(PREFIX + "g2"), persisted.get(PREFIX + "m").getGroups(),
+                "g1 was kept in m, though alice still reaches u through g2");
+    }
+
+    @Test
+    @DisplayName("a group with a nesting kept for a group above is written with LDAP's other changes, not refused (batch 14 review round 1: subagent P2)")
+    void aGroupWithAKeptNestingIsWrittenWithLdapsOtherChanges() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        user("uid=eve,ou=users,dc=example,dc=com", "eve");
+        // LDAP: all nests dept and has a value outside the searches, which may name anyone; dept names bob and dave now —
+        // LDAP took eve out of it, added dave, and no longer nests team, where alice is. Both may be named in all.
+        group("cn=all,ou=groups,dc=example,dc=com", "all", CONTRACTOR, "cn=dept,ou=groups,dc=example,dc=com");
+        group("cn=dept,ou=groups,dc=example,dc=com", "dept", BOB, DAVE);
+        local("team", List.of("alice"), List.of());
+        stored("all", List.of(), List.of(PREFIX + "dept"));
+        stored("dept", List.of("eve", "bob"), List.of("team"));
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertEquals(Set.of("bob", "dave", "eve"), new HashSet<>(persisted.get(PREFIX + "dept").getUsers()),
+                "dept was not written with dave, whom LDAP adds — or eve, whom all may name, was taken out");
+        assertEquals(List.of("team"), persisted.get(PREFIX + "dept").getGroups(),
+                "team was taken out of dept, though all may name alice through it");
+        assertTrue(!errors(result).contains(PREFIX + "dept: "), "dept was refused: " + errors(result));
+        assertTrue(updatesOf("dept").stream().allMatch(g -> g.getGroups().contains("team")),
+                "team was taken out of dept before the loop wrote it back: alice was without all in between");
+    }
+
+    @Test
+    @DisplayName("the groups below a nesting kept in a group the loop writes gain no one, though they are written after it (R151, batch 14 review round 1)")
+    void aGroupBelowANestingKeptInAGroupWrittenFirstGainsNoOne() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        user("uid=eve,ou=users,dc=example,dc=com", "eve");
+        // LDAP: all nests dept and has a value outside the searches, which may name alice; dept names bob and dave — LDAP
+        // added dave — and no longer nests team, where alice is, so dept keeps team, and is written before it; team names
+        // alice and eve, whom LDAP adds.
+        group("cn=all,ou=groups,dc=example,dc=com", "all", CONTRACTOR, "cn=dept,ou=groups,dc=example,dc=com");
+        group("cn=dept,ou=groups,dc=example,dc=com", "dept", BOB, DAVE);
+        group("cn=team,ou=groups,dc=example,dc=com", "team", ALICE, "uid=eve,ou=users,dc=example,dc=com");
+        stored("all", List.of(), List.of(PREFIX + "dept"));
+        stored("dept", List.of("bob"), List.of(PREFIX + "team"));
+        stored("team", List.of("alice"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(Set.of("bob", "dave"), new HashSet<>(persisted.get(PREFIX + "dept").getUsers()), "dept was not written");
+        assertEquals(List.of(PREFIX + "team"), persisted.get(PREFIX + "dept").getGroups(), "team was taken out of dept");
+        assertTrue(!persisted.get(PREFIX + "team").getUsers().contains("eve"),
+                "team gained eve through the nesting dept keeps, though LDAP does not name her in dept: she gains dept and all");
+    }
+
+    @Test
+    @DisplayName("a nesting LDAP took out is removed where the member a group above may name still reaches it another way (batch 14 review round 1: subagent P3)")
+    void aNestingIsRemovedWhereTheMemberStillReachesTheGroupAboveAnotherWay() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        // LDAP: u nests m and has a value outside the searches; m names bob, nests g, and no longer nests x; x nests g;
+        // g names dave alone now. alice stays in g — and reaches u through m and g whatever becomes of x.
+        group(U_DN, "u", CONTRACTOR, M_DN);
+        group(M_DN, "m", BOB, G_DN);
+        group(X_DN, "x", G_DN);
+        group(G_DN, "g", DAVE);
+        stored("u", List.of(), List.of(PREFIX + "m"));
+        stored("m", List.of("bob"), List.of(PREFIX + "x", PREFIX + "g"));
+        stored("x", List.of(), List.of(PREFIX + "g"));
+        stored("g", List.of("alice", "dave"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(List.of(PREFIX + "g"), persisted.get(PREFIX + "m").getGroups(),
+                "x was kept in m, though alice reaches u through g either way");
+        assertTrue(persisted.get(PREFIX + "g").getUsers().contains("alice"), "alice, whom u may name, was taken out of g");
+    }
+
+    @Test
+    @DisplayName("a member a group may still name through a group it nests stays in it when LDAP takes her out of its direct members (batch 14 review round 1)")
+    void aMemberTheGroupMayStillNameThroughAGroupItNestsStaysInIt() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        // LDAP: g names dave and nests h, and no longer names alice; h names bob and a value outside the searches, which
+        // may name alice — so g may still name her through h.
+        group(G_DN, "g", DAVE, H_DN);
+        group(H_DN, "h", BOB, CONTRACTOR);
+        stored("g", List.of("alice", "dave"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "g").getUsers().contains("alice"),
+                "alice, whom g may still name through h, was taken out of g");
+        assertTrue(errors(result).contains(PREFIX + "g: group " + PREFIX + "g: whom LDAP names in the group is not all known"),
+                "the change not made for alice was not reported: " + errors(result));
+    }
+
+    @Test
+    @DisplayName("only the orphan a member LDAP may name reaches the group above through is kept; the other is deleted (batch 14 review round 1: subagent P3)")
+    void onlyTheOrphanThatCarriesAMemberLdapMayNameIsKept() {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // LDAP: p names alice and has a value outside the searches, which may name bob. NemakiWare's p nests the orphans
+        // o1, where bob is, and o2, where alice is — she is put back in p, so o2 can go.
+        group(P_DN, "p", ALICE, CONTRACTOR);
+        stored("p", List.of(), List.of(PREFIX + "o1", PREFIX + "o2"));
+        stored("o1", List.of("bob"), List.of());
+        stored("o2", List.of("alice"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).deleteGroup(REPO, PREFIX + "o1");
+        verify(contentService).deleteGroup(REPO, PREFIX + "o2");
+        assertTrue(persisted.get(PREFIX + "p").getUsers().contains("alice"), "alice was not put back in p");
+    }
+
+    @Test
+    @DisplayName("a group keeping a member LDAP took out is not newly nested — the new group would give her its permissions (R149, batch 14 review round 1)")
+    void aGroupKeepingAMemberLdapTookOutIsNotNewlyNested() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        user(DAVE, "dave");
+        // LDAP: p nests g and has a value outside the searches, which may name bob; g names dave alone now, so bob stays in
+        // g. q is a new group that nests g.
+        group(P_DN, "p", CONTRACTOR, G_DN);
+        group(G_DN, "g", DAVE);
+        group("cn=q,ou=groups,dc=example,dc=com", "q", ALICE, G_DN);
+        stored("p", List.of(), List.of(PREFIX + "g"));
+        stored("g", List.of("bob", "dave"), List.of());
+
+        sync.syncGroups(REPO, false);
+
+        assertTrue(persisted.get(PREFIX + "g").getUsers().contains("bob"), "bob, whom p may name, was taken out of g");
+        assertTrue(!the(creates(), "q").getGroups().contains(PREFIX + "g"),
+                "q nests g, which keeps bob though LDAP took him out of it: he gains q");
+    }
+
+    @Test
+    @DisplayName("a group keeping a nesting LDAP took out is not newly nested — the new group would give whom it reaches through it its permissions (R149, batch 14 review round 1)")
+    void aGroupKeepingANestingLdapTookOutIsNotNewlyNested() {
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // LDAP: all nests dept and has a value outside the searches, which may name alice; dept names bob and no longer
+        // nests team, where alice is — so dept keeps team. q is a new group that nests dept.
+        group("cn=all,ou=groups,dc=example,dc=com", "all", CONTRACTOR, "cn=dept,ou=groups,dc=example,dc=com");
+        group("cn=dept,ou=groups,dc=example,dc=com", "dept", BOB);
+        group("cn=q,ou=groups,dc=example,dc=com", "q", BOB, "cn=dept,ou=groups,dc=example,dc=com");
+        local("team", List.of("alice"), List.of());
+        stored("all", List.of(), List.of(PREFIX + "dept"));
+        stored("dept", List.of("bob"), List.of("team"));
+
+        sync.syncGroups(REPO, false);
+
+        assertEquals(List.of("team"), persisted.get(PREFIX + "dept").getGroups(), "team was taken out of dept");
+        assertTrue(!the(creates(), "q").getGroups().contains(PREFIX + "dept"),
+                "q nests dept, which keeps team though LDAP took it out: alice gains q");
     }
 
     @Test
@@ -2307,10 +2487,13 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     void aMemberOfAGroupNotWrittenIsNotPutBackAbove() {
         user(ALICE, "alice");
         user(DAVE, "dave");
-        // LDAP: p names alice and nests g; g names dave; both have a value outside the searches, so neither is written —
-        // g keeps alice, whom it has from before.
+        user(BOB, "bob");
+        when(contentService.getUserItemById(REPO, "bob")).thenThrow(new IllegalStateException("store down"));
+        // LDAP: p names alice, nests g, and has a value outside the searches, so p is not written; g names dave and bob,
+        // whose own sync failed, so g is not written either — g keeps alice, whom it has from before. g cannot name her
+        // (batch 14 review round 1: with a value outside the searches, g's own hold kept her, and decided the lock).
         group(P_DN, "p", ALICE, G_DN, CONTRACTOR);
-        group(G_DN, "g", DAVE, "uid=y,ou=contractors,dc=example,dc=com");
+        group(G_DN, "g", DAVE, BOB);
         stored("p", List.of(), List.of(PREFIX + "g"));
         stored("g", List.of("alice", "dave"), List.of());
 
@@ -2476,6 +2659,10 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         assertTrue(result.getStatus() != SyncStatus.FAILED, "the sync failed on the cycle: " + errors(result));
         assertEquals(List.of("alice"), persisted.get(PREFIX + "d").getUsers(), "alice, whom LDAP names in d through cb and ca, lost d");
         assertEquals(List.of("bob"), persisted.get(PREFIX + "e").getUsers(), "bob, whom LDAP names in e through ca and cb, lost e");
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "d").equals(e.getGroupId())),
+                "d was reported as not all known, though LDAP names alice and bob in it surely, through the cycle: " + errors(result));
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "e").equals(e.getGroupId())),
+                "e was reported as not all known, though LDAP names alice and bob in it surely, through the cycle: " + errors(result));
     }
 
     @Test
@@ -2531,11 +2718,13 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         stored("z", List.of("bob"), List.of("y"));
         failFirstWrites("z", 2);
 
-        sync.syncGroups(REPO, false);
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
 
         assertEquals(List.of(), persisted.get(PREFIX + "z").getGroups());
         assertEquals(List.of("alice"), persisted.get(PREFIX + "a").getUsers(),
                 "alice, whom LDAP names in a through j, was dropped from a as if z — written without y — still took her there");
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "a").equals(e.getGroupId())),
+                "a was reported as not all known, though LDAP names alice in it surely, through j: " + errors(result));
     }
 
     @Test
@@ -2551,10 +2740,12 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
         stored("a", List.of("alice"), List.of(PREFIX + "z"));
         stored("z", List.of("bob"), List.of());
 
-        sync.syncGroups(REPO, false);
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
 
         assertEquals(List.of("alice"), persisted.get(PREFIX + "a").getUsers(),
                 "alice, whom LDAP names in a through z and j, lost a when z's entry was written without j");
+        assertTrue(result.getErrors().stream().noneMatch(e -> (PREFIX + "a").equals(e.getGroupId())),
+                "a was reported as not all known, though LDAP names alice in it surely, through z and j: " + errors(result));
     }
 
     @Test
