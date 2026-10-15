@@ -167,100 +167,62 @@ jobs:
           mvn clean install -N -DskipTests -q
           mvn clean install -f common/pom.xml -DskipTests -q
           mvn clean install -f cloudant-init/pom.xml -DskipTests -q
-      # A shell step, not a Java test. Every Java version of this check has been
-      # self-referential: remove a class from the list below and the test that would have
-      # complained is the one that no longer runs. This step runs whatever the list says.
-      # It does NOT protect against deleting the step itself — that is visible in the diff
-      # and is where review has to do the work.
-      - name: The list below covers this batch's locks
+      # A shell step, not a Java test. Every Java version of this check was self-referential:
+      # remove a class from the list and the test that would have complained is the one that no
+      # longer runs. It used to assert that a hand-written list of locks was a subset of a
+      # hand-written -Dtest allow-list. The allow-list is gone (the job runs the whole suite by
+      # exclusion), so the thing to guard is the opposite: that nobody quietly brings it back.
+      #
+      # It does NOT protect against deleting the step itself — that is visible in the diff and is
+      # where review has to do the work.
+      - name: The unit job runs the whole suite, not a chosen list
         run: |
           set -eu
-          # Scoped to THIS job by name, not by position. `head -1` took the file's first
-          # -Dtest= and called it "the unit list"; a job inserted above would have replaced the
-          # thing being checked while the message kept saying unit (review). The sed range ends
-          # at the next two-space key, which is where the next job starts.
-          # Anchored to the start of a line so this step's own pattern — which contains the
-          # same text — is not what gets read. Measured: the first draft matched itself.
+          # Scoped to THIS job by name, not by position (a job inserted above used to be read
+          # instead). The sed range ends at the next two-space key, where the next job starts.
+          # Anchored to the start of a line so this step's own text is not what gets read.
           LIST=$(sed -n '/^  unit-tests:/,/^  [a-z]/p' .github/workflows/integration-tests.yml \
                  | grep -oE "^ +-Dtest='[^']*'" | head -1)
           if [ -z "$LIST" ]; then
             echo "::error::no -Dtest list found inside the unit-tests job"; exit 1
           fi
-          # Exact CSV membership, not a substring: *"$lock"* was satisfied by
-          # CanonicalImportServiceTestDisabled, and by Surefire's own !Name exclusion syntax
-          # (the name is in the list and the class does not run). Review found both.
           NAMES=$(printf '%s' "$LIST" | sed "s/^ *-Dtest='//; s/'$//")
-          # Held in one variable so the closing message can COUNT it. The message said "all
-          # five" while the list had grown to seven — a hand-written number beside a
-          # hand-written list, which is the same shape that went stale in the readiness
-          # document and in the control ledger.
-          LOCKS="EverySupportedCouchDbIsMeasuredTest
-                 APartialRunIsNotRecordedAsCompleteTest
-                 NotionPartialReadsAreNotCompleteTest
-                 NoJavadocIsOrphanedTest
-                 CanonicalImportServiceTest
-                 TheSipLayoutIsWhereCommonsIpPutsItTest
-                 EvidenceProfileV1VectorsTest
-                 ReleaseReadinessIsMeasuredTest
-                 E1LeavesNoSilentGapTest
-                 ObservedIsNotCapturedTest
-                 NotAskedIsNotAskedAndAnsweredNothingTest
-                 NoForbiddenClaimShipsTest
-                 EveryStageIsListedTest
-                 ItReportsItDoesNotRenewTest
-                 WhichProfilesCanPassIsMeasuredTest
-                 TheRequirementMatrixIsHonestTest
-                 TheBundleIsFixedBeforeTheWriteTest
-                 TheStatementViewIsInTheOnePutTest
-                 TheAssemblerReadsOncePerPackageTest
-                 AssuranceIsCheckedBeforeAnythingIsWrittenTest
-                 OsvCheckDoesNotReadSilenceAsCleanTest
-                 TheScanSettingsAreReadAsWrittenTest
-                 TheReleaseSbomIsOfItsOwnTreeTest
-                 CmisProductVersionIsTheBuildVersionTest
-                 TheSipNamesTheBuildThatWroteItTest
-                 TheAtomFeedNamesTheBuildVersionTest
-                 TheUiNamesTheBuildVersionTest
-                 PrincipalBatchResourceTest
-                 AnchorControllerTest
-                 AnchorServiceTest
-                 AnchorSchedulerTest
-                 ProtectedPrincipalsAreNeverDeletedOrDemotedTest
-                 EveryUserEndpointRefusesProtectedPrincipalsTest
-                 CmisDeleteObjectDeletesAUserAsAUserTest
-                 CloudDirectorySyncDeletesThroughTheCanonicalPathTest
-                 JerseyDeletesAnswerARefusalAsARefusalTest
-                 GroupListsReadTheEmittedDocumentsTest
-                 DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest
-                 LdapMemberResolverTest
-                 TheConnectorKeepsMemberValuesAsReturnedTest
-                 DirectorySyncWritesOnlyTheMembersItCanNameTest
-                 MembershipWritesStampTheGroupTest"
-          for lock in $LOCKS; do
-            if ! printf '%s' "$NAMES" | tr ',' '\n' | grep -qx "$lock"; then
-              echo "::error::$lock is not named in the unit -Dtest list, so nothing in it runs here"
-              exit 1
-            fi
-            # Named is not the same as present. A renamed or deleted class leaves the name in
-            # the list and Surefire does not fail unless NONE of the named classes resolve.
-            FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
-            if [ -z "$FILE" ]; then
-              echo "::error::$lock is named in the list but no such test class exists"
-              exit 1
-            fi
-            # A third way to be named and not run, and the shortest way to silence a lock that
-            # has gone red: @Disabled on the class. Surefire reports zero tests and stays green.
-            if grep -qE '^@Disabled' "$FILE"; then
-              echo "::error::$lock is named in the list but the class is @Disabled"
-              exit 1
-            fi
+          # Every entry must be an exclusion. One bare class name means someone narrowed the job
+          # back to a chosen set, which is how the locks added with a batch stopped running here.
+          printf '%s' "$NAMES" | tr ',' '\n' | while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            case "$entry" in
+              !*) ;;
+              *) echo "::error::the unit job names a class to RUN ($entry). This job must run the"
+                 echo "::error::whole suite by exclusion, so a lock added with a batch runs without"
+                 echo "::error::being listed. Exclude what cannot run here; do not allow-list."
+                 exit 1 ;;
+            esac
           done
-          echo "the unit list names all $(printf '%s\n' $LOCKS | wc -l | tr -d ' ') locks, and each one exists"
+          echo "the unit job runs the whole suite; exclusions only: $NAMES"
 
       - name: Run unit tests
         run: |
+          # THE WHOLE SUITE, by exclusion. This was a positive allow-list of ~125 class names out of
+          # 637, so a lock added with a batch did not run here until someone remembered to add its
+          # name — and the locks this release added for the authentication fixes were not in it
+          # (external review T1, and our own review raised the same gap). An exclusion list cannot
+          # go stale that way: a new test class runs unless it is named here.
+          #
+          # What is excluded and why:
+          #   MultiThreadTest, InheritedFlagTest  — run in the integration jobs below, against a server
+          #   *IT, jp.aegif.nemaki.cmis.tck.**    — integration / TCK, need a running stack
+          #   AtlasManualDataLoader               — a manual data loader, not a test
+          # This is the same list the release gate runs locally (CLAUDE.md).
+          #
+          # NOTE, unverified until this job first runs: on macOS + JDK 21 the local gate sees one
+          # error — LineageBarrierTest$FrozenFormulas gets UnmeasurableException because that
+          # platform has no SecureDirectoryStream. This runner is Linux, where that API exists, so it
+          # is expected to pass here; if it does not, exclude that one nested class with a comment
+          # saying so rather than returning to an allow-list.
           mvn test \
-            -Dtest='ResourceBaseCsrfProtectionTest,CanonicalImportServiceTest,WebhookServiceTest,WebhookConfigTest,WebhookConfigParserTest,WebhookDeliveryServiceTest,HttpWebhookDispatcherTest,WebhookEventMatcherTest,ChildEventBatchProcessorTest,LiteralTypeValidatorTest,SolrPredicateWalkerMultilingualTest,SolrQueryProcessorScanCapTest,SolrQueryProcessorAclFilterTest,SolrUtilRelationshipReadersTest,ACLExpanderTest,PrincipalServiceImplCycleTest,SearchIndexReconciliationSchedulerTest,SearchIndexReconciliationFenceGuardTest,RAGIndexingServiceImplPwcTest,RAGIndexingServiceImplAclUpdateTest,AclEpochCounterServiceTest,Patch_AclEpochCounterTest,AclEpochStateTest,AclSemanticsGoldenTest,AclSemanticsCrossPathReportTest,AclSemanticsResolveAclIsRequiredTest,AclEffectiveEpochReadersProjectionTest,ContentWriterFenceTest,SolrUtilReadersFailureTest,CsrfValidatorBrowserBindingTest,NavigationPaginationTest,FilesystemImporterTest,ImportExportResourceTest,SlackConnectorAdapterTest,TeamsConnectorAdapterTest,ChatworkConnectorAdapterTest,MattermostConnectorAdapterTest,NotionConnectorAdapterTest,SalesforceConnectorAdapterTest,BoxDropboxAdapterTest,EverySupportedCouchDbIsMeasuredTest,APartialRunIsNotRecordedAsCompleteTest,NotionPartialReadsAreNotCompleteTest,NoJavadocIsOrphanedTest,TheSipLayoutIsWhereCommonsIpPutsItTest,EvidenceProfileV1VectorsTest,ReleaseReadinessIsMeasuredTest,E1LeavesNoSilentGapTest,ObservedIsNotCapturedTest,NotAskedIsNotAskedAndAnsweredNothingTest,NoForbiddenClaimShipsTest,EveryStageIsListedTest,ItReportsItDoesNotRenewTest,WhichProfilesCanPassIsMeasuredTest,TheRequirementMatrixIsHonestTest,TheBundleIsFixedBeforeTheWriteTest,TheStatementViewIsInTheOnePutTest,TheAssemblerReadsOncePerPackageTest,AssuranceIsCheckedBeforeAnythingIsWrittenTest,OsvCheckDoesNotReadSilenceAsCleanTest,TheScanSettingsAreReadAsWrittenTest,TheReleaseSbomIsOfItsOwnTreeTest,CmisProductVersionIsTheBuildVersionTest,TheSipNamesTheBuildThatWroteItTest,TheAtomFeedNamesTheBuildVersionTest,TheUiNamesTheBuildVersionTest,PrincipalBatchResourceTest,AnchorControllerTest,AnchorServiceTest,AnchorSchedulerTest,ProtectedPrincipalsAreNeverDeletedOrDemotedTest,EveryUserEndpointRefusesProtectedPrincipalsTest,CmisDeleteObjectDeletesAUserAsAUserTest,CloudDirectorySyncDeletesThroughTheCanonicalPathTest,JerseyDeletesAnswerARefusalAsARefusalTest,GroupListsReadTheEmittedDocumentsTest,DirectorySyncKeepsTheNestedGroupsItDoesNotSyncTest,LdapMemberResolverTest,TheConnectorKeepsMemberValuesAsReturnedTest,DirectorySyncWritesOnlyTheMembersItCanNameTest,MembershipWritesStampTheGroupTest' \
+            -Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader' \
+            -Dsurefire.failIfNoSpecifiedTests=false \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a

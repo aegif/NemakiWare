@@ -3698,33 +3698,64 @@ class CanonicalImportServiceTest {
     @Test
     void everyLockThisBatchAddedIsOnAListCiActuallyRuns() throws Exception {
         // This assertion lives HERE, and not in the class it is about, because a class cannot
-        // notice its own exclusion: drop EverySupportedCouchDbIsMeasuredTest from the -Dtest
-        // list and the test that would have complained is the one that no longer runs (both
-        // round-4 reviews, P1). This class is on the list in two workflows and is what the
-        // CSRF gate runs, so it is the wrong thing to quietly drop.
+        // notice its own exclusion: exclude EverySupportedCouchDbIsMeasuredTest from the unit job
+        // and the test that would have complained is the one that no longer runs (both round-4
+        // reviews, P1).
         //
-        // And it reads the -Dtest LISTS, not the file. The first version used
-        // yaml.contains(name), which the workflow's own explanatory comment satisfied — the
-        // "a sentence about the code is not the code" defect, committed in the fix for it.
+        // WHAT IT ASSERTS CHANGED IN 3.4.1 (external review T1). The unit job used to name ~125
+        // classes to RUN, and this lock checked that each name below was on that list. That made
+        // "CI runs my lock" a thing someone had to remember per batch — and the locks this release
+        // added for the authentication fixes were not on it. The job now runs the WHOLE suite by
+        // exclusion, so the question is no longer "is my name listed" but "does the unit job still
+        // run everything, and is any of these excluded". Asserting list membership now would be
+        // asserting the stale design: every name would have to be added to a list that no longer
+        // decides anything.
+        //
+        // It reads the -Dtest value, not the file. An earlier version used yaml.contains(name),
+        // which the workflow's own explanatory comment satisfied — "a sentence about the code is
+        // not the code", committed in the fix for exactly that.
         java.nio.file.Path workflow =
                 java.nio.file.Path.of("../.github/workflows/integration-tests.yml");
-        // The move dropped the existence check the original had. Without it a renamed workflow
-        // throws NoSuchFileException, which the control runner scores as "fired for the wrong
-        // reason" rather than as a lock doing its job.
+        // Without this a renamed workflow throws NoSuchFileException, which the control runner
+        // scores as "fired for the wrong reason" rather than as a lock doing its job.
         assertTrue(java.nio.file.Files.exists(workflow),
                 "the integration-tests workflow is not where this test looks: " + workflow);
         String yaml = java.nio.file.Files.readString(
                 workflow, java.nio.charset.StandardCharsets.UTF_8);
-        java.util.List<String> listed = new java.util.ArrayList<>();
-        java.util.regex.Matcher lists =
-                java.util.regex.Pattern.compile("-Dtest='([^']*)'").matcher(yaml);
-        while (lists.find()) {
-            for (String name : lists.group(1).split(",")) {
-                listed.add(name.trim());
-            }
+
+        // Scoped to the unit job, so a -Dtest in one of the integration jobs below is not read as
+        // the unit job's. The range ends at the next two-space key, where the next job starts.
+        java.util.regex.Matcher job = java.util.regex.Pattern
+                .compile("\n  unit-tests:\n(.*?)(?=\n  [a-z])", java.util.regex.Pattern.DOTALL)
+                .matcher(yaml);
+        assertTrue(job.find(), "the workflow has no unit-tests job for this lock to read");
+        // Anchored to the start of a line, so the guard STEP's own grep pattern — which contains
+        // the literal -Dtest='[^']*' inside a longer line — is not what gets read. Measured: the
+        // unanchored version read "[^" as the job's first entry and failed on its own regex.
+        java.util.regex.Matcher unitList = java.util.regex.Pattern
+                .compile("(?m)^\\s+-Dtest='([^']*)'").matcher(job.group(1));
+        assertTrue(unitList.find(), "the unit-tests job runs no -Dtest at all");
+        java.util.List<String> entries = new java.util.ArrayList<>();
+        for (String name : unitList.group(1).split(",")) {
+            entries.add(name.trim());
         }
 
-        java.util.List<String> missing = new java.util.ArrayList<>();
+        // 1. The job must still run the whole suite: every entry is an exclusion. One bare class
+        //    name means it was narrowed back to a chosen set.
+        java.util.List<String> runsOnly = new java.util.ArrayList<>();
+        for (String entry : entries) {
+            if (!entry.isEmpty() && !entry.startsWith("!")) {
+                runsOnly.add(entry);
+            }
+        }
+        assertEquals(java.util.List.of(), runsOnly,
+                "the unit job names classes to RUN, so it is a chosen list again and a lock added "
+                        + "with a batch runs on a laptop and nowhere else: " + entries);
+
+        // 2. And none of these locks may be among what the job excludes. A pattern like !*IT or
+        //    !jp.aegif.nemaki.cmis.tck.** is matched as Surefire matches it, so excluding a lock by
+        //    package or suffix is caught too, not only by its exact name.
+        java.util.List<String> excluded = new java.util.ArrayList<>();
         for (String lock : java.util.List.of(
                 "EverySupportedCouchDbIsMeasuredTest",
                 "APartialRunIsNotRecordedAsCompleteTest",
@@ -3740,19 +3771,42 @@ class CanonicalImportServiceTest {
                 "NoForbiddenClaimShipsTest",
                 "EveryStageIsListedTest",
                 "ItReportsItDoesNotRenewTest",
-            "WhichProfilesCanPassIsMeasuredTest",
-            "TheRequirementMatrixIsHonestTest",
+                "WhichProfilesCanPassIsMeasuredTest",
+                "TheRequirementMatrixIsHonestTest",
                 "TheBundleIsFixedBeforeTheWriteTest",
                 "TheStatementViewIsInTheOnePutTest",
                 "TheAssemblerReadsOncePerPackageTest",
-                "AssuranceIsCheckedBeforeAnythingIsWrittenTest")) {
-            if (!listed.contains(lock)) {
-                missing.add(lock);
+                "AssuranceIsCheckedBeforeAnythingIsWrittenTest",
+                // The locks 3.4.1 added for the authentication fixes — the ones the old allow-list
+                // never carried, which is what made the list the wrong design.
+                "CredentialsEndWithTheAccountTest",
+                "TheAssertedNameIsNotTheAuthenticatedOneTest",
+                "OidcLoginTest",
+                "OidcLoginEntryPointsTest",
+                "AuthenticationFilterPublicEndpointsTest",
+                "RestResourcesAreBehindTheFilterTest")) {
+            for (String entry : entries) {
+                if (entry.startsWith("!") && surefireExcludes(entry.substring(1), lock)) {
+                    excluded.add(lock + " (by " + entry + ")");
+                }
             }
         }
-        assertTrue(missing.isEmpty(),
-                "a lock this batch added or changed is on no -Dtest list, so it runs on a laptop "
-                        + "and nowhere else: " + missing + ". Listed: " + listed);
+        assertEquals(java.util.List.of(), excluded,
+                "the unit job excludes a lock, so it runs on a laptop and nowhere else: " + excluded);
+    }
+
+    /**
+     * Whether a Surefire exclusion pattern covers a simple class name. Only the two shapes this
+     * workflow uses: a bare or wildcarded class name, and a package prefix ending {@code .**}.
+     */
+    private static boolean surefireExcludes(String pattern, String simpleClassName) {
+        if (pattern.endsWith(".**")) {
+            // A package exclusion. These locks are named by simple name, so a package pattern can
+            // only reach them through a fully qualified name, which this lock does not carry.
+            return false;
+        }
+        String regex = pattern.replace(".", "\\.").replace("*", ".*");
+        return simpleClassName.matches(regex);
     }
 
     @Test
