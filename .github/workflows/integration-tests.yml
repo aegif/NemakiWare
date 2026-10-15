@@ -259,9 +259,14 @@ jobs:
           # platform has no SecureDirectoryStream. This runner is Linux, where that API exists, so it
           # is expected to pass here; if it does not, exclude that one nested class with a comment
           # saying so rather than returning to an allow-list.
+          # failure.ignore=false explicitly: with it true, Maven exits 0 even when locks go red, and every
+          # guard in this job still passes — the exact -Dtest list, the classes exist, none is @Disabled,
+          # and 8,147 tests "ran" (round-4 review, P1). Stating it here means turning it on is an edit to
+          # this line, in the diff.
           mvn test \
             -Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader' \
             -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dmaven.test.failure.ignore=false \
             -f core/pom.xml -Pdevelopment,opencmis-github-packages
       # Zero tests is not a pass. failIfNoSpecifiedTests=false (above) is there so an exclusion-only
       # -Dtest does not fail the plugin, but it also means a selection that matches NOTHING succeeds.
@@ -276,6 +281,16 @@ jobs:
           fi
           RAN=$(grep -ho 'tests="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
                 | grep -oE '[0-9]+' | awk '{n+=$1} END {print n+0}')
+          # Read the outcome too, not only the count. Counting alone passed a run where every lock was red
+          # and Maven had been told to ignore that (round-4 review, P1): 8,147 tests "ran" and the step was
+          # happy. This is independent of Maven's exit code on purpose.
+          BAD=$(grep -ho -E '(failures|errors)="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
+                | grep -oE '[0-9]+' | awk '{n+=$1} END {print n+0}')
+          if [ "$BAD" -ne 0 ]; then
+            echo "::error::$BAD unit test failures/errors are recorded in the surefire reports."
+            echo "::error::If the build still succeeded, something is ignoring test failures."
+            exit 1
+          fi
           # A FLOOR, far below the real total (8,140 at 3.4.1) and far above zero. It is not the total:
           # a figure that has to be bumped with every added test is a figure that goes stale, and the
           # readiness document is where the real count is recorded and locked.
