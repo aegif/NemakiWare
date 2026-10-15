@@ -313,6 +313,25 @@ public class OidcLoginEntryPointsTest {
     }
 
     @Test
+    @DisplayName("REST and API v1: a disabled account is refused and is NOT bound to the token's subject — \"cloud,disabled\" used to be eligible, and the binding was written before the refusal (batch 18 review round 1: subagent P1)")
+    void aDisabledAccountIsNeitherLoggedIntoNorBound() throws Exception {
+        UserItem held = account("eve", "cloud,disabled", null);
+        when(contentService.getUserItemById("bedroom", "eve")).thenReturn(held);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("eve", "sub-eve") + "\"}");
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("eve", "sub-eve")));
+
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        assertTrue(apiV1.startsWith("refused: "), apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+        // The harm was the binding, not the login: it was persisted before the method gate refused, so re-enabling
+        // the account later let that subject in. Nothing may be written for a disabled account.
+        verify(contentService, never()).applyUserUpdate(any(), any(), any());
+        assertTrue(held.getSubTypeProperties().stream().noneMatch(pr -> "nemaki:oidcSubject".equals(pr.getKey())),
+                "a disabled account was bound to the token's OIDC subject");
+    }
+
+    @Test
     @DisplayName("REST and API v1: an account linked to one subject is not logged into with another's token of the same name (batch 16 review round 1)")
     void anAccountLinkedToAnotherSubjectIsNotLoggedInto() throws Exception {
         UserItem bob = account("bob", "cloud", issuer + " sub-bob");

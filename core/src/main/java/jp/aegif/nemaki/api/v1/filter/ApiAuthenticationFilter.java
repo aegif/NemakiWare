@@ -220,7 +220,11 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
                 return;
             }
         } else {
+            // Without the service nothing verified these credentials, and the CallContext written below is read as
+            // "who the request is" (3.4.1, zero-trust P0). Refuse rather than pass an unverified identity on.
             logger.warning("ApiAuthenticationFilter: AuthenticationService not available");
+            abortWithUnauthorized(requestContext, "Authentication service is not available.");
+            return;
         }
 
         // Check if user is admin

@@ -260,7 +260,7 @@ public class ApiKeyResource {
      * Get the authenticated username from the request.
      */
     private String getAuthenticatedUsername() {
-        // First try from CallContext (set by ApiAuthenticationFilter)
+        // The identity the authentication filter established (restAuthenticationFilter for /api/v1/cmis/*)
         Object callContextObj = httpRequest.getAttribute("CallContext");
         if (callContextObj instanceof org.apache.chemistry.opencmis.commons.server.CallContext) {
             org.apache.chemistry.opencmis.commons.server.CallContext callContext =
@@ -275,11 +275,8 @@ public class ApiKeyResource {
             return httpRequest.getUserPrincipal().getName();
         }
 
-        // Try to get from request attribute (set by authentication filter)
-        Object username = httpRequest.getAttribute("authenticatedUser");
-        if (username != null) {
-            return username.toString();
-        }
+        // There was a third arm here reading an "authenticatedUser" request attribute. Nothing in core ever wrote
+        // it, so it could only ever have carried an identity no one verified (3.4.1, batch 18 review round 1).
         return null;
     }
 

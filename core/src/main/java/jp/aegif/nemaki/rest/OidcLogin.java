@@ -239,6 +239,13 @@ public class OidcLogin {
 			return linked.equals(binding(outcome)) ? null : "the account is linked to another OIDC subject";
 		}
 		String methods = property(account, "nemaki:allowedAuthMethods");
+		// A disabled account is not eligible, whatever else the list says (3.4.1, batch 18 review round 1):
+		// "cloud,disabled" used to be read as eligible here, and the caller writes the nemaki:oidcSubject
+		// binding BEFORE the authentication-method gate refuses the login — so a disabled account was bound
+		// permanently to whoever presented a token for its name, and re-enabling it let them in.
+		if (jp.aegif.nemaki.util.AuthenticationUtil.isDisabledValue(methods)) {
+			return "the account is disabled";
+		}
 		if (methods != null) {
 			for (String method : methods.split(",")) {
 				if ("cloud".equalsIgnoreCase(method.trim())) {

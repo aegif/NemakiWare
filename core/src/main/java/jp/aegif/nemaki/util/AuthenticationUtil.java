@@ -109,8 +109,10 @@ public class AuthenticationUtil {
 	 * Whether an {@code nemaki:allowedAuthMethods} value disables the account: {@code disabled} anywhere in the
 	 * comma-separated list, in any case and with any surrounding blanks (3.4.1, batch 17 review round 1). A compound value
 	 * such as {@code password,disabled} is disabled too — the admin API stores any string, and it used to be read as a
-	 * list that allows passwords. Every reader of the value asks this, so the rule has one place: the login, the
-	 * credentials issued earlier ({@link #mayStillAct}), passkeys, and the password change.
+	 * list that allows passwords. The readers that ask this: the login ({@link #isAuthMethodAllowed}), the credentials
+	 * issued earlier ({@link #mayStillAct}), the passkey registration and authentication, the password change
+	 * ({@code UserItemResource.isPasswordAuthAllowed}) and the generic OIDC eligibility ({@code OidcLogin.refusal}).
+	 * The user interface still reads the value as one word — a compound value shows there as the raw string.
 	 */
 	public static boolean isDisabledValue(String allowedMethods) {
 		if (allowedMethods == null) {

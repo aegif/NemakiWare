@@ -485,9 +485,18 @@ public class WebAuthnResource extends ResourceBase {
 			// Check allowedAuthMethods before issuing token
 			// Passkey is an extension of password auth, so check for "password" permission
 			ContentDaoService dao = getContentDaoService();
-			if (dao != null) {
-				jp.aegif.nemaki.model.UserItem userItem = dao.getUserItemById(repositoryId, userId);
-				if (userItem != null) {
+			{
+				// The account must be readable and present: deleting a user does not delete the passkeys, so a
+				// deleted account's credential used to pass every check below and still be issued a token and a
+				// cookie (3.4.1, batch 18 review round 1). Unknown is not "no restriction".
+				jp.aegif.nemaki.model.UserItem userItem = dao == null ? null
+						: dao.getUserItemById(repositoryId, userId);
+				if (userItem == null) {
+					log.warn("WebAuthn authentication rejected: the account's state cannot be read for " + userId);
+					addErrMsg(errMsg, "authentication", "accountDisabled");
+					return makeResult(false, result, errMsg).toString();
+				}
+				{
 					String allowedAuthMethods = null;
 					for (jp.aegif.nemaki.model.Property p : userItem.getSubTypeProperties()) {
 						if ("nemaki:allowedAuthMethods".equals(p.getKey())) {

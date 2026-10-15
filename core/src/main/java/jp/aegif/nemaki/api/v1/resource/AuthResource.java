@@ -200,7 +200,7 @@ public class AuthResource {
         logger.info("API v1: Logout request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername(repositoryId);
+            String username = getAuthenticatedUsername();
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
             }
@@ -252,7 +252,7 @@ public class AuthResource {
         logger.info("API v1: Token refresh request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername(repositoryId);
+            String username = getAuthenticatedUsername();
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
             }
@@ -317,7 +317,7 @@ public class AuthResource {
         logger.info("API v1: Get current user request for repository " + repositoryId);
         
         try {
-            String username = getAuthenticatedUsername(repositoryId);
+            String username = getAuthenticatedUsername();
             if (username == null || "anonymous".equals(username)) {
                 throw ApiException.unauthorized("Not authenticated");
             }
@@ -479,8 +479,10 @@ public class AuthResource {
     }
     
     /**
-     * Who the request is authenticated as — the identity {@code ApiAuthenticationFilter} established and put in the
-     * {@code CallContext}, which is the only one that was verified (3.4.1, zero-trust P0).
+     * Who the request is authenticated as: the identity the authentication filter established and put in the
+     * {@code CallContext} (3.4.1, zero-trust P0). For {@code /api/v1/cmis/*} that filter is
+     * {@code rest.AuthenticationFilter} — {@code web.xml} maps this path tree to it, and the Jersey-side
+     * {@code ApiAuthenticationFilter} then skips because the context is already set.
      *
      * <p>This used to read the raw {@code Authorization} header instead, taking the name out of a {@code Basic} value
      * <em>without checking its password</em>. The filter authenticates a request by its {@code AUTH_TOKEN} / API key
@@ -488,8 +490,12 @@ public class AuthResource {
      * {@code Authorization: Basic admin:anything} and be read here as {@code admin} — {@code /token/refresh} then minted
      * an admin token (measured on a development server: a non-admin's token plus a bogus admin header returned a token
      * for {@code admin}). The name a caller asserts is not the name they authenticated as.
+     *
+     * <p>A container-authenticated {@code UserPrincipal} is honoured as a second arm. Nothing in this product sets one
+     * (no {@code request.login} and no request wrapper overrides it), so it is dormant here; it is kept so a deployment
+     * that puts container authentication in front of the application is not refused.
      */
-    private String getAuthenticatedUsername(String repositoryId) {
+    private String getAuthenticatedUsername() {
         Object callContextObj = httpRequest != null ? httpRequest.getAttribute("CallContext") : null;
         if (callContextObj instanceof org.apache.chemistry.opencmis.commons.server.CallContext callContext
                 && StringUtils.isNotBlank(callContext.getUsername())) {

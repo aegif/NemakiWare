@@ -344,9 +344,14 @@ public class AuthenticationFilter implements Filter {
 			}
 		}
 
-		//Add attributes to Jersey @Context parameter
+		// Add attributes to Jersey @Context parameter, but ONLY for a request that authenticated: resources read
+		// this attribute as "who the request is" (3.4.1, zero-trust P0), and a refused request used to leave a
+		// context carrying the name it merely asserted. The chain is not advanced unless auth is true, so nothing
+		// reads it today — this keeps that true if a later error page or async dispatch ever does.
 		//TODO hard-coded key
-		request.setAttribute("CallContext", ctxt);
+		if (auth) {
+			request.setAttribute("CallContext", ctxt);
+		}
 
 		return auth;
 	}

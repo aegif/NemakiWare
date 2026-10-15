@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -40,6 +43,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.core.Response;
 import jp.aegif.nemaki.api.v1.exception.ApiException;
 import jp.aegif.nemaki.api.v1.model.response.AuthResponse;
+import jp.aegif.nemaki.api.v1.model.response.UserResponse;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.factory.auth.Token;
 import jp.aegif.nemaki.cmis.factory.auth.TokenService;
@@ -48,7 +52,8 @@ import jp.aegif.nemaki.model.UserItem;
 /**
  * API v1 acts as the identity the filter authenticated, not as the one the request asserts (3.4.1, zero-trust P0).
  *
- * <p>{@code ApiAuthenticationFilter} authenticates a request by its {@code AUTH_TOKEN} or API key <em>before</em> it
+ * <p>The authentication filter — {@code rest.AuthenticationFilter}, which {@code web.xml} maps over
+ * {@code /api/v1/cmis/*} — authenticates a request by its {@code AUTH_TOKEN} or API key <em>before</em> it
  * looks at {@code Authorization}, and records who that is in the {@code CallContext}. The resource used to re-derive the
  * name from the raw {@code Authorization} header, taking it out of a {@code Basic} value without checking the password:
  * a caller holding any valid token of their own could add {@code Authorization: Basic admin:anything} and have
@@ -126,6 +131,37 @@ class TheAssertedNameIsNotTheAuthenticatedOneTest {
 
         Response response = assertDoesNotThrow(() -> resource.refreshToken(REPO));
         assertEquals("token-for-admin", tokenOf(response));
+    }
+
+    @Test
+    @DisplayName("a blank authenticated username is not an identity — nothing is minted for the empty account")
+    void aBlankAuthenticatedUsernameIsNotAnIdentity() {
+        authenticatedAs("", ASSERTS_ADMIN);
+
+        assertThrows(ApiException.class, () -> resource.refreshToken(REPO),
+                "a blank authenticated username was taken for an identity");
+
+        // Discriminating: a blank name must be refused AT the identity step. Letting it through and relying on the
+        // account lookup to come back empty is the same outcome by a sibling arm, and would leave this lock green.
+        verify(contentService, never()).getUserItemById(REPO, "");
+        verify(tokenService, never()).setToken(anyString(), anyString(), eq(""));
+        verify(tokenService, never()).setToken("", REPO, "admin");
+    }
+
+    @Test
+    @DisplayName("the logout and the current-user answer are about the account the request authenticated as, not a name its header asserts")
+    void logoutAndCurrentUserFollowTheAuthenticatedAccount() {
+        authenticatedAs("bob", ASSERTS_ADMIN);
+
+        Response me = assertDoesNotThrow(() -> resource.getCurrentUser(REPO),
+                "the current-user answer refused the account the request authenticated as");
+        assertEquals(200, me.getStatus());
+        assertEquals("bob", ((UserResponse) me.getEntity()).getUserId(),
+                "the current-user answer described the name the request asserted");
+
+        assertDoesNotThrow(() -> resource.logout(REPO), "the logout refused the authenticated account");
+        // The admin's token is not the one a logout by bob may remove.
+        verify(tokenService, never()).removeToken(any(), eq(REPO), eq("admin"));
     }
 
     @Test

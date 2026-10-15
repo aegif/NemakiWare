@@ -519,7 +519,10 @@ public class AuthTokenResource extends ResourceBase{
 
 			// Check if SAML/cloud authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
-			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+			// Read the policy from the account, not through a service lookup that let the login through when it
+			// failed — the SAML arm (3.4.1, batch 18 review round 1; the same shape the OIDC arm was fixed to in
+			// batch 16). No entry lock measures this arm yet: residual R173.
+			if (!jp.aegif.nemaki.util.AuthenticationUtil.isAuthMethodAllowed(userItem, "cloud")) {
 				logger.debug("SAML authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
@@ -772,7 +775,10 @@ public class AuthTokenResource extends ResourceBase{
 
 			// Check if cloud/Google authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
-			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+			// Read the policy from the account, not through a service lookup that let the login through when it
+			// failed — the Google arm (3.4.1, batch 18 review round 1; the same shape the OIDC arm was fixed to in
+			// batch 16). No entry lock measures this arm yet: residual R173.
+			if (!jp.aegif.nemaki.util.AuthenticationUtil.isAuthMethodAllowed(userItem, "cloud")) {
 				logger.debug("Google authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
@@ -919,7 +925,10 @@ public class AuthTokenResource extends ResourceBase{
 
 			// Check if cloud/Microsoft authentication is allowed for this user
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
-			if (authService != null && !authService.isAuthMethodAllowed(userItem, "cloud")) {
+			// Read the policy from the account, not through a service lookup that let the login through when it
+			// failed — the Microsoft arm (3.4.1, batch 18 review round 1; the same shape the OIDC arm was fixed to in
+			// batch 16). No entry lock measures this arm yet: residual R173.
+			if (!jp.aegif.nemaki.util.AuthenticationUtil.isAuthMethodAllowed(userItem, "cloud")) {
 				logger.debug("Microsoft authentication denied for user {} (not in allowedAuthMethods)", userName);
 				addErrMsg(errMsg, "auth", "methodNotAllowed");
 				return makeResult(false, result, errMsg).toString();
