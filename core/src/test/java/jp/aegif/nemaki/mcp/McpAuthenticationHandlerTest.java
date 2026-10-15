@@ -262,6 +262,28 @@ public class McpAuthenticationHandlerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("guessing an MCP password is counted and then blocked — it went through no throttle at all (3.4.1, external review S6)")
+    public void guessingAnMcpPasswordIsEventuallyBlocked() {
+        String repositoryId = "bedroom";
+        String username = "admin";
+        User mockUser = mock(User.class);
+        when(mockUser.getUserId()).thenReturn(username);
+        when(mockUser.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
+        when(principalService.getUserById(repositoryId, username)).thenReturn(mockUser);
+
+        // The configured allowance is 15 failures. Guess past it.
+        for (int attempt = 0; attempt < 15; attempt++) {
+            assertFalse(authHandler.login(repositoryId, username, "not-the-password").isSuccess(),
+                    "a wrong password succeeded on attempt " + attempt);
+        }
+
+        // Now even the RIGHT password is refused: the throttle is what answers, not the password check.
+        // Without a throttle this login succeeds, which is the defect — guessing over MCP was unlimited.
+        assertFalse(authHandler.login(repositoryId, username, "admin").isSuccess(),
+                "the correct password still logged in after 15 failures, so nothing is counting them");
+    }
+
+    @Test
     @org.junit.jupiter.api.DisplayName("an MCP login with the API key of a deleted or disabled account opens no session (3.4.1, zero-trust P0)")
     public void anApiKeyLoginOpensNoSessionForAnAccountThatCannotAct() {
         when(apiKeyService.validateApiKey("bedroom", "nk_key-3")).thenReturn("testuser");

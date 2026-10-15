@@ -196,6 +196,33 @@ class SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest {
     }
 
     @Test
+    @DisplayName("an administrator changing their OWN password still needs the current one — the most valuable account to take over (external review S4)")
+    void anAdministratorChangingItsOwnPasswordNeedsTheCurrentPassword() {
+        // The arm the other locks leave open: without this, dropping "and not a self change" from
+        // callerMayResetWithoutTheOldPassword reads the same to all of them, and a stolen administrator
+        // token becomes a permanent administrator takeover (round-4 review, Codex P1).
+        UserItem admin = new UserItem("bob-doc", "nemaki:user", "bob", "bob",
+                org.mindrot.jbcrypt.BCrypt.hashpw(CURRENT_PASSWORD, org.mindrot.jbcrypt.BCrypt.gensalt(4)),
+                true, null);
+        doReturn(admin).when(service).getUserItemById(REPO, "bob");
+        doReturn(List.of()).when(service).getGroupIdsDirectlyContainingUser(REPO, "bob");
+        HttpServletRequest asItself = requestAs("bob", true);
+
+        String refused = assertDoesNotThrow(
+                () -> update(asItself, "bob", "new-pw", "not-the-current-one", null, null),
+                "the update threw instead of refusing");
+        assertTrue(refused.contains("\"failure\""), refused);
+        verify(service, never()).applyUserUpdate(any(), any(), any());
+
+        // Discriminating: with the current password the administrator's own change goes through.
+        String accepted = assertDoesNotThrow(
+                () -> update(asItself, "bob", "new-pw", CURRENT_PASSWORD, null, null),
+                "the update threw for an administrator presenting its own current password");
+        assertTrue(accepted.contains("\"success\""), accepted);
+        verify(service).applyUserUpdate(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("an administrator resetting ANOTHER account's password still needs no current password")
     void anAdministratorResetNeedsNoCurrentPassword() {
         String answer = assertDoesNotThrow(
