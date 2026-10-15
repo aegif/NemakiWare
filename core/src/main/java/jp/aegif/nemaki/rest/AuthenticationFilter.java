@@ -97,108 +97,13 @@ public class AuthenticationFilter implements Filter {
 
 			log.debug("=== AUTH DEBUG: requestURI=" + requestURI + ", servletPath=" + servletPath + ", pathInfo=" + pathInfo + " ===");
 
-			// UI paths should bypass REST authentication (handled by SPA)
-			if (requestURI != null && requestURI.contains("/ui/")) {
-				log.debug("Bypassing REST authentication for UI path: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for public /rest/all/* endpoints
-			// - /rest/all/repositories: needed for login page
-			// - /rest/all/build-info: non-sensitive server metadata for version display
-			//
-			// NOTE on /rest/all/readiness (the load-balancer probe): it is NOT listed here, and
-			// must not be. web.xml maps this filter to specific /rest/* patterns and readiness is
-			// not among them, so the filter never runs for it — adding a case here would be dead
-			// code that only widens the substring match below. Verified: an unauthenticated GET
-			// of /rest/all/readiness returns 200 with no entry in this list.
-			//
-			// These two use contains() rather than the pathInfo comparison used elsewhere in this
-			// filter (see the ingest-webhook case). That is tolerable only because the servlet
-			// container normalises the path before getRequestURI() and query strings are not part
-			// of it — probed with "?x=", ";", and "../" forms, all of which still returned 401 on
-			// protected paths. Do not add entries to this list without re-checking that.
-			if (requestURI != null && (requestURI.contains("/rest/all/repositories")
-					|| requestURI.contains("/rest/all/build-info"))) {
-				log.debug("Bypassing authentication for public /rest/all/* URI: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for SSO token conversion endpoints (SAML, OIDC, Google, Microsoft)
-			if (requestURI != null && (requestURI.contains("/authtoken/saml/convert") || requestURI.contains("/authtoken/oidc/convert")
-					|| requestURI.contains("/authtoken/google/convert") || requestURI.contains("/authtoken/microsoft/convert"))) {
-				log.debug("Bypassing authentication for SSO token conversion endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for ingest webhook receivers (external push notifications).
-			// Security is enforced via webhookSecret signature verification in IngestWebhookController.
-			// SECURITY: Use pathInfo (not requestURI) to prevent path traversal bypass.
-			// Do NOT use substring checks on "subscription" / "subscribe" — connector IDs may be
-			// e.g. subscription-teams or subscribe-slack. Admin-only routes are exactly
-			// POST|DELETE /v1/ingest-webhook/{connectorId}/subscribe (see IngestWebhookController).
-			if (pathInfo != null && pathInfo.startsWith("/v1/ingest-webhook/") && !pathInfo.endsWith("/subscribe")) {
-				log.debug("Bypassing authentication for ingest webhook endpoint: " + pathInfo);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for WebAuthn authentication endpoints (passkey login)
-			if (requestURI != null && (requestURI.contains("/webauthn/authenticate/begin")
-					|| requestURI.contains("/webauthn/authenticate/complete"))) {
-				log.debug("Bypassing authentication for WebAuthn authentication endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for Setup Wizard API endpoints
-			// Setup API must be accessible before CouchDB is configured (no auth possible)
-			// Use contextPath + prefix match to prevent partial URI matching
-			if (requestURI != null) {
-				String setupPrefix = hreq.getContextPath() + "/api/v1/setup/";
-				if (requestURI.startsWith(setupPrefix)) {
-					log.debug("Bypassing authentication for Setup API endpoint: " + requestURI);
-					chain.doFilter(req, res);
-					return;
-				}
-			}
-
-			// Bypass authentication for OpenAPI specification endpoints (allow public access to API docs)
-			// Note: API v1 CMIS endpoints are at /api/v1/cmis/* to avoid conflict with legacy /api/v1/repo/* endpoints
-			if (requestURI != null && (requestURI.contains("/api/v1/cmis/openapi.json") || requestURI.contains("/api/v1/cmis/openapi.yaml"))) {
-				log.debug("Bypassing authentication for OpenAPI spec endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for auth config endpoint (SSO button visibility settings)
-			// This must be public because it's accessed before user login
-			// Only match specific patterns to prevent unintended bypasses
-			if (requestURI != null && (
-					requestURI.equals("/core/rest/auth/config") ||
-					requestURI.endsWith("/rest/auth/config"))) {
-				log.debug("Bypassing authentication for auth config endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for API v1 auth endpoints (login, saml, oidc)
-			// These endpoints handle their own authentication through request body or SSO
-			if (requestURI != null && requestURI.contains("/api/v1/cmis/auth/") &&
-				(requestURI.endsWith("/login") || requestURI.contains("/saml") || requestURI.contains("/oidc"))) {
-				log.debug("Bypassing authentication for API v1 auth endpoint: " + requestURI);
-				chain.doFilter(req, res);
-				return;
-			}
-
-			// Bypass authentication for legacy authtoken login endpoint
-			// The login endpoint validates credentials itself via request body password
-			// Pattern: /core/rest/repo/{repositoryId}/authtoken/{userName}/login
-			if (requestURI != null && requestURI.contains("/rest/repo/") && requestURI.contains("/authtoken/") && requestURI.endsWith("/login")) {
-				log.debug("Bypassing authentication for authtoken login endpoint: " + requestURI);
+			// The public endpoints this filter is mapped over, matched whole (3.4.1, zero-trust P0). A part of the URI was
+			// enough before: any path with "/ui/" in it skipped authentication and reached the resources unauthenticated
+			// (/rest/repo/ui/user/list — the UI is served by its own servlet, outside this filter), and the other public
+			// names were found wherever they stood in the URI.
+			String publicEndpoint = publicEndpoint(hreq);
+			if (publicEndpoint != null) {
+				log.debug("Bypassing authentication for " + publicEndpoint + ": " + requestURI);
 				chain.doFilter(req, res);
 				return;
 			}
@@ -249,6 +154,44 @@ public class AuthenticationFilter implements Filter {
 			// Clear audit request context
 			AuditLogger.clearRequestContext();
 		}
+	}
+
+	/**
+	 * The endpoints that must answer before anyone has logged in, by the path the container routes the request to —
+	 * the servlet path and the path info, decoded and normalised, without the context path, the query, or path
+	 * parameters — each matched as a whole. A request whose path is not one of these is authenticated.
+	 *
+	 * <p>{@code /rest/all/readiness} (the load-balancer probe) is not here and must not be: web.xml does not map this
+	 * filter onto it. {@code /rest/all/repositories} and {@code /rest/auth/config} are not mapped either; they stay
+	 * listed so that mapping them would not lock out the login page. The ingest webhook receivers verify the
+	 * webhook's HMAC themselves; their {@code /subscribe} routes are an administrator's and are not public (connector
+	 * ids may be e.g. {@code subscribe-slack}, so the route is matched by its segments, not by a substring).
+	 */
+	private static final java.util.Map<java.util.regex.Pattern, String> PUBLIC_ENDPOINTS;
+	static {
+		java.util.Map<java.util.regex.Pattern, String> m = new java.util.LinkedHashMap<>();
+		m.put(java.util.regex.Pattern.compile("/rest/all/(repositories|build-info)"), "the login page's repository list and version");
+		m.put(java.util.regex.Pattern.compile("/rest/auth/config"), "the SSO button settings");
+		m.put(java.util.regex.Pattern.compile("/rest/repo/[^/]+/authtoken/[^/]+/login"), "the password login");
+		m.put(java.util.regex.Pattern.compile("/rest/repo/[^/]+/authtoken/(saml|oidc|google|microsoft)/convert"), "an SSO token conversion");
+		m.put(java.util.regex.Pattern.compile("/rest/repo/[^/]+/webauthn/authenticate/(begin|complete)"), "a passkey login");
+		m.put(java.util.regex.Pattern.compile("/api/v1/cmis/auth/repositories/[^/]+/(login|saml|oidc)"), "an API v1 login");
+		m.put(java.util.regex.Pattern.compile("/api/v1/cmis/openapi\\.(json|yaml)"), "the OpenAPI document");
+		m.put(java.util.regex.Pattern.compile("/api/v1/setup/.*"), "the setup wizard");
+		m.put(java.util.regex.Pattern.compile("/api/v1/ingest-webhook/[^/]+"), "an ingest webhook receiver");
+		PUBLIC_ENDPOINTS = java.util.Collections.unmodifiableMap(m);
+	}
+
+	/** What the request reaches without logging in — one of {@link #PUBLIC_ENDPOINTS}, named — or null. */
+	static String publicEndpoint(HttpServletRequest request) {
+		String path = (request.getServletPath() == null ? "" : request.getServletPath())
+				+ (request.getPathInfo() == null ? "" : request.getPathInfo());
+		for (java.util.Map.Entry<java.util.regex.Pattern, String> endpoint : PUBLIC_ENDPOINTS.entrySet()) {
+			if (endpoint.getKey().matcher(path).matches()) {
+				return endpoint.getValue();
+			}
+		}
+		return null;
 	}
 
 	public boolean login(HttpServletRequest request, HttpServletResponse response){
