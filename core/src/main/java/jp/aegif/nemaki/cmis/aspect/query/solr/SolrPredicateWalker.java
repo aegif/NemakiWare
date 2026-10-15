@@ -51,6 +51,7 @@ import org.apache.chemistry.opencmis.server.support.query.TextSearchLexer;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermInSetQuery;
@@ -437,19 +438,48 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkIsNull(CmisTree colNode) {
-		String field = safeWalkExprToString(colNode);
+		String field = solrFieldOfColumn(colNode);
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
-		TermRangeQuery q1 = TermRangeQuery.newStringRange(field, null, null, false, false);
-			builder.add(q1, Occur.MUST_NOT);
+		// An "exists" range, negated. A BooleanQuery whose only clause is MUST_NOT matches nothing,
+		// so the absence is taken against all documents — the string this becomes is
+		// "+*:* -<field>:[* TO *]".
+		builder.add(new MatchAllDocsQuery(), Occur.MUST);
+		builder.add(existsRange(field), Occur.MUST_NOT);
 		return builder.build();
 	}
 
 	private Query walkIsNotNull(CmisTree colNode) {
-		String field = safeWalkExprToString(colNode);
-		// Lucene 9.x: Use TermRangeQuery.newStringRange() for wildcard range
-		TermRangeQuery q = TermRangeQuery.newStringRange(field, null, null, false, false);
-		return q;
+		// An open-ended range over the field: every document that has any value for it.
+		return existsRange(solrFieldOfColumn(colNode));
+	}
+
+	/**
+	 * "The field has some value", as the one range both operators are built from. Inclusive bounds,
+	 * so the query this prints is {@code field:[* TO *]} — the form Solr documents as an existence
+	 * check. With unbounded ends the exclusive form means the same thing, but it is not the idiom
+	 * and invites a second reading of a query string that is sent to Solr verbatim.
+	 */
+	private static TermRangeQuery existsRange(String field) {
+		return TermRangeQuery.newStringRange(field, null, null, true, true);
+	}
+
+	/**
+	 * The Solr field a CMIS column refers to — the same translation every other predicate uses
+	 * ({@code walkCompareInternal}): the column name through {@link SolrUtil#getPropertyNameInSolr},
+	 * escaped, because the caller turns this query into the Solr query string with
+	 * {@code toString()}.
+	 *
+	 * <p>{@code IS NULL} and {@code IS NOT NULL} used to read the column with
+	 * {@code safeWalkExprToString}, which walks to {@code walkCol} — and that returns {@code null}
+	 * for every column. The field name was therefore always null and {@code TermRangeQuery} threw
+	 * {@code "field must not be null"} (measured, 3.4.1: a NullPointerException, not an empty
+	 * result), so neither operator could be used at all. The CMIS name was also never translated to
+	 * the Solr name.
+	 */
+	private String solrFieldOfColumn(CmisTree colNode) {
+		String cmisColName = solrUtil.convertToString(colNode);
+		return ClientUtils.escapeQueryChars(
+				solrUtil.getPropertyNameInSolr(repositoryId, cmisColName));
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
