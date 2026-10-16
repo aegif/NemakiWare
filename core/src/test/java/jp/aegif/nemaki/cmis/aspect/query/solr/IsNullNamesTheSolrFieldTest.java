@@ -145,6 +145,22 @@ class IsNullNamesTheSolrFieldTest {
     }
 
     @Test
+    @DisplayName("a custom DATETIME property's colon is escaped — that arm of the property map does not escape it itself")
+    void aCustomDateTimePropertyIsEscapedOnce() {
+        // The DATETIME arm returns "dynamicDate.property.<id>" with a RAW colon, where the STRING arm
+        // escapes. Passing it through unchanged puts a bare colon in the query, which Solr rejects as a
+        // syntax error (400) — the opposite break from escaping twice, in the same line of code.
+        column(null, "nemaki:dueDate", "dynamicDate.property.nemaki:dueDate");
+
+        assertEquals("dynamicDate.property.nemaki\\:dueDate:[* TO *]", isNotNull(),
+                "the DATETIME field's colon was left raw, so Solr rejects the query");
+        assertEquals("+*:* -dynamicDate.property.nemaki\\:dueDate:[* TO *]", isNull(),
+                "the DATETIME field's colon was left raw, so Solr rejects the query");
+        assertFalse(isNull().contains("\\\\"),
+                "the DATETIME field's colon was escaped twice");
+    }
+
+    @Test
     @DisplayName("a table-qualified column resolves to its property — the qualifier is not part of the field name")
     void aQualifiedColumnResolvesToItsProperty() {
         // WHERE d.cmis:name IS NULL. Joining the node's children with a dot asks for "d.cmis:name", which is in
