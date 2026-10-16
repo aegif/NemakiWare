@@ -74,6 +74,27 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
+    /**
+     * The body of the method in {@code door} that calls {@code login(…)} on the authentication
+     * service — the method whose context actually reaches the throttle. A {@code put} anywhere else
+     * in the file (a helper nothing calls, a comment) does not wire anything (round-7 review).
+     */
+    private String methodThatLogsIn(Path door) throws IOException {
+        String body = read(door);
+        Matcher login = Pattern.compile("\\w+\\.login\\(\\s*ctxt\\s*\\)|\\w+\\.login\\(\\s*callContext\\s*\\)")
+                .matcher(body);
+        assertTrue(login.find(), door + " no longer calls login() with a context it built, so this"
+                + " lock cannot tell which method the throttle's address has to be put in");
+        Matcher signature = Pattern
+                .compile("\n\\s*(?:public|private|protected)[^\n;{]*\\{")
+                .matcher(body.substring(0, login.start()));
+        int start = 0;
+        while (signature.find()) {
+            start = signature.start();
+        }
+        return body.substring(start, login.end());
+    }
+
     @Test
     @DisplayName("every door that reaches the Basic-auth throttle puts the request in the call context (S5)")
     void everyDoorGivesTheThrottleSomethingToKeyOn() throws IOException {
@@ -84,16 +105,22 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // The fourth caller is the CMIS binding, whose context map holds strings only; it supplies
         // "remoteAddress" instead and is measured by the resolver lock below.
         for (Path door : List.of(REST_LOGIN, REST_FILTER, API_FILTER)) {
-            // The PUT, with a request as its value — not the string anywhere in the file. One of these
-            // doors mentions the key in a comment, and `put("throttleRequest", null)` would read the
-            // same to a contains() check (round-6 review, P3).
+            // In the SAME METHOD that calls login(), with a request as its value — not the string
+            // anywhere in the file. One of these doors mentions the key in a comment, and
+            // `put("throttleRequest", null)` would read the same to a contains() check (round-6
+            // review); a `put` left in an unused helper would read the same to a whole-file regex
+            // (round-7 review, P3).
             Matcher put = Pattern
                     .compile("put\\(\\s*\"throttleRequest\",\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)")
-                    .matcher(read(door));
+                    .matcher(methodThatLogsIn(door));
             assertTrue(put.find(),
                     door + " does not put the servlet request in the call context, so the throttle keys"
                             + " every caller as \"unknown\" and failures against one name add up across"
                             + " the internet");
+            // What this does NOT prove (round-7 review, P3): that the statement RUNS (it is read from
+            // the source, not driven), and that the identifier is the servlet request rather than
+            // something else named "request". The behaviour of the throttle itself is measured in
+            // LoginThrottle's tests and over MCP in TheMcpLoginToolGoesThroughTheThrottledDoorTest.
             assertTrue(put.group(1).toLowerCase(java.util.Locale.ROOT).contains("request"),
                     door + " puts something that is not the servlet request under \"throttleRequest\": "
                             + put.group(1) + " — the resolver reads it as a request and falls back to"
@@ -214,7 +241,12 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                 return name.endsWith(".yml") || name.endsWith(".yaml");
             }).toList()) {
                 String yaml = Files.readString(file, StandardCharsets.UTF_8);
-                Matcher value = Pattern.compile("JAVA_TOOL_OPTIONS[=:]([^\\n]*(?:\\n\\s+[^-\\s][^\\n]*)*)")
+                // The continuation lines of a YAML block scalar, which is how a long option list is
+                // written — INCLUDING lines that start with "-D". The first form of this pattern
+                // excluded every line starting with "-" (meaning to skip list items) and so skipped
+                // exactly the lines a password would be on (round-7 review, P2).
+                Matcher value = Pattern
+                        .compile("JAVA_TOOL_OPTIONS[=:]([^\\n]*(?:\\n[ \\t]+(?:-D|[^-\\s])[^\\n]*)*)")
                         .matcher(yaml);
                 while (value.find()) {
                     if (Pattern.compile("-D[\\w.]*password=", Pattern.CASE_INSENSITIVE)
@@ -235,9 +267,15 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
     @Test
     @DisplayName("and the two facts stay tied: a compose file that passes a password with -D needs that listener silenced (S8)")
     void aPasswordPassedOnTheCommandLineKeepsTheListenerSilenced() throws IOException {
+        // Recursive and both extensions, like its sibling below: this one kept the non-recursive
+        // Files.list + ".yml" form after that was fixed 30 lines down, which is the same reader with
+        // the same blind spot (round-7 review, P3).
         List<String> passing = new ArrayList<>();
-        try (var files = Files.list(COMPOSE_DIR)) {
-            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".yml")).toList()) {
+        try (var files = Files.walk(COMPOSE_DIR)) {
+            for (Path file : files.filter(f -> {
+                String name = f.getFileName().toString();
+                return name.endsWith(".yml") || name.endsWith(".yaml");
+            }).toList()) {
                 String yaml = Files.readString(file, StandardCharsets.UTF_8);
                 if (Pattern.compile("-D[\\w.]*password=", Pattern.CASE_INSENSITIVE).matcher(yaml).find()) {
                     passing.add(file.getFileName().toString());

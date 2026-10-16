@@ -18,14 +18,18 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -71,35 +75,61 @@ class EveryFieldNameIsEscapedOnceTest {
     }
 
     @Test
-    @DisplayName("the DATETIME arm keeps its raw colon — nothing is indexed under that name, so a VALID query over it would answer \"everything\"")
-    void theDateTimeArmKeepsItsRawColon() {
-        // Not an oversight. Every indexing path writes a custom property as
-        // "dynamic.property.<key>" with no type branch, so "dynamicDate.property.<id>" names a
-        // field NO document carries. Escaped, it is a syntactically valid query: the positive
-        // predicates answer none and the negated ones (IS NULL, NOT IN, <>) answer EVERY document
-        // the type and ACL filters leave — and SolrQueryProcessor turns a walker that throws plus a
-        // manual parser that answers nothing into "*:*". Raw, Solr rejects the query with a 400,
-        // which is the loud failure this release must not convert into a silent wrong answer
-        // (round-6 review).
-        assertEquals("dynamicDate.property.nemaki:dueDate",
-                SolrUtil.queryableFieldName("dynamicDate.property.nemaki:dueDate"),
-                "the DATETIME field name was made queryable, so IS NULL over a custom DATETIME"
-                        + " property now matches every document instead of failing loudly");
+    @DisplayName("a field name nothing is indexed under is REFUSED — with or without a colon in the property id")
+    void anUnindexedFieldNameIsRefused() {
+        // Every indexing path writes a custom property as "dynamic.property.<key>" with no type
+        // branch, so "dynamicDate.property.<id>" names a field NO document carries. A query over it
+        // answers none for the positive predicates and EVERY document the type and ACL filters leave
+        // for the negated ones. Escaping it made that silent (round-6 review); leaving the colon raw
+        // only helped while the id HAD a colon — a property id needs to be non-blank and nothing
+        // else, so "dueDate" gave a perfectly valid field name and the silent "everything" came back
+        // (round-7 review). Both shapes are refused.
+        for (String name : java.util.List.of("dynamicDate.property.nemaki:dueDate",
+                "dynamicDate.property.dueDate")) {
+            CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class,
+                    () -> SolrUtil.queryableFieldName(name),
+                    "the field " + name + " was turned into a query instead of being refused, so a"
+                            + " negated predicate over it matches every document");
+            assertTrue(refused.getMessage().contains(name),
+                    "the refusal does not say which property cannot be queried: " + refused.getMessage());
+        }
     }
 
     @Test
-    @DisplayName("and the only reason it is left raw is that nothing writes that field — if an indexer starts writing it, this lock says so")
+    @DisplayName("and the only reason it is refused is that nothing writes that field — if an indexer starts writing it, this lock says so")
     void nothingIndexesTheDateTimeField() throws IOException {
-        // The premise, measured rather than assumed: if any write path ever starts producing
-        // "dynamicDate." fields, the exemption above becomes wrong (the field would be real and
-        // the raw colon would be a plain defect), and this lock is where that is noticed.
-        String indexer = read(Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java"));
-        Matcher writes = Pattern.compile("addField\\(\\s*\"?dynamicDate").matcher(indexer);
-        assertTrue(!writes.find(),
-                "something now indexes a dynamicDate field: the DATETIME exemption in"
-                        + " queryableFieldName exists only because nothing did");
-        assertTrue(SolrUtil.DATETIME_FIELD_PREFIX.equals("dynamicDate.property."),
-                "the prefix the exemption keys on changed");
+        // The premise, measured rather than assumed, across EVERY indexer in the tree and not only
+        // the one next to the mapping (round-7 review, P3): if any write path ever starts producing
+        // "dynamicDate" fields, the refusal above becomes wrong (the field would be real) and this
+        // is where that is noticed.
+        // Every mention of the name, not an addField("dynamicDate… shape: the three write paths all
+        // build the field name into a VARIABLE first (doc.addField(fieldName, …)), so a type branch
+        // that set fieldName = "dynamicDate.property." + key would never match a shape-based regex
+        // (round-7 review, P2). The literal itself cannot hide that way.
+        List<String> mentions = new ArrayList<>();
+        try (var files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
+                String body = Files.readString(file, StandardCharsets.UTF_8);
+                int from = 0;
+                while ((from = body.indexOf("dynamicDate", from)) >= 0) {
+                    mentions.add(file.getFileName().toString() + ":" + body.substring(
+                            Math.max(0, body.lastIndexOf('\n', from) + 1),
+                            Math.min(body.length(), body.indexOf('\n', from) < 0 ? body.length()
+                                    : body.indexOf('\n', from))).trim());
+                    from += "dynamicDate".length();
+                }
+            }
+        }
+        // The only file allowed to name it is the one that maps a query column to it and refuses it.
+        List<String> outsideTheMapping = mentions.stream()
+                .filter(m -> !m.startsWith("SolrUtil.java:"))
+                .toList();
+        assertTrue(outsideTheMapping.isEmpty(),
+                "a file other than the property map names the dynamicDate field. If something now"
+                        + " INDEXES it, refusing to query it is wrong and this refusal has to go: "
+                        + outsideTheMapping);
+        assertEquals("dynamicDate.property.", SolrUtil.DATETIME_FIELD_PREFIX,
+                "the prefix the refusal keys on changed");
     }
 
     @Test
@@ -130,6 +160,28 @@ class EveryFieldNameIsEscapedOnceTest {
     }
 
     @Test
+    @DisplayName("the manual parser re-throws a refusal instead of answering null — null becomes \"*:*\", the whole WHERE dropped")
+    void theManualFallbackReThrowsARefusal() throws IOException {
+        // SolrQueryProcessor answers "*:*" when the walker produced nothing AND the manual parser
+        // answered nothing: no WHERE clause at all legitimately means every document. A REFUSAL must
+        // not take that path — it would turn "this property cannot be queried" into "here is
+        // everything" (round-7 review). The two remaining *:* fallbacks, for a WHERE clause that
+        // could not be translated at all, are recorded as a residual (R188).
+        String processor = read(PROCESSOR);
+        int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
+        assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");
+        String body = processor.substring(manual);
+
+        int rethrow = body.indexOf("CmisInvalidArgumentException refusal");
+        int genericCatch = body.indexOf("} catch (Exception e) {");
+        assertTrue(rethrow > 0 && rethrow < genericCatch,
+                "the manual parser does not re-throw a refusal before its catch-all, so a refused"
+                        + " predicate becomes null and the caller answers every document");
+        assertTrue(body.substring(rethrow, genericCatch).contains("throw refusal"),
+                "the refusal is caught and not re-thrown");
+    }
+
+    @Test
     @DisplayName("every field-name production in the walker goes through the rule")
     void everyProductionInTheWalkerGoesThroughTheRule() throws IOException {
         String walker = read(WALKER);
@@ -146,6 +198,12 @@ class EveryFieldNameIsEscapedOnceTest {
             found++;
             int statementStart = walker.lastIndexOf(';', from) + 1;
             String statement = walker.substring(statementStart, walker.indexOf(';', from) + 1);
+            // Immediately BEFORE this call, not merely somewhere in the same statement: two of these
+            // calls share one statement, so a statement-level check is satisfied by the sibling and
+            // either wrapper could be dropped with the lock green (round-7 review, P3).
+            String before = walker.substring(Math.max(0, from - 90), from).replaceAll("\\s+", "");
+            boolean wrapped = before.endsWith("queryableFieldName(")
+                    || before.endsWith("queryableFieldName(solrUtil.");
             from += "getPropertyNameInSolr(".length();
             // The one exemption, named: buildQualField's result is a VALUE (callers put it in
             // new Term("type", …)), so escaping it as a field name would look for a term that was
@@ -154,7 +212,7 @@ class EveryFieldNameIsEscapedOnceTest {
                 exemptions++;
                 continue;
             }
-            assertTrue(statement.contains("queryableFieldName("),
+            assertTrue(wrapped,
                     "a field name is built without the one rule that escapes it exactly once: "
                             + statement.trim());
         }
@@ -179,7 +237,10 @@ class EveryFieldNameIsEscapedOnceTest {
             String statement = processor.substring(statementStart, processor.indexOf(';', from) + 1);
             from += "getPropertyNameInSolr(".length();
             found++;
-            assertTrue(statement.contains("SolrUtil.queryableFieldName("),
+            String before = processor.substring(Math.max(0, from - "getPropertyNameInSolr(".length() - 90),
+                    from - "getPropertyNameInSolr(".length()).replaceAll("\\s+", "");
+            assertTrue(before.endsWith("SolrUtil.queryableFieldName(")
+                            || before.endsWith("SolrUtil.queryableFieldName(solrUtil."),
                     "the manual parser builds a field name without the rule, and it is the path that"
                             + " ANSWERS when the walker throws: " + statement.trim());
         }

@@ -18,6 +18,7 @@ package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.server.support.query.CmisCommonTree;
 import org.apache.chemistry.opencmis.server.support.query.CmisQlStrictLexer;
 import org.apache.chemistry.opencmis.server.support.query.ColumnReference;
@@ -100,6 +102,15 @@ class IsNullNamesTheSolrFieldTest {
         return query.toString();
     }
 
+    /** The IS NULL node itself, for the cases where walking it must throw. */
+    private CmisCommonTree isNullNode() {
+        CmisCommonTree node = new CmisCommonTree(CmisQlStrictLexer.IS_NULL, "IS_NULL");
+        CmisCommonTree col = new CmisCommonTree(CmisQlStrictLexer.COL, "COL");
+        col.addChild(new CmisCommonTree(CmisQlStrictLexer.ID, "the-query-object-resolves-this"));
+        node.addChild(col);
+        return node;
+    }
+
     private String isNull() {
         return predicate(CmisQlStrictLexer.IS_NULL);
     }
@@ -145,22 +156,18 @@ class IsNullNamesTheSolrFieldTest {
     }
 
     @Test
-    @DisplayName("a custom DATETIME property keeps its raw colon, so the query fails loudly instead of matching everything")
-    void aCustomDateTimePropertyFailsLoudly() {
-        // The DATETIME arm of the property map returns "dynamicDate.property.<id>", and NOTHING is
-        // indexed under that name — every write path puts a custom property in
-        // "dynamic.property.<key>" with no type branch. Escaping it would make this a VALID query
-        // over a field no document carries, and IS NULL over such a field matches EVERY document
-        // the type and ACL filters leave; raw, Solr rejects it with a 400. The loud failure is the
-        // correct answer until the indexer writes that field (round-6 review; the reason lives in
-        // SolrUtil.queryableFieldName, and EveryFieldNameIsEscapedOnceTest measures the premise).
+    @DisplayName("IS NULL over a custom DATETIME property is REFUSED, not answered with every document")
+    void aCustomDateTimePropertyIsRefused() {
+        // Nothing is indexed under "dynamicDate.property.<id>", so a query over it would answer
+        // EVERY document the type and ACL filters leave for IS NULL. The walker refuses, and that
+        // refusal ends in a 400 rather than a dropped WHERE clause (SolrQueryProcessor's own
+        // fallbacks are measured in EveryFieldNameIsEscapedOnceTest; round-7 review).
         column(null, "nemaki:dueDate", "dynamicDate.property.nemaki:dueDate");
 
-        assertEquals("dynamicDate.property.nemaki:dueDate:[* TO *]", isNotNull(),
-                "the DATETIME field name was made queryable");
-        assertEquals("+*:* -dynamicDate.property.nemaki:dueDate:[* TO *]", isNull(),
-                "the DATETIME field name was made queryable, so IS NULL over a custom DATETIME"
-                        + " property matches every document instead of failing loudly");
+        assertThrows(CmisInvalidArgumentException.class,
+                () -> walker.walkPredicate(isNullNode()),
+                "IS NULL over a custom DATETIME property built a query instead of refusing, and that"
+                        + " query matches every document the type and ACL filters leave");
     }
 
     @Test
