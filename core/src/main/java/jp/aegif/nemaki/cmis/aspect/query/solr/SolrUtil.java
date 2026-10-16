@@ -332,10 +332,13 @@ public class SolrUtil implements ApplicationContextAware {
 			// perfectly valid field name, and the silent "everything" came straight back (round-7
 			// review). So refuse the statement instead.
 			//
-			// Refusing is safe here: every caller ends in a 400, not in a dropped WHERE clause.
-			// SolrQueryProcessor catches a walker exception, tries the manual parser, and calls
-			// exceptionService.invalidArgument when that answers nothing; the manual parser itself
-			// re-throws this exception rather than returning null (which WOULD become "*:*").
+			// Refusing reaches the client as a 400 — but only because SolrQueryProcessor was changed
+			// to let it (round-8 review, both reviewers, P1). Its catch around the walker used to
+			// hand the statement to the manual parser, which returns the FIRST predicate it
+			// recognises and discards the rest: "WHERE tag = 'x' AND dueDate IS NULL" came back as a
+			// successful query for tag alone, with the refused condition silently dropped. Now a
+			// CmisInvalidArgumentException is re-thrown before that fallback, and the manual parser
+			// re-throws it too rather than returning null (null WOULD become "*:*").
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
 					"This property cannot be used in a query: nothing is indexed under the field it"
 							+ " maps to (" + fromPropertyMap + "). Custom DATETIME properties are"

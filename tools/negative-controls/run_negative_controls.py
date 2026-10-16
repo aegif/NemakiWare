@@ -9774,8 +9774,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9894,8 +9894,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 439 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 441 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10895,7 +10895,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10909,7 +10909,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10965,8 +10965,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 439 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 441 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10979,8 +10979,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **439 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **439 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **441 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **441 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11816,7 +11816,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **439 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **441 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13798,8 +13798,8 @@ CONTROLS = [
         what="the canon states a gap count above the sweep boundary that is not the runner's — a retired or resurrected id reads as a measurement",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 3 ある（',
-        replace='**9 回目以後に足した control は 439 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
+        find='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 3 ある（',
+        replace='**9 回目以後に足した control は 441 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13870,7 +13870,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 2162 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 2164 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13913,7 +13913,7 @@ CONTROLS = [
         what="the readiness document's unit total drops below what the sources declare and no lock notices, so a figure left behind while the suite grew reads as a measurement",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='**8,181 本 green**',
+        find='**8,182 本 green**',
         replace='**4,365 本 green**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
@@ -13955,7 +13955,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **439 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **441 本**（通し未実施）。',
         # A count far below any the runner will have again: 213 was this control's stale value, and
         # on 2026-10-13 the real count became 213, so find and replace were the same and it did not fire.
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **100 本**（通し未実施）。',
@@ -13967,7 +13967,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **2162**（2026-10-16 時点）',
+        find='- コントロール **2164**（2026-10-16 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -24022,7 +24022,7 @@ CONTROLS = [
         what="a field name nothing is indexed under is turned into a query instead of being refused, so IS NULL / NOT IN / <> over a custom DATETIME property match EVERY document the type and ACL filters leave (round-6 and round-7 reviews)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java',
-        find='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {\n\t\t\t// REFUSED, not escaped and not passed through. NOTHING is indexed under this name: every\n\t\t\t// write path puts a custom property in "dynamic.property.<key>" with no type branch (see\n\t\t\t// indexing below; "dynamicDate" appears only in the schema\'s dynamic-field declaration\n\t\t\t// and in the line above). A query over a field no document carries answers "no\n\t\t\t// documents" for the positive predicates and EVERY document the type and ACL filters\n\t\t\t// leave for the negated ones (IS NULL, NOT IN, <>) — the direction this tree least wants\n\t\t\t// a query to break in.\n\t\t\t//\n\t\t\t// Escaping it made that silent (round-6 review). Leaving the colon raw only helped while\n\t\t\t// the property id HAD a colon: a type definition\'s property id needs to be non-blank and\n\t\t\t// nothing else (TypeResource), so "dueDate" gives "dynamicDate.property.dueDate", a\n\t\t\t// perfectly valid field name, and the silent "everything" came straight back (round-7\n\t\t\t// review). So refuse the statement instead.\n\t\t\t//\n\t\t\t// Refusing is safe here: every caller ends in a 400, not in a dropped WHERE clause.\n\t\t\t// SolrQueryProcessor catches a walker exception, tries the manual parser, and calls\n\t\t\t// exceptionService.invalidArgument when that answers nothing; the manual parser itself\n\t\t\t// re-throws this exception rather than returning null (which WOULD become "*:*").\n\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(\n\t\t\t\t\t"This property cannot be used in a query: nothing is indexed under the field it"\n\t\t\t\t\t\t\t+ " maps to (" + fromPropertyMap + "). Custom DATETIME properties are"\n\t\t\t\t\t\t\t+ " not queryable in this version.");\n\t\t}\n',
+        find='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {\n\t\t\t// REFUSED, not escaped and not passed through. NOTHING is indexed under this name: every\n\t\t\t// write path puts a custom property in "dynamic.property.<key>" with no type branch (see\n\t\t\t// indexing below; "dynamicDate" appears only in the schema\'s dynamic-field declaration\n\t\t\t// and in the line above). A query over a field no document carries answers "no\n\t\t\t// documents" for the positive predicates and EVERY document the type and ACL filters\n\t\t\t// leave for the negated ones (IS NULL, NOT IN, <>) — the direction this tree least wants\n\t\t\t// a query to break in.\n\t\t\t//\n\t\t\t// Escaping it made that silent (round-6 review). Leaving the colon raw only helped while\n\t\t\t// the property id HAD a colon: a type definition\'s property id needs to be non-blank and\n\t\t\t// nothing else (TypeResource), so "dueDate" gives "dynamicDate.property.dueDate", a\n\t\t\t// perfectly valid field name, and the silent "everything" came straight back (round-7\n\t\t\t// review). So refuse the statement instead.\n\t\t\t//\n\t\t\t// Refusing reaches the client as a 400 — but only because SolrQueryProcessor was changed\n\t\t\t// to let it (round-8 review, both reviewers, P1). Its catch around the walker used to\n\t\t\t// hand the statement to the manual parser, which returns the FIRST predicate it\n\t\t\t// recognises and discards the rest: "WHERE tag = \'x\' AND dueDate IS NULL" came back as a\n\t\t\t// successful query for tag alone, with the refused condition silently dropped. Now a\n\t\t\t// CmisInvalidArgumentException is re-thrown before that fallback, and the manual parser\n\t\t\t// re-throws it too rather than returning null (null WOULD become "*:*").\n\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(\n\t\t\t\t\t"This property cannot be used in a query: nothing is indexed under the field it"\n\t\t\t\t\t\t\t+ " maps to (" + fromPropertyMap + "). Custom DATETIME properties are"\n\t\t\t\t\t\t\t+ " not queryable in this version.");\n\t\t}\n',
         replace='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {\n\t\t\treturn fromPropertyMap;\n\t\t}\n',
         test='IsNullNamesTheSolrFieldTest',
         expect_fail=['aCustomDateTimePropertyIsRefused'],
@@ -24219,6 +24219,26 @@ CONTROLS = [
         replace='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX) && fromPropertyMap.contains(":")) {\n',
         test='EveryFieldNameIsEscapedOnceTest',
         expect_fail=['anUnindexedFieldNameIsRefused'],
+    ),
+    dict(
+        id='HK5',
+        what="a walker refusal is handed to the manual parser, which answers with the FIRST predicate it recognises and discards the rest — the refused condition is silently dropped and the query succeeds (round-8 review, both reviewers, P1)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java',
+        find='\t\t\t} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException refusal) {\n\t\t\t\t// A REFUSAL is not a translation failure, and it must NOT be handed to the manual\n\t\t\t\t// parser (round-8 review, both reviewers, P1). That parser returns the FIRST predicate\n\t\t\t\t// it recognises and discards the rest, so\n\t\t\t\t//     WHERE nemaki:tag = \'x\' AND nemaki:dueDate IS NULL\n\t\t\t\t// came back as a successful query for tag alone — the refused condition silently\n\t\t\t\t// dropped, 200 with results where the answer must be a 400. The walker refuses only\n\t\t\t\t// when it knows the field cannot be queried at all; nothing downstream can do better.\n\t\t\t\tlogger.warn("Refusing the statement: " + refusal.getMessage());\n\t\t\t\tthrow refusal;\n',
+        replace='',
+        test='EveryFieldNameIsEscapedOnceTest',
+        expect_fail=['aRefusalIsNotHandedToTheManualParser'],
+    ),
+    dict(
+        id='HL5',
+        what="one of the TWO field names built in a single statement loses its wrapper — a statement-level check is satisfied by the sibling, so the rule has an unmeasured exception (round-7 review P3, measured in round 8)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\tquery.setQuery(queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID))\n\t\t\t\t+ ":" + ClientUtils.escapeQueryChars(folderId) + " AND "\n\t\t\t\t+ queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID))\n\t\t\t\t+ ":cmis\\\\:folder"); // only "folder" nodes',
+        replace='\t\tquery.setQuery(queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID))\n\t\t\t\t+ ":" + ClientUtils.escapeQueryChars(folderId) + " AND "\n\t\t\t\t+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID)\n\t\t\t\t+ ":cmis\\\\:folder"); // only "folder" nodes',
+        test='EveryFieldNameIsEscapedOnceTest',
+        expect_fail=['everyProductionInTheWalkerGoesThroughTheRule'],
     ),
 ]
 
@@ -24904,9 +24924,43 @@ def compile_check(ids: list) -> list:
     return problems
 
 
+def controls_have_the_keys_they_need() -> list:
+    """Controls whose shape the runner cannot apply at all.
+
+    Every step below indexes control["file"], control["test"] and the sabotage's own
+    find/find_span. A control written without one of them does not fail as a control — it
+    raises a bare KeyError in the RECOVERY pass, before the first control runs, so the run
+    produces neither the diagnosis nor any measurement. That happened on 2026-10-16: a
+    line-by-line rebuild of GP5 dropped module= and file=, and the sweep died with
+    KeyError: 'file' (round-8 review, both reviewers: the check this message once claimed
+    was added lived only in a scratch helper, not here).
+    """
+    problems = []
+    for control in CONTROLS:
+        cid = control.get("id", "<no id>")
+        # The keys the runner INDEXES (control["…"]). "module" is read with .get() and has a
+        # default, so a control without it is fine — measured by running this check against the
+        # tree, where 40-odd long-standing controls omit it.
+        missing = [key for key in ("id", "file", "test", "expect_fail")
+                   if key not in control]
+        if "find" not in control and "find_span" not in control:
+            missing.append("find/find_span")
+        if "replace" not in control and "find_span" not in control:
+            missing.append("replace")
+        if missing:
+            problems.append(f"{cid}: missing {', '.join(missing)}")
+    return problems
+
+
 def main() -> None:
     if "--self-test" in sys.argv[1:]:
         raise SystemExit(1 if run_self_test() else 0)
+
+    # BEFORE recovery, which indexes control["file"] itself.
+    shape_problems = controls_have_the_keys_they_need()
+    if shape_problems:
+        raise SystemExit("these controls are missing keys the runner needs, so no control can "
+                         "run:\n  " + "\n  ".join(shape_problems))
 
     # The judgement functions decide every result below, so they are checked before any
     # control runs. A runner whose verdicts are wrong reports confidently either way.

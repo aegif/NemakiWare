@@ -349,6 +349,16 @@ public class SolrQueryProcessor implements QueryProcessor {
 						}
 					}
 				}
+			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException refusal) {
+				// A REFUSAL is not a translation failure, and it must NOT be handed to the manual
+				// parser (round-8 review, both reviewers, P1). That parser returns the FIRST predicate
+				// it recognises and discards the rest, so
+				//     WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL
+				// came back as a successful query for tag alone — the refused condition silently
+				// dropped, 200 with results where the answer must be a 400. The walker refuses only
+				// when it knows the field cannot be queried at all; nothing downstream can do better.
+				logger.warn("Refusing the statement: " + refusal.getMessage());
+				throw refusal;
 			} catch (Exception e) {
 				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
 				// CRITICAL FIX (2025-12-18): Try manual parsing before throwing exception
