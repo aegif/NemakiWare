@@ -93,7 +93,7 @@ class EveryFieldNameIsEscapedOnceTest {
      * Literals keep their contents here, because the dangerous write can be spelled
      * {@code doc.addField("dynamicDate.property." + key, v)}.
      */
-    private static String codeOnly(String source) {
+    private static String withoutComments(String source) {
         return JavaSource.withoutComments(source);
     }
 
@@ -107,11 +107,15 @@ class EveryFieldNameIsEscapedOnceTest {
      * second one here is the other half of what that review called out.
      */
     private static int endOfBlock(String code, int from) {
-        return JavaSource.matchingClose(code, code.indexOf('{', from));
+        // from, not indexOf('{', from): matchingClose looks for the brace itself, and resolving it
+        // here first means a missing one becomes -1 — which makes that scan start at 0 and delimit
+        // the FIRST block of the file, so the assertions below read another method and accuse the
+        // production of something it did not do (round-14 review, P3).
+        return JavaSource.matchingClose(code, from);
     }
 
-    /** {@link JavaSource#codeWithoutLiteralText(String)}, for the locks that read what code CALLS. */
-    private static String codeWithoutLiteralText(String source) {
+    /** {@link JavaSource#withoutLiteralText(String)}, for the locks that read what code CALLS. */
+    private static String withoutLiteralText(String source) {
         return JavaSource.withoutLiteralText(source);
     }
 
@@ -165,7 +169,7 @@ class EveryFieldNameIsEscapedOnceTest {
                 // code line was not cut at all (a false red). The literals themselves STAY: the
                 // dangerous write can be spelled `doc.addField("dynamicDate.property." + key, v)`
                 // (round-11 review, P3 — and round-9's hole was the same scanner, a line earlier).
-                for (String raw : codeOnly(Files.readString(file, StandardCharsets.UTF_8)).split("\n", -1)) {
+                for (String raw : withoutComments(Files.readString(file, StandardCharsets.UTF_8)).split("\n", -1)) {
                     number++;
                     String code = raw.trim();
                     if (code.isEmpty()) {
@@ -233,7 +237,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // handing it a statement the walker REFUSED produced a successful query for the other half:
         //   WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL  ->  200, tag only, dueDate dropped.
         // Both reviewers found this in round 8. The refusal has to leave before that fallback.
-        String processor = codeWithoutLiteralText(read(PROCESSOR));
+        String processor = withoutLiteralText(read(PROCESSOR));
         int walkCall = processor.indexOf("solrPredicateWalker.walkPredicate(whereTree)");
         assertTrue(walkCall > 0,
                 "the walker call is gone — this lock no longer reads that path. It reads the"
@@ -298,7 +302,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // not take that path — it would turn "this property cannot be queried" into "here is
         // everything" (round-7 review). The two remaining *:* fallbacks, for a WHERE clause that
         // could not be translated at all, are recorded as a residual (R188).
-        String processor = codeWithoutLiteralText(read(PROCESSOR));
+        String processor = withoutLiteralText(read(PROCESSOR));
         int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
         assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");
         String body = processor.substring(manual);
@@ -320,7 +324,7 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("every field-name production in the walker goes through the rule")
     void everyProductionInTheWalkerGoesThroughTheRule() throws IOException {
-        String walker = codeWithoutLiteralText(read(WALKER));
+        String walker = withoutLiteralText(read(WALKER));
 
         // Each of these is a statement that ends in a field name. The round-5 review found IN,
         // ANY-IN and LIKE passing getPropertyNameInSolr straight into a Term, and the comparison
@@ -365,7 +369,7 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("the manual fallback — the path that answers when the walker throws — goes through the rule too")
     void theManualFallbackGoesThroughTheRule() throws IOException {
-        String processor = codeWithoutLiteralText(read(PROCESSOR));
+        String processor = withoutLiteralText(read(PROCESSOR));
         int found = 0;
         int from = 0;
         while ((from = processor.indexOf("getPropertyNameInSolr(", from)) >= 0) {

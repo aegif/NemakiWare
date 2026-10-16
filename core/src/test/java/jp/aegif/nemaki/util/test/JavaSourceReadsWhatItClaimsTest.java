@@ -60,7 +60,7 @@ class JavaSourceReadsWhatItClaimsTest {
     }
 
     @Test
-    @DisplayName("the contents of literals stay for codeOnly and go for codeWithoutLiteralText")
+    @DisplayName("the contents of literals stay for withoutComments and go for withoutLiteralText")
     void literalContentsStayOrGoByTheMode() {
         String source = "log.warn(\"parseSecondaryTypeWhereClause was not invoked\");\n";
 
@@ -91,7 +91,7 @@ class JavaSourceReadsWhatItClaimsTest {
     }
 
     @Test
-    @DisplayName("a text block's contents go with codeWithoutLiteralText, and the code around it stays")
+    @DisplayName("a text block's contents go with withoutLiteralText, and the code around it stays")
     void aTextBlockIsOneLiteral() {
         String source = "String t = \"\"\"\n  dynamicDate.property.x\n  \"\"\";\nint n = 1;\n";
 
@@ -99,7 +99,7 @@ class JavaSourceReadsWhatItClaimsTest {
                 "the text block's contents were read as code");
         assertTrue(JavaSource.withoutLiteralText(source).contains("int n = 1;"));
         assertTrue(JavaSource.withoutComments(source).contains("dynamicDate.property.x"),
-                "codeOnly dropped a literal's contents, and the premise lock needs them");
+                "withoutComments dropped a literal's contents, and the premise lock needs them");
     }
 
     @Test

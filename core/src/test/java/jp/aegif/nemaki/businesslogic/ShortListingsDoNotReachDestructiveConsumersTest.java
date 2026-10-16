@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.businesslogic;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
@@ -165,7 +166,13 @@ class ShortListingsDoNotReachDestructiveConsumersTest {
             try {
                 all.append(JavaSource.withoutComments(
                         JavaSource.methodBody(slice, signaturePrefix)));
-            } catch (RuntimeException e) {
+            } catch (HarnessBroken couldNotRead) {
+                // Not swallowed: HarnessBroken means the reader could not understand the source, and
+                // breaking here would turn "I could not look at the remaining overloads" into "there
+                // were none" — the very substitution this branch is named after (round-14 review,
+                // P2). Only the ordinary "no more overloads" case ends the loop.
+                throw couldNotRead;
+            } catch (RuntimeException noMoreOverloads) {
                 break;
             }
             remaining = remaining.substring(at + signaturePrefix.length());

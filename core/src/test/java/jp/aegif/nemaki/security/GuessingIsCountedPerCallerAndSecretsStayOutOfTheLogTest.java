@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.util.test.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -121,12 +122,24 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                     }
                     if (qualifier != null
                             && file.getFileName().toString().equals(qualifier + ".java")) {
-                        inTheQualifier.add(found.group(1));
+                        // One class in that file, or this cannot tell WHICH class declares it: a
+                        // package-private helper class in Keys.java would otherwise answer for Keys
+                        // itself (round-14 review, P2). Counting class declarations is an
+                        // approximation and it errs towards "could not resolve".
+                        if (code.split("(?m)^\\s*(?:public |final |abstract |static )*class ").length > 2) {
+                            inTheQualifier.add(null);
+                        } else {
+                            inTheQualifier.add(found.group(1));
+                        }
                     }
                 }
             }
         } catch (IOException unreadable) {
-            return null;
+            // Not null: "a file could not be read" is the harness failing, not an answer about the
+            // key, and folding the two into one value is the defect this branch is named after
+            // (round-14 review, P2).
+            throw new HarnessBroken("could not read the sources while resolving the constant "
+                    + name, unreadable);
         }
         // The name decides where to look FIRST. A qualified name (Keys.REQUEST) means the type it
         // names, and reading the door's own file before it is a fail-open: a same-named constant in
@@ -138,6 +151,8 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         if (qualifier != null) {
             return inTheQualifier.size() == 1 ? inTheQualifier.get(0) : null;
         }
+        // Null entries only come from a file this cannot read class-wise; they poison the count on
+        // purpose, so the answer above is null rather than a guess.
         if (inTheDoor.size() == 1) {
             return inTheDoor.get(0);
         }

@@ -156,7 +156,7 @@ public final class JavaSource {
      *
      * <p>Text blocks are read as ONE literal, and an escape inside one is consumed with the
      * character after it. The first form of this reader did neither: a file with a text block
-     * ({@code McpToolsProvider} has ten) was read as "literal, close, literal" and everything after
+     * ({@code McpToolsProvider} has five) was read as "literal, close, literal" and everything after
      * it was taken for string, so a lock reading that file measured nothing (3.4.1, rounds 12-13 of
      * the batch-18 review).
      */

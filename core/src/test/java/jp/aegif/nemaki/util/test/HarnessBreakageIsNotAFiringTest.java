@@ -81,7 +81,7 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     @Test
-    @DisplayName("no test signals harness breakage with an AssertionError any more")
+    @DisplayName("no test signals harness breakage with one of the phrasings this sweep knows")
     void noTestStillReportsBreakageAsAnAssertion() throws Exception {
         // The sweep, not one file: the defect was a FAMILY — every reflection helper that
         // reports "renamed or reshaped". A new one written in the old shape puts the runner
@@ -145,5 +145,10 @@ class HarnessBreakageIsNotAFiringTest {
         assertTrue(offenders.isEmpty(),
                 "these locks report harness breakage as an AssertionError, which the control "
                         + "runner scores as a firing: " + offenders);
+        // What this does NOT say: that no such throw is left. The judgement is the vocabulary above,
+        // and five throws whose meaning is breakage are written in words it does not know — the
+        // round-14 reviews counted them (residual R189, recorded and stopped). `throw new
+        // AssertionError(e)` cannot be swept by wording at all. Until this judges by type, the claim
+        // is "none in these phrasings", and the gap is the residual's.
     }
 }
