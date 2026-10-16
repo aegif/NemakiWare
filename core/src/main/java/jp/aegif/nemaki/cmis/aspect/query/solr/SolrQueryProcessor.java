@@ -445,11 +445,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 		
-//		Term t = new Term(
-//				solrUtil.getPropertyNameInSolr(PropertyIds.OBJECT_TYPE_ID),
-//				StringUtils.join(tables, " "));
-//		fromQueryString += new TermQuery(t).toString();
-		fromQueryString += "("+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) +":"+ StringUtils.join(tables," " + solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID) + ":") + ")";
+		// Both calls through the same rule as the WHERE productions (a no-op for this static
+		// property, but the rule has no exemptions — see EveryFieldNameIsEscapedOnceTest).
+		String typeIdField = SolrUtil.queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID));
+		fromQueryString += "("+ typeIdField +":"+ StringUtils.join(tables," " + typeIdField + ":") + ")";
 
 		// Execute query
 		SolrQuery solrQuery = new SolrQuery();

@@ -135,8 +135,16 @@ public class AuthResource {
             // locks out after 15 attempts over REST, CMIS and MCP was unlimited here, and it kept
             // answering while the account was locked out everywhere else (round-5 review). Same
             // counter and key as the Basic-auth path, so a lockout holds across the doors.
-            if (authenticationService != null
-                    && authenticationService.isPasswordGuessingBlocked(repositoryId, request.getUserId(),
+            if (authenticationService == null) {
+                // No counter, no door. @Autowired without required=false means this cannot happen
+                // in a wired context, but the alternative stance — carry on unthrottled — is the
+                // one this endpoint had until 3.4.1, and the filter next door refuses for exactly
+                // this reason (round-6 review, P3).
+                logger.severe("API v1: the authentication service is not available, so password"
+                        + " attempts cannot be counted; refusing the login");
+                throw ApiException.internalError("Authentication service not available");
+            }
+            if (authenticationService.isPasswordGuessingBlocked(repositoryId, request.getUserId(),
                             httpRequest)) {
                 logger.warning("API v1: login temporarily locked (too many failed attempts) for user "
                         + request.getUserId() + " in repository " + repositoryId);
@@ -194,18 +202,18 @@ public class AuthResource {
         }
     }
 
-    /** Count a wrong password at this door, on the shared counter. */
+    /**
+     * Count a wrong password at this door, on the shared counter. No null guard: the login refuses
+     * before reaching here when the service is absent, so a guard would only hide a wiring fault
+     * (round-6 review).
+     */
     private void recordPasswordFailure(String repositoryId, String userId) {
-        if (authenticationService != null) {
-            authenticationService.recordPasswordFailure(repositoryId, userId, httpRequest);
-        }
+        authenticationService.recordPasswordFailure(repositoryId, userId, httpRequest);
     }
 
     /** Clear the count after a password that was right AND allowed by the account's policy. */
     private void recordPasswordSuccess(String repositoryId, String userId) {
-        if (authenticationService != null) {
-            authenticationService.recordPasswordSuccess(repositoryId, userId, httpRequest);
-        }
+        authenticationService.recordPasswordSuccess(repositoryId, userId, httpRequest);
     }
     
     @POST

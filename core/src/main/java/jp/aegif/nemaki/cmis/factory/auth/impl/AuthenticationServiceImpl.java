@@ -258,7 +258,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 * <li>The CMIS bindings reach this through {@code NemakiAuthCallContextHandler}, whose context map
 	 *     holds strings only, so they supply the immediate peer under {@code remoteAddress} and get no
 	 *     proxy awareness. That key is also the SSO proxy-header check's input, where it must stay the
-	 *     peer — it is read second here for that reason, not first.</li>
+	 *     peer — so it is not rewritten to the resolved client. It is read SECOND because the
+	 *     proxy-aware answer is the better one when a door supplies both; no door does today
+	 *     (round-6 review: the earlier wording gave the SSO check as the reason for the order, which
+	 *     does not follow).</li>
 	 * </ul>
 	 *
 	 * <p>The request is read from {@code throttleRequest} and not from {@code httpServletRequest}

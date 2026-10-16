@@ -285,7 +285,7 @@ public class SolrUtil implements ApplicationContextAware {
 
 		// Handle DATETIME properties with special field type
 		if (pd != null && PropertyType.DATETIME.equals(pd.getPropertyType())) {
-			return "dynamicDate.property." + cmisColName;
+			return DATETIME_FIELD_PREFIX + cmisColName;
 		}
 
 		// Default to STRING type for all other properties
@@ -317,9 +317,26 @@ public class SolrUtil implements ApplicationContextAware {
 		if (fromPropertyMap == null) {
 			return null;
 		}
+		if (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {
+			// Left as it is — with the raw colon Solr rejects as a syntax error. NOTHING is indexed
+			// under this name: every write path puts a custom property in "dynamic.property.<key>"
+			// with no type branch (see indexing below; "dynamicDate" appears only in the schema's
+			// dynamic-field declaration and in the line above). A syntactically VALID query over a
+			// field no document carries answers "no documents" for the positive predicates and
+			// EVERY document the type and ACL filters leave for the negated ones (IS NULL, NOT IN,
+			// <>) — and the query that produced it cannot even fall back, because a walker that
+			// throws plus a manual parser that answers nothing becomes "*:*" in SolrQueryProcessor.
+			// Escaping this name therefore turned a loud 400 into a silent "everything" (round-6
+			// review). Until the indexer writes this field, the loud failure is the correct answer;
+			// the underlying gap — custom DATETIME properties are not queryable — is a residual.
+			return fromPropertyMap;
+		}
 		return org.apache.solr.client.solrj.util.ClientUtils
 				.escapeQueryChars(fromPropertyMap.replace("\\:", ":"));
 	}
+
+	/** The prefix the DATETIME arm of {@link #getPropertyNameInSolr} returns, and nothing writes. */
+	public static final String DATETIME_FIELD_PREFIX = "dynamicDate.property.";
 
 	public String convertToString(CmisTree propertyNode) {
 		List<String> _string = new ArrayList<String>();

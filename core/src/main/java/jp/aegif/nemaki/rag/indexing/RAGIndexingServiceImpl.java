@@ -778,7 +778,12 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
     private ExtractedText extractText(String repositoryId, Document document) {
         String attachmentId = document.getAttachmentNodeId();
         if (attachmentId == null) {
-            // A statement about this version: it has no content stream at all.
+            // A statement about this version: it has no content stream at all. NOT REACHED from
+            // indexDocument today — getMimeType returns null for the same condition and the MIME
+            // gate throws first (round-6 review, P3). Kept because it is the correct answer for
+            // this input and the gate's order is not this method's contract; the purge of a
+            // document that lost its content stream is done by deleteContentStream, which calls
+            // triggerRAGDeletion directly.
             return ExtractedText.notIndexable(null);
         }
 

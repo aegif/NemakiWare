@@ -370,8 +370,8 @@ public class SolrPredicateWalker{
 		// not by joining the node's children with a dot: "WHERE d.nemaki:tag LIKE 'x%'" asked for
 		// "d.nemaki:tag", which is in no property map, so the field became a custom one no document
 		// carries and LIKE matched nothing (round-5 review). Escaped once, as everywhere else.
-		String field = queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId,
-				getColumnReference(colNode).getPropertyQueryName()));
+		String field = queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));
 		String pattern = translatePattern((String) rVal); // Solr wildcard expression
 		
 		WildcardQuery q = new WildcardQuery(new Term(field, pattern));
@@ -545,7 +545,11 @@ public class SolrPredicateWalker{
 		}
 
 		// Build a statement
-		String parentIdField = solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID);
+		// Through the same rule as every other field name here. A no-op for a static property
+		// (the map answers "parent_id"), but the rule has no exemptions — the lock counts calls
+		// of the map, not shapes, so a future static name with a special character is covered.
+		String parentIdField = queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID));
 		Term t = new Term(parentIdField, folderId);
 		Query q = new TermQuery(t);
 		
@@ -1033,6 +1037,14 @@ public class SolrPredicateWalker{
 	 * @param alias
 	 * @return
 	 */
+	/**
+	 * The one call of the property map in this class whose result is a VALUE, not a field name:
+	 * callers put it in {@code new Term("type", …)}, where {@code "type"} is the field. It must
+	 * therefore NOT go through {@link #queryableFieldName} — escaping a value as if it were a field
+	 * name would look for a term that was never indexed. The lock in
+	 * {@code EveryFieldNameIsEscapedOnceTest} names this site as the single exemption, so a new call
+	 * cannot join it silently (round-6 review).
+	 */
 	private String buildQualField(String alias) {
 		String cmisName = queryObject.getTypeQueryName(alias);
 		String solrName = solrUtil.getPropertyNameInSolr(repositoryId, cmisName);
@@ -1059,9 +1071,10 @@ public class SolrPredicateWalker{
 		// from sourceObjectId values that are caller-supplied; characters
 		// such as ':' '*' '\\' '(' ')' would otherwise inject Solr query
 		// syntax (DoS via wildcards or unintended result shaping).
-		query.setQuery(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID)
+		query.setQuery(queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID))
 				+ ":" + ClientUtils.escapeQueryChars(folderId) + " AND "
-				+ solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID) + ":cmis\\:folder"); // only "folder" nodes
+				+ queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.BASE_TYPE_ID))
+				+ ":cmis\\:folder"); // only "folder" nodes
 
 		// Connect to SolrServer and add subfolder ids to the list
 		try {
