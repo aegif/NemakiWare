@@ -294,10 +294,17 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   フィールドに対する `IS NULL` は「全文書」に当たってしまうので、**その文を明示的に拒否します**
   （「このプロパティは問い合わせに使えません」という 400。静かに誤った結果を返すより、はっきり失敗するほうが
   安全だという判断です。残件 R187）。
-  **どのプロパティが該当するか**: REST の型定義 API（`POST /core/rest/repo/{repo}/type`）で作ったプロパティは
-  問い合わせ名 = ID になるのでこれに当たります。**出荷している DATETIME プロパティ 14 個**（保持期間の
-  `cmis:rm_expirationDate` などを含む 7 つの secondary type）は問い合わせ名と ID が違うため、この経路には
-  来ません — ただしその食い違い自体が別の残件（R178 の最後の行）です。
+  **どのプロパティが該当するか（訂正）**: **出荷している DATETIME プロパティもすべて該当します。** 7 つの
+  secondary type の 14 個（保持期間の `cmis:rm_expirationDate` / `cmis:rm_startOfRetention`、ノート・
+  メッセージ・業務記録・チャット文脈・クラウドドライブ・外部連携の日付）は、どれも**問い合わせ名 = ID**
+  で登録されるため（`Patch_*SecondaryType` の `setQueryName(propertyId)`）、この経路に来ます。
+  `WHERE cmis:rm_expirationDate IS NULL` は 400 になります（`IS NOT NULL`・`IN`・`LIKE` も同じ）。
+  REST の型定義 API で作ったプロパティも同様です。
+  **挙動は変わっていません** — この修正の前も、生のコロンを受け取った Solr が構文エラーを返していました。
+  変わったのは、失敗の理由が読める 400 になったことだけです（前の版の記述は逆のことを書いていました）。
+  **保持期間の運用そのものは影響を受けません** — 期限切れの文書を見つけるのは `RetentionScheduler` で、
+  CouchDB の view（`Patch_RetentionLastModificationView`）で引いており、CMIS SQL を投げません。
+  いま CMIS SQL でこれらの日付を絞り込む方法はありません（残件 R187）。
 - **`LIKE`** — テーブル修飾した列（`WHERE d.nemaki:tag LIKE 'x%'`）がどの対応表にも無い名前に解決し、
   0 件になっていました。
 - **比較（`=`・`<>`・`<` など）** — カスタムのプロパティのフィールド名を二重にエスケープしており、

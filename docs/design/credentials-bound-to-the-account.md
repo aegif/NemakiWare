@@ -75,6 +75,24 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 根拠にするので、パスワードと結びのある資格情報だけに当てる。**乗っ取りの後始末**では API キーとパスキーを
 明示的に取り消す手順を RELEASE_NOTES に書く（オーナー回答 3 と同じ趣旨）。
 
+**世代の読み書きの規則**（確認 8 巡目、2 名 — これが無いと fail-closed が fail-open になる）:
+
+- **既存の利用者文書に欄が無い**ときは **0 とみなす**。資格情報の側も、発行時に読んだ値（0）を書く。
+  「欄が無い＝拒否」にすると、**上げた直後に誰も入れない**（新しく発行した資格情報まで拒まれる）。
+  `accountId` の無い資格情報を拒むのはオーナー回答 1 のとおりだが、世代は**別の軸**で、0 が正当な値。
+- **資格情報の世代が利用者の世代より大きい**ときも**拒否**する（新しいレプリカが書いた値を古い木が
+  読む形・壊れた値。`<` だけを見ると素通りする）。
+- **単調性は書き手が守る**。世代はパスワードのハッシュと**同じ CouchDB の更新**で書き（同じ `_rev`）、
+  `409` を受けたら**読み直して +1 を作り直す**（メモリに持っていた古い値から +1 にすると、同時に 2 回
+  変えたときに 1 回分が失われ、1 回目の直後に発行した資格情報が生き残る）。再試行で解決できなければ
+  **パスワードの変更を失敗させる**（世代を上げられないまま変えるのは fail-open）。
+- **文書全体を置き換える更新**（`UserItemResource.update` / `update-json` のような PUT）は、
+  **世代の欄を落としても下げてもいけない**。落ちると失効させた資格情報が全部また通る。保存の手前の
+  1 か所（下の §4.4）で、保存する利用者の世代が**保存前の値以上**であることを確かめる。
+- **MD5 → BCrypt の自動アップグレード**は世代を上げない（利用者が変えたのではない）。§4.4 の「1 か所に
+  集める」はこの例外を**引数で**渡す（`bumpGeneration` の真偽）。集約したうえで例外を flag にしないと、
+  ログインした本人のトークンがその場で無効になる（確認 8 巡目の subagent P3）。
+
 判定（`AuthenticationUtil` に置き、`mayStillAct` の隣で同じ利用者の読みを使う）:
 
 ```
@@ -84,9 +102,11 @@ boundToThisAccount(credential, account):
   credential.accountId が
       account.getId() と不一致            → 拒否（作り直し・ID の使い回し）
   この置き場が generation を照合する種類で
-      かつ credential.generation <
-           account.credentialGeneration      → 拒否（パスワードを変えた後の古い資格情報）
-      かつ credential.generation が無い       → 拒否（上の「accountId が無い」と同じ扱い）
+      かつ credential.generation !=
+           account.credentialGeneration      → 拒否（古い＝パスワードを変えた後、
+                                                大きい＝別のレプリカが書いた値か壊れた値）
+      （account 側に欄が無ければ 0 とみなす。credential 側に欄が無ければ 0 とみなす —
+        この版より前に発行したものは accountId が無いので既に拒まれている）
   それ以外                                → 通す
 ```
 
@@ -108,9 +128,13 @@ boundToThisAccount(credential, account):
 - 作成時に、そのときの `UserItem.getId()` を書く。
 - `validateApiKey` が返すのは今も `userId` だけなので、**判定は呼び出し側（`AuthenticationServiceImpl.loginWithApiKey`・MCP）には置けない**。
   `ApiKeyService` が利用者を読んで判定するか、`validateApiKey` が `ApiKey` を返す形にするかを選ぶ（§6 の未決 2）。
-- **さらに、`deleteUser` がその利用者の API キーを取り消す。** 結びだけでは、この版より前のキー（`accountId` が無い）を
-  守れない。取り消しなら、古いキーも含めて消える。両方やる（取り消しが主、結びは `deleteUser` を通らない削除
-  — 利用者の文書を CMIS で直接消す経路 — に対する防御）。
+- **さらに、`deleteUser` がその利用者の API キーを取り消す。** ~~結びだけでは、この版より前のキー
+  （`accountId` が無い）を守れない。~~ **オーナー回答 1（fail-closed）でその前提は消えた** — `accountId` の
+  無いキーは §3 の規則で拒まれる。取り消しは **`deleteUser` を通らない削除**（利用者の文書を CMIS で直接
+  消す経路）に対する防御として残す（確認 8 巡目の subagent P3 — 古い理由付けが残っていた）。
+- **引き方**: 取り消しは **`userId`（既存の `getByUserId` の索引）で引く**。`accountId` で引くと、
+  `accountId` を持たない古いキーが 1 件も見つからず、置き場に残り続ける（同 P3）。`accountId` は
+  **照合**に使い、**引き当て**には使わない。
 
 ### 4.2 セッションのトークン
 
@@ -138,8 +162,8 @@ boundToThisAccount(credential, account):
 - `api/v1/principals/PrincipalBatchApplier.java` — 1（一括プリンシパル是正）
 - `rest/controller/UserController.java` — 1（Spring MVC）
 - `cmis/factory/auth/impl/AuthenticationServiceImpl.java` — 1（**MD5 → BCrypt の自動アップグレード。これは
-  利用者が変えたのではないので、`credentialsNotBefore` を書いてはいけない** — 書くと、ログインした本人の
-  トークンがその場で無効になる）
+  利用者が変えたのではないので、**世代を上げてはいけない** — 上げると、ログインした本人の
+  トークンがその場で無効になる。集約した 1 か所へは `bumpGeneration=false` で渡す（§3 の規則））
 
 **探索語の盲点（この棚卸しの限界）**: `setPassowrd(` だけで数えると、**利用者文書に BCrypt のハッシュを直接書く 2 つの経路が
 落ちる** — `api/setup/resource/SetupAdminResource.java:108`（`POST /api/v1/setup/admin/change-password`。主リポジトリの admin 文書を
@@ -196,7 +220,7 @@ Normal Mode では 403 を返すので Setup Mode 限定。
 `ContentServiceImpl.deleteUser(repositoryId, userId, actor)` は `refuseProtectedUser` →
 `getUserItemById` → `removeUserFromAllGroups` → `delete(SystemCallContext, …)` の 4 段で、**資格情報には
 一切触れていない**（`WebAuthn`・`ApiKey`・`Token`・`RssToken` の語が 1 つも無い）。取り消しは
-**`user.getId()` を取った後**（`accountId` で引くため）、**`delete` の前**に置く:
+**`user.getId()` を取った後**（照合のため。引き当ては `userId` — §4.1）、**`delete` の前**に置く:
 
 1. API キー（`ApiKeyService` にアカウント単位の取り消し）
 2. パスキー（`WebAuthnCredential` をアカウント単位で消す）
@@ -256,7 +280,7 @@ Normal Mode では 403 を返すので Setup Mode 限定。
 直す前の製品（`072a3c00b`）に当てて、落ちる本数と内訳を**錠を足し終えた後に**測る
 （`old-product-count-after-the-last-lock`）。
 
-## 6. 未決（オーナーに） — **1〜4 は 2026-10-16 に回答済み。5・6 は確認 7 巡目で新しく出た**
+## 6. 未決（オーナーに） — **6 件すべて 2026-10-16 に回答済み**（1〜4 は確認 6 巡目、5・6 は確認 7 巡目に出て同じ日に回答）
 
 1. **この版より前に発行した資格情報**（`accountId` が無い）をどうするか。
    - (a) 名前だけで通す（これまでと同じ。アップグレードで何も壊れない。作り直しの穴は `deleteUser` の取り消しで塞ぐ）
@@ -295,20 +319,23 @@ Normal Mode では 403 を返すので Setup Mode 限定。
   1 版遅れる代わりに、更新中の窓が無い。
 - (c) 拒否を**設定で切り替える**（既定は拒否。更新中だけ緩める）。設定が増える。
 
-オーナーの回答 1（fail-closed）はそのままで、**いつから拒むか**だけの判断。推奨は (a) — この木の
-multi-replica の手順は既に「再索引・stamp は 1 台に固定」のような全停止寄りの制約を持っており、
-2 段に分けると「どの版から守られているか」が利用者から見えなくなる。
+オーナーの回答 1（fail-closed）はそのままで、**いつから拒むか**だけの判断。推奨は (a)。
+**オーナーの回答（2026-10-16）: (a) 全停止で更新する。** 運用手順（[`v3.4.0-upgrade-runbook.md`](../operations/v3.4.0-upgrade-runbook.md)
+と 3.4.1 の手順）に「この版への更新はローリング不可 — 全レプリカを止めてから上げる」を書く。
+**逆向きの窓も同じ理由で閉じる**（確認 8 巡目の subagent P3）: 新しいレプリカが上げた世代を、欄を知らない
+古いレプリカの**文書全体の更新**が落とす形。全停止ならどちらも起きない。
 
 ### 未決 6（確認 7 巡目の subagent P3）— 一括プリンシパル是正が世代を上げるか
 
 `PrincipalBatchApplier` がパスワードを書くとき世代を上げると、**是正が触った利用者全員のトークンが失効**
 する（その人たちは何もしていないのに再ログインになる）。選択肢: (a) 上げる（パスワードを変えたのだから
 正しい）、(b) 上げない（是正は管理操作で、パスワードを変えていない利用者の資格情報を切らない）。
-推奨は **(a)** — 是正がパスワードを**実際に変えた**利用者だけが対象なので、再ログインは正しい帰結。
-ただし一括なので規模が見えるよう、是正の結果に「失効させた利用者の数」を出す。
+推奨は **(a)**。**オーナーの回答（2026-10-16）: (a) 上げる。** 是正がパスワードを**実際に変えた**利用者
+だけが対象なので、再ログインは正しい帰結。一括なので規模が見えるよう、**是正の結果に「失効させた利用者の
+数」を出す**（preview にも出す — 適用の前に規模が分かるように）。
 
 ## 7. 入れないもの
 
 - 共有のセッションの置き場、短命トークンとリフレッシュ、全員のセッションの一括取り消し — ロードマップ (1)
   （`zero-trust-roadmap.md`）。この設計は**いまの置き場のまま**で R170 を閉じる。
-- `nemaki:credentialsNotBefore` を使った「管理者が 1 人の資格情報を全部無効にする」操作の API — 上と同じ。
+- `nemaki:credentialGeneration` を使った「管理者が 1 人の資格情報を全部無効にする」操作の API — 上と同じ。
