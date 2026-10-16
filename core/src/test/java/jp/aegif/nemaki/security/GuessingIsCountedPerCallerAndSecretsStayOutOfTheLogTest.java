@@ -86,7 +86,11 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         assertTrue(login.find(), door + " no longer calls login() with a context it built, so this"
                 + " lock cannot tell which method the throttle's address has to be put in");
         Matcher signature = Pattern
-                .compile("\n\\s*(?:public|private|protected)[^\n;{]*\\{")
+                // The signature may span lines — AuthTokenResource's login() does, and requiring
+                // the brace on the signature's own line made the span start at the PREVIOUS
+                // method (register), so a `put` moved there satisfied this lock (round-8
+                // review, P2). Allow newlines inside the parameter list.
+                .compile("\n\\t*(?:public|private|protected)[^;{]*?\\{", Pattern.DOTALL)
                 .matcher(body.substring(0, login.start()));
         int start = 0;
         while (signature.find()) {
@@ -240,17 +244,29 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                 String name = f.getFileName().toString();
                 return name.endsWith(".yml") || name.endsWith(".yaml");
             }).toList()) {
-                String yaml = Files.readString(file, StandardCharsets.UTF_8);
-                // The continuation lines of a YAML block scalar, which is how a long option list is
-                // written — INCLUDING lines that start with "-D". The first form of this pattern
-                // excluded every line starting with "-" (meaning to skip list items) and so skipped
-                // exactly the lines a password would be on (round-7 review, P2).
-                Matcher value = Pattern
-                        .compile("JAVA_TOOL_OPTIONS[=:]([^\\n]*(?:\\n[ \\t]+(?:-D|[^-\\s])[^\\n]*)*)")
-                        .matcher(yaml);
-                while (value.find()) {
+                // YAML's own rule — the block is every FOLLOWING line indented deeper than the key —
+                // instead of guessing what a continuation line starts with. The guess excluded "-"
+                // (meaning list items) and so excluded "-D…password="; allowing only "-D" then
+                // stopped at "-Xmx512m" (both measured; round-7 and round-8 reviews).
+                List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                for (int i = 0; i < lines.size(); i++) {
+                    if (!lines.get(i).contains("JAVA_TOOL_OPTIONS")) {
+                        continue;
+                    }
+                    int indent = lines.get(i).indexOf(lines.get(i).trim());
+                    StringBuilder block = new StringBuilder(lines.get(i));
+                    for (int j = i + 1; j < lines.size(); j++) {
+                        String next = lines.get(j);
+                        if (next.isBlank()) {
+                            continue;
+                        }
+                        if (next.indexOf(next.trim()) <= indent) {
+                            break;
+                        }
+                        block.append('\n').append(next);
+                    }
                     if (Pattern.compile("-D[\\w.]*password=", Pattern.CASE_INSENSITIVE)
-                            .matcher(value.group(1)).find()) {
+                            .matcher(block.toString()).find()) {
                         viaToolOptions.add(file.getFileName().toString());
                         break;
                     }

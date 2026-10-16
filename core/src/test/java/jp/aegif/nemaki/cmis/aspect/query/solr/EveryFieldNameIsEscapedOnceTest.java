@@ -120,14 +120,34 @@ class EveryFieldNameIsEscapedOnceTest {
                 }
             }
         }
-        // The only file allowed to name it is the one that maps a query column to it and refuses it.
-        List<String> outsideTheMapping = mentions.stream()
-                .filter(m -> !m.startsWith("SolrUtil.java:"))
+        // NOT "every line in SolrUtil is fine": the three write paths live in that same file (round-8
+        // review, both reviewers, P2), so exempting the file exempts the most likely way for this
+        // premise to break. The known occurrences are frozen instead, by what the line DOES.
+        List<String> unexpected = mentions.stream()
+                .filter(m -> !m.contains("public static final String DATETIME_FIELD_PREFIX")
+                        && !m.contains("return DATETIME_FIELD_PREFIX + cmisColName;")
+                        && !m.contains("if (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {")
+                        && !m.contains("//") && !m.contains("* "))
                 .toList();
-        assertTrue(outsideTheMapping.isEmpty(),
-                "a file other than the property map names the dynamicDate field. If something now"
-                        + " INDEXES it, refusing to query it is wrong and this refusal has to go: "
-                        + outsideTheMapping);
+        assertTrue(unexpected.isEmpty(),
+                "a line other than the three that map, declare and refuse this prefix now names it."
+                        + " If something INDEXES it, refusing to query it is wrong and the refusal in"
+                        + " queryableFieldName has to go: " + unexpected);
+        // And the same for the constant, which is how an indexer would naturally spell it.
+        List<String> viaConstant = new ArrayList<>();
+        try (var files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    if (line.contains("DATETIME_FIELD_PREFIX")
+                            && (line.contains("addField") || line.contains("setField")
+                                    || line.contains("fieldName =") || line.contains("solrFieldName ="))) {
+                        viaConstant.add(file.getFileName() + ":" + line.trim());
+                    }
+                }
+            }
+        }
+        assertTrue(viaConstant.isEmpty(),
+                "something builds an indexed field name from the DATETIME prefix constant: " + viaConstant);
         assertEquals("dynamicDate.property.", SolrUtil.DATETIME_FIELD_PREFIX,
                 "the prefix the refusal keys on changed");
     }
@@ -157,6 +177,29 @@ class EveryFieldNameIsEscapedOnceTest {
         assertEquals("dynamic.property.x\\:a\\-b",
                 SolrUtil.queryableFieldName("dynamic.property.x:a-b"),
                 "a hyphen in a property id was left raw next to the colon this rule fixes");
+    }
+
+    @Test
+    @DisplayName("a refusal is not handed to the manual parser — that parser answers with a DIFFERENT predicate")
+    void aRefusalIsNotHandedToTheManualParser() throws IOException {
+        // The manual parser returns the FIRST predicate it recognises and discards the rest, so
+        // handing it a statement the walker REFUSED produced a successful query for the other half:
+        //   WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL  ->  200, tag only, dueDate dropped.
+        // Both reviewers found this in round 8. The refusal has to leave before that fallback.
+        String processor = read(PROCESSOR);
+        int walkCall = processor.indexOf("solrPredicateWalker.walkPredicate(whereTree)");
+        assertTrue(walkCall > 0, "the walker call is gone — this lock no longer reads that path");
+        int refusalCatch = processor.indexOf("CmisInvalidArgumentException refusal", walkCall);
+        int genericCatch = processor.indexOf("} catch (Exception e) {", walkCall);
+        int fallback = processor.indexOf("parseSecondaryTypeWhereClause", genericCatch);
+        assertTrue(refusalCatch > 0 && refusalCatch < genericCatch,
+                "the catch around walkPredicate does not take a refusal first, so a refused"
+                        + " statement is handed to the manual parser and comes back as a query for"
+                        + " whatever other predicate that parser recognises");
+        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw refusal"),
+                "the refusal is caught before the fallback but not re-thrown");
+        assertTrue(fallback > genericCatch,
+                "the manual-parser fallback moved; this lock measures that the refusal leaves first");
     }
 
     @Test
