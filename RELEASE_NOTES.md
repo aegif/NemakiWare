@@ -294,21 +294,33 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   フィールドに対する `IS NULL` は「全文書」に当たってしまうので、**その文を明示的に拒否します**
   （「このプロパティは問い合わせに使えません」という 400。静かに誤った結果を返すより、はっきり失敗するほうが
   安全だという判断です。残件 R187）。
-  **どのプロパティが該当するか（訂正）**: **出荷している DATETIME プロパティもすべて該当します。** 7 つの
-  secondary type の 14 個（保持期間の `cmis:rm_expirationDate` / `cmis:rm_startOfRetention`、ノート・
-  メッセージ・業務記録・チャット文脈・クラウドドライブ・外部連携の日付）は、どれも**問い合わせ名 = ID**
-  で登録されるため（`Patch_*SecondaryType` の `setQueryName(propertyId)`）、この経路に来ます。
-  `WHERE cmis:rm_expirationDate IS NULL` は 400 になります（`IS NOT NULL`・`IN`・`LIKE` も同じ）。
-  REST の型定義 API で作ったプロパティも同様です。
-  **挙動が変わる場合があります（重要）**: 単独の条件（`WHERE cmis:rm_expirationDate IS NULL`）は 3.4.0 でも
-  400 でした。しかし**ほかの条件と AND でつないだ文**（`WHERE nemaki:tag='x' AND cmis:rm_expirationDate IS
-  NULL`）は、3.4.0 では**日付の条件が黙って無視され、`nemaki:tag='x'` だけの結果が 200 で返っていました**。
-  3.4.1 はこれを **400** にします — 条件を落とした一覧を「その条件に合う文書」として返さないためです。
-  **結果が返っていた問い合わせが 400 になる**ので、保存した検索やスクリプトがある場合は見直してください。
+  **どの文が拒否に届くか（配備して実測し、訂正しました）**: 届くのは**対応表がこのフィールド名を実際に
+  引いたとき**だけで、プロパティの種類では決まりません。3.4.1 を bedroom（全 2,449 文書）に配備して
+  測った答え（測定用の secondary type を作り、測った後に消しています）:
+
+  | 文（`SELECT cmis:objectId FROM …`） | 3.4.1 の答え |
+  |---|---|
+  | `cmis:document WHERE nemaki:probeDate IS NULL`（`IS NOT NULL` も） | **400**（拒否） |
+  | `nemaki:probeDateSec WHERE nemaki:probeDate = / >= / IN / IS NULL` | **400**（拒否） |
+  | `cmis:document WHERE nemaki:probeDate = TIMESTAMP '…'`（`<>`・`>=`・`IN` も） | 200・**2,449 件 = 全文書** |
+  | `cmis:document WHERE cmis:name LIKE '%a%' AND nemaki:probeDate IS NULL` | 200・15 件（**日付の条件を落とした答え**） |
+  | `cmis:document WHERE cmis:rm_expirationDate IS NULL` | 200・**2,449 件 = 全文書** |
+
+  **前の版に書いた「保持期間の 2 つを含む出荷済みの DATETIME プロパティは 400 になる」は誤りでした。**
+  `cmis:rm_*` は接頭辞が `cmis:` なので JOIN の補完が飛ばし、文の解析が先に失敗して手書きの fallback が
+  `*:*`（全文書）に落ちます — 3.4.0 でも 3.4.1 でも**条件を無視した 200** が返ります。`cmis:document` に
+  対して書いた比較（`=`・`<>`・`>=`・`IN`）も、複合 WHERE でほかの条件が先に当たった文も同じで、
+  **日付の条件が静かに落ちます**（残件 R188。この版では直していません。**日付で絞ったつもりの結果が
+  絞られていないことがあるので、件数を鵜呑みにしないでください**）。**古い版から上げたリポジトリ**では、
+  保存済みの型定義の問い合わせ名が接頭辞なし（`rm_expirationDate` / `chatCapturedAt`）のことがあり、
+  その綴りはどの経路にも引っかからないため同じく全文書が返ります（実測）。
+  **400 になる文が、その前に正しい結果を返していたことはありません。** 対応表が返すフィールド
+  （`dynamicDate.property.<id>`）を持つ文書は**索引に 1 件も無い**（全 indexer に錠を置いて測っています）ので、
+  この条件で結果が絞られたことは一度もなく、返っていたのは全文書か、条件を落とした一覧か、500 でした。
   **保持期間の運用そのものは影響を受けません** — 期限切れの文書を見つけるのは `RetentionScheduler` で、
   CouchDB の view（`documentsByExpirationDate`。`Patch_RetentionExpirationView` が作ります）で引いており、
-  CMIS SQL を投げません（明示的な期限が無い文書の経路は別の view `Patch_RetentionLastModificationView`
-  です）。いま CMIS SQL でこれらの日付を絞り込む方法はありません（残件 R187）。
+  CMIS SQL を投げません（明示的な期限が無い文書の経路は別の view `documentsByLastModification`
+  です。`Patch_RetentionLastModificationView` はそれを作る patch のクラス名）。いま CMIS SQL でこれらの日付を絞り込む方法はありません（残件 R187）。
 - **`LIKE`** — テーブル修飾した列（`WHERE d.nemaki:tag LIKE 'x%'`）がどの対応表にも無い名前に解決し、
   0 件になっていました。
 - **比較（`=`・`<>`・`<` など）** — カスタムのプロパティのフィールド名を二重にエスケープしており、

@@ -64,12 +64,20 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 **どの判定がどの置き場に当たるか**（確認 7 巡目の Codex P2 — 「1 つの規則」と オーナーの回答 3 が
 食い違っていた）:
 
-| 置き場 | `accountId` の照合 | `generation` の照合（パスワード変更で失効） |
-|---|---|---|
-| セッションのトークン | **する** | **する** |
-| MCP のセッション | **する** | **する** |
-| API キー | **する** | **しない**（オーナー回答 3 — 自動処理が黙って止まるため） |
-| パスキー | **する** | **しない**（パスワードから導かれた資格情報ではない。失効させると、正当に登録した人が入れなくなる — 過剰拒否） |
+| 置き場 | 発行時に**書く**欄 | **照合する**欄 | 欄が無いときの答え |
+|---|---|---|---|
+| セッションのトークン（`Token`） | `accountId`・`generation` | `accountId`・`generation` | どちらも**拒否** |
+| MCP のセッション（`McpSession`） | `accountId`・`generation` | `accountId`・`generation` | どちらも**拒否** |
+| API キー（`ApiKey`） | `accountId`・`generation` | `accountId` のみ | `accountId` 無し → **拒否**／`generation` は照合しないので答えに影響しない |
+| パスキー（`WebAuthnCredential`） | `accountId`・`generation` | `accountId` のみ | 同上 |
+| RSS のフィードのトークン（`RssToken`） | `accountId`・`generation` | `accountId` のみ | 同上 |
+
+**5 つ全部が両方の欄を書く**（確認 10 巡目の Codex P2 — パスキーの生産者が `generation` を書かず、RSS が
+この表に無く、錠の計画が RSS を `accountId` の規則から外していた。生産者と消費者と錠が食い違っていた）。
+照合しない置き場でも**書く**のは、(a) 調査のため、(b) 将来「管理者が 1 人の資格情報を全部無効にする」
+操作（§7）を足すときに欄が揃っているため、(c) 書く側の規則が 1 つで済むため。
+`generation` を照合しないのは、API キー（オーナー回答 3 — 自動処理が黙って止まる）、パスキーと RSS
+（パスワードから導かれた資格情報ではない。失効させると正当に登録した人が入れない = 過剰拒否）。
 
 `accountId` の照合は**全部**に当たる（R170 の本体）。`generation` の照合は「パスワードを変えた」ことを
 根拠にするので、パスワードと結びのある資格情報だけに当てる。**乗っ取りの後始末**では API キーとパスキーを
@@ -85,21 +93,40 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
   欠落を許す互換上の理由は無い）。
 - **資格情報の世代が利用者の世代より大きい**ときも**拒否**する（新しいレプリカが書いた値を古い木が
   読む形・壊れた値。`<` だけを見ると素通りする）。
-- **単調性は書き手が守る**。世代はパスワードのハッシュと**同じ CouchDB の更新**で書き（同じ `_rev`）、
-  `409` を受けたら**読み直して +1 を作り直す**（メモリに持っていた古い値から +1 にすると、同時に 2 回
-  変えたときに 1 回分が失われ、1 回目の直後に発行した資格情報が生き残る）。再試行で解決できなければ
-  **パスワードの変更を失敗させる**（世代を上げられないまま変えるのは fail-open）。
+- **3 つの役割を 3 つの層に分ける**（確認 10 巡目の Codex P2 — 「1 か所」と書いて 3 つの候補を並べていた。
+  どれが何をするかを決めた）:
+
+  | 役割 | 置き場 | 形 |
+  |---|---|---|
+  | **上げる**（+1） | `ContentService` の新しいメソッド **`changePassword(repositoryId, userId, newHash, bumpGeneration)`** | パスワードを書く 9 か所が**これだけ**を呼ぶ。MD5→BCrypt は `bumpGeneration=false`。一括是正は `true`（オーナー回答 6）。 |
+  | **再試行**（409） | 同じ `changePassword` の中 | `409` を受けたら**利用者を読み直して +1 を作り直す**。メモリの古い値から +1 にすると、同時に 2 回変えたとき 1 回分が失われる。解決できなければ**パスワードの変更を失敗させる**（上げられないまま変えるのは fail-open）。 |
+  | **下げない・落とさない** | **couch の DAO** `ContentDaoServiceImpl#update(String, UserItem)` | PUT の直前に `_id` を読み直して（キャッシュを通さない）、保存する世代が**保存前の値以上**であることを確かめる。下がる・落ちるなら拒否。**cached の DAO には置かない**（cached は couch を包む decorator なので、両方に置くと読みが 2 回・判定が 2 回になる）。 |
+
+  この分け方なら、DAO を直に呼ぶ経路（MD5→BCrypt）も**下げない側**は覆われ、**上げる側**は
+  `changePassword` を呼ぶかどうかで明示される。`getUserItemByIdFresh` を `ContentService` に足す必要は
+  **無い**（読み直しは couch の DAO の中で済む）。
 - **文書全体を置き換える更新**（`UserItemResource.update` / `update-json` のような PUT）は、
   **世代の欄を落としても下げてもいけない**。落ちると失効させた資格情報が全部また通る。
   **どこで守るか**（確認 9 巡目の Codex P2 — 「1 か所」と書いて場所を決めていなかった。読んで確かめた）:
-  - **守りは DAO のメソッドに引く** — `ContentDaoService#update(String, UserItem)`（実装は couch と
-    cached の 2 つ）。**呼び出し元は 2 件**（確認 9 巡目の subagent P2 — 私は 1 件と書いていた）:
-    `ContentServiceImpl.updateInternal`（3415 行）と **`AuthenticationServiceImpl`（518 行、MD5→BCrypt）**。
-    後者は `applyUserUpdate` も `updateInternal` も通らないので、`updateInternal` に置くと
-    **その段落が `applyUserUpdate` を却下した理由として挙げた経路そのものが外れる**。
-  - 比較には**新しい読み**が要る（キャッシュ越しの読みは「呼び出し側がいま変えたインスタンス」を返しうる
-    — R115 の注記）。`getGroupItemByIdFresh` は在るが利用者版が無いので、**`getUserItemByIdFresh` を足す**。
-    保存ごとに 1 回の余分な読みが入る（利用者の更新は頻度が低いので許容と判断した。**測っていない**）。
+  - **場所は上の表のとおり couch の DAO**（`dao/impl/couch/ContentDaoServiceImpl#update(String, UserItem)`）。
+    DAO に引くのは**呼び出し元が 2 件**あるからで（確認 9 巡目の subagent P2）、
+    `ContentServiceImpl.updateInternal`（3415 行）と `AuthenticationServiceImpl`（518 行、MD5→BCrypt）。
+    後者は `applyUserUpdate` も `updateInternal` も通らない。
+  - **比べる述語**（確認 10 巡目の subagent P2 — 書き換えで落ちていた）: **両側とも欄が無ければ 0 とみなし、
+    「保存する値 ≥ 保存前の値」を要求する**。欄を落とす更新は 0 になるので、保存前が 1 以上なら自動的に
+    拒まれる（落とす形を別に書く必要は無い）。**保存前の値が整数として読めない**ときは比べられないので
+    拒否する（unknown ≠ 0）。読み直しは couch の DAO の中で CouchDB から直に行うので、
+    `getUserItemByIdFresh` を `ContentService` に足す必要は無い。保存ごとに 1 回の余分な読みが入る
+    （利用者の更新は頻度が低いので許容と判断した。**測っていない**）。
+  - **拒否したときキャッシュを捨てる**（確認 10 巡目の subagent P2。読んで確かめた）:
+    `dao/impl/cached/ContentDaoServiceImpl.getUserItemById`（836 行）は**キャッシュの実体をそのまま返す**
+    （`return v;`）ので、パスワードを変える経路は**キャッシュに載っているオブジェクトを書き換えてから**
+    保存する。同じクラスの `update`（1469 行）は下層を呼んだ**後にだけ**キャッシュを置き直すので、下層が
+    拒んで例外を投げると**キャッシュには世代 n+1、CouchDB には n** が残る。その状態で §3 の照合を当てると、
+    世代 n で発行した**生きている資格情報を全部拒む**（eviction まで）= 過剰拒否で、この木では
+    通してしまうのと同じ重さの欠陥。したがって cached の `update` は**例外のときに `userItemCache` と
+    `contentCache` からその利用者を捨てて再 throw する**。409 の再試行の読み直しも**キャッシュを通さない**
+    こと（通すと失われた更新になる）。
   - **外れるのは setup の 2 経路**（`SetupAdminResource:108`・`SetupApplyResource:484` — 利用者文書に
     BCrypt のハッシュを直接書く raw な PUT）。ここは **Setup Mode 限定**（`SetupModeGuardFilter` が
     Normal Mode では 403）。確認 9 巡目の subagent が読んで確かめたところ、`SetupAdminResource` は
@@ -128,6 +155,14 @@ boundToThisAccount(credential, account):
   それ以外                                → 通す
 ```
 
+**同じ利用者 ID の文書が 2 つ在りうること**（確認 10 巡目の subagent P3。製品のコメントが書いている —
+`ContentServiceImpl.checkUserItemDeletion` 907-913 行「その利用者 ID が別の文書に解決するなら、利用者は
+そちらで生きている」）。資格情報は**文書 id** に結ぶのに、引き当ては常に**名前**なので、名前の解決先が
+別の文書に移ると、その人の資格情報は全部 `WRONG_ACCOUNT` で拒まれる。**向きは過剰拒否側**（パスワードで
+入り直して再発行すれば戻る）であり、「前の持ち主の資格情報が新しい文書に通る」R170 の向きには倒れない。
+名前が 2 つの文書に解決する状態自体は別の問題（重複の検出はこのバッチの範囲ではない）なので、
+**この帰結を RELEASE_NOTES の「上げたときに止まるもの」に 1 行書く**だけにする。
+
 **`accountId` が無い資格情報は拒否する**（オーナー判断 2026-10-16、§6 の未決 1 — 推奨は「名前だけで通す」だったが
 オーナーが fail-closed を選んだ）。したがって**この版に上げた瞬間に、既存の API キー・セッションのトークン・
 パスキー・MCP のセッションは全部通らなくなる**。これは運用に見える変更なので:
@@ -146,18 +181,26 @@ boundToThisAccount(credential, account):
 - 作成時に、そのときの `UserItem.getId()` を書く。
 - `validateApiKey` が返すのは今も `userId` だけなので、**判定は呼び出し側（`AuthenticationServiceImpl.loginWithApiKey`・MCP）には置けない**。
   **オーナー回答 2: `ApiKeyService` の中で判定する**（戻り値の形は変えない）。通らなければ **null を返す**
-  — 呼び出し側 3 か所は「null なら拒否」をすでに実装しているので、形が変わらない。実装時に
-  `ApiKeyServiceImpl` に `ContentService` が注入されているかを確かめる（無ければ足す。
-  `AuthenticationServiceImpl` は持っているので循環参照にはならない）。
+  — 呼び出し側 3 か所は「null なら拒否」をすでに実装しているので、形が変わらない。
+  **利用者の読みは `ContentDaoService`（この bean に既に注入されている — `serviceContext.xml`）から行う。
+  `ContentService` を注入してはいけない**（確認 10 巡目の Codex P2）: `deleteUser` から `ApiKeyService` を
+  呼ぶので、`ContentService → ApiKeyService → ContentService` の循環参照になり、Spring が起動を拒むか
+  初期化途中の proxy を掴む。「`AuthenticationServiceImpl` が持っているから循環しない」と書いたのは誤り
+  （循環は呼ぶ向きで決まる）。
 - **アカウント単位の取り消しを足す**: いまの interface は `revokeApiKey(repositoryId, keyId)` だけなので、
   `deleteUser` と一括是正のために `int revokeApiKeysOf(String repositoryId, String userId)` を足す
-  （**引き当ては `userId`** — 上記。戻り値の件数は `deleteUser` のログと、一括是正の「失効数」の表示に使う）。
+  （**引き当ては `userId`** — 上記。戻り値の件数は `deleteUser` のログに使う。**一括是正の「失効数」には
+  使わない** — オーナー回答 3 でパスワード変更は API キーを取り消さないので、一括是正が表示するのは
+  世代 +1 で**失効させた利用者の数**。混ぜると `PrincipalBatchApplier` が API キーを取り消す実装になり、
+  オーナーの判断に反して自動処理が止まる。確認 10 巡目の subagent P2）。
 - `createApiKey`（2 形）が `accountId` と `generation` を書く（発行時に利用者を読む）。`listApiKeys` の
   表示には出さない（画面の契約を変えない）。
 - **さらに、`deleteUser` がその利用者の API キーを取り消す。** ~~結びだけでは、この版より前のキー
-  （`accountId` が無い）を守れない。~~ **オーナー回答 1（fail-closed）でその前提は消えた** — `accountId` の
-  無いキーは §3 の規則で拒まれる。取り消しは **`deleteUser` を通らない削除**（利用者の文書を CMIS で直接
-  消す経路）に対する防御として残す（確認 8 巡目の subagent P3 — 古い理由付けが残っていた）。
+  （`accountId` が無い）を守れない。~~ ~~取り消しは `deleteUser` を通らない削除に対する防御として残す。~~
+  **この理由付けも誤りだった**（確認 10 巡目の subagent P2）: `deleteUser` の**中**に置いた取り消しは、
+  `deleteUser` を**通らない**経路（`deleteUserItem` — CMIS からの削除）を守れない。R170 を閉じているのは
+  §3 の `accountId` の照合で、取り消しは**置き場に使えない行を残さないための最良努力の掃除**
+  （§4.7 の「順の理由」と同じ位置づけ）。だから**両方の入口**（`deleteUser` と `deleteUserItem`）に置く。
 - **引き方**: 取り消しは **`userId`（既存の `getByUserId` の索引）で引く**。`accountId` で引くと、
   `accountId` を持たない古いキーが 1 件も見つからず、置き場に残り続ける（同 P3）。`accountId` は
   **照合**に使い、**引き当て**には使わない。
@@ -173,7 +216,12 @@ boundToThisAccount(credential, account):
   `core/src/main/java` 配下、interface と実装を除く）。**訂正**: 最初に書いた 12 か所には `SamlSignatureVerifier` の 2 件を
   数えていたが、あれは**コメント**で呼び出しではない（grep の件数をそのまま書いた誤り）。SAML のトークンは
   `AuthTokenResource` の 6 件のうちの 1 つで出る。
-- 判定は `AuthenticationServiceImpl.loginWithToken`（バッチ 17 で利用者を読んでいる場所）。
+- 判定は `AuthenticationServiceImpl.loginWithToken`（バッチ 17 で利用者を読んでいる場所）。**ここで
+  `Token` そのものを手に入れること**（確認 10 巡目の subagent P3）: `validateToken` は真偽しか返さず、
+  新しい欄の持ち主である `Token` が判定点に無い。`TokenService.getToken(app, repositoryId, userName)` が
+  在るのでそれで読む。`validateToken` の意味は変えない（呼び出し側が複数あり波及する）。
+  **全部のトークンの扉がここを通る**ことは確かめた（`AuthenticationFilter` 241・282 行、
+  `ApiAuthenticationFilter` 141・195 行 → `login()` → `loginWithToken`）ので、判定点は 1 つで足りる。
 
 ### 4.3 MCP のセッション
 
@@ -200,8 +248,11 @@ boundToThisAccount(credential, account):
 `BCrypt.hashpw` で数えると 9 件が出て、そのうちこの 2 件が `setPassowrd` の外にある。**到達性**: `SetupModeGuardFilter` が
 Normal Mode では 403 を返すので Setup Mode 限定。
 
-**書く場所は 5 ファイルに散っており、さらに上の 2 つが別の語彙で書くので、1 か所（`ContentService` の保存の手前か専用の
-ヘルパー）に集めて、そこを通らないパスワード変更が無いことを錠で測る。錠は `setPassowrd` と `BCrypt.hashpw` の両方の語彙で
+**書く場所は 5 ファイルに散っており、さらに上の 2 つが別の語彙で書くので、1 か所に集めて、そこを通らない
+パスワード変更が無いことを錠で測る。集約先は §3 の表のメソッド
+`ContentService.changePassword(repositoryId, userId, newHash, bumpGeneration)` で、**「保存の手前」という
+層ではない**（確認 10 巡目の subagent P2）— `AuthenticationServiceImpl`（518 行）は `ContentService` を
+通らずに `contentDaoService.update` を直に呼ぶので、層に置く形ではこの経路を覆えない。錠は `setPassowrd` と `BCrypt.hashpw` の両方の語彙で
 数えること** — 片方だけで数えた棚卸しから書いた錠は、偽の保証になる（確認 2 巡目の subagent P2）。
 
 **API キーとパスキーはパスワード変更で失効させない**（§3 の表。オーナー回答 3 と、パスキーがパスワードから
@@ -216,10 +267,14 @@ Normal Mode では 403 を返すので Setup Mode 限定。
 **パスキーを消さない**（そのメソッドに `WebAuthn` の語が 1 件も出てこない）。つまり削除して同じ ID を作り直すと、
 **前の持ち主のパスキーで新しい利用者としてログインできる**。
 
-- 資格情報の文書に `accountId`・`issuedAt` を足し、**登録のときに**そのときの `UserItem.getId()` を書く。
+- 資格情報の文書に `accountId`・**`generation`**・`issuedAt` を足し、**登録のときに**そのときの
+  `UserItem.getId()` と世代を書く（§3 の表のとおり**5 つ全部が両方の欄を書く**。照合するのは `accountId`
+  だけ。確認 10 巡目の subagent P3 — ここだけ `generation` が落ちており、§3 の散文「欄が無ければ拒否」を
+  素直に読むと**新規登録のパスキーが全部拒まれる**）。
 - 認証（`WebAuthnResource` の finish/assertion の入口）で §3 の同じ判定を通す。
-- **`deleteUser` がそのアカウントのパスキーを取り消す**（API キーと同じ扱い。`accountId` の無い古いパスキーも
-  §3 の規則で拒まれるが、取り消しは「`deleteUser` を通らない削除」に対する防御として両方やる）。
+- **`deleteUser` と `deleteUserItem` がそのアカウントのパスキーを取り消す**（API キーと同じ扱い・同じ理由
+  — 拒否は §3 の照合が受け持ち、取り消しは置き場の掃除。§4.1 と §4.7 を参照。「`deleteUser` を通らない
+  削除への防御」と書いていたのは逆だった）。
 - **E2E で測れる**（確認 7 巡目の Codex P3 — 「実機の authenticator が要るので測れない」と書いたのは誤り）:
   `core/src/main/webapp/ui/tests/auth/passkey.spec.ts` は CDP の **virtual authenticator** を作って登録と
   永続化まで測っている。だから (a) 作り直した利用者が前の持ち主のパスキーで入れないこと、(b) 新しく登録した
@@ -248,18 +303,29 @@ Normal Mode では 403 を返すので Setup Mode 限定。
 
 `ContentServiceImpl.deleteUser(repositoryId, userId, actor)` は `refuseProtectedUser` →
 `getUserItemById` → `removeUserFromAllGroups` → `delete(SystemCallContext, …)` の 4 段で、**資格情報には
-一切触れていない**（`WebAuthn`・`ApiKey`・`Token`・`RssToken` の語が 1 つも無い）。取り消しは
-**`user.getId()` を取った後**（照合のため。引き当ては `userId` — §4.1）、**`delete` の前**に置く:
+一切触れていない**（`WebAuthn`・`ApiKey`・`Token`・`RssToken` の語が 1 つも無い）。取り消しは **`delete` の後**（下の「順の理由」）。`user.getId()` は削除の前に取っておく（記録と件数のため。
+引き当ては `userId` — §4.1）。取り消す対象:
 
 1. API キー（`ApiKeyService` にアカウント単位の取り消し）
-2. パスキー（`WebAuthnCredential` をアカウント単位で消す）
-3. RSS のトークン（§4.6 を入れるなら）
-4. セッションのトークンと MCP のセッション（バッチ 17 で要求ごとに利用者を読むので、消えた利用者のものは
-   既に拒まれる。取り消しは置き場に残り続けないための掃除で、security の決め手ではない）
+2. パスキー（`WebAuthnCredential` を利用者 ID で消す）
+3. RSS のトークン（§4.6）
+4. セッションのトークンと MCP のセッションは**対象外**（各 JVM のメモリで、要求のたびの読みで既に拒まれる）
 
-**順の理由**: `delete` が失敗すると「利用者は残り、資格情報は消えた」状態になる — **過剰拒否の向き**で、
-再発行すれば戻る。逆（先に削除、後で取り消し）だと、削除が済んで取り消しが落ちたときに**資格情報が生きた
-まま利用者が消える** = R170 そのものが残る。
+**CMIS の削除も同じことをする**（確認 10 巡目の Codex P2）: CMIS から利用者を消す経路は
+`ContentServiceImpl.deleteUserItem`（923 行）で、**`deleteUser` を通らない**。両方に置く。置かないと
+「削除で取り消す」という文がその経路で偽になる（認証は §3 の照合が拒むので security の穴ではなく、
+置き場に使えない行が残る）。
+
+**順の理由（確認 10 巡目の Codex P1 で逆だと分かった — 直した）**: **先に削除し、そのあとで取り消す。**
+
+- 私が最初に書いた順（取り消し → 削除）は、**削除が失敗したときに利用者だけが残り、その人の API キーと
+  パスキーが取り返しのつかない形で消える**。security の利得は無い。
+- 逆の順（削除 → 取り消し）で取り消しが落ちても、**認証は戻らない**: §3 の照合が、利用者が居なければ
+  `ACCOUNT_CANNOT_ACT` で拒み、同じ利用者 ID を作り直しても**文書 id が違う**ので `WRONG_ACCOUNT` で拒む。
+  残るのは「CouchDB に使えない行が残る」ことだけで、それは掃除の問題。
+- つまり取り消しは**最良努力の掃除**であって、R170 を閉じているのは §3 の照合。設計の §4.1 と §4.6 が
+  「取り消しは `deleteUser` を通らない削除への防御」と書いていたのも同じ誤り（照合がそれを覆う）ので、
+  取り消しの位置づけを「置き場に使えない行を残さないため」に書き直す。
 
 ### 4.8 アップグレードの波及（fail-closed の帰結。確かめた）
 
@@ -277,9 +343,9 @@ Normal Mode では 403 を返すので Setup Mode 限定。
     （再ログインは更新のたびに起きていること）。棚卸しの対象ではない。
 - 名指すべき出口（確認 7 巡目の subagent が挙げた）: [`docs/MCP-SERVER.md`](../MCP-SERVER.md) の
   `nemakiware_apikey_login` と、画面の API キーの管理（`core/src/main/webapp/ui/src/services/apiKey.ts`）。
-- `PrincipalBatchApplier`（§4.4 の書き込み元の 1 つ）が世代を上げると、**一括プリンシパル是正が触った利用者
-  全員のトークンが失効する**（パスワードを変えた扱いになる）。これは意図した挙動か、是正では世代を上げない
-  べきか — **実装前に決める**（§6 の未決 6）。
+- `PrincipalBatchApplier`（§4.4 の書き込み元の 1 つ）が世代を上げると、**是正がパスワードを実際に変えた
+  利用者のトークンが失効する**（再ログインになる）。**オーナー回答 6（2026-10-16）: 上げる**（実際に変えた
+  人だけが対象なので正しい帰結）。規模が見えるよう、**失効させた利用者の数を是正の結果と preview に出す**。
 - したがって運用手順に: 上げる前に**API キーで動いている自動処理の棚卸し**、上げた後に**再発行**と
   パスキーの**再登録**。RELEASE_NOTES に太字で書く（§3）。
 
@@ -351,6 +417,9 @@ Normal Mode では 403 を返すので Setup Mode 限定。
 オーナーの回答 1（fail-closed）はそのままで、**いつから拒むか**だけの判断。推奨は (a)。
 **オーナーの回答（2026-10-16）: (a) 全停止で更新する。** 運用手順（[`v3.4.0-upgrade-runbook.md`](../operations/v3.4.0-upgrade-runbook.md)
 と 3.4.1 の手順）に「この版への更新はローリング不可 — 全レプリカを止めてから上げる」を書く。
+**ローリングの手順そのものが書いてある [`docs/MULTI-REPLICA-DEPLOYMENT.md`](../MULTI-REPLICA-DEPLOYMENT.md)
+（281・317 行）にも同じ断りを書く**（確認 10 巡目の subagent P2 — そこだけ読んだ運用者が順次入替をすると、
+更新中に発行した資格情報が拒まれる）。
 **逆向きの窓も同じ理由で閉じる**（確認 8 巡目の subagent P3）: 新しいレプリカが上げた世代を、欄を知らない
 古いレプリカの**文書全体の更新**が落とす形。全停止ならどちらも起きない。
 
