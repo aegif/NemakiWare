@@ -85,6 +85,11 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 
 **世代の読み書きの規則**（確認 8 巡目、2 名 — これが無いと fail-closed が fail-open になる）:
 
+- **「読めない」は常に拒否、どちらの側でもどちらの向きでも**（確認 11 巡目の subagent P2 — 片側しか
+  決めていなかった）。欄の値が**非負の整数として読めない**なら、account 側でも credential 側でも、
+  保存前の値でも保存する値でも**拒否する**（判定なら認証を拒み、保存なら保存を拒む）。unknown を 0 に
+  丸めると、パスワード変更で失効させたはずの資格情報が `0 == 0` で全部通る = fail-open で、この枝が
+  名前にしている罠そのもの（[[could-not-ask-vs-answered-no]]）。**欄が無いこと**だけが別扱いで、次の 2 行。
 - **既存の利用者文書に欄が無い**ときは **0 とみなす**（互換のため。上げた直後に誰も入れない状態を避ける）。
   **資格情報の側は違う** — 発行時に読んだ値（0 でもよい）を**必ず明示的に書く**。
   **欄が無い・整数でない・負の数・読めない資格情報は拒否**する（確認 9 巡目の Codex P2: 資格情報側の
@@ -126,7 +131,14 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
     世代 n で発行した**生きている資格情報を全部拒む**（eviction まで）= 過剰拒否で、この木では
     通してしまうのと同じ重さの欠陥。したがって cached の `update` は**例外のときに `userItemCache` と
     `contentCache` からその利用者を捨てて再 throw する**。409 の再試行の読み直しも**キャッシュを通さない**
-    こと（通すと失われた更新になる）。
+    こと（通すと失われた更新になる）。**ここは「fresh を足す必要は無い」の例外**（確認 11 巡目の
+    subagent P2 — 同じ節が矛盾していた）: キャッシュを通さない UserItem の読みは**今どこにも無い**
+    （`ContentService` は `getGroupItemByIdFresh` だけ、`ContentDaoService` は content / document /
+    folder / relationship / policy / item / groupItem の fresh だけで、**利用者版が無い**）。
+    下げない側の守りは couch の DAO の中で読み直すので要らないが、**`changePassword` の 409 の再試行には
+    要る** — `getUserItemByIdFresh` を足すか、その再試行だけ couch の DAO を直に読む。どちらにするかは
+    実装時に決めて設計に書く。足す場合は兄弟の `getGroupItemByIdFresh`（cached 実装）と同じ fail-closed
+    の形（読めなければ null ではなく throw）に揃える。
   - **外れるのは setup の 2 経路**（`SetupAdminResource:108`・`SetupApplyResource:484` — 利用者文書に
     BCrypt のハッシュを直接書く raw な PUT）。ここは **Setup Mode 限定**（`SetupModeGuardFilter` が
     Normal Mode では 403）。確認 9 巡目の subagent が読んで確かめたところ、`SetupAdminResource` は
@@ -217,8 +229,9 @@ boundToThisAccount(credential, account):
   数えていたが、あれは**コメント**で呼び出しではない（grep の件数をそのまま書いた誤り）。SAML のトークンは
   `AuthTokenResource` の 6 件のうちの 1 つで出る。
 - 判定は `AuthenticationServiceImpl.loginWithToken`（バッチ 17 で利用者を読んでいる場所）。**ここで
-  `Token` そのものを手に入れること**（確認 10 巡目の subagent P3）: `validateToken` は真偽しか返さず、
-  新しい欄の持ち主である `Token` が判定点に無い。`TokenService.getToken(app, repositoryId, userName)` が
+  `Token` そのものを手に入れること**（確認 10 巡目の subagent P3）: `validateToken` が返すのは**利用者名（無効なら
+  null）**で（確認 11 巡目の subagent P3 — 「真偽しか返さず」と書いたのは誤り）、新しい欄の持ち主である
+  `Token` が判定点に無い。`TokenService.getToken(app, repositoryId, userName)` が
   在るのでそれで読む。`validateToken` の意味は変えない（呼び出し側が複数あり波及する）。
   **全部のトークンの扉がここを通る**ことは確かめた（`AuthenticationFilter` 241・282 行、
   `ApiAuthenticationFilter` 141・195 行 → `login()` → `loginWithToken`）ので、判定点は 1 つで足りる。
@@ -358,8 +371,9 @@ Normal Mode では 403 を返すので Setup Mode 限定。
   細工で落ちる control を置く）。
 - パスワードを変えても **API キーとパスキーは通る**（§3 の表。2 本）。
 - `deleteUser` がその利用者の API キーを取り消し、**ほかの利用者のキーは取り消さない**（2 本）。
-- **`accountId` が無い資格情報は拒まれる**（オーナー判断 2026-10-16 — fail-closed。トークン・API キー・
-  パスキー・MCP のセッションの 4 つの置き場でそれぞれ、2〜4 本）。**この錠は「意図した拒否」を書く**ので、
+- **`accountId` が無い資格情報は拒まれる**（オーナー判断 2026-10-16 — fail-closed。**5 つの置き場すべてで**
+  それぞれ 2〜4 本。§3 の表が 5 つと書いているのに、ここは 4 つしか挙げておらず RSS が落ちていた —
+  確認 11 巡目の Codex P2）。**この錠は「意図した拒否」を書く**ので、
   同じ入力が通ることを表明している既存の錠が在れば書き換える（バッチ 17 の錠を `accountId` を持つ資格情報に
   直す必要が在るか、実装の前に grep で確かめる）。
 - **パスキー**（オーナー判断 2026-10-16 — このバッチに入れる）: 作り直した利用者が前の持ち主のパスキーで
@@ -367,6 +381,11 @@ Normal Mode では 403 を返すので Setup Mode 限定。
   **E2E でも測る** — 既存の `passkey.spec.ts` は CDP の virtual authenticator を使っているので、作り直した
   利用者が前のパスキーで入れないことと、新しく登録すれば入れることを広げて測れる（§4.5）。
 - **RSS のフィードのトークン**（§4.6 を入れるなら）: 作り直した利用者が前の持ち主のトークンで引けない（1 本）。
+  **この 1 本では足りない**（確認 11 巡目の Codex P2）: `deleteUser` の掃除だけ実装して照合を入れなくても、
+  作り直しの錠は掃除で緑になる（前の持ち主のトークンがもう無いので引けない）。**照合そのものを測る錠**を
+  別に置く — 掃除を通さずに**名前の解決先が別の文書に移った**状態（古いトークンは残っている）で引いて
+  拒まれること、および `accountId` が無いトークンが拒まれること（2 本）。
+  [[a-sibling-arm-of-the-same-check-satisfies-the-lock]] の形。
 - **`deleteUser` の順**: `delete` が失敗したときに「資格情報だけ消えて利用者が残る」側に倒れる（1 本 —
   順を入れ替える細工で落ちる）。
 - 入口を通すこと: トークンと API キーは `AuthenticationServiceImpl.login`、MCP は `authenticate`。
