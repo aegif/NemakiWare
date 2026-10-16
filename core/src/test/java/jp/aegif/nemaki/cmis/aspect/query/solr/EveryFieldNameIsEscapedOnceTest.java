@@ -66,6 +66,74 @@ class EveryFieldNameIsEscapedOnceTest {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
+    /**
+     * The same file with its comments removed, for the locks below that read the production's text.
+     *
+     * <p>They look for what the code DOES, and prose is not code: the most natural place to write
+     * "this must not be handed to the manual parser" is the comment inside the very catch clause one
+     * of them reads, and on the raw text that sentence turned the lock red with a message naming a
+     * defect that was not there — an over-refusal, which this tree treats as the same weight of
+     * defect as letting one through (round-10 review, P2). String literals keep their contents, so
+     * a URL or a message is not mistaken for a comment.
+     */
+    private static String codeOnly(String source) {
+        StringBuilder code = new StringBuilder(source.length());
+        boolean inString = false;
+        boolean inChar = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                    code.append(c);
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                    code.append(' ');
+                }
+                continue;
+            }
+            if (inString || inChar) {
+                code.append(c);
+                if (c == '\\') {
+                    if (i + 1 < source.length()) {
+                        code.append(next);
+                        i++;
+                    }
+                } else if (inString && c == '"') {
+                    inString = false;
+                } else if (inChar && c == '\'') {
+                    inChar = false;
+                }
+                continue;
+            }
+            if (c == '/' && next == '/') {
+                inLineComment = true;
+                i++;
+                continue;
+            }
+            if (c == '/' && next == '*') {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '\'') {
+                inChar = true;
+            }
+            code.append(c);
+        }
+        return code.toString();
+    }
+
     @Test
     @DisplayName("the STRING arm's already-escaped colon stays escaped once")
     void anAlreadyEscapedColonStaysEscapedOnce() {
@@ -120,11 +188,15 @@ class EveryFieldNameIsEscapedOnceTest {
                     if (!code.contains("dynamicDate") && !code.contains("DATETIME_FIELD_PREFIX")) {
                         continue;
                     }
-                    boolean known = code.contains("DATETIME_FIELD_PREFIX = \"dynamicDate.property.\"")
-                            || code.contains("return DATETIME_FIELD_PREFIX + cmisColName;")
-                            || code.contains("startsWith(DATETIME_FIELD_PREFIX)")
-                            || code.contains("DATETIME_FIELD_PREFIX, SolrUtil.DATETIME_FIELD_PREFIX");
-                    if (!known) {
+                    // Each known use is REMOVED from the line and what is left is looked at again:
+                    // exempting the whole line let `if (startsWith(DATETIME_FIELD_PREFIX)) {
+                    // doc.addField(DATETIME_FIELD_PREFIX + key, v); }` through — the indexer written
+                    // on the same line as a known use (round-10 review, P2).
+                    String rest = code
+                            .replace("DATETIME_FIELD_PREFIX = \"dynamicDate.property.\"", "")
+                            .replace("return DATETIME_FIELD_PREFIX + cmisColName;", "")
+                            .replace("startsWith(DATETIME_FIELD_PREFIX)", "");
+                    if (rest.contains("dynamicDate") || rest.contains("DATETIME_FIELD_PREFIX")) {
                         uses.add(file.getFileName() + ":" + number + " " + code);
                     }
                 }
@@ -133,7 +205,10 @@ class EveryFieldNameIsEscapedOnceTest {
         assertTrue(uses.isEmpty(),
                 "the DATETIME field name is used somewhere other than the three places that map,"
                         + " declare and refuse it. If something now INDEXES it, the refusal in"
-                        + " queryableFieldName is an over-refusal and has to go: " + uses);
+                        + " queryableFieldName is an over-refusal and has to go. If instead one of"
+                        + " those three was renamed or split over two lines, this lock's exemptions"
+                        + " name the old spelling and have to be updated — that is not a defect in"
+                        + " the production (round-10 review, P3): " + uses);
         assertEquals("dynamicDate.property.", SolrUtil.DATETIME_FIELD_PREFIX,
                 "the prefix the refusal keys on changed");
     }
@@ -172,9 +247,13 @@ class EveryFieldNameIsEscapedOnceTest {
         // handing it a statement the walker REFUSED produced a successful query for the other half:
         //   WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL  ->  200, tag only, dueDate dropped.
         // Both reviewers found this in round 8. The refusal has to leave before that fallback.
-        String processor = read(PROCESSOR);
+        String processor = codeOnly(read(PROCESSOR));
         int walkCall = processor.indexOf("solrPredicateWalker.walkPredicate(whereTree)");
-        assertTrue(walkCall > 0, "the walker call is gone — this lock no longer reads that path");
+        assertTrue(walkCall > 0,
+                "the walker call is gone — this lock no longer reads that path. It reads the"
+                        + " production's text, so renaming that call, the caught variable or the"
+                        + " catch-all clause turns this red without any defect in the production"
+                        + " (round-10 review, P3); re-point the lock in the same change");
         int refusalCatch = processor.indexOf("CmisInvalidArgumentException refusal", walkCall);
         int genericCatch = processor.indexOf("} catch (Exception e) {", walkCall);
         int fallback = processor.indexOf("parseSecondaryTypeWhereClause", genericCatch);
@@ -182,14 +261,25 @@ class EveryFieldNameIsEscapedOnceTest {
                 "the catch around walkPredicate does not take a refusal first, so a refused"
                         + " statement is handed to the manual parser and comes back as a query for"
                         + " whatever other predicate that parser recognises");
-        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw refusal"),
+        // By the type, not the name: renaming the caught variable must not turn this red.
+        Matcher thrown = Pattern
+                .compile("CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
+                .matcher(processor.substring(refusalCatch, genericCatch));
+        assertTrue(thrown.find(), "the refusal clause does not name the exception it catches");
+        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw " + thrown.group(1)),
                 "the refusal is caught before the fallback but not re-thrown");
         // And it must not try the fallback FIRST. The likely "improvement" — ask the manual parser,
         // throw only if it answers nothing — satisfies every assertion above and brings the whole
         // defect back (round-9 review, P1): the parser answers with the OTHER predicate.
-        assertFalse(processor.substring(refusalCatch, genericCatch).contains("parseSecondaryTypeWhereClause"),
-                "the refusal's own catch calls the manual parser, so a refused statement still comes"
-                        + " back as a query for whatever other predicate that parser recognises");
+        // Not just the parser's NAME: a helper that calls it reads the same (round-10 review, P2).
+        // What any fallback must do to take effect is ASSIGN the where clause, so that is what is
+        // forbidden here — robust to extracting a helper and to renaming it.
+        String refusalBody = processor.substring(refusalCatch, genericCatch);
+        assertFalse(refusalBody.contains("whereQueryString ="),
+                "the refusal's own catch assigns a WHERE clause, so a refused statement still comes"
+                        + " back as a query for whatever other predicate something else recognises");
+        assertFalse(refusalBody.contains("parseSecondaryTypeWhereClause"),
+                "the refusal's own catch calls the manual parser");
         assertTrue(fallback > genericCatch,
                 "the manual-parser fallback moved; this lock measures that the refusal leaves first");
     }
@@ -202,7 +292,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // not take that path — it would turn "this property cannot be queried" into "here is
         // everything" (round-7 review). The two remaining *:* fallbacks, for a WHERE clause that
         // could not be translated at all, are recorded as a residual (R188).
-        String processor = read(PROCESSOR);
+        String processor = codeOnly(read(PROCESSOR));
         int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
         assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");
         String body = processor.substring(manual);
@@ -219,7 +309,7 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("every field-name production in the walker goes through the rule")
     void everyProductionInTheWalkerGoesThroughTheRule() throws IOException {
-        String walker = read(WALKER);
+        String walker = codeOnly(read(WALKER));
 
         // Each of these is a statement that ends in a field name. The round-5 review found IN,
         // ANY-IN and LIKE passing getPropertyNameInSolr straight into a Term, and the comparison
@@ -264,7 +354,7 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("the manual fallback — the path that answers when the walker throws — goes through the rule too")
     void theManualFallbackGoesThroughTheRule() throws IOException {
-        String processor = read(PROCESSOR);
+        String processor = codeOnly(read(PROCESSOR));
         int found = 0;
         int from = 0;
         while ((from = processor.indexOf("getPropertyNameInSolr(", from)) >= 0) {

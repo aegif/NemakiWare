@@ -9774,8 +9774,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9894,8 +9894,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 444 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 446 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10895,7 +10895,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10909,7 +10909,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10965,8 +10965,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 444 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 446 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10979,8 +10979,8 @@ CONTROLS = [
         # the marker (measured 2026-10-01); it is the outstanding direction — every site must
         # carry the marker — that a single contains() let through, and that arm is not measured
         # until a control is added again (canon §5).
-        find='9 回目以後に足した control は **444 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
-        replace='9 回目以後に足した control は **444 本**。\n  7 回目以後に足した 137 本も',
+        find='9 回目以後に足した control は **446 本**（通し未実施）。\n  7 回目以後に足した 137 本も',
+        replace='9 回目以後に足した control は **446 本**。\n  7 回目以後に足した 137 本も',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11816,7 +11816,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **444 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **446 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13798,8 +13798,8 @@ CONTROLS = [
         what="the canon states a gap count above the sweep boundary that is not the runner's — a retired or resurrected id reads as a measurement",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 3 ある（',
-        replace='**9 回目以後に足した control は 444 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
+        find='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 3 ある（',
+        replace='**9 回目以後に足した control は 446 本**（通し未実施）（境界 QJ4）。この範囲には欠番が 1 ある（',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theCanonsGapCountIsTheRunners'],
     ),
@@ -13870,7 +13870,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 2167 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 2169 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13955,7 +13955,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **444 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **446 本**（通し未実施）。',
         # A count far below any the runner will have again: 213 was this control's stale value, and
         # on 2026-10-13 the real count became 213, so find and replace were the same and it did not fire.
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **100 本**（通し未実施）。',
@@ -13967,7 +13967,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **2167**（2026-10-16 時点）',
+        find='- コントロール **2169**（2026-10-16 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -24270,6 +24270,26 @@ CONTROLS = [
         test='EveryFieldNameIsEscapedOnceTest',
         expect_fail=['aRefusalIsNotHandedToTheManualParser'],
     ),
+    dict(
+        id='HP5',
+        what="an indexer writes the DATETIME field ON THE SAME LINE as a known use of the prefix, which the premise lock exempted wholesale — the field becomes real while the query side keeps refusing it (round-10 review, P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java',
+        find='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {\n',
+        replace='\t\tif (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) { String unused = DATETIME_FIELD_PREFIX + "x";\n',
+        test='EveryFieldNameIsEscapedOnceTest',
+        expect_fail=['nothingIndexesTheDateTimeField'],
+    ),
+    dict(
+        id='HQ5',
+        what="the refusal's catch assigns a WHERE clause from somewhere else (a helper, not the parser by name) — the refused condition is silently dropped again and a name-based check does not see it (round-10 review, P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java',
+        find='\t\t\t\tlogger.warn("Refusing the statement: " + refusal.getMessage());\n\t\t\t\tthrow refusal;\n',
+        replace='\t\t\t\tlogger.warn("Refusing the statement: " + refusal.getMessage());\n\t\t\t\twhereQueryString = "*:*";\n\t\t\t\tif (false) {\n\t\t\t\t\tthrow refusal;\n\t\t\t\t}\n',
+        test='EveryFieldNameIsEscapedOnceTest',
+        expect_fail=['aRefusalIsNotHandedToTheManualParser'],
+    ),
 ]
 
 
@@ -24979,7 +24999,8 @@ def controls_have_the_keys_they_need() -> list:
         if "replace" not in control:
             # Unconditionally: sabotage_text indexes control["replace"] for BOTH shapes, so a
             # find_span control without it raises a bare KeyError too (round-9 review, P2 —
-            # the first form of this check exempted span controls). All 2164 have it today.
+            # the first form of this check exempted span controls). All 2169 have it today
+            # (measured with ast; the first version of this comment said 2164 — round-10 review).
             missing.append("replace")
         if missing:
             problems.append(f"{cid}: missing {', '.join(missing)}")

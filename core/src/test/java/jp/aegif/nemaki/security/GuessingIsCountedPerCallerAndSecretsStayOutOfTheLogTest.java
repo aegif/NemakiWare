@@ -81,8 +81,9 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
      */
     private String methodThatLogsIn(Path door) throws IOException {
         String body = read(door);
-        Matcher login = Pattern.compile("\\w+\\.login\\(\\s*ctxt\\s*\\)|\\w+\\.login\\(\\s*callContext\\s*\\)")
-                .matcher(body);
+        // Any identifier for the context, not the two names in the tree today: renaming a local
+        // must not turn this lock red (round-10 review, P3).
+        Matcher login = Pattern.compile("\\w+\\.login\\(\\s*\\w+\\s*\\)").matcher(body);
         assertTrue(login.find(), door + " no longer calls login() with a context it built, so this"
                 + " lock cannot tell which method the throttle's address has to be put in");
         Matcher signature = Pattern
@@ -116,8 +117,11 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
             // `put("throttleRequest", null)` would read the same to a contains() check (round-6
             // review); a `put` left in an unused helper would read the same to a whole-file regex
             // (round-7 review, P3).
+            // The literal or an upper-case constant that names it: extracting the key into a
+            // constant must not turn this lock red (round-10 review, P3).
             Matcher put = Pattern
-                    .compile("put\\(\\s*\"throttleRequest\",\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)")
+                    .compile("put\\(\\s*(?:\"throttleRequest\"|[A-Z][A-Z0-9_]*THROTTLE[A-Z0-9_]*|THROTTLE[A-Z0-9_]*),"
+                            + "\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)")
                     .matcher(methodThatLogsIn(door));
             assertTrue(put.find(),
                     door + " does not put the servlet request in the call context, so the throttle keys"
@@ -252,10 +256,13 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                 // stopped at "-Xmx512m" (both measured; round-7 and round-8 reviews).
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
                 for (int i = 0; i < lines.size(); i++) {
-                    // An ASSIGNMENT of the variable, not a mention: the regex this replaced required
-                    // "=" or ":", and a bare contains() lets a comment that merely names
-                    // JAVA_TOOL_OPTIONS add a false third compose to the frozen set (round-9 review,
-                    // P3 — two of the compose files already have such comment lines).
+                    // An ASSIGNMENT of the variable, not a mention: what puts the password in the
+                    // JVM's startup echo is the value, and a line that merely names the variable
+                    // carries none. In today's tree both spellings give the same set — the two files
+                    // that mention it in a comment are the two that assign it, and the mention's own
+                    // block is empty, so a bare contains() adds nothing (measured, round-10 review:
+                    // the earlier note here claimed a false third compose, which does not happen).
+                    // The regex is so that this set does not depend on that coincidence.
                     String code = lines.get(i).contains("#")
                             ? lines.get(i).substring(0, lines.get(i).indexOf('#'))
                             : lines.get(i);
