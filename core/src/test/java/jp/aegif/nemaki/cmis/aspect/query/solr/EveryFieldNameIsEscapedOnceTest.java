@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.cmis.aspect.query.solr;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -98,56 +99,41 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("and the only reason it is refused is that nothing writes that field — if an indexer starts writing it, this lock says so")
     void nothingIndexesTheDateTimeField() throws IOException {
-        // The premise, measured rather than assumed, across EVERY indexer in the tree and not only
-        // the one next to the mapping (round-7 review, P3): if any write path ever starts producing
-        // "dynamicDate" fields, the refusal above becomes wrong (the field would be real) and this
-        // is where that is noticed.
-        // Every mention of the name, not an addField("dynamicDate… shape: the three write paths all
-        // build the field name into a VARIABLE first (doc.addField(fieldName, …)), so a type branch
-        // that set fieldName = "dynamicDate.property." + key would never match a shape-based regex
-        // (round-7 review, P2). The literal itself cannot hide that way.
-        List<String> mentions = new ArrayList<>();
+        // The premise, measured rather than assumed, across every indexer in the tree. Three earlier
+        // forms of this lock each had a hole the reviewers found: exempting the whole file the
+        // indexer lives in, exempting any line containing "//", and checking four spellings of the
+        // assignment (a line like `String n = DATETIME_FIELD_PREFIX + key; doc.addField(n, v);`
+        // escaped all of them). So: collect every line that names the field EITHER as the literal OR
+        // through the constant, cut any trailing comment off first, and exempt only the three uses
+        // that map, declare and refuse it — by what the code says, not by which file it is in.
+        List<String> uses = new ArrayList<>();
         try (var files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
-                String body = Files.readString(file, StandardCharsets.UTF_8);
-                int from = 0;
-                while ((from = body.indexOf("dynamicDate", from)) >= 0) {
-                    mentions.add(file.getFileName().toString() + ":" + body.substring(
-                            Math.max(0, body.lastIndexOf('\n', from) + 1),
-                            Math.min(body.length(), body.indexOf('\n', from) < 0 ? body.length()
-                                    : body.indexOf('\n', from))).trim());
-                    from += "dynamicDate".length();
-                }
-            }
-        }
-        // NOT "every line in SolrUtil is fine": the three write paths live in that same file (round-8
-        // review, both reviewers, P2), so exempting the file exempts the most likely way for this
-        // premise to break. The known occurrences are frozen instead, by what the line DOES.
-        List<String> unexpected = mentions.stream()
-                .filter(m -> !m.contains("public static final String DATETIME_FIELD_PREFIX")
-                        && !m.contains("return DATETIME_FIELD_PREFIX + cmisColName;")
-                        && !m.contains("if (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {")
-                        && !m.contains("//") && !m.contains("* "))
-                .toList();
-        assertTrue(unexpected.isEmpty(),
-                "a line other than the three that map, declare and refuse this prefix now names it."
-                        + " If something INDEXES it, refusing to query it is wrong and the refusal in"
-                        + " queryableFieldName has to go: " + unexpected);
-        // And the same for the constant, which is how an indexer would naturally spell it.
-        List<String> viaConstant = new ArrayList<>();
-        try (var files = Files.walk(Path.of("src/main/java"))) {
-            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
-                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-                    if (line.contains("DATETIME_FIELD_PREFIX")
-                            && (line.contains("addField") || line.contains("setField")
-                                    || line.contains("fieldName =") || line.contains("solrFieldName ="))) {
-                        viaConstant.add(file.getFileName() + ":" + line.trim());
+                int number = 0;
+                for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    number++;
+                    String code = raw.contains("//") ? raw.substring(0, raw.indexOf("//")) : raw;
+                    code = code.trim();
+                    if (code.isEmpty() || code.startsWith("*") || code.startsWith("/*")) {
+                        continue;
+                    }
+                    if (!code.contains("dynamicDate") && !code.contains("DATETIME_FIELD_PREFIX")) {
+                        continue;
+                    }
+                    boolean known = code.contains("DATETIME_FIELD_PREFIX = \"dynamicDate.property.\"")
+                            || code.contains("return DATETIME_FIELD_PREFIX + cmisColName;")
+                            || code.contains("startsWith(DATETIME_FIELD_PREFIX)")
+                            || code.contains("DATETIME_FIELD_PREFIX, SolrUtil.DATETIME_FIELD_PREFIX");
+                    if (!known) {
+                        uses.add(file.getFileName() + ":" + number + " " + code);
                     }
                 }
             }
         }
-        assertTrue(viaConstant.isEmpty(),
-                "something builds an indexed field name from the DATETIME prefix constant: " + viaConstant);
+        assertTrue(uses.isEmpty(),
+                "the DATETIME field name is used somewhere other than the three places that map,"
+                        + " declare and refuse it. If something now INDEXES it, the refusal in"
+                        + " queryableFieldName is an over-refusal and has to go: " + uses);
         assertEquals("dynamicDate.property.", SolrUtil.DATETIME_FIELD_PREFIX,
                 "the prefix the refusal keys on changed");
     }
@@ -198,6 +184,12 @@ class EveryFieldNameIsEscapedOnceTest {
                         + " whatever other predicate that parser recognises");
         assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw refusal"),
                 "the refusal is caught before the fallback but not re-thrown");
+        // And it must not try the fallback FIRST. The likely "improvement" — ask the manual parser,
+        // throw only if it answers nothing — satisfies every assertion above and brings the whole
+        // defect back (round-9 review, P1): the parser answers with the OTHER predicate.
+        assertFalse(processor.substring(refusalCatch, genericCatch).contains("parseSecondaryTypeWhereClause"),
+                "the refusal's own catch calls the manual parser, so a refused statement still comes"
+                        + " back as a query for whatever other predicate that parser recognises");
         assertTrue(fallback > genericCatch,
                 "the manual-parser fallback moved; this lock measures that the refusal leaves first");
     }

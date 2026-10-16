@@ -90,7 +90,9 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                 // the brace on the signature's own line made the span start at the PREVIOUS
                 // method (register), so a `put` moved there satisfied this lock (round-8
                 // review, P2). Allow newlines inside the parameter list.
-                .compile("\n\\t*(?:public|private|protected)[^;{]*?\\{", Pattern.DOTALL)
+                // Tabs OR spaces: the api/v1 filter is indented with four spaces, and a tab-only
+                // pattern made the span start at the CLASS declaration there (round-9 review, P2).
+                .compile("\n[ \\t]*(?:public|private|protected)[^;{]*?\\{", Pattern.DOTALL)
                 .matcher(body.substring(0, login.start()));
         int start = 0;
         while (signature.find()) {
@@ -250,7 +252,14 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                 // stopped at "-Xmx512m" (both measured; round-7 and round-8 reviews).
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
                 for (int i = 0; i < lines.size(); i++) {
-                    if (!lines.get(i).contains("JAVA_TOOL_OPTIONS")) {
+                    // An ASSIGNMENT of the variable, not a mention: the regex this replaced required
+                    // "=" or ":", and a bare contains() lets a comment that merely names
+                    // JAVA_TOOL_OPTIONS add a false third compose to the frozen set (round-9 review,
+                    // P3 — two of the compose files already have such comment lines).
+                    String code = lines.get(i).contains("#")
+                            ? lines.get(i).substring(0, lines.get(i).indexOf('#'))
+                            : lines.get(i);
+                    if (!Pattern.compile("JAVA_TOOL_OPTIONS\\s*[=:]").matcher(code).find()) {
                         continue;
                     }
                     int indent = lines.get(i).indexOf(lines.get(i).trim());
