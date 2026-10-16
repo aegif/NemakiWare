@@ -137,6 +137,16 @@ public class ContentServiceImpl implements ContentService {
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private ContentDaoService contentDaoService;
+
+	/**
+	 * Used only to take a deleted user's API keys out of the store (R170, batch 19).
+	 *
+	 * <p>Optional on purpose: a context that does not wire it still deletes users, and the
+	 * credentials of a deleted account are refused by their own store either way. The direction
+	 * of this dependency matters — {@code ApiKeyService} reads users through
+	 * {@code ContentDaoService}, not through this service, so there is no cycle.
+	 */
+	private jp.aegif.nemaki.cmis.factory.auth.ApiKeyService apiKeyService;
 	// TypeManager obtained via SpringContext to avoid circular dependency
 	// private TypeManager typeManager;
 	private RenditionManager renditionManager;
@@ -891,6 +901,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		removeUserFromAllGroups(repositoryId, userId);
 		delete(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user.getId(), false);
+		revokeCredentialsOf(repositoryId, userId);
 		return true;
 	}
 
@@ -932,6 +943,40 @@ public class ContentServiceImpl implements ContentService {
 		}
 		removeUserFromAllGroups(deletion.callContext(), deletion.repositoryId(), deletion.item().getUserId());
 		delete(deletion.callContext(), deletion.repositoryId(), deletion.item().getId(), deletedWithParent);
+		// The CMIS way of deleting a user does not go through deleteUser, so the housekeeping has to
+		// be here as well (R170): otherwise the API keys of a user deleted this way stay in the
+		// store. They cannot authenticate — credentialBinding refuses them once the document is
+		// gone — but an operator listing keys would see rows nobody can use.
+		revokeCredentialsOf(deletion.repositoryId(), deletion.item().getUserId());
+	}
+
+	/**
+	 * Best-effort housekeeping after a user is gone: takes their credentials out of the stores.
+	 *
+	 * <p>AFTER the delete, deliberately (R170, batch 19 design §4.7). Revoking first and deleting
+	 * second loses the keys of a user who then turns out to be undeletable, and buys nothing: what
+	 * stops a credential of a deleted account is the comparison in the credential's own store
+	 * ({@code AuthenticationUtil.credentialBinding} answers {@code ACCOUNT_CANNOT_ACT} when the
+	 * account is gone, and {@code WRONG_ACCOUNT} when the same user id names a new document).
+	 *
+	 * <p>Which is also why a failure here is logged and not propagated: the delete has happened and
+	 * the security boundary holds without this.
+	 */
+	private void revokeCredentialsOf(String repositoryId, String userId) {
+		if (apiKeyService == null || userId == null) {
+			return;
+		}
+		try {
+			int revoked = apiKeyService.revokeApiKeysOf(repositoryId, userId);
+			if (revoked > 0) {
+				log.info("Revoked " + revoked + " API key(s) of the deleted user " + userId
+						+ " in repository " + repositoryId);
+			}
+		} catch (Exception failed) {
+			log.warn("Could not revoke the API keys of the deleted user " + userId
+					+ " in repository " + repositoryId + "; they cannot authenticate, but the rows"
+					+ " stay in the store: " + failed.getMessage());
+		}
 	}
 
 	/** Refuses to delete a protected user (R115): the built-in accounts, and {@code actor} itself. */
@@ -5329,6 +5374,10 @@ public class ContentServiceImpl implements ContentService {
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 		initDelegates();
+	}
+
+	public void setApiKeyService(jp.aegif.nemaki.cmis.factory.auth.ApiKeyService apiKeyService) {
+		this.apiKeyService = apiKeyService;
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

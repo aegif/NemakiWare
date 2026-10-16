@@ -62,7 +62,27 @@ public class TokenServiceImpl implements TokenService{
 						+ ", expires in: " + (expirationMillis / 60000) + " minutes");
 			}
 
+			// R170: bind the token to the ACCOUNT DOCUMENT and to the generation it was issued at.
+			// Read here rather than at the ten call sites, none of which has to change. A token that
+			// records no account cannot authenticate at all (the login refuses it), so failing to
+			// bind has to fail the mint: handing back a token that will never work is worse than
+			// saying so now.
+			UserItem account = contentService.getUserItemById(repositoryId, userName);
+			if (account == null || account.getId() == null) {
+				throw new IllegalStateException("No account document for user '" + userName
+						+ "' in repository '" + repositoryId
+						+ "', so a token issued now could never authenticate");
+			}
+			Long accountGeneration = jp.aegif.nemaki.util.AuthenticationUtil.accountGeneration(account);
+			if (accountGeneration == null) {
+				throw new IllegalStateException("The credential generation of user '" + userName
+						+ "' cannot be read, so a token issued now could not be compared with it");
+			}
+
 			Token newToken = new Token(userName, token, expiration);
+			newToken.setAccountId(account.getId());
+			newToken.setCredentialGeneration(accountGeneration);
+			newToken.setIssuedAt(currentTime);
 			repoMap.put(userName, newToken);
 			return newToken;
 		}

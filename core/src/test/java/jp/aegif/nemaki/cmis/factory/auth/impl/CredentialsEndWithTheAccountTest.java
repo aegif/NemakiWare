@@ -48,6 +48,9 @@ import jp.aegif.nemaki.util.constant.CallContextKey;
  */
 class CredentialsEndWithTheAccountTest {
 
+    /** The id of the account DOCUMENT the fixture's credentials are issued for (R170). */
+    private static final String ACCOUNT_DOCUMENT = "alice-doc";
+
     private AuthenticationServiceImpl service;
     private ContentService contentService;
 
@@ -65,7 +68,13 @@ class CredentialsEndWithTheAccountTest {
         when(repositories.contains("bedroom")).thenReturn(true);
         service.setRepositoryInfoMap(repositories);
         TokenService tokens = mock(TokenService.class);
-        when(tokens.getToken("", "bedroom", "alice")).thenReturn(new Token("alice", "session-1", System.currentTimeMillis() + 60_000));
+        // Bound to the account document and to its generation, because the login compares both
+        // since R170 (3.4.1 batch 19). A fixture minting an unbound token would make every test
+        // here pass or fail on THAT refusal instead of on what this class is about.
+        Token session = new Token("alice", "session-1", System.currentTimeMillis() + 60_000);
+        session.setAccountId(ACCOUNT_DOCUMENT);
+        session.setCredentialGeneration(0L);
+        when(tokens.getToken("", "bedroom", "alice")).thenReturn(session);
         when(tokens.validateToken("", "bedroom", "session-1")).thenReturn("alice");
         service.setTokenService(tokens);
         ApiKeyService keys = mock(ApiKeyService.class);
@@ -80,6 +89,7 @@ class CredentialsEndWithTheAccountTest {
     private static UserItem account(String allowedAuthMethods) {
         UserItem user = mock(UserItem.class);
         when(user.getUserId()).thenReturn("alice");
+        when(user.getId()).thenReturn(ACCOUNT_DOCUMENT);
         when(user.getSubTypeProperties()).thenReturn(allowedAuthMethods == null ? List.of()
                 : List.of(new Property("nemaki:allowedAuthMethods", allowedAuthMethods)));
         return user;

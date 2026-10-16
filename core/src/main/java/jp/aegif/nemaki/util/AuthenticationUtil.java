@@ -18,6 +18,149 @@ public class AuthenticationUtil {
 	private static final String ALLOWED_AUTH_METHODS_KEY = "nemaki:allowedAuthMethods";
 
 	/**
+	 * Subtype property key that stores the account's credential generation: a monotonically
+	 * increasing integer, raised by one every time the account's password changes (3.4.1, R170).
+	 *
+	 * <p>A generation and not a timestamp. {@code issuedAt < credentialsNotBefore} depends on the
+	 * clock: two credentials issued in the same millisecond compare equal, and with replica clock
+	 * skew a credential issued BEFORE a password change can carry a later time (round-7 design
+	 * review). An integer read from the account document answers the same on every replica.
+	 */
+	private static final String CREDENTIAL_GENERATION_KEY = "nemaki:credentialGeneration";
+
+	/** Why a credential is not accepted — logged, and asserted by the locks. */
+	public enum CredentialBinding {
+		/** Accepted. */
+		OK,
+		/** The account is gone, or {@code allowedAuthMethods} disables it (batch 17's rule). */
+		ACCOUNT_CANNOT_ACT,
+		/** The credential records no account id: issued before 3.4.1 (owner's decision: refuse). */
+		NOT_BOUND,
+		/** The credential was issued for a DIFFERENT account document with the same user id. */
+		WRONG_ACCOUNT,
+		/** The credential records no usable generation, and this store compares generations. */
+		NO_GENERATION,
+		/** Issued before the account's current generation: the password changed since. */
+		STALE_GENERATION,
+		/** Issued with a generation the account has not reached: another replica, or corruption. */
+		FUTURE_GENERATION,
+		/** The account's own generation cannot be read, so nothing can be compared. */
+		ACCOUNT_GENERATION_UNREADABLE
+	}
+
+	/**
+	 * The account's credential generation, or {@code null} when the stored value cannot be read.
+	 *
+	 * <p>Absent means {@code 0}: an account that existed before 3.4.1 has no such property, and
+	 * refusing those would lock every user out the moment this version starts (the credentials
+	 * themselves are refused for having no {@code accountId} — that is a different axis).
+	 * A value that is PRESENT but not a non-negative integer returns {@code null}: unknown is not
+	 * zero, and comparing against a guess would silently un-invalidate credentials.
+	 */
+	public static Long accountGeneration(UserItem account) {
+		if (account == null) {
+			return null;
+		}
+		List<Property> properties = account.getSubTypeProperties();
+		if (properties == null) {
+			return 0L;
+		}
+		for (Property property : properties) {
+			if (!CREDENTIAL_GENERATION_KEY.equals(property.getKey())) {
+				continue;
+			}
+			Object value = property.getValue();
+			if (value == null || String.valueOf(value).trim().isEmpty()) {
+				return 0L;
+			}
+			try {
+				long generation = Long.parseLong(String.valueOf(value).trim());
+				return generation < 0 ? null : generation;
+			} catch (NumberFormatException notAnInteger) {
+				log.warn("Account " + account.getUserId() + " has an unreadable "
+						+ CREDENTIAL_GENERATION_KEY + " (" + value + "); refusing its credentials");
+				return null;
+			}
+		}
+		return 0L;
+	}
+
+	/**
+	 * Whether a credential still belongs to the account it was issued for (3.4.1, R170).
+	 *
+	 * <p>Until this release a credential recorded only the user's NAME, so deleting a user and
+	 * recreating the same user id handed the new account every credential the old one had.
+	 *
+	 * @param credentialAccountId the {@code UserItem.getId()} recorded when the credential was
+	 *        issued; null or blank means it was issued before this release
+	 * @param credentialGeneration the generation recorded when the credential was issued, as stored
+	 *        (so this method, not each caller, decides what an unreadable value means)
+	 * @param account the account as read for THIS request (batch 17 already reads it)
+	 * @param generationApplies whether this kind of credential is invalidated by a password change —
+	 *        true for session tokens and MCP sessions, false for API keys (owner's decision: an
+	 *        automation must not stop when a human changes their password) and for passkeys (not
+	 *        derived from the password) and RSS feed tokens
+	 */
+	public static CredentialBinding credentialBinding(String credentialAccountId,
+			Object credentialGeneration, UserItem account, boolean generationApplies) {
+		if (!mayStillAct(account)) {
+			return CredentialBinding.ACCOUNT_CANNOT_ACT;
+		}
+		if (credentialAccountId == null || credentialAccountId.trim().isEmpty()) {
+			return CredentialBinding.NOT_BOUND;
+		}
+		if (!credentialAccountId.equals(account.getId())) {
+			return CredentialBinding.WRONG_ACCOUNT;
+		}
+		if (!generationApplies) {
+			return CredentialBinding.OK;
+		}
+		Long accountGeneration = accountGeneration(account);
+		if (accountGeneration == null) {
+			return CredentialBinding.ACCOUNT_GENERATION_UNREADABLE;
+		}
+		Long issued = credentialGenerationOf(credentialGeneration);
+		if (issued == null) {
+			return CredentialBinding.NO_GENERATION;
+		}
+		if (issued < accountGeneration) {
+			return CredentialBinding.STALE_GENERATION;
+		}
+		if (issued > accountGeneration) {
+			return CredentialBinding.FUTURE_GENERATION;
+		}
+		return CredentialBinding.OK;
+	}
+
+	/**
+	 * The generation a credential records, or {@code null} when it records none that can be used.
+	 *
+	 * <p>Unlike the account side, an ABSENT value is not zero here. A credential issued by this
+	 * version always writes the generation it read, so a missing, non-numeric or negative value
+	 * means the write did not finish or the record is damaged — and treating that as zero would let
+	 * it pass against an account still at zero (round-9 design review).
+	 */
+	private static Long credentialGenerationOf(Object stored) {
+		if (stored == null) {
+			return null;
+		}
+		if (stored instanceof Number) {
+			long generation = ((Number) stored).longValue();
+			return generation < 0 ? null : generation;
+		}
+		String text = String.valueOf(stored).trim();
+		if (text.isEmpty()) {
+			return null;
+		}
+		try {
+			long generation = Long.parseLong(text);
+			return generation < 0 ? null : generation;
+		} catch (NumberFormatException notAnInteger) {
+			return null;
+		}
+	}
+
+	/**
 	 * Single source of truth for the {@code nemaki:allowedAuthMethods} account
 	 * policy gate.
 	 *

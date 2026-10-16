@@ -21,6 +21,8 @@ package jp.aegif.nemaki.cmis.factory.auth.impl;
 import jp.aegif.nemaki.cmis.factory.auth.ApiKeyService;
 import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.ApiKey;
+import jp.aegif.nemaki.model.UserItem;
+import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.constant.NodeType;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -118,6 +120,20 @@ public class ApiKeyServiceImpl implements ApiKeyService {
         // Hash the key for storage
         String keyHash = BCrypt.hashpw(plainTextKey, BCrypt.gensalt());
 
+        // R170: bind the key to the ACCOUNT DOCUMENT, not to the name. A key that records no
+        // accountId cannot authenticate at all — AuthenticationUtil.credentialBinding refuses it —
+        // so issuing one would be a silent trap: refuse here, while the caller can still see why.
+        UserItem account = contentDaoService.getUserItemById(repositoryId, userId);
+        if (account == null || account.getId() == null) {
+            throw new IllegalStateException("No account document for user '" + userId
+                    + "', so an API key issued now could never authenticate");
+        }
+        Long accountGeneration = AuthenticationUtil.accountGeneration(account);
+        if (accountGeneration == null) {
+            throw new IllegalStateException("The credential generation of user '" + userId
+                    + "' cannot be read, so an API key issued now could not be compared with it");
+        }
+
         // Create the ApiKey object
         ApiKey apiKey = new ApiKey(userId, repositoryId, name);
         apiKey.setId(UUID.randomUUID().toString());
@@ -128,6 +144,11 @@ public class ApiKeyServiceImpl implements ApiKeyService {
         apiKey.setActive(true);
         apiKey.setCreated(new GregorianCalendar());
         apiKey.setCreator(userId);
+        apiKey.setAccountId(account.getId());
+        // Written although API keys do NOT compare it (owner's decision 2026-10-16: a human changing
+        // their password must not stop an automation). One rule writes every store, and an
+        // administrator revoking "every credential of this person" then has the field to work with.
+        apiKey.setCredentialGeneration(Long.toString(accountGeneration));
 
         // Save to database
         contentDaoService.create(repositoryId, apiKey);
@@ -225,6 +246,20 @@ public class ApiKeyServiceImpl implements ApiKeyService {
             // Verify the full key with BCrypt
             try {
                 if (BCrypt.checkpw(apiKey, key.getKeyHash())) {
+                    // R170: the key belongs to the account document it was issued for. Asked HERE
+                    // and not by the callers, because this method answers with a user NAME: no
+                    // caller can tell which document that name resolves to now (owner's decision,
+                    // 2026-10-16). The generation does not apply to API keys — see createApiKey.
+                    UserItem account =
+                            contentDaoService.getUserItemById(repositoryId, key.getUserId());
+                    AuthenticationUtil.CredentialBinding binding =
+                            AuthenticationUtil.credentialBinding(key.getAccountId(),
+                                    key.getCredentialGeneration(), account, false);
+                    if (binding != AuthenticationUtil.CredentialBinding.OK) {
+                        log.warn("API key validation failed: " + binding + " for prefix " + keyPrefix
+                                + " (repository: " + repositoryId + ")");
+                        continue;
+                    }
                     log.debug("API key validated for user: " + key.getUserId());
                     // Update lastUsed timestamp asynchronously (in-memory + periodic DB flush)
                     updateLastUsedAsync(repositoryId, key);
@@ -240,6 +275,28 @@ public class ApiKeyServiceImpl implements ApiKeyService {
         }
 
         return null;
+    }
+
+    @Override
+    public int revokeApiKeysOf(String repositoryId, String userId) {
+        if (userId == null) {
+            return 0;
+        }
+        // By the NAME, not by accountId: a key issued before 3.4.1 records no accountId, and looking
+        // up by it would leave exactly those keys behind (§4.1 of the design). What accountId is for
+        // is the COMPARISON in validateApiKey.
+        List<ApiKey> keys = listApiKeys(repositoryId, userId);
+        int revoked = 0;
+        for (ApiKey key : keys) {
+            contentDaoService.delete(repositoryId, key.getId());
+            revoked++;
+        }
+        if (revoked > 0) {
+            invalidateCache(repositoryId);
+            log.info("Revoked " + revoked + " API key(s) of user " + userId
+                    + " in repository " + repositoryId);
+        }
+        return revoked;
     }
 
     @Override

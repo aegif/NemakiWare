@@ -75,6 +75,13 @@
         <property name="webhookService">
             <ref bean="WebhookService" />
         </property>
+        <!-- Only so that deleting a user takes their API keys out of the store (R170). The
+             credentials of a deleted account are refused by their own store regardless; this
+             keeps unusable rows out. ApiKeyService reads users through ContentDaoService, so
+             wiring it here does not create a cycle. -->
+        <property name="apiKeyService">
+            <ref bean="apiKeyService" />
+        </property>
 			<!-- P3-2: explicit, not @Autowired. Every other dependency of this bean is an
 		     explicit <property>, and an annotation here would rely on a component-scan
 		     element elsewhere in this file continuing to register the post-processor. A

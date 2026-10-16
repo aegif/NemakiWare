@@ -123,4 +123,17 @@ public interface ApiKeyService {
      * @param keyId The API key ID
      */
     void updateLastUsed(String repositoryId, String keyId);
+
+    /**
+     * Revokes every API key of a user and answers how many were revoked (R170, 3.4.1).
+     *
+     * <p>{@code revokeApiKey} works one key id at a time, which is not what deleting a user needs.
+     * The lookup is by the user NAME, deliberately: a key issued before 3.4.1 records no
+     * {@code accountId}, and looking up by that would leave exactly those keys in the store.
+     *
+     * <p>This is housekeeping, not the security boundary. What stops a key of a deleted account is
+     * the comparison in {@link #validateApiKey}; this keeps unusable rows out of the store (and
+     * gives the delete a number to log).
+     */
+    int revokeApiKeysOf(String repositoryId, String userId);
 }
