@@ -72,7 +72,7 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 | パスキー（`WebAuthnCredential`） | `accountId`・`generation` | `accountId` のみ | 同上 |
 | RSS のフィードのトークン（`RssToken`） | `accountId`・`generation` | `accountId` のみ | 同上 |
 
-**5 つ全部が両方の欄を書く**（確認 10 巡目の Codex P2 — パスキーの生産者が `generation` を書かず、RSS が
+**このバッチに入れる置き場すべてが両方の欄を書く**（4 つ＝トークン・API キー・パスキー・MCP のセッション。RSS を入れるなら 5 つ目 — 未決 7。確認 14 巡目の subagent P2 で「5 つ全部」と無条件に書いていたのを未決 7 に合わせた。「書く」と「書けないなら発行しない」は同じ生産者側の規則）（確認 10 巡目の Codex P2 — パスキーの生産者が `generation` を書かず、RSS が
 この表に無く、錠の計画が RSS を `accountId` の規則から外していた。生産者と消費者と錠が食い違っていた）。
 照合しない置き場でも**書く**のは、(a) 調査のため、(b) 将来「管理者が 1 人の資格情報を全部無効にする」
 操作（§7）を足すときに欄が揃っているため、(c) 書く側の規則が 1 つで済むため。
