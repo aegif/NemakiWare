@@ -61,8 +61,11 @@ public class McpAuthenticationHandlerTest {
         authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
         // As in production: the account a session or key acts for is read (3.4.1 — it must still be there, not disabled).
         authHandler.setContentService(contentService);
+        // Built BEFORE the stubbing: boundAccount() stubs a mock of its own, and nesting that inside
+        // when(...) is an unfinished stubbing that fails every test in the class (Mockito).
+        jp.aegif.nemaki.model.UserItem anyAccount = boundAccount();
         when(contentService.getUserItemById(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(mock(jp.aegif.nemaki.model.UserItem.class));
+                .thenReturn(anyAccount);
     }
 
     // ========== Basic Authentication Tests ==========
@@ -223,14 +226,14 @@ public class McpAuthenticationHandlerTest {
         Map<String, String> headers = new HashMap<>();
         headers.put("X-MCP-Session-Token", VALID_TOKEN_4);
         authHandler.registerSessionToken(VALID_TOKEN_4, "testuser", "bedroom");
-        jp.aegif.nemaki.model.UserItem disabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        jp.aegif.nemaki.model.UserItem disabled = boundAccount();
         when(disabled.getSubTypeProperties()).thenReturn(java.util.List.of(
                 new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "disabled")));
         when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(disabled);
 
         assertFalse(authHandler.authenticate("bedroom", headers).isSuccess(), "the session of a disabled account still acted");
 
-        jp.aegif.nemaki.model.UserItem enabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        jp.aegif.nemaki.model.UserItem enabled = boundAccount();
         when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(enabled);
         assertFalse(authHandler.authenticate("bedroom", headers).isSuccess(), "the dropped session came back with the account");
     }
@@ -250,7 +253,14 @@ public class McpAuthenticationHandlerTest {
     @org.junit.jupiter.api.DisplayName("where the account's state cannot be read, neither an MCP session nor an API key acts for it (3.4.1, zero-trust P0)")
     public void nothingActsForAnAccountWhoseStateCannotBeRead() {
         McpAuthenticationHandler unwired = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
-        unwired.registerSessionToken(VALID_TOKEN_4, "testuser", "bedroom");
+        // Since R170 (3.4.1 batch 19) a session is bound to the account DOCUMENT, so where the
+        // account cannot be read no session is OPENED — which is stronger than refusing it on use,
+        // and is why the session arm of this lock now measures the opening. "A session that exists
+        // while the account cannot be read" is no longer a state this handler can be in: every way
+        // of opening one reads the account first.
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> unwired.registerSessionToken(VALID_TOKEN_4, "testuser", "bedroom"),
+                "a session was opened for an account no one could read");
         when(apiKeyService.validateApiKey("bedroom", "nk_key-2")).thenReturn("testuser");
         Map<String, String> session = new HashMap<>();
         session.put("X-MCP-Session-Token", VALID_TOKEN_4);
@@ -296,7 +306,7 @@ public class McpAuthenticationHandlerTest {
         when(alice.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
         when(principalService.getUserById(repositoryId, username)).thenReturn(alice);
 
-        jp.aegif.nemaki.model.UserItem cloudOnly = mock(jp.aegif.nemaki.model.UserItem.class);
+        jp.aegif.nemaki.model.UserItem cloudOnly = boundAccount();
         when(cloudOnly.getSubTypeProperties()).thenReturn(java.util.List.of(
                 new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud")));
         when(contentService.getUserItemById(repositoryId, username)).thenReturn(cloudOnly);
@@ -313,7 +323,7 @@ public class McpAuthenticationHandlerTest {
 
         // The administrator now allows passwords again. The lockout must still hold: if the refused
         // login above cleared the counter, this one succeeds and nothing was counted.
-        jp.aegif.nemaki.model.UserItem allowed = mock(jp.aegif.nemaki.model.UserItem.class);
+        jp.aegif.nemaki.model.UserItem allowed = boundAccount();
         when(allowed.getSubTypeProperties()).thenReturn(java.util.List.of(
                 new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "password")));
         when(contentService.getUserItemById(repositoryId, username)).thenReturn(allowed);
@@ -327,7 +337,7 @@ public class McpAuthenticationHandlerTest {
     @org.junit.jupiter.api.DisplayName("an MCP login with the API key of a deleted or disabled account opens no session (3.4.1, zero-trust P0)")
     public void anApiKeyLoginOpensNoSessionForAnAccountThatCannotAct() {
         when(apiKeyService.validateApiKey("bedroom", "nk_key-3")).thenReturn("testuser");
-        jp.aegif.nemaki.model.UserItem disabled = mock(jp.aegif.nemaki.model.UserItem.class);
+        jp.aegif.nemaki.model.UserItem disabled = boundAccount();
         when(disabled.getSubTypeProperties()).thenReturn(java.util.List.of(
                 new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "disabled")));
         when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(disabled);
@@ -339,7 +349,8 @@ public class McpAuthenticationHandlerTest {
         assertFalse(authHandler.loginWithApiKey("bedroom", "nk_key-4").isSuccess(),
                 "the API key of a deleted account opened an MCP session");
 
-        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(mock(jp.aegif.nemaki.model.UserItem.class));
+        jp.aegif.nemaki.model.UserItem readable = boundAccount();
+        when(contentService.getUserItemById("bedroom", "testuser")).thenReturn(readable);
         assertTrue(authHandler.loginWithApiKey("bedroom", "nk_key-3").isSuccess(), "the key of an account that can act was refused");
     }
 
@@ -619,8 +630,22 @@ public class McpAuthenticationHandlerTest {
 
     // ========== allowedAuthMethods policy gate (security audit follow-up, 3.2.1) ==========
 
+    /**
+     * An account mock that names its own DOCUMENT, which every credential is bound to since R170.
+     *
+     * <p>A bare {@code mock(UserItem.class)} answers null for {@code getId()}, and a session or key
+     * bound to null is refused — so a fixture that used one would make every test here fail on THAT
+     * refusal instead of on what it is about (3.4.1 batch 19).
+     */
+    private static jp.aegif.nemaki.model.UserItem boundAccount() {
+        jp.aegif.nemaki.model.UserItem account = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(account.getId()).thenReturn("account-document");
+        return account;
+    }
+
     private static UserItem userItemWithPolicy(String userId, String allowedAuthMethods) {
         UserItem u = new UserItem();
+        u.setId(userId + "-doc");
         u.setUserId(userId);
         if (allowedAuthMethods != null) {
             u.setSubTypeProperties(List.of(new Property("nemaki:allowedAuthMethods", allowedAuthMethods)));

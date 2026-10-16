@@ -77,6 +77,14 @@ public class McpToolsProviderTest {
         MockitoAnnotations.openMocks(this);
         ObjectMapper objectMapper = ObjectMapperFactory.createDefaultObjectMapper();
         authHandler = new McpAuthenticationHandler(principalService, apiKeyService, TEST_SESSION_TTL_SECONDS);
+        // A session is bound to the account DOCUMENT it is opened for (R170, 3.4.1 batch 19), so the
+        // handler has to be able to read the account: without a content service no session can be
+        // opened at all, and every tool here starts by registering one. The account is built before
+        // the stubbing below — nesting a stubbed mock inside when(...) is an unfinished stubbing.
+        jp.aegif.nemaki.model.UserItem account = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(account.getId()).thenReturn("admin-doc");
+        when(contentService.getUserItemById(anyString(), anyString())).thenReturn(account);
+        authHandler.setContentService(contentService);
         resultFactory = new McpToolResultFactory(objectMapper);
         toolsProvider = new McpToolsProvider(authHandler, vectorSearchService, contentService,
                 textExtractionService, permissionService, typeManager, discoveryService,

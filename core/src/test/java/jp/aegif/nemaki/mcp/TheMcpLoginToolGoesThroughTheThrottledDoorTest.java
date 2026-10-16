@@ -69,8 +69,12 @@ class TheMcpLoginToolGoesThroughTheThrottledDoorTest {
         when(alice.getUserId()).thenReturn(USER);
         when(alice.getPasswordHash()).thenReturn(BCrypt.hashpw(PASSWORD, BCrypt.gensalt(4)));
         when(principalService.getUserById(REPO, USER)).thenReturn(alice);
-        when(contentService.getUserItemById(anyString(), anyString()))
-                .thenReturn(mock(jp.aegif.nemaki.model.UserItem.class));
+        // The account names its own DOCUMENT: since R170 a session is opened only for an account it
+        // can be bound to, so a bare mock (getId() == null) would make the login fail here for a
+        // reason that has nothing to do with the throttle this lock measures (3.4.1 batch 19).
+        jp.aegif.nemaki.model.UserItem account = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(account.getId()).thenReturn(USER + "-doc");
+        when(contentService.getUserItemById(anyString(), anyString())).thenReturn(account);
 
         McpAuthenticationHandler authHandler =
                 new McpAuthenticationHandler(principalService, apiKeyService, 3600);
