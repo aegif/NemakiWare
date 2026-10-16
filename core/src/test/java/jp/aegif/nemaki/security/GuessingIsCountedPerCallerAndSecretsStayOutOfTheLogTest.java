@@ -79,6 +79,40 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
      * service — the method whose context actually reaches the throttle. A {@code put} anywhere else
      * in the file (a helper nothing calls, a comment) does not wire anything (round-7 review).
      */
+    /** What the reader asks for: {@code callContext.get("throttleRequest")}. */
+    private static final String THROTTLE_KEY = "throttleRequest";
+
+    private static final String THROTTLE_KEY_LITERAL = "\"throttleRequest\"";
+
+    /**
+     * The value of a {@code String} constant named in the production, or null when it cannot be read.
+     *
+     * <p>Null, not a guess: a key this lock cannot resolve is "could not ask", and the assertion that
+     * calls this says so. Looking it up across the module is what lets the key live in a constants
+     * class rather than only in the door that uses it.
+     */
+    private static String constantValue(String name) {
+        if (name == null || name.startsWith("\"")) {
+            return null;
+        }
+        String simple = name.substring(name.lastIndexOf('.') + 1);
+        Pattern declaration = Pattern.compile(
+                "String\\s+" + Pattern.quote(simple) + "\\s*=\\s*\"([^\"]*)\"");
+        List<String> values = new ArrayList<>();
+        try (var files = Files.walk(Path.of("src/main/java"))) {
+            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
+                Matcher found = declaration.matcher(Files.readString(file, StandardCharsets.UTF_8));
+                while (found.find()) {
+                    values.add(found.group(1));
+                }
+            }
+        } catch (IOException unreadable) {
+            return null;
+        }
+        // Exactly one declaration, or this lock does not know which one the door means.
+        return values.size() == 1 ? values.get(0) : null;
+    }
+
     private String methodThatLogsIn(Path door) throws IOException {
         String body = read(door);
         // Any identifier for the context, not the two names in the tree today: renaming a local
@@ -117,24 +151,44 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
             // `put("throttleRequest", null)` would read the same to a contains() check (round-6
             // review); a `put` left in an unused helper would read the same to a whole-file regex
             // (round-7 review, P3).
-            // The literal or an upper-case constant that names it: extracting the key into a
-            // constant must not turn this lock red (round-10 review, P3).
+            // The literal, or a constant whose VALUE is that literal. Accepting any constant whose
+            // NAME looks throttle-ish was the round-10 answer to a rename, and both reviewers found
+            // the hole in round 11: the reader asks for "throttleRequest" by literal, so a constant
+            // spelled THROTTLE_REQUEST_KEY = "throttle_request" left this lock green while the
+            // resolver found nothing and keyed every caller as "unknown" again — the S5 defect
+            // itself. The guard belongs on the side that does the reading
+            // ([[loosening-one-side-of-a-pair-opens-the-other]]).
             Matcher put = Pattern
-                    .compile("put\\(\\s*(?:\"throttleRequest\"|[A-Z][A-Z0-9_]*THROTTLE[A-Z0-9_]*|THROTTLE[A-Z0-9_]*),"
+                    .compile("put\\(\\s*(\"?[A-Za-z_][A-Za-z0-9_.]*\"?)\\s*,"
                             + "\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)")
                     .matcher(methodThatLogsIn(door));
-            assertTrue(put.find(),
-                    door + " does not put the servlet request in the call context, so the throttle keys"
-                            + " every caller as \"unknown\" and failures against one name add up across"
-                            + " the internet");
+            String keyedOn = null;
+            String valuePut = null;
+            List<String> keysTried = new ArrayList<>();
+            while (put.find()) {
+                String key = put.group(1);
+                keysTried.add(key);
+                if (THROTTLE_KEY_LITERAL.equals(key) || THROTTLE_KEY.equals(constantValue(key))) {
+                    keyedOn = key;
+                    valuePut = put.group(2);
+                    break;
+                }
+            }
+            assertTrue(keyedOn != null,
+                    door + " does not put the servlet request in the call context under "
+                            + THROTTLE_KEY_LITERAL + ", so the throttle keys every caller as"
+                            + " \"unknown\" and failures against one name add up across the internet."
+                            + " If the key is a constant, this lock needs to find its declaration in"
+                            + " core/src/main/java and read the same value — what it found put here:"
+                            + " " + keysTried);
             // What this does NOT prove (round-7 review, P3): that the statement RUNS (it is read from
             // the source, not driven), and that the identifier is the servlet request rather than
             // something else named "request". The behaviour of the throttle itself is measured in
             // LoginThrottle's tests and over MCP in TheMcpLoginToolGoesThroughTheThrottledDoorTest.
-            assertTrue(put.group(1).toLowerCase(java.util.Locale.ROOT).contains("request"),
-                    door + " puts something that is not the servlet request under \"throttleRequest\": "
-                            + put.group(1) + " — the resolver reads it as a request and falls back to"
-                            + " \"unknown\" when it is not one");
+            assertTrue(valuePut.toLowerCase(java.util.Locale.ROOT).contains("request"),
+                    door + " puts something that is not the servlet request under "
+                            + THROTTLE_KEY_LITERAL + ": " + valuePut + " — the resolver reads it as a"
+                            + " request and falls back to \"unknown\" when it is not one");
         }
     }
 

@@ -74,10 +74,26 @@ class EveryFieldNameIsEscapedOnceTest {
      * of them reads, and on the raw text that sentence turned the lock red with a message naming a
      * defect that was not there — an over-refusal, which this tree treats as the same weight of
      * defect as letting one through (round-10 review, P2). String literals keep their contents, so
-     * a URL or a message is not mistaken for a comment.
+     * a URL or a message is not mistaken for a comment — {@link #codeWithoutLiteralText(String)} is
+     * for the locks that must not be satisfied (or refused) by prose inside a literal either.
+     *
+     * <p>Text blocks are read as one literal. Surrendering on {@code """} was the first answer to
+     * the round-11 review and it failed at once: {@code McpToolsProvider} has ten of them, and the
+     * premise lock below reads every file of the module. Scanned as "open, close, open", the rest of
+     * such a file would be taken for string and the lock would quietly measure nothing.
      */
     private static String codeOnly(String source) {
+        return codeOnly(source, true);
+    }
+
+    /** {@link #codeOnly(String)}, with the CONTENTS of string literals removed as well. */
+    private static String codeWithoutLiteralText(String source) {
+        return codeOnly(source, false);
+    }
+
+    private static String codeOnly(String source, boolean keepLiteralText) {
         StringBuilder code = new StringBuilder(source.length());
+        boolean inTextBlock = false;
         boolean inString = false;
         boolean inChar = false;
         boolean inLineComment = false;
@@ -85,6 +101,21 @@ class EveryFieldNameIsEscapedOnceTest {
         for (int i = 0; i < source.length(); i++) {
             char c = source.charAt(i);
             char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
+            boolean tripleQuote = c == '"' && next == '"' && i + 2 < source.length()
+                    && source.charAt(i + 2) == '"';
+            if (inTextBlock) {
+                // The newlines are kept either way, so the line numbers this lock reports stay true.
+                if (tripleQuote) {
+                    inTextBlock = false;
+                    i += 2;
+                    if (keepLiteralText) {
+                        code.append("\"\"\"");
+                    }
+                } else if (c == '\n' || keepLiteralText) {
+                    code.append(c);
+                }
+                continue;
+            }
             if (inLineComment) {
                 if (c == '\n') {
                     inLineComment = false;
@@ -97,14 +128,23 @@ class EveryFieldNameIsEscapedOnceTest {
                     inBlockComment = false;
                     i++;
                     code.append(' ');
+                } else if (c == '\n') {
+                    // The newlines of a block comment are kept so that the line NUMBERS this lock
+                    // reports still point at the file (round-11 review, P3).
+                    code.append(c);
                 }
                 continue;
             }
             if (inString || inChar) {
-                code.append(c);
+                boolean closingDelimiter = (inString && c == '"') || (inChar && c == '\'');
+                if (keepLiteralText || closingDelimiter) {
+                    code.append(c);
+                }
                 if (c == '\\') {
                     if (i + 1 < source.length()) {
-                        code.append(next);
+                        if (keepLiteralText) {
+                            code.append(next);
+                        }
                         i++;
                     }
                 } else if (inString && c == '"') {
@@ -122,6 +162,14 @@ class EveryFieldNameIsEscapedOnceTest {
             if (c == '/' && next == '*') {
                 inBlockComment = true;
                 i++;
+                continue;
+            }
+            if (tripleQuote) {
+                inTextBlock = true;
+                i += 2;
+                if (keepLiteralText) {
+                    code.append("\"\"\"");
+                }
                 continue;
             }
             if (c == '"') {
@@ -178,11 +226,16 @@ class EveryFieldNameIsEscapedOnceTest {
         try (var files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
                 int number = 0;
-                for (String raw : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                // Comments off through the same scanner as the locks above — its own `indexOf("//")`
+                // was defeated from both sides: a string literal containing "//" cut the line short
+                // (hiding an indexing call written after it) and a block comment at the END of a
+                // code line was not cut at all (a false red). The literals themselves STAY: the
+                // dangerous write can be spelled `doc.addField("dynamicDate.property." + key, v)`
+                // (round-11 review, P3 — and round-9's hole was the same scanner, a line earlier).
+                for (String raw : codeOnly(Files.readString(file, StandardCharsets.UTF_8)).split("\n", -1)) {
                     number++;
-                    String code = raw.contains("//") ? raw.substring(0, raw.indexOf("//")) : raw;
-                    code = code.trim();
-                    if (code.isEmpty() || code.startsWith("*") || code.startsWith("/*")) {
+                    String code = raw.trim();
+                    if (code.isEmpty()) {
                         continue;
                     }
                     if (!code.contains("dynamicDate") && !code.contains("DATETIME_FIELD_PREFIX")) {
@@ -247,26 +300,38 @@ class EveryFieldNameIsEscapedOnceTest {
         // handing it a statement the walker REFUSED produced a successful query for the other half:
         //   WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL  ->  200, tag only, dueDate dropped.
         // Both reviewers found this in round 8. The refusal has to leave before that fallback.
-        String processor = codeOnly(read(PROCESSOR));
+        String processor = codeWithoutLiteralText(read(PROCESSOR));
         int walkCall = processor.indexOf("solrPredicateWalker.walkPredicate(whereTree)");
         assertTrue(walkCall > 0,
                 "the walker call is gone — this lock no longer reads that path. It reads the"
                         + " production's text, so renaming that call, the caught variable or the"
                         + " catch-all clause turns this red without any defect in the production"
                         + " (round-10 review, P3); re-point the lock in the same change");
-        int refusalCatch = processor.indexOf("CmisInvalidArgumentException refusal", walkCall);
-        int genericCatch = processor.indexOf("} catch (Exception e) {", walkCall);
-        int fallback = processor.indexOf("parseSecondaryTypeWhereClause", genericCatch);
-        assertTrue(refusalCatch > 0 && refusalCatch < genericCatch,
+        // By the TYPE, both clauses: the earlier form of this lock looked for the exact strings
+        // "CmisInvalidArgumentException refusal" and "} catch (Exception e) {", so renaming either
+        // caught variable — a correct change — turned it red with a message naming a defect that
+        // was not there, and the arm that claimed to read the type could only ever capture the name
+        // the line above had already required (round-11 review, P2).
+        Matcher refusalClause = Pattern
+                .compile("catch\\s*\\(\\s*(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
+                .matcher(processor);
+        assertTrue(refusalClause.find(walkCall),
                 "the catch around walkPredicate does not take a refusal first, so a refused"
                         + " statement is handed to the manual parser and comes back as a query for"
                         + " whatever other predicate that parser recognises");
-        // By the type, not the name: renaming the caught variable must not turn this red.
-        Matcher thrown = Pattern
-                .compile("CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
-                .matcher(processor.substring(refusalCatch, genericCatch));
-        assertTrue(thrown.find(), "the refusal clause does not name the exception it catches");
-        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw " + thrown.group(1)),
+        int refusalCatch = refusalClause.start();
+        String refusalName = refusalClause.group(1);
+        Matcher catchAll = Pattern.compile("catch\\s*\\(\\s*Exception\\s+(\\w+)\\s*\\)")
+                .matcher(processor);
+        assertTrue(catchAll.find(walkCall),
+                "the catch-all around walkPredicate is gone — this lock measures that the refusal"
+                        + " leaves BEFORE it, and there is nothing to be before");
+        int genericCatch = catchAll.start();
+        int fallback = processor.indexOf("parseSecondaryTypeWhereClause", genericCatch);
+        assertTrue(refusalCatch < genericCatch,
+                "the refusal is caught AFTER the catch-all, so the catch-all takes it first and"
+                        + " hands the refused statement to the manual parser");
+        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw " + refusalName),
                 "the refusal is caught before the fallback but not re-thrown");
         // And it must not try the fallback FIRST. The likely "improvement" — ask the manual parser,
         // throw only if it answers nothing — satisfies every assertion above and brings the whole
@@ -292,24 +357,33 @@ class EveryFieldNameIsEscapedOnceTest {
         // not take that path — it would turn "this property cannot be queried" into "here is
         // everything" (round-7 review). The two remaining *:* fallbacks, for a WHERE clause that
         // could not be translated at all, are recorded as a residual (R188).
-        String processor = codeOnly(read(PROCESSOR));
+        String processor = codeWithoutLiteralText(read(PROCESSOR));
         int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
         assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");
         String body = processor.substring(manual);
 
-        int rethrow = body.indexOf("CmisInvalidArgumentException refusal");
-        int genericCatch = body.indexOf("} catch (Exception e) {");
-        assertTrue(rethrow > 0 && rethrow < genericCatch,
+        // By the type here too (round-11 review, P2): the exact strings turned this red for a
+        // rename of the caught variable, which is not a defect in the production.
+        Matcher rethrown = Pattern
+                .compile("catch\\s*\\(\\s*(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
+                .matcher(body);
+        Matcher catchAll = Pattern.compile("catch\\s*\\(\\s*Exception\\s+(\\w+)\\s*\\)").matcher(body);
+        assertTrue(rethrown.find(), "the manual parser does not catch a refusal at all, so a"
+                + " refused predicate becomes null and the caller answers every document");
+        assertTrue(catchAll.find(), "the manual parser's catch-all is gone — this lock measures that"
+                + " the refusal is taken BEFORE it");
+        assertTrue(rethrown.start() < catchAll.start(),
                 "the manual parser does not re-throw a refusal before its catch-all, so a refused"
                         + " predicate becomes null and the caller answers every document");
-        assertTrue(body.substring(rethrow, genericCatch).contains("throw refusal"),
+        assertTrue(body.substring(rethrown.start(), catchAll.start())
+                        .contains("throw " + rethrown.group(1)),
                 "the refusal is caught and not re-thrown");
     }
 
     @Test
     @DisplayName("every field-name production in the walker goes through the rule")
     void everyProductionInTheWalkerGoesThroughTheRule() throws IOException {
-        String walker = codeOnly(read(WALKER));
+        String walker = codeWithoutLiteralText(read(WALKER));
 
         // Each of these is a statement that ends in a field name. The round-5 review found IN,
         // ANY-IN and LIKE passing getPropertyNameInSolr straight into a Term, and the comparison
@@ -354,7 +428,7 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("the manual fallback — the path that answers when the walker throws — goes through the rule too")
     void theManualFallbackGoesThroughTheRule() throws IOException {
-        String processor = codeOnly(read(PROCESSOR));
+        String processor = codeWithoutLiteralText(read(PROCESSOR));
         int found = 0;
         int from = 0;
         while ((from = processor.indexOf("getPropertyNameInSolr(", from)) >= 0) {
