@@ -341,7 +341,8 @@ public class UserController {
                     response.put("errors", java.util.Collections.singletonList(policyError));
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
                 }
-                user.setPassowrd(getContentService().hashPassword(password));
+                getContentService().stampPasswordChange(user,
+                        getContentService().hashPassword(password), true);
             }
 
             // shared signature + persist tail (modifier stamp inside)

@@ -524,7 +524,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					
 					try {
 						// ユーザーのパスワードハッシュをBCryptに更新
-						u.setPassowrd(result.getNewHash());
+						// bumpGeneration = false: the user did not change their password, so raising the
+						// generation would end the session of the person who just logged in (R170).
+						contentService.stampPasswordChange(u, result.getNewHash(), false);
 						contentDaoService.update(repositoryId, u);
 						
 						log.info("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt for user: " + userId);

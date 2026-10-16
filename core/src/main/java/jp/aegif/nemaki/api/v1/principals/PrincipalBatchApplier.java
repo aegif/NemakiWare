@@ -203,7 +203,8 @@ final class PrincipalBatchApplier {
                     user.setAdmin(admin);
                 }
                 if (row.cell("password") != null) {
-                    user.setPassowrd(contentService.hashPassword(row.cell("password")));
+                    contentService.stampPasswordChange(user,
+                            contentService.hashPassword(row.cell("password")), true);
                 }
                 contentService.applyUserUpdate(repositoryId, user, actor);
                 String groups = row.cell("groups");

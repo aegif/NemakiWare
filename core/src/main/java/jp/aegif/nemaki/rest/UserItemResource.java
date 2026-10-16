@@ -742,7 +742,7 @@ private ContentService getContentServiceSafe() {
 							}
 						}
 						if (status) {
-							user.setPassowrd(service.hashPassword(password));
+							service.stampPasswordChange(user, service.hashPassword(password), true);
 						}
 					}
 
@@ -837,7 +837,7 @@ private ContentService getContentServiceSafe() {
 			// Self-service change or non-admin: require old password verification
 			if(AuthenticationUtil.passwordMatches(oldPassword, userItem.getPassowrd())){
 				String hash = getContentService().hashPassword(newPassword);
-				userItem.setPassowrd(hash);
+				getContentService().stampPasswordChange(userItem, hash, true);
 				try{
 					getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
 				}catch(Exception e){
@@ -853,7 +853,7 @@ private ContentService getContentServiceSafe() {
 		} else {
 			// Admin resetting another user's password: skip old password verification
 			String hash = getContentService().hashPassword(newPassword);
-			userItem.setPassowrd(hash);
+			getContentService().stampPasswordChange(userItem, hash, true);
 			try{
 				getContentService().update(new SystemCallContext(repositoryId), repositoryId, userItem);
 			}catch(Exception e){
@@ -1053,7 +1053,7 @@ private ContentService getContentServiceSafe() {
 					}
 				}
 				if (status) {
-					user.setPassowrd(service.hashPassword(password));
+					service.stampPasswordChange(user, service.hashPassword(password), true);
 				}
 			}
 

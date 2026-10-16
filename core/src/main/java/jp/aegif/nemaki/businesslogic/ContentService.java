@@ -291,6 +291,22 @@ public interface ContentService {
 	String hashPassword(String plainPassword);
 
 	/**
+	 * Writes a new password hash onto a user and, when asked, raises their credential generation.
+	 *
+	 * <p>The ONE place a password is written (R170, 3.4.1 batch 19). The generation is what makes the
+	 * change end the sessions it opened: session tokens and MCP sessions carry the generation they
+	 * were issued at and are refused once it moves.
+	 *
+	 * <p><strong>Nothing is saved here.</strong> Each of the nine callers writes the password as part
+	 * of its own update — a name, a set of groups, a policy — and saving here would split those into
+	 * a second revision (measured while implementing, 2026-10-16).
+	 *
+	 * @param bumpGeneration false for the MD5-to-BCrypt upgrade, which the user did not ask for:
+	 *        raising it there would end the session of the person who just logged in.
+	 */
+	void stampPasswordChange(UserItem user, String newHash, boolean bumpGeneration);
+
+	/**
 	 * Stamp the modification signature with {@code actorUsername} and persist an
 	 * already-merged user. Each REST stack performs its own field-merge and
 	 * password-policy enforcement to preserve its contract, then delegates the

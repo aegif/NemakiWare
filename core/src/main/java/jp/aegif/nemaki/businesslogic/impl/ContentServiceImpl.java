@@ -869,6 +869,38 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public void stampPasswordChange(jp.aegif.nemaki.model.UserItem user, String newHash,
+			boolean bumpGeneration) {
+		if (user == null || newHash == null) {
+			throw new IllegalArgumentException("a password change needs a user and a hash");
+		}
+		// The generation first, the password last, and the password written ONCE: writing it before
+		// the generation can be read leaves the new password on the object the caller is about to
+		// save with the generation unchanged — the change takes effect and invalidates nothing (its
+		// own lock caught that). One call also lets the lock below count the writers.
+		if (bumpGeneration) {
+			Long current = jp.aegif.nemaki.util.AuthenticationUtil.accountGeneration(user);
+			if (current == null) {
+				// Unknown is not zero: raising from a value nobody can read would invent a number,
+				// and the save guard below the DAO refuses an unreadable generation anyway (R170).
+				throw new IllegalStateException("the credential generation of user "
+						+ user.getUserId()
+						+ " cannot be read, so this password change cannot invalidate what it should");
+			}
+			java.util.List<jp.aegif.nemaki.model.Property> properties =
+					user.getSubTypeProperties() == null ? new java.util.ArrayList<>()
+							: new java.util.ArrayList<>(user.getSubTypeProperties());
+			properties.removeIf(p -> jp.aegif.nemaki.util.AuthenticationUtil.CREDENTIAL_GENERATION_KEY
+					.equals(p.getKey()));
+			properties.add(new jp.aegif.nemaki.model.Property(
+					jp.aegif.nemaki.util.AuthenticationUtil.CREDENTIAL_GENERATION_KEY,
+					Long.toString(current + 1)));
+			user.setSubTypeProperties(properties);
+		}
+		user.setPassowrd(newHash);
+	}
+
+	@Override
 	public void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername) {
 		// The built-in administrator stays an administrator (R115). This is the one demotion
 		// this method can refuse from the merged user alone: what was stored is not known here

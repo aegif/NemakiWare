@@ -26,7 +26,7 @@ public class AuthenticationUtil {
 	 * skew a credential issued BEFORE a password change can carry a later time (round-7 design
 	 * review). An integer read from the account document answers the same on every replica.
 	 */
-	private static final String CREDENTIAL_GENERATION_KEY = "nemaki:credentialGeneration";
+	public static final String CREDENTIAL_GENERATION_KEY = "nemaki:credentialGeneration";
 
 	/** Why a credential is not accepted — logged, and asserted by the locks. */
 	public enum CredentialBinding {

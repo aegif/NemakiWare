@@ -427,7 +427,8 @@ public class UserResource {
                 if (!policyResult.isOk()) {
                     throw ApiException.invalidArgument(policyResult.getErrorMessage());
                 }
-                user.setPassowrd(contentService.hashPassword(request.getPassword()));
+                contentService.stampPasswordChange(user,
+                        contentService.hashPassword(request.getPassword()), true);
             }
 
             // shared signature + persist tail (modifier stamp inside)
@@ -559,7 +560,8 @@ public class UserResource {
                 throw ApiException.invalidArgument("Old password is incorrect");
             }
             
-            user.setPassowrd(contentService.hashPassword(request.getNewPassword()));
+            contentService.stampPasswordChange(user,
+                    contentService.hashPassword(request.getNewPassword()), true);
 
             // shared signature + persist tail (modifier stamp inside)
             contentService.applyUserUpdate(repositoryId, user, getAuthenticatedUsername());
