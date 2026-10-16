@@ -1203,6 +1203,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			return null;
 
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException refusal) {
+			// A REFUSAL, not a parse failure: answering null here would make the caller fall back to
+			// "*:*" — the whole WHERE clause dropped, every document returned. The refusal has to
+			// reach the client (round-7 review).
+			throw refusal;
 		} catch (Exception e) {
 			logger.warn("Error parsing secondary type WHERE clause: " + e.getMessage());
 			return null;

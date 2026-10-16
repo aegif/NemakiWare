@@ -318,18 +318,28 @@ public class SolrUtil implements ApplicationContextAware {
 			return null;
 		}
 		if (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {
-			// Left as it is — with the raw colon Solr rejects as a syntax error. NOTHING is indexed
-			// under this name: every write path puts a custom property in "dynamic.property.<key>"
-			// with no type branch (see indexing below; "dynamicDate" appears only in the schema's
-			// dynamic-field declaration and in the line above). A syntactically VALID query over a
-			// field no document carries answers "no documents" for the positive predicates and
-			// EVERY document the type and ACL filters leave for the negated ones (IS NULL, NOT IN,
-			// <>) — and the query that produced it cannot even fall back, because a walker that
-			// throws plus a manual parser that answers nothing becomes "*:*" in SolrQueryProcessor.
-			// Escaping this name therefore turned a loud 400 into a silent "everything" (round-6
-			// review). Until the indexer writes this field, the loud failure is the correct answer;
-			// the underlying gap — custom DATETIME properties are not queryable — is a residual.
-			return fromPropertyMap;
+			// REFUSED, not escaped and not passed through. NOTHING is indexed under this name: every
+			// write path puts a custom property in "dynamic.property.<key>" with no type branch (see
+			// indexing below; "dynamicDate" appears only in the schema's dynamic-field declaration
+			// and in the line above). A query over a field no document carries answers "no
+			// documents" for the positive predicates and EVERY document the type and ACL filters
+			// leave for the negated ones (IS NULL, NOT IN, <>) — the direction this tree least wants
+			// a query to break in.
+			//
+			// Escaping it made that silent (round-6 review). Leaving the colon raw only helped while
+			// the property id HAD a colon: a type definition's property id needs to be non-blank and
+			// nothing else (TypeResource), so "dueDate" gives "dynamicDate.property.dueDate", a
+			// perfectly valid field name, and the silent "everything" came straight back (round-7
+			// review). So refuse the statement instead.
+			//
+			// Refusing is safe here: every caller ends in a 400, not in a dropped WHERE clause.
+			// SolrQueryProcessor catches a walker exception, tries the manual parser, and calls
+			// exceptionService.invalidArgument when that answers nothing; the manual parser itself
+			// re-throws this exception rather than returning null (which WOULD become "*:*").
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+					"This property cannot be used in a query: nothing is indexed under the field it"
+							+ " maps to (" + fromPropertyMap + "). Custom DATETIME properties are"
+							+ " not queryable in this version.");
 		}
 		return org.apache.solr.client.solrj.util.ClientUtils
 				.escapeQueryChars(fromPropertyMap.replace("\\:", ":"));
