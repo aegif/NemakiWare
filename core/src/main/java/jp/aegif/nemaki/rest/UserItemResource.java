@@ -1387,7 +1387,14 @@ private ContentService getContentServiceSafe() {
 	 * Whether this caller may set {@code userId}'s password without presenting the current one: an
 	 * administrator resetting SOMEONE ELSE's password, which is the one case {@code changePassword} also
 	 * allows (3.4.1, external review S4). A self-change — and any change by a non-administrator — has to
-	 * prove knowledge of the current password, so a stolen token cannot become a permanent takeover.
+	 * prove knowledge of the current password.
+	 *
+	 * <p>What this does NOT claim: that a stolen token cannot be turned into a lasting takeover. For a
+	 * NON-administrator's token it closes that, because every way to set a password now asks for the
+	 * current one. An administrator's token still has other ways to outlive its 24 hours — resetting
+	 * another administrator, creating an account and granting it the admin flag, and the API v1 update,
+	 * which sets a password with no current one even for the caller's own account (recorded in R176's
+	 * remaining shape; round-4 review, P2).
 	 */
 	private boolean callerMayResetWithoutTheOldPassword(HttpServletRequest httpRequest, String userId) {
 		CallContext callContext = (CallContext) httpRequest.getAttribute("CallContext");

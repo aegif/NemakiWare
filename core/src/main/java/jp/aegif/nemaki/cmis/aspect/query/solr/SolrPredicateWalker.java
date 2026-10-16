@@ -489,7 +489,23 @@ public class SolrPredicateWalker{
 	 */
 	private String solrFieldOfColumn(CmisTree colNode) {
 		ColumnReference colRef = getColumnReference(colNode);
-		return solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName());
+		return queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));
+	}
+
+	/**
+	 * A field name whose colon is escaped exactly once, whatever {@link SolrUtil#getPropertyNameInSolr}
+	 * returned. Its two arms disagree: the STRING arm escapes the colon of a custom property itself, the
+	 * DATETIME arm ({@code dynamicDate.property.<id>}) does not. Escaping unconditionally broke the first
+	 * (a doubled backslash names a field nothing is indexed under, so {@code IS NULL} matched every
+	 * document); escaping not at all broke the second (a raw colon is a Solr syntax error, so the query is
+	 * rejected with 400). Normalising first makes this idempotent and correct for both — measured both ways
+	 * (3.4.1, external review C1 and the round-3/round-4 reviews).
+	 */
+	private static String queryableFieldName(String fromPropertyMap) {
+		if (fromPropertyMap == null) {
+			return null;
+		}
+		return fromPropertyMap.replace("\\:", ":").replace(":", "\\:");
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
