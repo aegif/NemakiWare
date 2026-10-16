@@ -246,7 +246,12 @@ public class SolrPredicateWalker{
 		
 		String right = safeWalkExprToString(rightNode);
 
-		map.put(FLD, ClientUtils.escapeQueryChars(solrUtil.getPropertyNameInSolr(repositoryId, left)));
+		// Escaped once (round-5 review). escapeQueryChars over the STRING arm's output escaped the
+		// backslash the property map had already put there, so a comparison against a custom
+		// property named a field nothing is indexed under and matched nothing. What is NOT changed
+		// here is how the column is read: "left" is still the node's children joined with a dot, so
+		// a qualified column resolves to a field no document carries (R178's remaining shape).
+		map.put(FLD, queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, left)));
 		map.put(CND, right);
 		return map;
 	}
@@ -361,8 +366,12 @@ public class SolrPredicateWalker{
 					"LIKE is not allowed for multi-value properties ");
 		}
 
-		// Build a statement
-		String field = solrUtil.getPropertyNameInSolr(repositoryId,solrUtil.convertToString(colNode));
+		// Build a statement. The column is resolved through the query object's own ColumnReference,
+		// not by joining the node's children with a dot: "WHERE d.nemaki:tag LIKE 'x%'" asked for
+		// "d.nemaki:tag", which is in no property map, so the field became a custom one no document
+		// carries and LIKE matched nothing (round-5 review). Escaped once, as everywhere else.
+		String field = queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId,
+				getColumnReference(colNode).getPropertyQueryName()));
 		String pattern = translatePattern((String) rVal); // Solr wildcard expression
 		
 		WildcardQuery q = new WildcardQuery(new Term(field, pattern));
@@ -388,7 +397,11 @@ public class SolrPredicateWalker{
 		// Build a statement
 		// Combine queries with "OR" because Solr doesn't have "IN" syntax
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		String field = solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString());
+		// Escaped once, like every other field name here: the DATETIME arm of the property map
+		// returns a RAW colon, and an IN over a custom DATETIME property was rejected with 400
+		// (round-5 review).
+		String field = queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString()));
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -420,7 +433,8 @@ public class SolrPredicateWalker{
 		// The previous implementation called walkEquals() which doesn't handle IN lists correctly
 		// Now we iterate over the list values similar to walkIn() method
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		String field = solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString());
+		String field = queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString()));
 		List<?> list = (List<?>) walkExpr(rightNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -475,12 +489,16 @@ public class SolrPredicateWalker{
 	 *     exception was caught in {@code SolrQueryProcessor} and the statement fell back to the manual
 	 *     parser, which answered these two operators correctly for properties outside {@code cmis:} — so
 	 *     the operators were broken here, not unusable everywhere.</li>
-	 * <li>It does not escape the result again. {@code getPropertyNameInSolr} already escapes the colon of
-	 *     a custom property, and running {@code escapeQueryChars} over
+	 * <li>It does not escape the result a second time. {@code getPropertyNameInSolr} already escapes the
+	 *     colon of a custom property, and running {@code escapeQueryChars} over
 	 *     {@code dynamic.property.nemaki\:foo} escapes that backslash too, naming a field nothing is
 	 *     indexed under — which for {@code IS NULL} matched EVERY document the type and ACL filters left.
-	 *     {@code walkIn} and {@code walkInAny} do not escape either; {@code walkCompareInternal} does, and
-	 *     that is the same defect on a path this batch did not open (recorded as a residual).</li>
+	 *     It escapes ONCE, through {@link SolrUtil#queryableFieldName}. An earlier version of this
+	 *     javadoc said {@code walkIn} and {@code walkInAny} "do not escape either" as if that were the
+	 *     model to follow: it is not — not escaping at all leaves the DATETIME arm's raw colon, which
+	 *     Solr rejects with 400, and those two productions had that defect until the round-5 review
+	 *     (now routed through the same method). {@code walkCompareInternal} resolves the column the old
+	 *     way as well, which is the part of R178 this batch still has not opened.</li>
 	 * </ul>
 	 *
 	 * <p>Using the query object's reference also means a qualified column ({@code WHERE t.cmis:name IS
@@ -493,19 +511,15 @@ public class SolrPredicateWalker{
 	}
 
 	/**
-	 * A field name whose colon is escaped exactly once, whatever {@link SolrUtil#getPropertyNameInSolr}
-	 * returned. Its two arms disagree: the STRING arm escapes the colon of a custom property itself, the
-	 * DATETIME arm ({@code dynamicDate.property.<id>}) does not. Escaping unconditionally broke the first
-	 * (a doubled backslash names a field nothing is indexed under, so {@code IS NULL} matched every
-	 * document); escaping not at all broke the second (a raw colon is a Solr syntax error, so the query is
-	 * rejected with 400). Normalising first makes this idempotent and correct for both — measured both ways
-	 * (3.4.1, external review C1 and the round-3/round-4 reviews).
+	 * A field name escaped for a Solr query exactly once, whatever
+	 * {@link SolrUtil#getPropertyNameInSolr} returned — see {@link SolrUtil#queryableFieldName},
+	 * which is where the rule lives because that is where the two disagreeing arms live. Every
+	 * production in this walker that turns a property name into a field name goes through here;
+	 * the round-5 review found three that did not (IN, ANY-IN and LIKE), and the manual fallback
+	 * in {@link SolrQueryProcessor} is routed through the same method.
 	 */
 	private static String queryableFieldName(String fromPropertyMap) {
-		if (fromPropertyMap == null) {
-			return null;
-		}
-		return fromPropertyMap.replace("\\:", ":").replace(":", "\\:");
+		return SolrUtil.queryableFieldName(fromPropertyMap);
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////

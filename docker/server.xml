@@ -20,7 +20,11 @@
      Documentation at /docs/config/server.html
  -->
 <Server port="8005" shutdown="SHUTDOWN">
-  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <!-- logArgs="false": the compose files pass the CouchDB and LDAP passwords as JVM arguments
+       and this listener prints every one of them at startup by default (3.4.1, external review
+       S8). No Dockerfile copies THIS file today — both use docker/core/server.xml — but a build
+       context change would otherwise restore the leak silently (round-5 review). -->
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" logArgs="false" />
   <!-- Security listener. Documentation at /docs/config/listeners.html
   <Listener className="org.apache.catalina.security.SecurityListener" />
   -->

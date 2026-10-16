@@ -97,6 +97,10 @@ public class ApiAuthenticationFilter implements ContainerRequestFilter {
 
         // Create CallContext
         CallContextImpl callContext = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
+        // The client address the brute-force throttle keys on — see the REST filter: without it
+        // every Basic-auth request through /api/** and /odata/** counted against
+        // "<repo>:<user>:unknown" (round-5 review).
+        callContext.put("throttleRequest", httpServletRequest);
 
         // Check for AUTH_TOKEN header (NemakiWare token-based authentication)
         // Support both standard header name (AUTH_TOKEN) and legacy header name (nemaki_auth_token)

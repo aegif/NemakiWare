@@ -1120,8 +1120,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 				String propertyName = likeMatcher.group(1);
 				String pattern = likeMatcher.group(2);
 
-				// Convert to Solr field name
-				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				// Convert to Solr field name, escaped once (the same rule the walker uses)
+				String solrFieldName = SolrUtil.queryableFieldName(
+						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
 
 				// Convert SQL LIKE pattern to a Solr wildcard pattern while
 				// keeping the rest of the value safe. Process char-by-char so
@@ -1146,7 +1147,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (equalsMatcher.find()) {
 				String propertyName = equalsMatcher.group(1);
 				String value = equalsMatcher.group(2);
-				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				String solrFieldName = SolrUtil.queryableFieldName(
+						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
 				// Escape inside the phrase so a value containing '"' or '\\'
 				// cannot terminate the quoted term and inject query syntax.
 				return solrFieldName + ":"
@@ -1162,7 +1164,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (notEqualsMatcher.find()) {
 				String propertyName = notEqualsMatcher.group(1);
 				String value = notEqualsMatcher.group(2);
-				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				String solrFieldName = SolrUtil.queryableFieldName(
+						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
 				// Escape inside the phrase (see equals case) to prevent
 				// query-syntax injection through the value.
 				return "-" + solrFieldName + ":"
@@ -1177,7 +1180,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Matcher isNullMatcher = isNullPattern.matcher(whereClause);
 			if (isNullMatcher.find()) {
 				String propertyName = isNullMatcher.group(1);
-				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				// Escaped once, through the same method the walker uses. This fallback is the path
+				// that ANSWERS when the walker throws, and the DATETIME arm of the property map
+				// returns a raw colon — which Solr rejects with 400 (round-5 review).
+				String solrFieldName = SolrUtil.queryableFieldName(
+						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
 				return "-" + solrFieldName + ":[* TO *]";
 			}
 
@@ -1189,7 +1196,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Matcher isNotNullMatcher = isNotNullPattern.matcher(whereClause);
 			if (isNotNullMatcher.find()) {
 				String propertyName = isNotNullMatcher.group(1);
-				String solrFieldName = solrUtil.getPropertyNameInSolr(repositoryId, propertyName);
+				String solrFieldName = SolrUtil.queryableFieldName(
+						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
 				return solrFieldName + ":[* TO *]";
 			}
 

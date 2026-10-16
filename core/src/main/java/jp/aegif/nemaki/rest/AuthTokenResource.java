@@ -320,8 +320,11 @@ public class AuthTokenResource extends ResourceBase{
 			// The brute-force throttle keys on the client IP, and it reads it from here. Without this the
 			// key was "<repo>:<user>:unknown" for every caller, so 15 failures against a name — anyone's,
 			// from anywhere — locked that account out for everyone (external review S5, 3.4.1).
+			// "throttleRequest" and not "httpServletRequest": the SSO proxy-header check falls back to
+			// the latter, so using it would also turn proxy-header authentication on for this door
+			// (round-5 review).
 			((org.apache.chemistry.opencmis.server.impl.CallContextImpl) ctxt).put(
-				"httpServletRequest", request);
+				"throttleRequest", request);
 
 			jp.aegif.nemaki.cmis.factory.auth.AuthenticationService authService = getAuthenticationService();
 			if (authService == null) {

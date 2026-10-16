@@ -130,12 +130,29 @@ public class AuthResource {
                 throw ApiException.invalidArgument("password is required");
             }
             
+            // Count the guesses. This door checks the password itself instead of going through
+            // AuthenticationService.login, so until 3.4.1 nothing counted it: the same guessing that
+            // locks out after 15 attempts over REST, CMIS and MCP was unlimited here, and it kept
+            // answering while the account was locked out everywhere else (round-5 review). Same
+            // counter and key as the Basic-auth path, so a lockout holds across the doors.
+            if (authenticationService != null
+                    && authenticationService.isPasswordGuessingBlocked(repositoryId, request.getUserId(),
+                            httpRequest)) {
+                logger.warning("API v1: login temporarily locked (too many failed attempts) for user "
+                        + request.getUserId() + " in repository " + repositoryId);
+                throw ApiException.unauthorized("Invalid credentials");
+            }
+
             UserItem user = contentService.getUserItemById(repositoryId, request.getUserId());
             if (user == null) {
+                // An unknown name is not counted: a probe for which accounts exist must not be able
+                // to lock out a name that does not, and the throttle's own contract counts genuine
+                // password attempts only.
                 throw ApiException.unauthorized("Invalid credentials");
             }
             
             if (!AuthenticationUtil.passwordMatches(request.getPassword(), user.getPassowrd())) {
+                recordPasswordFailure(repositoryId, request.getUserId());
                 throw ApiException.unauthorized("Invalid credentials");
             }
 
@@ -146,8 +163,12 @@ public class AuthResource {
             if (!AuthenticationUtil.isAuthMethodAllowed(user, "password")) {
                 logger.info("API v1: password authentication denied for user " + request.getUserId()
                         + " (not in allowedAuthMethods)");
+                // Not cleared: the password was right but the account may not use it, and clearing
+                // here would let a correct password on a disabled account reset the counter.
                 throw ApiException.unauthorized("Invalid credentials");
             }
+
+            recordPasswordSuccess(repositoryId, request.getUserId());
 
             if (tokenService == null) {
                 throw ApiException.internalError("Token service not available");
@@ -170,6 +191,20 @@ public class AuthResource {
         } catch (Exception e) {
             logger.severe("Error during login: " + e.getMessage());
             throw ApiException.internalError("Login failed: " + e.getMessage(), e);
+        }
+    }
+
+    /** Count a wrong password at this door, on the shared counter. */
+    private void recordPasswordFailure(String repositoryId, String userId) {
+        if (authenticationService != null) {
+            authenticationService.recordPasswordFailure(repositoryId, userId, httpRequest);
+        }
+    }
+
+    /** Clear the count after a password that was right AND allowed by the account's policy. */
+    private void recordPasswordSuccess(String repositoryId, String userId) {
+        if (authenticationService != null) {
+            authenticationService.recordPasswordSuccess(repositoryId, userId, httpRequest);
         }
     }
     

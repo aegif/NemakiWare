@@ -54,6 +54,14 @@ public class SearchIndexAclReindexTask {
         public static final String CACHE_EVICTION_FAILURE = "CACHE_EVICTION_FAILURE";
         public static final String PWC_PURGE_FAILURE = "PWC_PURGE_FAILURE";
         /**
+         * A block left by an EARLIER version of a document could not be removed after the version
+         * that is there now turned out to have no indexable text (3.4.1, external review C4). The
+         * work is the same as {@link #PWC_PURGE_FAILURE} — {@link Operation#RAG_PURGE} — and only
+         * the label differs, so triage can tell a redaction that did not take effect from a draft
+         * that was never allowed in.
+         */
+        public static final String STALE_CONTENT_PURGE_FAILURE = "STALE_CONTENT_PURGE_FAILURE";
+        /**
          * Not a failure at all: the ACL-epoch outbox ACK establishing a durable obligation for a
          * mutation that SUCCEEDED (increment 7b). It used to be recorded as
          * {@code INDEX_WRITE_FAILURE}, which sent anyone triaging the queue looking for a Solr

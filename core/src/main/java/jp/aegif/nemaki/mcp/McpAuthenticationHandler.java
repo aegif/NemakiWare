@@ -400,7 +400,6 @@ public class McpAuthenticationHandler {
             loginThrottle.recordFailure(throttleKey);
             return McpAuthResult.failure("Invalid credentials");
         }
-        loginThrottle.recordSuccess(throttleKey);
 
         // Enforce the account's allowedAuthMethods policy: a disabled or
         // cloud-only account must not authenticate via password over MCP either
@@ -414,6 +413,11 @@ public class McpAuthenticationHandler {
                 return McpAuthResult.failure("Invalid credentials");
             }
         }
+
+        // Cleared only now, after the policy accepted it (round-5 review): clearing it right after
+        // the password check let a correct password on a disabled or cloud-only account reset the
+        // counter, so guessing a password that can never log in was unlimited.
+        loginThrottle.recordSuccess(throttleKey);
 
         return McpAuthResult.success(username, repositoryId);
     }

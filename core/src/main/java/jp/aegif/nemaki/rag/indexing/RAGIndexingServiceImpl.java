@@ -148,19 +148,47 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
         String mimeType = getMimeType(repositoryId, document);
         if (!isMimeTypeSupported(mimeType)) {
+            // The CURRENT version cannot be indexed, so whatever an EARLIER version left in the
+            // index is now wrong. Before 3.4.1 nothing removed it: replacing a document with a
+            // redacted scan, or with a type we do not extract, left the OLD text searchable
+            // through RAG and MCP for everyone the ACL filter admits — the redaction had no
+            // effect where it matters most (external review C4).
+            //
+            // Only when the type is KNOWN. getMimeType returns null for three different things —
+            // the document has no attachment, the store threw, the store handed back nothing —
+            // and a store outage must not be read as "this version is not indexable" (the same
+            // collapse ContentOutcome exists to undo). A document that genuinely lost its content
+            // stream is purged by deleteContentStream, which calls triggerRAGDeletion directly.
+            if (mimeType != null) {
+                purgeTheBlockOfAVersionThatIsGone(repositoryId, document.getId(),
+                        "the current version's MIME type (" + mimeType + ") is not indexable");
+            }
             throw RAGIndexingException.unsupportedMimeType(mimeType);
         }
 
         try {
             // Extract text content
-            String textContent = extractText(repositoryId, document);
-            if (textContent == null || textContent.trim().isEmpty()) {
+            ExtractedText extracted = extractText(repositoryId, document);
+            if (extracted.outcome() == ContentOutcome.UNREADABLE) {
+                // "Could not read" is not "has no text". Nothing is known about this version, so
+                // the block stays as it is (it may still be accurate) and the caller is told the
+                // attempt is retryable. Keeping it is a trade: see the javadoc of ContentOutcome.
+                log.warn("RAG indexDocument: the content of {} could not be read; its RAG block was"
+                        + " left as it was and may now be stale", document.getId());
+                throw RAGIndexingException.contentUnreadable(document.getId(), extracted.failure());
+            }
+            if (extracted.outcome() == ContentOutcome.NOT_INDEXABLE) {
+                purgeTheBlockOfAVersionThatIsGone(repositoryId, document.getId(),
+                        "the current version has no text to index");
                 throw RAGIndexingException.noContent("No text content extracted");
             }
+            String textContent = extracted.text();
 
             // Chunk the text
             List<TextChunk> chunks = chunkingService.chunk(textContent);
             if (chunks.isEmpty()) {
+                purgeTheBlockOfAVersionThatIsGone(repositoryId, document.getId(),
+                        "chunking the current version produced nothing");
                 throw RAGIndexingException.noContent("chunking produced no results");
             }
 
@@ -245,6 +273,19 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
      * would silently survive with no record.
      */
     private void handlePwcPurge(String repositoryId, String documentId) throws RAGIndexingException {
+        purgeBlocksDurably(repositoryId, documentId, "a Private Working Copy must never be indexed",
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE);
+    }
+
+    /**
+     * The purge above and the stale-content purge below, in one place: delete the block, verify it
+     * is gone, and if that cannot be confirmed record a durable {@code RAG_PURGE} task so the
+     * obligation outlives this request. {@code reason} only labels the queue row for triage (the
+     * re-drive dispatches on the {@code Operation}); {@code why} appears in the log and in the
+     * exception when even the durable record cannot be written.
+     */
+    private void purgeBlocksDurably(String repositoryId, String documentId, String why, String reason)
+            throws RAGIndexingException {
         boolean confirmedAbsent = false;
         String problem = null;
         try {
@@ -261,8 +302,9 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         }
         // Not confirmed gone → the obligation MUST become durable.
         if (reconciliationService == null) {
-            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
-                    + problem + ") and no reconciliation queue is wired to make the purge durable");
+            throw new RAGIndexingException("the RAG block of " + documentId + " could not be purged ("
+                    + problem + "; " + why + ") and no reconciliation queue is wired to make the"
+                    + " purge durable");
         }
         // enqueueOrThrow: fail if we cannot even record the obligation (otherwise
         // "Solr delete failed AND queue write failed AND caller reports success").
@@ -273,15 +315,15 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         // fails THIS PWC only. An uncaught IllegalStateException would escape the batch
         // loop's catch and abort the ENTIRE reindex.
         try {
-            reconciliationService.enqueueOrThrow(repositoryId, documentId,
-                    jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.PWC_PURGE_FAILURE,
+            reconciliationService.enqueueOrThrow(repositoryId, documentId, reason,
                     jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Operation.RAG_PURGE);
         } catch (RuntimeException e) {
-            throw new RAGIndexingException("PWC block for " + documentId + " could not be purged ("
-                    + problem + ") and the durable RAG_PURGE task could not be recorded", e);
+            throw new RAGIndexingException("the RAG block of " + documentId + " could not be purged ("
+                    + problem + "; " + why + ") and the durable RAG_PURGE task could not be"
+                    + " recorded", e);
         }
-        log.warn("RAG indexDocument: PWC block purge for {} not confirmed ({}); durable RAG_PURGE task enqueued",
-                documentId, problem);
+        log.warn("RAG: the block purge of {} is not confirmed ({}; {}); a durable RAG_PURGE task was enqueued",
+                documentId, problem, why);
     }
 
     @Override
@@ -733,38 +775,126 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         return null;
     }
 
-    private String extractText(String repositoryId, Document document) {
+    private ExtractedText extractText(String repositoryId, Document document) {
         String attachmentId = document.getAttachmentNodeId();
         if (attachmentId == null) {
-            return null;
+            // A statement about this version: it has no content stream at all.
+            return ExtractedText.notIndexable(null);
+        }
+
+        AttachmentNode attachment;
+        try {
+            attachment = contentService.getAttachment(repositoryId, attachmentId);
+        } catch (Exception e) {
+            log.warn("RAG: the attachment " + attachmentId + " of " + document.getId()
+                    + " could not be read", e);
+            return ExtractedText.unreadable(e);
+        }
+        if (attachment == null) {
+            // The document names an attachment the store did not hand back: a broken reference,
+            // not "this version has no text". It must not authorise a purge.
+            log.warn("RAG: the attachment {} of {} was not returned by the store", attachmentId,
+                    document.getId());
+            return ExtractedText.unreadable(null);
+        }
+
+        InputStream contentStream;
+        try {
+            contentStream = attachment.getInputStream();
+        } catch (Exception e) {
+            log.warn("RAG: the content stream of " + document.getId() + " could not be opened", e);
+            return ExtractedText.unreadable(e);
+        }
+        if (contentStream == null) {
+            log.warn("RAG: the attachment {} of {} returned no content stream", attachmentId,
+                    document.getId());
+            return ExtractedText.unreadable(null);
         }
 
         try {
-            AttachmentNode attachment = contentService.getAttachment(repositoryId, attachmentId);
-            if (attachment == null) {
-                return null;
-            }
-
-            InputStream contentStream = attachment.getInputStream();
-            if (contentStream == null) {
-                return null;
-            }
-
-            try {
-                String mimeType = attachment.getMimeType();
-                String fileName = attachment.getName();
-                return textExtractionService.extractText(contentStream, mimeType, fileName);
-            } finally {
-                try {
-                    contentStream.close();
-                } catch (Exception e) {
-                    // Ignore
-                }
-            }
+            return ExtractedText.of(textExtractionService.extractText(contentStream,
+                    attachment.getMimeType(), attachment.getName()));
         } catch (Exception e) {
-            log.warn("Failed to extract text for document: " + document.getId(), e);
-            return null;
+            // The extractor HAD the bytes and could not get text out of them. That is
+            // deterministic for this version (an encrypted or corrupt file fails the same way
+            // every time), so it IS a statement about the content and may authorise the purge.
+            log.warn("RAG: text extraction failed for " + document.getId(), e);
+            return ExtractedText.notIndexable(e);
+        } finally {
+            try {
+                contentStream.close();
+            } catch (Exception e) {
+                // Ignore
+            }
         }
+    }
+
+    /**
+     * What reading the CURRENT version's text produced. Three outcomes, not two, because the
+     * purge below turns on telling two of them apart:
+     *
+     * <ul>
+     * <li>{@code NOT_INDEXABLE} is a statement ABOUT THIS VERSION'S CONTENT — there is no content
+     *     stream, the extractor had the bytes and could not get text out of them, or the text is
+     *     blank. It is deterministic: the same bytes fail the same way every time, so the block an
+     *     earlier version left behind is simply wrong and is removed.</li>
+     * <li>{@code UNREADABLE} says only that the bytes could not be obtained (the store threw, or
+     *     handed back nothing). Nothing is known about this version, so the block is LEFT as it is
+     *     and the caller is told it may retry. The trade is deliberate: purging here would empty a
+     *     document out of RAG on a transient store outage, and the only repair is a full reindex.
+     *     The cost of leaving it is that the block may now be stale (recorded as a residual).</li>
+     * <li>{@code TEXT} is the ordinary case.</li>
+     * </ul>
+     *
+     * <p>Before 3.4.1 {@code extractText} returned {@code null} for all of these, so a CouchDB
+     * outage read exactly like an empty file (external review C4).
+     */
+    private enum ContentOutcome { TEXT, NOT_INDEXABLE, UNREADABLE }
+
+    /** The outcome above, with the text when there is one and the failure when there was one. */
+    private record ExtractedText(ContentOutcome outcome, String text, Throwable failure) {
+        static ExtractedText of(String extracted) {
+            return (extracted == null || extracted.trim().isEmpty())
+                    ? new ExtractedText(ContentOutcome.NOT_INDEXABLE, null, null)
+                    : new ExtractedText(ContentOutcome.TEXT, extracted, null);
+        }
+
+        static ExtractedText notIndexable(Throwable failure) {
+            return new ExtractedText(ContentOutcome.NOT_INDEXABLE, null, failure);
+        }
+
+        static ExtractedText unreadable(Throwable failure) {
+            return new ExtractedText(ContentOutcome.UNREADABLE, null, failure);
+        }
+    }
+
+    /**
+     * Remove the RAG block that an earlier version of {@code documentId} left behind, because the
+     * version that is there NOW has no indexable text. Same durability as the PWC purge: delete,
+     * verify absence, and if that cannot be confirmed record a durable {@code RAG_PURGE} task so
+     * the obligation outlives this request.
+     *
+     * <p>It asks before deleting. A full RAG reindex calls {@link #indexDocument} for EVERY
+     * document and most of the ones that reach this point (images, archives, encrypted files)
+     * never had a block at all, while {@link #purgeDocumentBlocks} ends in a hard commit — purging
+     * them unconditionally would add one commit per such document to a reindex that already takes
+     * hours. A {@code rows=0} query is cheap. If the question cannot be answered, it purges anyway:
+     * unknown is not "absent".
+     */
+    private void purgeTheBlockOfAVersionThatIsGone(String repositoryId, String documentId, String why)
+            throws RAGIndexingException {
+        boolean present;
+        try {
+            present = isDocumentInRagIndex(repositoryId, documentId);
+        } catch (RAGIndexingException unknown) {
+            present = true;
+        }
+        if (!present) {
+            return;
+        }
+        log.info("RAG: purging the block of {} because {}", documentId, why);
+        purgeBlocksDurably(repositoryId, documentId, why,
+                jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.STALE_CONTENT_PURGE_FAILURE);
     }
 
     private String getMimeType(String repositoryId, Document document) {

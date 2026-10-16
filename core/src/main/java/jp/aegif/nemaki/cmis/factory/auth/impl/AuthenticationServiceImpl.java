@@ -216,7 +216,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// Brute-force throttle: deny during lockout before checking the password.
 		String username = callContext.getUsername();
-		String throttleKey = repositoryId + ":" + username + ":" + resolveClientIpForThrottle(callContext);
+		String throttleKey = throttleKey(repositoryId, username, resolveClientIpForThrottle(callContext));
 		if (loginThrottle.isBlocked(throttleKey)) {
 			log.warn("Login temporarily locked (too many failed attempts) for user '" + username
 					+ "' in repository '" + repositoryId + "'");
@@ -243,36 +243,92 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	/**
 	 * Client IP for throttle keying; {@code "unknown"} if unavailable.
 	 *
-	 * <p>Resolved through {@link jp.aegif.nemaki.util.TrustedProxyResolver}, the same helper
-	 * {@code AuditLogger.getClientIp} uses, so a forwarded-for header counts only from a configured
-	 * proxy. Behind a reverse proxy {@code getRemoteAddr()} is the proxy for every caller, which makes
-	 * one throttle key for the whole internet (external review S5, 3.4.1).
+	 * <p>{@code "unknown"} is one key for everyone: 15 failures against a name from anywhere lock that
+	 * name out for all callers (external review S5, 3.4.1). So every door that reaches
+	 * {@link #loginWithBasicAuth} has to supply an address, and the round-5 review found two that did
+	 * not. All four, measured:
 	 *
-	 * <p>{@code "unknown"} is still possible — a caller with no request in the context at all — and every
-	 * such attempt shares one key. That is a lockout of the named account by anyone who can reach the
-	 * endpoint, so the callers that HAVE a request must put it in the context; the REST login does.
+	 * <ul>
+	 * <li>{@code rest/AuthTokenResource} (the {@code /authtoken/{user}/login} door) and the two
+	 *     authentication filters ({@code rest/AuthenticationFilter}, {@code api/v1/ApiAuthenticationFilter},
+	 *     which together cover {@code /rest/**}, {@code /api/**} and {@code /odata/**}) put the request
+	 *     under {@code throttleRequest} and are resolved here through
+	 *     {@link jp.aegif.nemaki.util.TrustedProxyResolver} — the same helper {@code AuditLogger} uses, so
+	 *     a forwarded-for header counts only from a configured proxy.</li>
+	 * <li>The CMIS bindings reach this through {@code NemakiAuthCallContextHandler}, whose context map
+	 *     holds strings only, so they supply the immediate peer under {@code remoteAddress} and get no
+	 *     proxy awareness. That key is also the SSO proxy-header check's input, where it must stay the
+	 *     peer — it is read second here for that reason, not first.</li>
+	 * </ul>
+	 *
+	 * <p>The request is read from {@code throttleRequest} and not from {@code httpServletRequest}
+	 * deliberately: {@link #loginWithExternalAuth} falls back to the latter for its trusted-proxy check,
+	 * so putting the request there would also turn proxy-header SSO authentication ON for doors where it
+	 * is currently inert — a widening that has nothing to do with counting failures.
+	 *
+	 * <p>What this does NOT fix: with {@code external.authentication.trustedProxies} unset — it has no
+	 * default anywhere — the resolver returns the immediate peer, so behind a reverse proxy every caller
+	 * is the proxy and the named lockout is still reachable from behind it. Recorded as a residual.
 	 */
 	private String resolveClientIpForThrottle(CallContext callContext) {
 		try {
-			Object ra = callContext.get("remoteAddress");
-			if (ra instanceof String s && StringUtils.isNotBlank(s)) {
-				return s;
-			}
-			Object req = callContext.get("httpServletRequest");
+			Object req = callContext.get("throttleRequest");
 			if (req instanceof jakarta.servlet.http.HttpServletRequest r) {
-				String resolved = jp.aegif.nemaki.util.TrustedProxyResolver.resolveClientIp(r, propertyManager);
+				String resolved = resolveClientIpForThrottle(r);
 				if (StringUtils.isNotBlank(resolved)) {
 					return resolved;
 				}
-				String addr = r.getRemoteAddr();
-				if (StringUtils.isNotBlank(addr)) {
-					return addr;
-				}
+			}
+			Object ra = callContext.get("remoteAddress");
+			if (ra instanceof String s && StringUtils.isNotBlank(s)) {
+				return s;
 			}
 		} catch (RuntimeException ignored) {
 			// fall through to "unknown"
 		}
 		return "unknown";
+	}
+
+	/** The same resolution for a door that has the request itself (API v1 login). */
+	private String resolveClientIpForThrottle(jakarta.servlet.http.HttpServletRequest request) {
+		if (request == null) {
+			return null;
+		}
+		String resolved = jp.aegif.nemaki.util.TrustedProxyResolver.resolveClientIp(request, propertyManager);
+		if (StringUtils.isNotBlank(resolved)) {
+			return resolved;
+		}
+		String addr = request.getRemoteAddr();
+		return StringUtils.isNotBlank(addr) ? addr : null;
+	}
+
+	/**
+	 * One construction of the throttle key, so the doors that check a password themselves cannot
+	 * count against a different key than {@link #loginWithBasicAuth} does.
+	 */
+	private String throttleKey(String repositoryId, String username, String address) {
+		return repositoryId + ":" + username + ":" + (StringUtils.isNotBlank(address) ? address : "unknown");
+	}
+
+	@Override
+	public boolean isPasswordGuessingBlocked(String repositoryId, String username,
+			jakarta.servlet.http.HttpServletRequest request) {
+		return loginThrottle.isBlocked(
+				throttleKey(repositoryId, username, resolveClientIpForThrottle(request)));
+	}
+
+	@Override
+	public void recordPasswordFailure(String repositoryId, String username,
+			jakarta.servlet.http.HttpServletRequest request) {
+		loginThrottle.recordFailure(
+				throttleKey(repositoryId, username, resolveClientIpForThrottle(request)));
+	}
+
+	@Override
+	public void recordPasswordSuccess(String repositoryId, String username,
+			jakarta.servlet.http.HttpServletRequest request) {
+		loginThrottle.recordSuccess(
+				throttleKey(repositoryId, username, resolveClientIpForThrottle(request)));
 	}
 
 	/**

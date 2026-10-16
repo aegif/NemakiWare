@@ -210,6 +210,11 @@ public class AuthenticationFilter implements Filter {
 
 		//Create simplified callContext without servlet dependencies
 		CallContextImpl ctxt = new CallContextImpl(null, CmisVersion.CMIS_1_1, repositoryId, null, null, null, null, null);
+		// The client address the brute-force throttle keys on. Without it every Basic-auth request
+		// through this filter — /rest/**, and the paths web.xml maps here — counted against
+		// "<repo>:<user>:unknown", so 15 failures from anywhere locked that name out for everyone
+		// (round-5 review: the S5 fix had covered the authtoken door only).
+		ctxt.put("throttleRequest", request);
 
 		// Check for AUTH_TOKEN header first (NemakiWare token-based authentication)
 		// Support both legacy header name (nemaki_auth_token) and standard header name (AUTH_TOKEN)

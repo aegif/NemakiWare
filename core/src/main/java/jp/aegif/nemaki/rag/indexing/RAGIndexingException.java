@@ -27,6 +27,14 @@ public class RAGIndexingException extends Exception {
         TEXT_EXTRACTION_FAILED,
         /** No text content could be extracted or produced */
         NO_CONTENT,
+        /**
+         * The content BYTES could not be obtained, so nothing is known about this version — as
+         * opposed to {@link #NO_CONTENT}, which says the version has no text. Nothing dispatches on
+         * this value; it exists so the two outcomes are not the same value, and the purge decision
+         * in {@code RAGIndexingServiceImpl.indexDocument} keeps a block that may still be accurate
+         * instead of deleting it on a transient store outage (3.4.1, external review C4).
+         */
+        CONTENT_UNREADABLE,
         /** Embedding generation failed */
         EMBEDDING_FAILED,
         /** Solr indexing operation failed */
@@ -114,6 +122,17 @@ public class RAGIndexingException extends Exception {
         return new RAGIndexingException(
                 "No text content: " + reason,
                 ErrorType.NO_CONTENT, false);
+    }
+
+    /**
+     * The content could not be READ (the store threw or handed back nothing), so this version's
+     * text is unknown. Retryable, and deliberately NOT {@link ErrorType#NO_CONTENT}: see that
+     * constant's note.
+     */
+    public static RAGIndexingException contentUnreadable(String documentId, Throwable cause) {
+        return new RAGIndexingException("The content of document " + documentId
+                + " could not be read, so its RAG block was left as it was (it may be stale)",
+                cause, ErrorType.CONTENT_UNREADABLE, true);
     }
 
     /**

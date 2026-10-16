@@ -6,12 +6,28 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory brute-force throttle for password logins.
  *
- * <p>Keyed per (repository, user, client-IP) so that an attacker hammering one
- * account from one IP is locked out without letting them lock out a legitimate
- * user globally (the IP is part of the key). Only <em>failures</em> are counted;
- * a successful login clears the counter, so correct credentials are never
- * throttled. During a lockout the login is denied before the password is even
- * checked (fail-closed).
+ * <p>The key is the caller's, not this class's: it takes whatever string the caller
+ * builds. Only <em>failures</em> are counted; a successful login clears the counter, so
+ * correct credentials are never throttled. During a lockout the login is denied before
+ * the password is even checked (fail-closed).
+ *
+ * <p>What the callers actually key on (3.4.1, round-5 review — this javadoc used to say
+ * "per (repository, user, client-IP)" as if that held everywhere):
+ *
+ * <ul>
+ *   <li>{@code AuthenticationServiceImpl} keys {@code <repo>:<user>:<address>} and is the
+ *       counter for Basic auth over REST, the API and the CMIS bindings, and for the API v1
+ *       login door. The address is the immediate peer unless
+ *       {@code external.authentication.trustedProxies} names it, so behind an unconfigured
+ *       reverse proxy every caller shares one key — a named account can still be locked out
+ *       from behind that proxy (recorded as a residual).</li>
+ *   <li>{@code McpAuthenticationHandler} keys {@code mcp:<repo>:<user>} with NO address: the
+ *       MCP handler never sees a servlet request, so failures there are shared across
+ *       callers.</li>
+ * </ul>
+ *
+ * <p>Entries are never evicted, so a key space that grows (one per address) grows the map.
+ * Recorded as a residual.
  *
  * <p>State is JVM-local (like the SAML replay cache and other single-replica
  * subsystems — see docs/MULTI-REPLICA-DEPLOYMENT.md). Tunable via system

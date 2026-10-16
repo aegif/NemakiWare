@@ -294,6 +294,33 @@ public class SolrUtil implements ApplicationContextAware {
 		return "dynamic.property." + cmisColName.replace(":", "\\:").replace("\\\\:", "\\:");
 	}
 
+	/**
+	 * The name above, escaped for a Solr query exactly once (3.4.1, external review C1).
+	 *
+	 * <p>{@link #getPropertyNameInSolr} does not answer in one form: the STRING arm escapes the
+	 * colon of a custom property itself ({@code dynamic.property.nemaki\:tag}), the DATETIME arm
+	 * ({@code dynamicDate.property.<id>}) does not, and the static entries have nothing to escape.
+	 * Callers that escape unconditionally break the first (a doubled backslash names a field
+	 * nothing is indexed under, so {@code IS NULL} matches EVERY document the type and ACL filters
+	 * leave); callers that escape not at all break the second (a raw colon is a Solr syntax error,
+	 * so the query is rejected with 400). Both were measured.
+	 *
+	 * <p>So: undo the one thing that arm does, then escape once and completely. Completely matters
+	 * because the field name carries a property id an administrator chose — a {@code +}, a space or
+	 * a bracket in it was left raw by the colon-only version of this method (round-5 review).
+	 *
+	 * <p>Not a general unescaper: a property id that genuinely contains a backslash before a colon
+	 * cannot be told apart from an escape, and {@link #getPropertyNameInSolr} already collapses
+	 * that case itself. Such an id is outside what this map handles.
+	 */
+	public static String queryableFieldName(String fromPropertyMap) {
+		if (fromPropertyMap == null) {
+			return null;
+		}
+		return org.apache.solr.client.solrj.util.ClientUtils
+				.escapeQueryChars(fromPropertyMap.replace("\\:", ":"));
+	}
+
 	public String convertToString(CmisTree propertyNode) {
 		List<String> _string = new ArrayList<String>();
 		for (int i = 0; i < propertyNode.getChildCount(); i++) {
