@@ -105,6 +105,12 @@ class EveryFieldNameIsEscapedOnceTest {
      * dangerous after it went unread, and a harmless nested catch before the re-throw put the throw
      * out of range and turned the lock red. The careful scanner for this already existed — writing a
      * second one here is the other half of what that review called out.
+     *
+     * <p>The double resolution it replaced ({@code matchingClose(code, code.indexOf('{', from))})
+     * could delimit the FIRST block of the file when there was no brace, but neither caller can
+     * reach that: {@code from} is always a catch clause's start, and a clause that compiles has its
+     * brace. The reason to stop resolving twice is that it hid which scan owned the search, not a
+     * consequence anyone measured (round-15 review, P3).
      */
     private static int endOfBlock(String code, int from) {
         // from, not indexOf('{', from): matchingClose looks for the brace itself, and resolving it

@@ -81,8 +81,8 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     @Test
-    @DisplayName("no test signals harness breakage with one of the phrasings this sweep knows")
-    void noTestStillReportsBreakageAsAnAssertion() throws Exception {
+    @DisplayName("no test THROWS an AssertionError with one of the phrasings this sweep knows")
+    void noTestThrowsAnAssertionErrorWithAKnownBreakagePhrase() throws Exception {
         // The sweep, not one file: the defect was a FAMILY — every reflection helper that
         // reports "renamed or reshaped". A new one written in the old shape puts the runner
         // back where it was, and nothing else would notice.
@@ -145,7 +145,12 @@ class HarnessBreakageIsNotAFiringTest {
         assertTrue(offenders.isEmpty(),
                 "these locks report harness breakage as an AssertionError, which the control "
                         + "runner scores as a firing: " + offenders);
-        // What this does NOT say: that no such throw is left. The judgement is the vocabulary above,
+        // What this does NOT say: that no such throw is left — nor that an assertion METHOD does
+        // not say the same thing. This looks for `throw new AssertionError(` at the start of a line,
+        // so `assertTrue(start > 0, "… is gone, so the test above proves nothing")` is outside it
+        // entirely (round-15 review, P1: EveryPersistedRenditionIsRecordedTest:142 does exactly
+        // that, with a word this sweep knows), and the runner scores AssertionFailedError as a
+        // firing too. Both shapes belong to residual R189. The judgement is the vocabulary above,
         // and five throws whose meaning is breakage are written in words it does not know — the
         // round-14 reviews counted them (residual R189, recorded and stopped). `throw new
         // AssertionError(e)` cannot be swept by wording at all. Until this judges by type, the claim

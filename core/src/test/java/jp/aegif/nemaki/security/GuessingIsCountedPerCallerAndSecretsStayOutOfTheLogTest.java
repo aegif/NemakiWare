@@ -122,15 +122,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                     }
                     if (qualifier != null
                             && file.getFileName().toString().equals(qualifier + ".java")) {
-                        // One class in that file, or this cannot tell WHICH class declares it: a
-                        // package-private helper class in Keys.java would otherwise answer for Keys
-                        // itself (round-14 review, P2). Counting class declarations is an
-                        // approximation and it errs towards "could not resolve".
-                        if (code.split("(?m)^\\s*(?:public |final |abstract |static )*class ").length > 2) {
-                            inTheQualifier.add(null);
-                        } else {
-                            inTheQualifier.add(found.group(1));
-                        }
+                        inTheQualifier.add(found.group(1));
                     }
                 }
             }
@@ -149,6 +141,12 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // simple name is used elsewhere, and core has 123 String declarations, many of them plain
         // names like KEY (round-12 review, P2).
         if (qualifier != null) {
+            // Exactly one literal declaration in the type the name qualifies, or this cannot say
+            // which one the door means. Counting the classes in that file was an approximation and
+            // the round-15 review found valid Java it refused (a base class and the public class in
+            // one file, an interface, an enum); the approximation is gone, and what is left is the
+            // honest limit: a declaration this cannot attribute makes the caller fail with a
+            // message asking for the lock to be pointed at it.
             return inTheQualifier.size() == 1 ? inTheQualifier.get(0) : null;
         }
         // Null entries only come from a file this cannot read class-wise; they poison the count on

@@ -163,18 +163,12 @@ class ShortListingsDoNotReachDestructiveConsumersTest {
                 break;
             }
             String slice = remaining.substring(at);
-            try {
-                all.append(JavaSource.withoutComments(
-                        JavaSource.methodBody(slice, signaturePrefix)));
-            } catch (HarnessBroken couldNotRead) {
-                // Not swallowed: HarnessBroken means the reader could not understand the source, and
-                // breaking here would turn "I could not look at the remaining overloads" into "there
-                // were none" — the very substitution this branch is named after (round-14 review,
-                // P2). Only the ordinary "no more overloads" case ends the loop.
-                throw couldNotRead;
-            } catch (RuntimeException noMoreOverloads) {
-                break;
-            }
+            // No catch at all (round-15 review, P2): the ordinary "no more overloads" case is the
+            // `indexOf < 0` above, so anything thrown here is the reader failing to understand the
+            // source — and turning that into "there were none" is the substitution this branch is
+            // named after. Re-throwing only HarnessBroken still swallowed the rest.
+            all.append(JavaSource.withoutComments(
+                    JavaSource.methodBody(slice, signaturePrefix)));
             remaining = remaining.substring(at + signaturePrefix.length());
         }
         return all.toString();
