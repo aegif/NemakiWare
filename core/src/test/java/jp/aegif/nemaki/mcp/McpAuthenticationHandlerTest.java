@@ -284,6 +284,46 @@ public class McpAuthenticationHandlerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("a correct password the account may not use does not reset the counter (3.4.1, round-5 review)")
+    public void aCorrectPasswordTheAccountMayNotUseDoesNotResetTheCounter() {
+        // recordSuccess used to run as soon as the password matched, BEFORE the allowedAuthMethods
+        // check refused it. So a caller who knows the password of a disabled or cloud-only account
+        // could clear the counter at will and guess forever in batches of fourteen.
+        String repositoryId = "bedroom";
+        String username = "alice";
+        User alice = mock(User.class);
+        when(alice.getUserId()).thenReturn(username);
+        when(alice.getPasswordHash()).thenReturn(ADMIN_PASSWORD_HASH);
+        when(principalService.getUserById(repositoryId, username)).thenReturn(alice);
+
+        jp.aegif.nemaki.model.UserItem cloudOnly = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(cloudOnly.getSubTypeProperties()).thenReturn(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud")));
+        when(contentService.getUserItemById(repositoryId, username)).thenReturn(cloudOnly);
+
+        for (int attempt = 0; attempt < 14; attempt++) {
+            assertFalse(authHandler.login(repositoryId, username, "not-the-password").isSuccess());
+        }
+        // The password is right; the policy refuses it. This must NOT clear the fourteen.
+        assertFalse(authHandler.login(repositoryId, username, "admin").isSuccess(),
+                "a cloud-only account logged in with a password over MCP");
+
+        // The fifteenth failure completes the lockout.
+        assertFalse(authHandler.login(repositoryId, username, "not-the-password").isSuccess());
+
+        // The administrator now allows passwords again. The lockout must still hold: if the refused
+        // login above cleared the counter, this one succeeds and nothing was counted.
+        jp.aegif.nemaki.model.UserItem allowed = mock(jp.aegif.nemaki.model.UserItem.class);
+        when(allowed.getSubTypeProperties()).thenReturn(java.util.List.of(
+                new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "password")));
+        when(contentService.getUserItemById(repositoryId, username)).thenReturn(allowed);
+
+        assertFalse(authHandler.login(repositoryId, username, "admin").isSuccess(),
+                "the correct password logged in, so the refused login reset the counter and guessing"
+                        + " over MCP is unlimited in batches of fourteen");
+    }
+
+    @Test
     @org.junit.jupiter.api.DisplayName("an MCP login with the API key of a deleted or disabled account opens no session (3.4.1, zero-trust P0)")
     public void anApiKeyLoginOpensNoSessionForAnAccountThatCannotAct() {
         when(apiKeyService.validateApiKey("bedroom", "nk_key-3")).thenReturn("testuser");

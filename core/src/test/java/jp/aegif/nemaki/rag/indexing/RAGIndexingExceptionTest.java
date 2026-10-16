@@ -148,12 +148,15 @@ public class RAGIndexingExceptionTest {
     public void testAllErrorTypes() {
         RAGIndexingException.ErrorType[] types = RAGIndexingException.ErrorType.values();
         
-        assertEquals(8, types.length, "Should have 8 error types");
+        assertEquals(9, types.length, "Should have 9 error types");
         
         assertNotNull(RAGIndexingException.ErrorType.SERVICE_DISABLED);
         assertNotNull(RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE);
         assertNotNull(RAGIndexingException.ErrorType.TEXT_EXTRACTION_FAILED);
         assertNotNull(RAGIndexingException.ErrorType.NO_CONTENT);
+        // Added in 3.4.1 (external review C4): "the bytes could not be read" must not be the same
+        // value as NO_CONTENT, because the stale-block purge turns on telling the two apart.
+        assertNotNull(RAGIndexingException.ErrorType.CONTENT_UNREADABLE);
         assertNotNull(RAGIndexingException.ErrorType.EMBEDDING_FAILED);
         assertNotNull(RAGIndexingException.ErrorType.SOLR_ERROR);
         assertNotNull(RAGIndexingException.ErrorType.ACL_ERROR);
