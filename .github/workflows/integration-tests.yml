@@ -70,7 +70,9 @@ on:
       - '.trivyignore.yaml'
       - '.github/workflows/security-scan.yml'
   pull_request:
-    branches: [ master, main, develop ]
+    # release/** is on the push list, so the gate ran only AFTER a merge into a release branch.
+    # A PR onto one did not start this workflow at all (round-4 review, P3).
+    branches: [ master, main, develop, 'release/**' ]
     paths:
       - 'pom.xml'
       - 'core/src/main/java/**'
@@ -205,6 +207,35 @@ jobs:
           fi
           echo "the unit job runs the whole suite; exclusions exactly as documented: $ACTUAL"
 
+          # -Dtest is not the only selection: core/pom.xml configures surefire <excludes> and
+          # <excludedGroups> too, and none of the checks here used to read them. One line there
+          # (<exclude>**/evidence/**</exclude>) removes ~495 tests — the document and claim locks among
+          # them — and every check above still passes, the floor included (round-4 review, P2).
+          # Scoped to the surefire plugin: the pom has several <excludes> blocks (enforcer, resources,
+          # war), and reading them all made this check compare the wrong list (measured).
+          POM_SUREFIRE=$(sed -n '/maven-surefire-plugin/,/<\/plugin>/p' core/pom.xml)
+          POM_EXCLUDES=$(printf '%s' "$POM_SUREFIRE" \
+                         | grep -oE '<exclude>[^<]*</exclude>' | sed 's/<[^>]*>//g' | tr '\n' ' ' | sed 's/ $//')
+          POM_GROUPS=$(printf '%s' "$POM_SUREFIRE" \
+                       | grep -oE '<excludedGroups>[^<]*</excludedGroups>' | sed 's/<[^>]*>//g')
+          EXPECTED_POM_EXCLUDES="**/test/tests/** **/test/compatibility/** **/*\$*"
+          EXPECTED_POM_GROUPS='${surefire.excludedGroups}'
+          if [ "$POM_GROUPS" != "$EXPECTED_POM_GROUPS" ]; then
+            echo "::error::core/pom.xml's surefire <excludedGroups> is not what this job expects."
+            echo "::error::expected: $EXPECTED_POM_GROUPS"
+            echo "::error::actual:   $POM_GROUPS"
+            exit 1
+          fi
+          if [ "$POM_EXCLUDES" != "$EXPECTED_POM_EXCLUDES" ]; then
+            echo "::error::core/pom.xml's surefire <excludes> is not what this job expects."
+            echo "::error::expected: $EXPECTED_POM_EXCLUDES"
+            echo "::error::actual:   $POM_EXCLUDES"
+            echo "::error::An exclusion added there removes tests without changing -Dtest, so none of the"
+            echo "::error::checks in this job would notice. Change EXPECTED_POM_EXCLUDES in the same commit."
+            exit 1
+          fi
+          echo "core/pom.xml's surefire selection is as documented: excludes [$POM_EXCLUDES] groups [$POM_GROUPS]"
+
           # Named-and-not-running, the two ways the old allow-list step also checked. They still apply
           # under an exclusion list: a class runs without being named, but a RENAME or a @Disabled takes
           # it out silently and neither the exact-list check above nor a Java lock can see it (the Java
@@ -225,9 +256,14 @@ jobs:
               echo "::error::$lock does not exist — renamed or deleted, so nothing in it runs here"
               exit 1
             fi
-            # Both spellings, and an indented one: the pattern inherited from the old step was
-            # '^@Disabled', which @org.junit.jupiter.api.Disabled slipped straight past (measured).
-            if grep -qE '^[[:space:]]*@(org\.junit\.jupiter\.api\.)?Disabled' "$FILE"; then
+            # The CLASS being disabled, which is what silences the whole lock. Three things this has to
+            # get right (round-4 review, P3): the inherited '^@Disabled' let
+            # @org.junit.jupiter.api.Disabled past; a bare 'Disabled' prefix also matches @DisabledOnOs
+            # and @DisabledIfEnvironmentVariable, which would fail the job for the wrong reason; and the
+            # annotation can sit on the class line itself. So: the annotation must be Disabled exactly
+            # (end of name), and it must be on a line that declares the class or immediately precedes one.
+            if grep -qE '^[[:space:]]*@(org\.junit\.jupiter\.api\.)?Disabled([[:space:]]*\(|[[:space:]]*$)' "$FILE" \
+               || grep -qE '^[[:space:]]*(public[[:space:]]+)?@(org\.junit\.jupiter\.api\.)?Disabled([[:space:]]*\([^)]*\))?[[:space:]]+(public[[:space:]]+)?(final[[:space:]]+)?class[[:space:]]' "$FILE"; then
               echo "::error::$lock exists but the class is @Disabled, so nothing in it runs here"
               exit 1
             fi
@@ -279,8 +315,13 @@ jobs:
           if [ ! -d "$REPORTS" ]; then
             echo "::error::no surefire reports at $REPORTS — the unit job selected no tests at all"; exit 1
           fi
-          RAN=$(grep -ho 'tests="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
+          # tests= INCLUDES skipped (measured: a @Disabled method gave tests="5" skipped="1"), so a
+          # suite silenced with @Disabled would keep the count up. Subtract them.
+          COUNTED=$(grep -ho 'tests="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
                 | grep -oE '[0-9]+' | awk '{n+=$1} END {print n+0}')
+          SKIPPED=$(grep -ho 'skipped="[0-9]*"' "$REPORTS"/TEST-*.xml 2>/dev/null \
+                | grep -oE '[0-9]+' | awk '{n+=$1} END {print n+0}')
+          RAN=$((COUNTED - SKIPPED))
           # Read the outcome too, not only the count. Counting alone passed a run where every lock was red
           # and Maven had been told to ignore that (round-4 review, P1): 8,147 tests "ran" and the step was
           # happy. This is independent of Maven's exit code on purpose.
@@ -296,11 +337,12 @@ jobs:
           # readiness document is where the real count is recorded and locked.
           FLOOR=7000
           if [ "$RAN" -lt "$FLOOR" ]; then
-            echo "::error::only $RAN unit tests ran (floor $FLOOR). The selection matched almost nothing,"
+            echo "::error::only $RAN unit tests ran ($COUNTED counted - $SKIPPED skipped; floor $FLOOR)."
+            echo "::error::The selection matched almost nothing, or the suite was silenced,"
             echo "::error::which succeeds silently with failIfNoSpecifiedTests=false. Check the -Dtest list."
             exit 1
           fi
-          echo "unit tests that ran: $RAN (floor $FLOOR)"
+          echo "unit tests that ran: $RAN ($COUNTED counted - $SKIPPED skipped; floor $FLOOR)"
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a
       # green build that never ran it would be asserting exactly nothing about that claim.
