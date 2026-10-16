@@ -109,12 +109,21 @@ class HarnessBreakageIsNotAFiringTest {
                                 // "model class missing for a source file" — which neither of
                                 // the first two phrases matches. Anything that says the lock
                                 // cannot SEE its subject belongs to HarnessBroken.
+                                // Widened again in round 13 of the batch-18 review: a new source
+                                // reader said "ends inside a string literal … cannot vouch for
+                                // what they measured" with an AssertionError, and this sweep —
+                                // which exists so that a NEW member of the family is caught —
+                                // matched none of its words. Approximating a family by its
+                                // wording is weak; until the sweep can judge by type, every new
+                                // phrasing has to be added here.
                                 if (startsTheLine && (statement.contains("was renamed")
                                         || statement.contains("reshaped")
                                         || statement.contains("missing for a source file")
                                         || statement.contains("nothing was checked")
                                         || statement.contains("no longer exists")
                                         || statement.contains("unbalanced braces")
+                                        || statement.contains("ends inside")
+                                        || statement.contains("cannot vouch")
                                         || statement.contains("is gone"))) {
                                     return true;
                                 }

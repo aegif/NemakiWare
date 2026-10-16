@@ -29,7 +29,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import jp.aegif.nemaki.testsupport.JavaSource;
+import jp.aegif.nemaki.util.test.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -84,13 +84,19 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
      * The value of a {@code String} constant named in the production, or null when it cannot be read.
      *
      * <p>Null, not a guess: a key this lock cannot resolve is "could not ask", and the assertion that
-     * calls this says so.
+     * calls this says so. One case does NOT come back as null — a source file the reader cannot
+     * understand throws {@code HarnessBroken}, which fails the test and is deliberately not an
+     * {@code AssertionError} so that the control runner does not score it as a firing
+     * (round-13 review, P3).
      *
      * <p>Read from CODE, not from the file's text (round-12 review, P2): the first form of this
      * scanned raw sources, so a javadoc example writing the same constant with the right value would
-     * have answered for a production that used the wrong one. A qualified name ({@code Keys.REQUEST})
-     * is looked up in the type it names first, so an unrelated constant of the same simple name
-     * elsewhere does not make the answer ambiguous.
+     * have answered for a production that used the wrong one.
+     *
+     * <p>A qualified name ({@code Keys.REQUEST}) is read ONLY from the type it names: falling back to
+     * the door's own file would let a same-named constant there answer for the one the put uses
+     * (round-13 review, P2). An unqualified name is read from the door's file, then from the module
+     * if there is exactly one declaration.
      */
     private static String constantValue(String name, Path door) {
         if (name == null || name.startsWith("\"")) {
@@ -106,11 +112,11 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         List<String> anywhere = new ArrayList<>();
         try (var files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
-                String code = JavaSource.codeOnly(Files.readString(file, StandardCharsets.UTF_8));
+                String code = JavaSource.withoutComments(Files.readString(file, StandardCharsets.UTF_8));
                 Matcher found = declaration.matcher(code);
                 while (found.find()) {
                     anywhere.add(found.group(1));
-                    if (file.getFileName().equals(door.getFileName())) {
+                    if (file.equals(door)) {
                         inTheDoor.add(found.group(1));
                     }
                     if (qualifier != null
@@ -122,15 +128,18 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         } catch (IOException unreadable) {
             return null;
         }
-        // Nearest first: the door's own file, then the type the name qualifies, then the module.
-        // Taking "exactly one in the module" as the only rule turned this lock red for a constant
-        // whose simple name is used elsewhere — and core has 123 String declarations, many of them
-        // plain names like KEY (round-12 review, P2).
+        // The name decides where to look FIRST. A qualified name (Keys.REQUEST) means the type it
+        // names, and reading the door's own file before it is a fail-open: a same-named constant in
+        // another method of the door would answer for the one the put actually uses
+        // (round-13 review, P2). An unqualified name means this file, then the module — taking
+        // "exactly one in the module" as the only rule turned this lock red for a constant whose
+        // simple name is used elsewhere, and core has 123 String declarations, many of them plain
+        // names like KEY (round-12 review, P2).
+        if (qualifier != null) {
+            return inTheQualifier.size() == 1 ? inTheQualifier.get(0) : null;
+        }
         if (inTheDoor.size() == 1) {
             return inTheDoor.get(0);
-        }
-        if (inTheQualifier.size() == 1) {
-            return inTheQualifier.get(0);
         }
         return anywhere.size() == 1 ? anywhere.get(0) : null;
     }

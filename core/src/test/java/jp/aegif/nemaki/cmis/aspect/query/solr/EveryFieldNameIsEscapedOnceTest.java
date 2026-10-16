@@ -32,7 +32,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 
-import jp.aegif.nemaki.testsupport.JavaSource;
+import jp.aegif.nemaki.util.test.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -70,9 +70,6 @@ class EveryFieldNameIsEscapedOnceTest {
     private static final String REFUSAL_CLAUSE =
             "catch\\s*\\(\\s*(?:final\\s+)?(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)";
 
-    /** Any catch clause, used only to find where the refusal's own body ENDS. */
-    private static final String ANY_CLAUSE = "catch\\s*\\(";
-
     private static final Path PROCESSOR =
             Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java");
 
@@ -97,12 +94,25 @@ class EveryFieldNameIsEscapedOnceTest {
      * {@code doc.addField("dynamicDate.property." + key, v)}.
      */
     private static String codeOnly(String source) {
-        return JavaSource.codeOnly(source);
+        return JavaSource.withoutComments(source);
+    }
+
+    /**
+     * The index just past the block a catch clause owns, from {@link JavaSource#matchingClose}.
+     *
+     * <p>Bounding a clause's body by "the next {@code catch}" was wrong in both directions
+     * (round-13 review, P2): a nested try/catch inside the clause ended the scan early, so anything
+     * dangerous after it went unread, and a harmless nested catch before the re-throw put the throw
+     * out of range and turned the lock red. The careful scanner for this already existed — writing a
+     * second one here is the other half of what that review called out.
+     */
+    private static int endOfBlock(String code, int from) {
+        return JavaSource.matchingClose(code, code.indexOf('{', from));
     }
 
     /** {@link JavaSource#codeWithoutLiteralText(String)}, for the locks that read what code CALLS. */
     private static String codeWithoutLiteralText(String source) {
-        return JavaSource.codeWithoutLiteralText(source);
+        return JavaSource.withoutLiteralText(source);
     }
 
     @Test
@@ -250,14 +260,14 @@ class EveryFieldNameIsEscapedOnceTest {
                         + " whatever other predicate that parser recognises");
         int refusalCatch = refusalClause.start();
         String refusalName = refusalClause.group(1);
-        // Where the refusal's own body ENDS is the NEXT catch clause, whatever it catches: reading
-        // the catch-all by a pattern of its own made a pure respelling (`java.lang.Exception`,
-        // `final`) skip to a clause in another method, and the body then swallowed that method's
-        // fallback — a false accusation (round-12 review, P3).
-        Matcher nextClause = Pattern.compile(ANY_CLAUSE).matcher(processor);
-        assertTrue(nextClause.find(refusalCatch + 1),
-                "no clause follows the refusal, so there is nothing for it to leave before");
-        int afterRefusal = nextClause.start();
+        // Where the refusal's own body ENDS is its own closing brace. Reading the catch-all by a
+        // pattern of its own made a pure respelling (`java.lang.Exception`, `final`) skip to a
+        // clause in another method (round-12 review, P3); bounding by "the next catch" then broke
+        // on a NESTED one (round-13 review, P2).
+        int afterRefusal = endOfBlock(processor, refusalCatch);
+        assertTrue(afterRefusal > refusalCatch,
+                "the refusal clause has no body this lock can delimit, so nothing below measures"
+                        + " what it does");
         int fallback = processor.indexOf("parseSecondaryTypeWhereClause", refusalCatch);
         assertTrue(fallback > afterRefusal,
                 "the manual-parser fallback is not after the refusal's own clause, so the refusal is"
@@ -298,11 +308,10 @@ class EveryFieldNameIsEscapedOnceTest {
         Matcher rethrown = Pattern.compile(REFUSAL_CLAUSE).matcher(body);
         assertTrue(rethrown.find(), "the manual parser does not catch a refusal at all, so a"
                 + " refused predicate becomes null and the caller answers every document");
-        Matcher nextClause = Pattern.compile(ANY_CLAUSE).matcher(body);
-        assertTrue(nextClause.find(rethrown.start() + 1),
-                "no clause follows the refusal in the manual parser, so there is nothing for it to"
-                        + " be taken before");
-        assertTrue(body.substring(rethrown.start(), nextClause.start())
+        int endOfRethrow = endOfBlock(body, rethrown.start());
+        assertTrue(endOfRethrow > rethrown.start(),
+                "the refusal clause in the manual parser has no body this lock can delimit");
+        assertTrue(body.substring(rethrown.start(), endOfRethrow)
                         .contains("throw " + rethrown.group(1)),
                 "the refusal is caught and not re-thrown, so a refused predicate becomes null and"
                         + " the caller answers every document");
