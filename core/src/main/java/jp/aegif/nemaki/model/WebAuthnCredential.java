@@ -20,6 +20,18 @@ public class WebAuthnCredential extends NodeBase {
 	private GregorianCalendar createdAt;
 	private String objectType;
 
+	/** The id of the UserItem DOCUMENT this passkey was registered for (R170, 3.4.1). */
+	private String accountId;
+
+	/**
+	 * The account's credential generation when this passkey was registered (R170, 3.4.1).
+	 *
+	 * <p>Written like every other store, but NOT compared: a passkey is not derived from the
+	 * password, so a password change must not stop it (that would be an over-refusal of a credential
+	 * its owner registered deliberately).
+	 */
+	private String credentialGeneration;
+
 	public WebAuthnCredential() {
 		super();
 	}
@@ -109,5 +121,21 @@ public class WebAuthnCredential extends NodeBase {
 
 	public void setObjectType(String objectType) {
 		this.objectType = objectType;
+	}
+
+	public String getAccountId() {
+		return accountId;
+	}
+
+	public void setAccountId(String accountId) {
+		this.accountId = accountId;
+	}
+
+	public String getCredentialGeneration() {
+		return credentialGeneration;
+	}
+
+	public void setCredentialGeneration(String credentialGeneration) {
+		this.credentialGeneration = credentialGeneration;
 	}
 }

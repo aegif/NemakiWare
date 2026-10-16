@@ -345,6 +345,24 @@ public class WebAuthnResource extends ResourceBase {
 			credential.setDisplayName(displayName);
 			credential.setDiscoverable(registrationResult.isDiscoverable().orElse(false));
 			credential.setCreatedAt(new GregorianCalendar());
+			// R170: a passkey belongs to the account DOCUMENT it was registered for, not to the user
+			// NAME. Deleting a user does not delete the passkeys, so the old holder's passkey used to
+			// log in as whoever took the same user id next. A passkey that records no account cannot
+			// authenticate at all, so refuse the registration rather than storing one that never works.
+			jp.aegif.nemaki.model.UserItem registeringAccount =
+					getContentDaoService().getUserItemById(repositoryId, userId);
+			if (registeringAccount == null || registeringAccount.getId() == null) {
+				addErrMsg(errMsg, "registration", "accountNotFound");
+				return makeResult(false, result, errMsg).toString();
+			}
+			Long registeringGeneration =
+					jp.aegif.nemaki.util.AuthenticationUtil.accountGeneration(registeringAccount);
+			if (registeringGeneration == null) {
+				addErrMsg(errMsg, "registration", "accountNotFound");
+				return makeResult(false, result, errMsg).toString();
+			}
+			credential.setAccountId(registeringAccount.getId());
+			credential.setCredentialGeneration(Long.toString(registeringGeneration));
 
 			// Extract transports
 			List<String> transports = pkc.getResponse().getTransports()
@@ -493,6 +511,20 @@ public class WebAuthnResource extends ResourceBase {
 						: dao.getUserItemById(repositoryId, userId);
 				if (userItem == null) {
 					log.warn("WebAuthn authentication rejected: the account's state cannot be read for " + userId);
+					addErrMsg(errMsg, "authentication", "accountDisabled");
+					return makeResult(false, result, errMsg).toString();
+				}
+				// R170: and it must be the same account DOCUMENT the passkey was registered for. The
+				// generation is NOT compared here — a passkey is not derived from the password, so a
+				// password change must not stop it (§3 of the batch-19 design). A passkey whose
+				// stored record cannot be read is refused: there is nothing to compare.
+				jp.aegif.nemaki.util.AuthenticationUtil.CredentialBinding binding =
+						jp.aegif.nemaki.util.AuthenticationUtil.credentialBinding(
+								storedCredential == null ? null : storedCredential.getAccountId(),
+								storedCredential == null ? null : storedCredential.getCredentialGeneration(),
+								userItem, false);
+				if (binding != jp.aegif.nemaki.util.AuthenticationUtil.CredentialBinding.OK) {
+					log.warn("WebAuthn authentication rejected: " + binding + " for " + userId);
 					addErrMsg(errMsg, "authentication", "accountDisabled");
 					return makeResult(false, result, errMsg).toString();
 				}

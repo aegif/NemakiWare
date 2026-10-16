@@ -151,39 +151,99 @@ public final class JavaSource {
     /**
      * The same text with comments removed, so a match is known to come from code.
      *
-     * <p>String literals are preserved: an assertion about a query string needs them.
+     * <p>String literals are preserved: an assertion about a query string needs them, and the
+     * dangerous write a lock looks for can be spelled {@code doc.addField("dynamicDate." + k, v)}.
+     *
+     * <p>Text blocks are read as ONE literal, and an escape inside one is consumed with the
+     * character after it. The first form of this reader did neither: a file with a text block
+     * ({@code McpToolsProvider} has ten) was read as "literal, close, literal" and everything after
+     * it was taken for string, so a lock reading that file measured nothing (3.4.1, rounds 12-13 of
+     * the batch-18 review).
      */
     public static String withoutComments(String body) {
-        StringBuilder out = new StringBuilder();
+        return scan(body, true);
+    }
+
+    /**
+     * The same text with comments removed AND the contents of literals removed.
+     *
+     * <p>For the locks that read what the code CALLS: there a method name inside a message is not a
+     * call, so prose about a method must neither satisfy nor refuse a check about calling it.
+     */
+    public static String withoutLiteralText(String body) {
+        return scan(body, false);
+    }
+
+    private static String scan(String source, boolean keepLiteralText) {
+        StringBuilder code = new StringBuilder(source.length());
+        boolean inTextBlock = false;
         boolean inString = false;
         boolean inChar = false;
-        boolean inLine = false;
-        boolean inBlock = false;
-        for (int i = 0; i < body.length(); i++) {
-            char c = body.charAt(i);
-            char next = i + 1 < body.length() ? body.charAt(i + 1) : '\0';
-
-            if (inLine) {
-                if (c == '\n') {
-                    inLine = false;
-                    out.append(c);
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
+            boolean tripleQuote = c == '"' && next == '"' && i + 2 < source.length()
+                    && source.charAt(i + 2) == '"';
+            if (inTextBlock) {
+                // Newlines are kept whatever the mode, so the line NUMBERS a lock reports still
+                // point at the file. An escape is consumed with the character after it: a text block
+                // may contain \""" , and reading that as the terminator made the scanner treat the
+                // real terminator as a new opening delimiter and swallow the code that followed.
+                if (c == '\\') {
+                    if (keepLiteralText) {
+                        code.append(c);
+                        if (i + 1 < source.length()) {
+                            code.append(next);
+                        }
+                    } else if (next == '\n') {
+                        // A line continuation inside a text block: the newline is still a line of
+                        // the file, and eating it shifted every line number after it
+                        // (round-13 review, P3).
+                        code.append(next);
+                    }
+                    i++;
+                } else if (tripleQuote) {
+                    inTextBlock = false;
+                    i += 2;
+                    if (keepLiteralText) {
+                        code.append("\"\"\"");
+                    }
+                } else if (c == '\n' || keepLiteralText) {
+                    code.append(c);
                 }
                 continue;
             }
-            if (inBlock) {
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                    code.append(c);
+                }
+                continue;
+            }
+            if (inBlockComment) {
                 if (c == '*' && next == '/') {
-                    inBlock = false;
+                    inBlockComment = false;
                     i++;
+                    code.append(' ');
                 } else if (c == '\n') {
-                    out.append(c);
+                    code.append(c);
                 }
                 continue;
             }
             if (inString || inChar) {
-                out.append(c);
-                if (c == '\\' && i + 1 < body.length()) {
-                    out.append(next);
-                    i++;
+                boolean closingDelimiter = (inString && c == '"') || (inChar && c == '\'');
+                if (keepLiteralText || closingDelimiter) {
+                    code.append(c);
+                }
+                if (c == '\\') {
+                    if (i + 1 < source.length()) {
+                        if (keepLiteralText) {
+                            code.append(next);
+                        }
+                        i++;
+                    }
                 } else if (inString && c == '"') {
                     inString = false;
                 } else if (inChar && c == '\'') {
@@ -191,22 +251,41 @@ public final class JavaSource {
                 }
                 continue;
             }
-
             if (c == '/' && next == '/') {
-                inLine = true;
+                inLineComment = true;
                 i++;
-            } else if (c == '/' && next == '*') {
-                inBlock = true;
-                i++;
-            } else {
-                if (c == '"') {
-                    inString = true;
-                } else if (c == '\'') {
-                    inChar = true;
-                }
-                out.append(c);
+                continue;
             }
+            if (c == '/' && next == '*') {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+            if (tripleQuote) {
+                inTextBlock = true;
+                i += 2;
+                if (keepLiteralText) {
+                    code.append("\"\"\"");
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '\'') {
+                inChar = true;
+            }
+            code.append(c);
         }
-        return out.toString();
+        // Fail-closed: a file that ends inside a literal or a comment was not read the way this
+        // scanner assumes, and whatever a lock concludes from the text would be about a file it did
+        // not understand (round-12 review, P2).
+        if (inTextBlock || inString || inChar || inBlockComment) {
+            throw new HarnessBroken("this source ends inside "
+                    + (inTextBlock ? "a text block" : inString ? "a string literal"
+                            : inChar ? "a char literal" : "a block comment")
+                    + ", so the locks that read it cannot vouch for what they measured."
+                    + " Either the file does not compile or this reader needs to learn the form");
+        }
+        return code.toString();
     }
 }

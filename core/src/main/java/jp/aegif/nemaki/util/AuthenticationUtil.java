@@ -57,6 +57,43 @@ public class AuthenticationUtil {
 	 * A value that is PRESENT but not a non-negative integer returns {@code null}: unknown is not
 	 * zero, and comparing against a guess would silently un-invalidate credentials.
 	 */
+	/**
+	 * What a save would do to an account's credential generation (R170, 3.4.1).
+	 */
+	public enum GenerationSave {
+		/** The save keeps or raises it. */
+		OK,
+		/** The save would take it backwards, so credentials a password change ended would work again. */
+		WOULD_LOWER,
+		/** The stored value cannot be read as a non-negative integer, so nothing can be compared. */
+		STORED_UNREADABLE,
+		/** The value being saved cannot be read as a non-negative integer. */
+		SAVING_UNREADABLE
+	}
+
+	/**
+	 * Whether saving {@code saving} over {@code stored} may go ahead (R170, 3.4.1).
+	 *
+	 * <p>The generation is what makes a password change end the sessions it opened. A PUT that
+	 * replaces the whole document can drop the field or write an older value without meaning to, and
+	 * every credential that change invalidated would start working again — silently.
+	 *
+	 * <p>Absent on either side counts as 0 (an account that never changed its password), so dropping
+	 * the field is refused exactly when the stored value is above 0. Unreadable is NOT 0: guessing
+	 * would un-invalidate credentials, which is the fail-open this branch is named after.
+	 */
+	public static GenerationSave generationSave(UserItem stored, UserItem saving) {
+		Long before = accountGeneration(stored);
+		if (before == null) {
+			return GenerationSave.STORED_UNREADABLE;
+		}
+		Long after = accountGeneration(saving);
+		if (after == null) {
+			return GenerationSave.SAVING_UNREADABLE;
+		}
+		return after < before ? GenerationSave.WOULD_LOWER : GenerationSave.OK;
+	}
+
 	public static Long accountGeneration(UserItem account) {
 		if (account == null) {
 			return null;
