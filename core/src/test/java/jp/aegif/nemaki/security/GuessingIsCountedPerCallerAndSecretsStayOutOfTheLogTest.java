@@ -84,10 +84,20 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // The fourth caller is the CMIS binding, whose context map holds strings only; it supplies
         // "remoteAddress" instead and is measured by the resolver lock below.
         for (Path door : List.of(REST_LOGIN, REST_FILTER, API_FILTER)) {
-            assertTrue(read(door).contains("\"throttleRequest\""),
+            // The PUT, with a request as its value — not the string anywhere in the file. One of these
+            // doors mentions the key in a comment, and `put("throttleRequest", null)` would read the
+            // same to a contains() check (round-6 review, P3).
+            Matcher put = Pattern
+                    .compile("put\\(\\s*\"throttleRequest\",\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)")
+                    .matcher(read(door));
+            assertTrue(put.find(),
                     door + " does not put the servlet request in the call context, so the throttle keys"
                             + " every caller as \"unknown\" and failures against one name add up across"
                             + " the internet");
+            assertTrue(put.group(1).toLowerCase(java.util.Locale.ROOT).contains("request"),
+                    door + " puts something that is not the servlet request under \"throttleRequest\": "
+                            + put.group(1) + " — the resolver reads it as a request and falls back to"
+                            + " \"unknown\" when it is not one");
         }
     }
 
@@ -193,13 +203,22 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // before any Tomcat listener runs, so logArgs="false" does not cover it. Two evaluation
         // overlays pass an Atlas/Purview password that way; that is recorded as R180's remaining
         // shape, and this lock freezes the set so a THIRD one cannot join silently (round-5 review).
+        // Recursive, both extensions, and the whole file rather than one line: a compose in a
+        // subdirectory, a .yaml, or a multi-line YAML value would otherwise escape the freeze
+        // (round-6 review, P3). The whole-file form needs the password to be inside a
+        // JAVA_TOOL_OPTIONS value, so the test looks at each such value's own text.
         List<String> viaToolOptions = new ArrayList<>();
-        try (var files = Files.list(COMPOSE_DIR)) {
-            for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".yml")).toList()) {
-                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
-                    if (line.contains("JAVA_TOOL_OPTIONS")
-                            && Pattern.compile("-D[\\w.]*password=", Pattern.CASE_INSENSITIVE)
-                                    .matcher(line).find()) {
+        try (var files = Files.walk(COMPOSE_DIR)) {
+            for (Path file : files.filter(f -> {
+                String name = f.getFileName().toString();
+                return name.endsWith(".yml") || name.endsWith(".yaml");
+            }).toList()) {
+                String yaml = Files.readString(file, StandardCharsets.UTF_8);
+                Matcher value = Pattern.compile("JAVA_TOOL_OPTIONS[=:]([^\\n]*(?:\\n\\s+[^-\\s][^\\n]*)*)")
+                        .matcher(yaml);
+                while (value.find()) {
+                    if (Pattern.compile("-D[\\w.]*password=", Pattern.CASE_INSENSITIVE)
+                            .matcher(value.group(1)).find()) {
                         viaToolOptions.add(file.getFileName().toString());
                         break;
                     }

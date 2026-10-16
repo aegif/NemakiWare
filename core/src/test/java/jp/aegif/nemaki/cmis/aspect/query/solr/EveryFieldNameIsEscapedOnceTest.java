@@ -71,11 +71,35 @@ class EveryFieldNameIsEscapedOnceTest {
     }
 
     @Test
-    @DisplayName("the DATETIME arm's raw colon is escaped once")
-    void aRawColonIsEscapedOnce() {
-        assertEquals("dynamicDate.property.nemaki\\:dueDate",
+    @DisplayName("the DATETIME arm keeps its raw colon — nothing is indexed under that name, so a VALID query over it would answer \"everything\"")
+    void theDateTimeArmKeepsItsRawColon() {
+        // Not an oversight. Every indexing path writes a custom property as
+        // "dynamic.property.<key>" with no type branch, so "dynamicDate.property.<id>" names a
+        // field NO document carries. Escaped, it is a syntactically valid query: the positive
+        // predicates answer none and the negated ones (IS NULL, NOT IN, <>) answer EVERY document
+        // the type and ACL filters leave — and SolrQueryProcessor turns a walker that throws plus a
+        // manual parser that answers nothing into "*:*". Raw, Solr rejects the query with a 400,
+        // which is the loud failure this release must not convert into a silent wrong answer
+        // (round-6 review).
+        assertEquals("dynamicDate.property.nemaki:dueDate",
                 SolrUtil.queryableFieldName("dynamicDate.property.nemaki:dueDate"),
-                "the DATETIME arm's raw colon was left raw, so Solr rejects the query");
+                "the DATETIME field name was made queryable, so IS NULL over a custom DATETIME"
+                        + " property now matches every document instead of failing loudly");
+    }
+
+    @Test
+    @DisplayName("and the only reason it is left raw is that nothing writes that field — if an indexer starts writing it, this lock says so")
+    void nothingIndexesTheDateTimeField() throws IOException {
+        // The premise, measured rather than assumed: if any write path ever starts producing
+        // "dynamicDate." fields, the exemption above becomes wrong (the field would be real and
+        // the raw colon would be a plain defect), and this lock is where that is noticed.
+        String indexer = read(Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrUtil.java"));
+        Matcher writes = Pattern.compile("addField\\(\\s*\"?dynamicDate").matcher(indexer);
+        assertTrue(!writes.find(),
+                "something now indexes a dynamicDate field: the DATETIME exemption in"
+                        + " queryableFieldName exists only because nothing did");
+        assertTrue(SolrUtil.DATETIME_FIELD_PREFIX.equals("dynamicDate.property."),
+                "the prefix the exemption keys on changed");
     }
 
     @Test
@@ -84,7 +108,7 @@ class EveryFieldNameIsEscapedOnceTest {
         assertEquals("name", SolrUtil.queryableFieldName("name"));
         assertNull(SolrUtil.queryableFieldName(null));
 
-        String once = SolrUtil.queryableFieldName("dynamicDate.property.nemaki:dueDate");
+        String once = SolrUtil.queryableFieldName("dynamic.property.nemaki:tag");
         assertEquals(once, SolrUtil.queryableFieldName(once),
                 "applying the rule twice is not the same as applying it once, so whether a caller"
                         + " escapes before calling changes the field it names");
@@ -100,9 +124,9 @@ class EveryFieldNameIsEscapedOnceTest {
         assertEquals("dynamic.property.a\\+b", SolrUtil.queryableFieldName("dynamic.property.a+b"));
         assertEquals("dynamic.property.a\\ b", SolrUtil.queryableFieldName("dynamic.property.a b"));
         assertEquals("dynamic.property.a\\(b\\)", SolrUtil.queryableFieldName("dynamic.property.a(b)"));
-        assertEquals("dynamicDate.property.x\\:a\\-b",
-                SolrUtil.queryableFieldName("dynamicDate.property.x:a-b"),
-                "a hyphen in a DATETIME property id was left raw next to the colon this rule fixes");
+        assertEquals("dynamic.property.x\\:a\\-b",
+                SolrUtil.queryableFieldName("dynamic.property.x:a-b"),
+                "a hyphen in a property id was left raw next to the colon this rule fixes");
     }
 
     @Test
@@ -113,42 +137,57 @@ class EveryFieldNameIsEscapedOnceTest {
         // Each of these is a statement that ends in a field name. The round-5 review found IN,
         // ANY-IN and LIKE passing getPropertyNameInSolr straight into a Term, and the comparison
         // predicate running escapeQueryChars over an already-escaped name.
-        Matcher production = Pattern
-                .compile("(?:String field|map\\.put\\(FLD,|return )[^;]*getPropertyNameInSolr[^;]*;",
-                        Pattern.DOTALL)
-                .matcher(walker);
-
+        // Every CALL of the property map, not three syntactic shapes: a production written with any
+        // other variable name used to pass both counts unchanged (round-6 review, P3).
         int found = 0;
-        while (production.find()) {
+        int exemptions = 0;
+        int from = 0;
+        while ((from = walker.indexOf("getPropertyNameInSolr(", from)) >= 0) {
             found++;
-            assertTrue(production.group().contains("queryableFieldName("),
+            int statementStart = walker.lastIndexOf(';', from) + 1;
+            String statement = walker.substring(statementStart, walker.indexOf(';', from) + 1);
+            from += "getPropertyNameInSolr(".length();
+            // The one exemption, named: buildQualField's result is a VALUE (callers put it in
+            // new Term("type", …)), so escaping it as a field name would look for a term that was
+            // never indexed. Everything else is a field name (round-6 review).
+            if (statement.contains("String solrName = solrUtil.getPropertyNameInSolr")) {
+                exemptions++;
+                continue;
+            }
+            assertTrue(statement.contains("queryableFieldName("),
                     "a field name is built without the one rule that escapes it exactly once: "
-                            + production.group());
+                            + statement.trim());
         }
-        assertEquals(5, found,
-                "the number of field-name productions in this walker changed; each new one has to"
-                        + " go through queryableFieldName and be counted here");
+        assertEquals(1, exemptions,
+                "the number of calls of the property map that produce a VALUE rather than a field"
+                        + " name changed; there is exactly one (buildQualField) and a new one must"
+                        + " be looked at, not assumed");
+        assertEquals(9, found,
+                "the number of calls of the property map in this walker changed; each one has to go"
+                        + " through queryableFieldName — or be the ONE exemption below — and be"
+                        + " counted here");
     }
 
     @Test
     @DisplayName("the manual fallback — the path that answers when the walker throws — goes through the rule too")
     void theManualFallbackGoesThroughTheRule() throws IOException {
         String processor = read(PROCESSOR);
-        Matcher production = Pattern
-                .compile("String solrFieldName =[^;]*;", Pattern.DOTALL)
-                .matcher(processor);
-
         int found = 0;
-        while (production.find()) {
+        int from = 0;
+        while ((from = processor.indexOf("getPropertyNameInSolr(", from)) >= 0) {
+            int statementStart = processor.lastIndexOf(';', from) + 1;
+            String statement = processor.substring(statementStart, processor.indexOf(';', from) + 1);
+            from += "getPropertyNameInSolr(".length();
             found++;
-            assertTrue(production.group().contains("SolrUtil.queryableFieldName("),
+            assertTrue(statement.contains("SolrUtil.queryableFieldName("),
                     "the manual parser builds a field name without the rule, and it is the path that"
-                            + " ANSWERS when the walker throws: " + production.group());
+                            + " ANSWERS when the walker throws: " + statement.trim());
         }
         // Five, not two: this lock found three more the first time it ran (LIKE, = and <> in the
         // same fallback), which is why it counts instead of checking the two the review named.
-        assertEquals(5, found,
-                "the manual parser's field-name productions changed in number; each one has to go"
-                        + " through SolrUtil.queryableFieldName and be counted here");
+        assertEquals(6, found,
+                "the calls of the property map in this file changed in number; each one has to go"
+                        + " through SolrUtil.queryableFieldName and be counted here (five WHERE"
+                        + " productions and the FROM clause's type-id field)");
     }
 }

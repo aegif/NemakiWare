@@ -145,19 +145,22 @@ class IsNullNamesTheSolrFieldTest {
     }
 
     @Test
-    @DisplayName("a custom DATETIME property's colon is escaped — that arm of the property map does not escape it itself")
-    void aCustomDateTimePropertyIsEscapedOnce() {
-        // The DATETIME arm returns "dynamicDate.property.<id>" with a RAW colon, where the STRING arm
-        // escapes. Passing it through unchanged puts a bare colon in the query, which Solr rejects as a
-        // syntax error (400) — the opposite break from escaping twice, in the same line of code.
+    @DisplayName("a custom DATETIME property keeps its raw colon, so the query fails loudly instead of matching everything")
+    void aCustomDateTimePropertyFailsLoudly() {
+        // The DATETIME arm of the property map returns "dynamicDate.property.<id>", and NOTHING is
+        // indexed under that name — every write path puts a custom property in
+        // "dynamic.property.<key>" with no type branch. Escaping it would make this a VALID query
+        // over a field no document carries, and IS NULL over such a field matches EVERY document
+        // the type and ACL filters leave; raw, Solr rejects it with a 400. The loud failure is the
+        // correct answer until the indexer writes that field (round-6 review; the reason lives in
+        // SolrUtil.queryableFieldName, and EveryFieldNameIsEscapedOnceTest measures the premise).
         column(null, "nemaki:dueDate", "dynamicDate.property.nemaki:dueDate");
 
-        assertEquals("dynamicDate.property.nemaki\\:dueDate:[* TO *]", isNotNull(),
-                "the DATETIME field's colon was left raw, so Solr rejects the query");
-        assertEquals("+*:* -dynamicDate.property.nemaki\\:dueDate:[* TO *]", isNull(),
-                "the DATETIME field's colon was left raw, so Solr rejects the query");
-        assertFalse(isNull().contains("\\\\"),
-                "the DATETIME field's colon was escaped twice");
+        assertEquals("dynamicDate.property.nemaki:dueDate:[* TO *]", isNotNull(),
+                "the DATETIME field name was made queryable");
+        assertEquals("+*:* -dynamicDate.property.nemaki:dueDate:[* TO *]", isNull(),
+                "the DATETIME field name was made queryable, so IS NULL over a custom DATETIME"
+                        + " property matches every document instead of failing loudly");
     }
 
     @Test

@@ -19,6 +19,7 @@ package jp.aegif.nemaki.api.v1.resource;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -175,6 +176,30 @@ class TheApiV1LoginCountsTheGuessTest {
                 "a cloud-only account logged in with a password");
 
         verify(authenticationService, never()).recordPasswordSuccess(anyString(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("with no counter wired, the door refuses instead of minting a token unthrottled")
+    void withNoCounterTheDoorRefuses() throws Exception {
+        // The opposite stance would be this endpoint's own pre-3.4.1 behaviour — carry on and mint
+        // a token with nothing counting — and the filter next door refuses for exactly this reason
+        // (round-6 review, P3).
+        set(resource, "authenticationService", null);
+        accountExists(null);
+
+        ApiException refused = assertThrows(ApiException.class,
+                () -> resource.login(REPO, credentials(PASSWORD)),
+                "the door minted a token with no counter wired, so guessing is unlimited again");
+        verify(tokenService, never()).setToken(anyString(), anyString(), anyString());
+
+        // The refusal has to be THIS one. Dropping the guard makes the next line dereference the
+        // missing service, and the resource's catch-all turns that NullPointerException into an
+        // ApiException with no token minted — so "it threw and minted nothing" is satisfied by the
+        // accident as well as by the check (measured: control HH5 did not fire without this).
+        assertTrue(refused.getMessage() != null
+                        && refused.getMessage().contains("Authentication service not available"),
+                "the door failed for some other reason than the missing counter, so this lock does"
+                        + " not measure the check: " + refused.getMessage());
     }
 
     @Test
