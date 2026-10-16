@@ -114,8 +114,8 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 
   | 役割 | 置き場 | 形 |
   |---|---|---|
-  | **上げる**（+1） | `ContentService` の新しいメソッド **`changePassword(repositoryId, userId, newHash, bumpGeneration)`** | パスワードを書く 9 か所が**これだけ**を呼ぶ。MD5→BCrypt は `bumpGeneration=false`。一括是正は `true`（オーナー回答 6）。 |
-  | **再試行**（409） | 同じ `changePassword` の中 | `409` を受けたら**利用者を読み直して +1 を作り直す**。メモリの古い値から +1 にすると、同時に 2 回変えたとき 1 回分が失われる。解決できなければ**パスワードの変更を失敗させる**（上げられないまま変えるのは fail-open）。 |
+  | **上げる**（+1） | `ContentService` の新しいメソッド **`stampPasswordChange(user, newHash, bumpGeneration)`**（**保存はしない**） | パスワードを書く 9 か所が**これだけ**を呼ぶ。MD5→BCrypt は `bumpGeneration=false`。一括是正は `true`（オーナー回答 6）。**実装のときに形を変えた**（2026-10-16、実装中に読んで確かめた）: 9 か所は**書いてから保存する**形で、保存は名前・グループなどほかの変更と**同じ 1 回**に乗っている（`UserResource:430` は `applyUserUpdate` が後で保存、`UserItemResource:840` は直後に `update`）。保存まで行う `changePassword` にすると**二重保存**になり、ほかの欄の変更が別の revision に分かれる。したがって上げる層は**在記憶の `UserItem` に 2 つの欄を刻むだけ**にし、保存は呼び出し側のまま。 |
+  | **再試行**（409） | **呼び出し側の既存の保存経路**（上げる層は保存しないので） | `409` を受けたら**利用者を読み直して +1 を作り直す**。メモリの古い値から +1 にすると、同時に 2 回変えたとき 1 回分が失われる。解決できなければ**パスワードの変更を失敗させる**（上げられないまま変えるのは fail-open）。 |
   | **下げない・落とさない** | **couch の DAO** `ContentDaoServiceImpl#update(String, UserItem)` | PUT の直前に `_id` を読み直して（キャッシュを通さない）、保存する世代が**保存前の値以上**であることを確かめる。下がる・落ちるなら拒否。**cached の DAO には置かない**（cached は couch を包む decorator なので、両方に置くと読みが 2 回・判定が 2 回になる）。 |
 
   この分け方なら、DAO を直に呼ぶ経路（MD5→BCrypt）も**下げない側**は覆われ、**上げる側**は
