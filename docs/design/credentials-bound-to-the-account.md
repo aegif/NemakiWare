@@ -77,9 +77,12 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
 
 **世代の読み書きの規則**（確認 8 巡目、2 名 — これが無いと fail-closed が fail-open になる）:
 
-- **既存の利用者文書に欄が無い**ときは **0 とみなす**。資格情報の側も、発行時に読んだ値（0）を書く。
-  「欄が無い＝拒否」にすると、**上げた直後に誰も入れない**（新しく発行した資格情報まで拒まれる）。
-  `accountId` の無い資格情報を拒むのはオーナー回答 1 のとおりだが、世代は**別の軸**で、0 が正当な値。
+- **既存の利用者文書に欄が無い**ときは **0 とみなす**（互換のため。上げた直後に誰も入れない状態を避ける）。
+  **資格情報の側は違う** — 発行時に読んだ値（0 でもよい）を**必ず明示的に書く**。
+  **欄が無い・整数でない・負の数・読めない資格情報は拒否**する（確認 9 巡目の Codex P2: 資格情報側の
+  欠落も 0 とみなすと、書き込みが落ちた・壊れた資格情報が、世代 0 のアカウントに対して `0 == 0` で
+  通ってしまう＝fail-open。この版より前のものは `accountId` が無いので既に拒まれており、資格情報側の
+  欠落を許す互換上の理由は無い）。
 - **資格情報の世代が利用者の世代より大きい**ときも**拒否**する（新しいレプリカが書いた値を古い木が
   読む形・壊れた値。`<` だけを見ると素通りする）。
 - **単調性は書き手が守る**。世代はパスワードのハッシュと**同じ CouchDB の更新**で書き（同じ `_rev`）、
@@ -87,8 +90,23 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
   変えたときに 1 回分が失われ、1 回目の直後に発行した資格情報が生き残る）。再試行で解決できなければ
   **パスワードの変更を失敗させる**（世代を上げられないまま変えるのは fail-open）。
 - **文書全体を置き換える更新**（`UserItemResource.update` / `update-json` のような PUT）は、
-  **世代の欄を落としても下げてもいけない**。落ちると失効させた資格情報が全部また通る。保存の手前の
-  1 か所（下の §4.4）で、保存する利用者の世代が**保存前の値以上**であることを確かめる。
+  **世代の欄を落としても下げてもいけない**。落ちると失効させた資格情報が全部また通る。
+  **どこで守るか**（確認 9 巡目の Codex P2 — 「1 か所」と書いて場所を決めていなかった。読んで確かめた）:
+  - **守りは DAO のメソッドに引く** — `ContentDaoService#update(String, UserItem)`（実装は couch と
+    cached の 2 つ）。**呼び出し元は 2 件**（確認 9 巡目の subagent P2 — 私は 1 件と書いていた）:
+    `ContentServiceImpl.updateInternal`（3415 行）と **`AuthenticationServiceImpl`（518 行、MD5→BCrypt）**。
+    後者は `applyUserUpdate` も `updateInternal` も通らないので、`updateInternal` に置くと
+    **その段落が `applyUserUpdate` を却下した理由として挙げた経路そのものが外れる**。
+  - 比較には**新しい読み**が要る（キャッシュ越しの読みは「呼び出し側がいま変えたインスタンス」を返しうる
+    — R115 の注記）。`getGroupItemByIdFresh` は在るが利用者版が無いので、**`getUserItemByIdFresh` を足す**。
+    保存ごとに 1 回の余分な読みが入る（利用者の更新は頻度が低いので許容と判断した。**測っていない**）。
+  - **外れるのは setup の 2 経路**（`SetupAdminResource:108`・`SetupApplyResource:484` — 利用者文書に
+    BCrypt のハッシュを直接書く raw な PUT）。ここは **Setup Mode 限定**（`SetupModeGuardFilter` が
+    Normal Mode では 403）。確認 9 巡目の subagent が読んで確かめたところ、`SetupAdminResource` は
+    `adminDoc.deepCopy()` に `passwordHash` だけ差して全文を PUT するので**ほかの欄は保たれる** —
+    つまり「落とさない」は満たすが、**「上げる」が抜ける**（admin のパスワードを変えても資格情報が
+    失効しない = fail-open）。**両方を実装の作業項目にする**（世代を保ち、かつパスワードを変えたなら
+    上げる）。「Setup Mode だから無視する」とは書かない。
 - **MD5 → BCrypt の自動アップグレード**は世代を上げない（利用者が変えたのではない）。§4.4 の「1 か所に
   集める」はこの例外を**引数で**渡す（`bumpGeneration` の真偽）。集約したうえで例外を flag にしないと、
   ログインした本人のトークンがその場で無効になる（確認 8 巡目の subagent P3）。
@@ -105,8 +123,8 @@ boundToThisAccount(credential, account):
       かつ credential.generation !=
            account.credentialGeneration      → 拒否（古い＝パスワードを変えた後、
                                                 大きい＝別のレプリカが書いた値か壊れた値）
-      （account 側に欄が無ければ 0 とみなす。credential 側に欄が無ければ 0 とみなす —
-        この版より前に発行したものは accountId が無いので既に拒まれている）
+      （account 側に欄が無ければ 0 とみなす。credential 側は**明示的な整数が無ければ拒否** —
+        欠落・型違い・負の数・読めない値は、書き込みが落ちた資格情報を通すことになる）
   それ以外                                → 通す
 ```
 
@@ -127,7 +145,15 @@ boundToThisAccount(credential, account):
 - `ApiKey` と `CouchApiKey` に `accountId`・`issuedAt` を足す（`issuedAt` は既存の `getCreated()` で足りるなら再利用する — 実装時に確かめる）。
 - 作成時に、そのときの `UserItem.getId()` を書く。
 - `validateApiKey` が返すのは今も `userId` だけなので、**判定は呼び出し側（`AuthenticationServiceImpl.loginWithApiKey`・MCP）には置けない**。
-  `ApiKeyService` が利用者を読んで判定するか、`validateApiKey` が `ApiKey` を返す形にするかを選ぶ（§6 の未決 2）。
+  **オーナー回答 2: `ApiKeyService` の中で判定する**（戻り値の形は変えない）。通らなければ **null を返す**
+  — 呼び出し側 3 か所は「null なら拒否」をすでに実装しているので、形が変わらない。実装時に
+  `ApiKeyServiceImpl` に `ContentService` が注入されているかを確かめる（無ければ足す。
+  `AuthenticationServiceImpl` は持っているので循環参照にはならない）。
+- **アカウント単位の取り消しを足す**: いまの interface は `revokeApiKey(repositoryId, keyId)` だけなので、
+  `deleteUser` と一括是正のために `int revokeApiKeysOf(String repositoryId, String userId)` を足す
+  （**引き当ては `userId`** — 上記。戻り値の件数は `deleteUser` のログと、一括是正の「失効数」の表示に使う）。
+- `createApiKey`（2 形）が `accountId` と `generation` を書く（発行時に利用者を読む）。`listApiKeys` の
+  表示には出さない（画面の契約を変えない）。
 - **さらに、`deleteUser` がその利用者の API キーを取り消す。** ~~結びだけでは、この版より前のキー
   （`accountId` が無い）を守れない。~~ **オーナー回答 1（fail-closed）でその前提は消えた** — `accountId` の
   無いキーは §3 の規則で拒まれる。取り消しは **`deleteUser` を通らない削除**（利用者の文書を CMIS で直接
@@ -138,7 +164,9 @@ boundToThisAccount(credential, account):
 
 ### 4.2 セッションのトークン
 
-- `Token` に `accountId`・`issuedAt` を足す。
+- `Token` に `accountId`・**`generation`**・`issuedAt` を足す。**世代を書くのを忘れないこと** — §3 の表で
+  トークンは世代を**照合する**側なので、書き手が無いと「欄が無い＝拒否」の規則に当たって**全部のトークンが
+  拒まれる**（確認 9 巡目の subagent P1: 生産者と消費者が逆になっていた。`a-vocabulary-with-no-producer`）。
 - **`TokenServiceImpl` には既に `contentService` が注入されている**（`serviceContext.xml`）ので、`set()` の中で
   利用者を読んで `accountId` を書ける。**`setToken` の呼び出し側を 1 つも変えなくてよい** — 実測した内訳は
   `AuthResource` 3・`AuthTokenResource` 6・`WebAuthnResource` 1 の **10 か所**（探索語 `tokenService.setToken`・`ts.setToken(`、
@@ -149,7 +177,8 @@ boundToThisAccount(credential, account):
 
 ### 4.3 MCP のセッション
 
-- `McpSession` に `accountId`・`issuedAt` を足し、`login`・`loginWithApiKey`・`registerSessionToken` で書く。
+- `McpSession` に `accountId`・**`generation`**・`issuedAt` を足し、`login`・`loginWithApiKey`・
+  `registerSessionToken` で書く（トークンと同じ理由で、世代は**照合する側だから書き手が必須**）。
 - 判定は `authenticateSessionToken`（バッチ 17 の `mayStillAct` の隣）。拒んだセッションは今と同じに捨てる。
 
 ### 4.4 パスワード変更で失効させる

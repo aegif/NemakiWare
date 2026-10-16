@@ -300,11 +300,15 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   で登録されるため（`Patch_*SecondaryType` の `setQueryName(propertyId)`）、この経路に来ます。
   `WHERE cmis:rm_expirationDate IS NULL` は 400 になります（`IS NOT NULL`・`IN`・`LIKE` も同じ）。
   REST の型定義 API で作ったプロパティも同様です。
-  **挙動は変わっていません** — この修正の前も、生のコロンを受け取った Solr が構文エラーを返していました。
-  変わったのは、失敗の理由が読める 400 になったことだけです（前の版の記述は逆のことを書いていました）。
+  **挙動が変わる場合があります（重要）**: 単独の条件（`WHERE cmis:rm_expirationDate IS NULL`）は 3.4.0 でも
+  400 でした。しかし**ほかの条件と AND でつないだ文**（`WHERE nemaki:tag='x' AND cmis:rm_expirationDate IS
+  NULL`）は、3.4.0 では**日付の条件が黙って無視され、`nemaki:tag='x'` だけの結果が 200 で返っていました**。
+  3.4.1 はこれを **400** にします — 条件を落とした一覧を「その条件に合う文書」として返さないためです。
+  **結果が返っていた問い合わせが 400 になる**ので、保存した検索やスクリプトがある場合は見直してください。
   **保持期間の運用そのものは影響を受けません** — 期限切れの文書を見つけるのは `RetentionScheduler` で、
-  CouchDB の view（`Patch_RetentionLastModificationView`）で引いており、CMIS SQL を投げません。
-  いま CMIS SQL でこれらの日付を絞り込む方法はありません（残件 R187）。
+  CouchDB の view（`documentsByExpirationDate`。`Patch_RetentionExpirationView` が作ります）で引いており、
+  CMIS SQL を投げません（明示的な期限が無い文書の経路は別の view `Patch_RetentionLastModificationView`
+  です）。いま CMIS SQL でこれらの日付を絞り込む方法はありません（残件 R187）。
 - **`LIKE`** — テーブル修飾した列（`WHERE d.nemaki:tag LIKE 'x%'`）がどの対応表にも無い名前に解決し、
   0 件になっていました。
 - **比較（`=`・`<>`・`<` など）** — カスタムのプロパティのフィールド名を二重にエスケープしており、
