@@ -32,6 +32,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 
+import jp.aegif.nemaki.testsupport.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +59,20 @@ class EveryFieldNameIsEscapedOnceTest {
 
     private static final Path WALKER =
             Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java");
+    /**
+     * A catch clause for the refusal, by its TYPE — qualified or not, {@code final} or not.
+     *
+     * <p>Both narrower forms of this have produced a false accusation: the exact string
+     * {@code "CmisInvalidArgumentException refusal"} turned red when the variable was renamed, and a
+     * pattern without {@code final} or the package qualifier turned red for a pure respelling and
+     * then reported it as "the refused condition is dropped" (rounds 11 and 12).
+     */
+    private static final String REFUSAL_CLAUSE =
+            "catch\\s*\\(\\s*(?:final\\s+)?(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)";
+
+    /** Any catch clause, used only to find where the refusal's own body ENDS. */
+    private static final String ANY_CLAUSE = "catch\\s*\\(";
+
     private static final Path PROCESSOR =
             Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java");
 
@@ -73,113 +88,21 @@ class EveryFieldNameIsEscapedOnceTest {
      * "this must not be handed to the manual parser" is the comment inside the very catch clause one
      * of them reads, and on the raw text that sentence turned the lock red with a message naming a
      * defect that was not there — an over-refusal, which this tree treats as the same weight of
-     * defect as letting one through (round-10 review, P2). String literals keep their contents, so
-     * a URL or a message is not mistaken for a comment — {@link #codeWithoutLiteralText(String)} is
-     * for the locks that must not be satisfied (or refused) by prose inside a literal either.
+     * defect as letting one through (round-10 review, P2).
      *
-     * <p>Text blocks are read as one literal. Surrendering on {@code """} was the first answer to
-     * the round-11 review and it failed at once: {@code McpToolsProvider} has ten of them, and the
-     * premise lock below reads every file of the module. Scanned as "open, close, open", the rest of
-     * such a file would be taken for string and the lock would quietly measure nothing.
+     * <p>The reader itself is {@link JavaSource}, shared with the other locks that read sources: the
+     * scanner written inline here was broken from three different directions in two rounds, and a
+     * second copy would drift from the first ([[a-second-reader-must-be-diffed-against-the-first]]).
+     * Literals keep their contents here, because the dangerous write can be spelled
+     * {@code doc.addField("dynamicDate.property." + key, v)}.
      */
     private static String codeOnly(String source) {
-        return codeOnly(source, true);
+        return JavaSource.codeOnly(source);
     }
 
-    /** {@link #codeOnly(String)}, with the CONTENTS of string literals removed as well. */
+    /** {@link JavaSource#codeWithoutLiteralText(String)}, for the locks that read what code CALLS. */
     private static String codeWithoutLiteralText(String source) {
-        return codeOnly(source, false);
-    }
-
-    private static String codeOnly(String source, boolean keepLiteralText) {
-        StringBuilder code = new StringBuilder(source.length());
-        boolean inTextBlock = false;
-        boolean inString = false;
-        boolean inChar = false;
-        boolean inLineComment = false;
-        boolean inBlockComment = false;
-        for (int i = 0; i < source.length(); i++) {
-            char c = source.charAt(i);
-            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
-            boolean tripleQuote = c == '"' && next == '"' && i + 2 < source.length()
-                    && source.charAt(i + 2) == '"';
-            if (inTextBlock) {
-                // The newlines are kept either way, so the line numbers this lock reports stay true.
-                if (tripleQuote) {
-                    inTextBlock = false;
-                    i += 2;
-                    if (keepLiteralText) {
-                        code.append("\"\"\"");
-                    }
-                } else if (c == '\n' || keepLiteralText) {
-                    code.append(c);
-                }
-                continue;
-            }
-            if (inLineComment) {
-                if (c == '\n') {
-                    inLineComment = false;
-                    code.append(c);
-                }
-                continue;
-            }
-            if (inBlockComment) {
-                if (c == '*' && next == '/') {
-                    inBlockComment = false;
-                    i++;
-                    code.append(' ');
-                } else if (c == '\n') {
-                    // The newlines of a block comment are kept so that the line NUMBERS this lock
-                    // reports still point at the file (round-11 review, P3).
-                    code.append(c);
-                }
-                continue;
-            }
-            if (inString || inChar) {
-                boolean closingDelimiter = (inString && c == '"') || (inChar && c == '\'');
-                if (keepLiteralText || closingDelimiter) {
-                    code.append(c);
-                }
-                if (c == '\\') {
-                    if (i + 1 < source.length()) {
-                        if (keepLiteralText) {
-                            code.append(next);
-                        }
-                        i++;
-                    }
-                } else if (inString && c == '"') {
-                    inString = false;
-                } else if (inChar && c == '\'') {
-                    inChar = false;
-                }
-                continue;
-            }
-            if (c == '/' && next == '/') {
-                inLineComment = true;
-                i++;
-                continue;
-            }
-            if (c == '/' && next == '*') {
-                inBlockComment = true;
-                i++;
-                continue;
-            }
-            if (tripleQuote) {
-                inTextBlock = true;
-                i += 2;
-                if (keepLiteralText) {
-                    code.append("\"\"\"");
-                }
-                continue;
-            }
-            if (c == '"') {
-                inString = true;
-            } else if (c == '\'') {
-                inChar = true;
-            }
-            code.append(c);
-        }
-        return code.toString();
+        return JavaSource.codeWithoutLiteralText(source);
     }
 
     @Test
@@ -312,26 +235,34 @@ class EveryFieldNameIsEscapedOnceTest {
         // caught variable — a correct change — turned it red with a message naming a defect that
         // was not there, and the arm that claimed to read the type could only ever capture the name
         // the line above had already required (round-11 review, P2).
-        Matcher refusalClause = Pattern
-                .compile("catch\\s*\\(\\s*(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
-                .matcher(processor);
+        // This lock's own pattern must not read the caught variable's NAME: that is what made the
+        // round-10 form turn red for a rename, with a message naming a defect that was not there.
+        assertTrue(Pattern.compile(REFUSAL_CLAUSE)
+                        .matcher("} catch (final org.x.CmisInvalidArgumentException somethingElse) {")
+                        .find(),
+                "this lock reads the refusal clause by a pattern that does not match a clause"
+                        + " spelled differently, so a rename or a qualifier in the production turns"
+                        + " it red for no defect");
+        Matcher refusalClause = Pattern.compile(REFUSAL_CLAUSE).matcher(processor);
         assertTrue(refusalClause.find(walkCall),
                 "the catch around walkPredicate does not take a refusal first, so a refused"
                         + " statement is handed to the manual parser and comes back as a query for"
                         + " whatever other predicate that parser recognises");
         int refusalCatch = refusalClause.start();
         String refusalName = refusalClause.group(1);
-        Matcher catchAll = Pattern.compile("catch\\s*\\(\\s*Exception\\s+(\\w+)\\s*\\)")
-                .matcher(processor);
-        assertTrue(catchAll.find(walkCall),
-                "the catch-all around walkPredicate is gone — this lock measures that the refusal"
-                        + " leaves BEFORE it, and there is nothing to be before");
-        int genericCatch = catchAll.start();
-        int fallback = processor.indexOf("parseSecondaryTypeWhereClause", genericCatch);
-        assertTrue(refusalCatch < genericCatch,
-                "the refusal is caught AFTER the catch-all, so the catch-all takes it first and"
-                        + " hands the refused statement to the manual parser");
-        assertTrue(processor.substring(refusalCatch, genericCatch).contains("throw " + refusalName),
+        // Where the refusal's own body ENDS is the NEXT catch clause, whatever it catches: reading
+        // the catch-all by a pattern of its own made a pure respelling (`java.lang.Exception`,
+        // `final`) skip to a clause in another method, and the body then swallowed that method's
+        // fallback — a false accusation (round-12 review, P3).
+        Matcher nextClause = Pattern.compile(ANY_CLAUSE).matcher(processor);
+        assertTrue(nextClause.find(refusalCatch + 1),
+                "no clause follows the refusal, so there is nothing for it to leave before");
+        int afterRefusal = nextClause.start();
+        int fallback = processor.indexOf("parseSecondaryTypeWhereClause", refusalCatch);
+        assertTrue(fallback > afterRefusal,
+                "the manual-parser fallback is not after the refusal's own clause, so the refusal is"
+                        + " taken by whatever hands the statement to that parser");
+        assertTrue(processor.substring(refusalCatch, afterRefusal).contains("throw " + refusalName),
                 "the refusal is caught before the fallback but not re-thrown");
         // And it must not try the fallback FIRST. The likely "improvement" — ask the manual parser,
         // throw only if it answers nothing — satisfies every assertion above and brings the whole
@@ -339,13 +270,13 @@ class EveryFieldNameIsEscapedOnceTest {
         // Not just the parser's NAME: a helper that calls it reads the same (round-10 review, P2).
         // What any fallback must do to take effect is ASSIGN the where clause, so that is what is
         // forbidden here — robust to extracting a helper and to renaming it.
-        String refusalBody = processor.substring(refusalCatch, genericCatch);
+        String refusalBody = processor.substring(refusalCatch, afterRefusal);
         assertFalse(refusalBody.contains("whereQueryString ="),
                 "the refusal's own catch assigns a WHERE clause, so a refused statement still comes"
                         + " back as a query for whatever other predicate something else recognises");
         assertFalse(refusalBody.contains("parseSecondaryTypeWhereClause"),
                 "the refusal's own catch calls the manual parser");
-        assertTrue(fallback > genericCatch,
+        assertTrue(fallback > refusalCatch,
                 "the manual-parser fallback moved; this lock measures that the refusal leaves first");
     }
 
@@ -364,20 +295,17 @@ class EveryFieldNameIsEscapedOnceTest {
 
         // By the type here too (round-11 review, P2): the exact strings turned this red for a
         // rename of the caught variable, which is not a defect in the production.
-        Matcher rethrown = Pattern
-                .compile("catch\\s*\\(\\s*(?:[\\w.]+\\.)?CmisInvalidArgumentException\\s+(\\w+)\\s*\\)")
-                .matcher(body);
-        Matcher catchAll = Pattern.compile("catch\\s*\\(\\s*Exception\\s+(\\w+)\\s*\\)").matcher(body);
+        Matcher rethrown = Pattern.compile(REFUSAL_CLAUSE).matcher(body);
         assertTrue(rethrown.find(), "the manual parser does not catch a refusal at all, so a"
                 + " refused predicate becomes null and the caller answers every document");
-        assertTrue(catchAll.find(), "the manual parser's catch-all is gone — this lock measures that"
-                + " the refusal is taken BEFORE it");
-        assertTrue(rethrown.start() < catchAll.start(),
-                "the manual parser does not re-throw a refusal before its catch-all, so a refused"
-                        + " predicate becomes null and the caller answers every document");
-        assertTrue(body.substring(rethrown.start(), catchAll.start())
+        Matcher nextClause = Pattern.compile(ANY_CLAUSE).matcher(body);
+        assertTrue(nextClause.find(rethrown.start() + 1),
+                "no clause follows the refusal in the manual parser, so there is nothing for it to"
+                        + " be taken before");
+        assertTrue(body.substring(rethrown.start(), nextClause.start())
                         .contains("throw " + rethrown.group(1)),
-                "the refusal is caught and not re-thrown");
+                "the refusal is caught and not re-thrown, so a refused predicate becomes null and"
+                        + " the caller answers every document");
     }
 
     @Test

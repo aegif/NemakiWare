@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import jp.aegif.nemaki.testsupport.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -74,11 +75,6 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
-    /**
-     * The body of the method in {@code door} that calls {@code login(…)} on the authentication
-     * service — the method whose context actually reaches the throttle. A {@code put} anywhere else
-     * in the file (a helper nothing calls, a comment) does not wire anything (round-7 review).
-     */
     /** What the reader asks for: {@code callContext.get("throttleRequest")}. */
     private static final String THROTTLE_KEY = "throttleRequest";
 
@@ -88,31 +84,62 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
      * The value of a {@code String} constant named in the production, or null when it cannot be read.
      *
      * <p>Null, not a guess: a key this lock cannot resolve is "could not ask", and the assertion that
-     * calls this says so. Looking it up across the module is what lets the key live in a constants
-     * class rather than only in the door that uses it.
+     * calls this says so.
+     *
+     * <p>Read from CODE, not from the file's text (round-12 review, P2): the first form of this
+     * scanned raw sources, so a javadoc example writing the same constant with the right value would
+     * have answered for a production that used the wrong one. A qualified name ({@code Keys.REQUEST})
+     * is looked up in the type it names first, so an unrelated constant of the same simple name
+     * elsewhere does not make the answer ambiguous.
      */
-    private static String constantValue(String name) {
+    private static String constantValue(String name, Path door) {
         if (name == null || name.startsWith("\"")) {
             return null;
         }
-        String simple = name.substring(name.lastIndexOf('.') + 1);
+        int dot = name.lastIndexOf('.');
+        String simple = name.substring(dot + 1);
+        String qualifier = dot < 0 ? null : name.substring(0, dot);
         Pattern declaration = Pattern.compile(
                 "String\\s+" + Pattern.quote(simple) + "\\s*=\\s*\"([^\"]*)\"");
-        List<String> values = new ArrayList<>();
+        List<String> inTheDoor = new ArrayList<>();
+        List<String> inTheQualifier = new ArrayList<>();
+        List<String> anywhere = new ArrayList<>();
         try (var files = Files.walk(Path.of("src/main/java"))) {
             for (Path file : files.filter(f -> f.getFileName().toString().endsWith(".java")).toList()) {
-                Matcher found = declaration.matcher(Files.readString(file, StandardCharsets.UTF_8));
+                String code = JavaSource.codeOnly(Files.readString(file, StandardCharsets.UTF_8));
+                Matcher found = declaration.matcher(code);
                 while (found.find()) {
-                    values.add(found.group(1));
+                    anywhere.add(found.group(1));
+                    if (file.getFileName().equals(door.getFileName())) {
+                        inTheDoor.add(found.group(1));
+                    }
+                    if (qualifier != null
+                            && file.getFileName().toString().equals(qualifier + ".java")) {
+                        inTheQualifier.add(found.group(1));
+                    }
                 }
             }
         } catch (IOException unreadable) {
             return null;
         }
-        // Exactly one declaration, or this lock does not know which one the door means.
-        return values.size() == 1 ? values.get(0) : null;
+        // Nearest first: the door's own file, then the type the name qualifies, then the module.
+        // Taking "exactly one in the module" as the only rule turned this lock red for a constant
+        // whose simple name is used elsewhere — and core has 123 String declarations, many of them
+        // plain names like KEY (round-12 review, P2).
+        if (inTheDoor.size() == 1) {
+            return inTheDoor.get(0);
+        }
+        if (inTheQualifier.size() == 1) {
+            return inTheQualifier.get(0);
+        }
+        return anywhere.size() == 1 ? anywhere.get(0) : null;
     }
 
+    /**
+     * The body of the method in {@code door} that calls {@code login(…)} on the authentication
+     * service — the method whose context actually reaches the throttle. A {@code put} anywhere else
+     * in the file (a helper nothing calls, a comment) does not wire anything (round-7 review).
+     */
     private String methodThatLogsIn(Path door) throws IOException {
         String body = read(door);
         // Any identifier for the context, not the two names in the tree today: renaming a local
@@ -167,20 +194,25 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
             List<String> keysTried = new ArrayList<>();
             while (put.find()) {
                 String key = put.group(1);
-                keysTried.add(key);
-                if (THROTTLE_KEY_LITERAL.equals(key) || THROTTLE_KEY.equals(constantValue(key))) {
+                String resolved = THROTTLE_KEY_LITERAL.equals(key) ? THROTTLE_KEY
+                        : constantValue(key, door);
+                keysTried.add(key + " -> " + (resolved == null ? "could not resolve" : resolved));
+                if (THROTTLE_KEY.equals(resolved)) {
                     keyedOn = key;
                     valuePut = put.group(2);
                     break;
                 }
             }
+            // Both cases named, because they are different defects and this lock cannot tell them
+            // apart: a key that is something else is the S5 defect itself, while a constant whose
+            // declaration this lock cannot find is "could not ask" and needs the lock pointed at it
+            // ([[could-not-ask-vs-answered-no]], round-12 review, P2).
             assertTrue(keyedOn != null,
-                    door + " does not put the servlet request in the call context under "
-                            + THROTTLE_KEY_LITERAL + ", so the throttle keys every caller as"
-                            + " \"unknown\" and failures against one name add up across the internet."
-                            + " If the key is a constant, this lock needs to find its declaration in"
-                            + " core/src/main/java and read the same value — what it found put here:"
-                            + " " + keysTried);
+                    door + " puts nothing in the call context under " + THROTTLE_KEY_LITERAL
+                            + ". Either the key is something else — and then the throttle keys every"
+                            + " caller as \"unknown\" and failures against one name add up across the"
+                            + " internet — or a constant's declaration could not be read here and"
+                            + " this lock has to be pointed at it. What it found: " + keysTried);
             // What this does NOT prove (round-7 review, P3): that the statement RUNS (it is read from
             // the source, not driven), and that the identifier is the servlet request rather than
             // something else named "request". The behaviour of the throttle itself is measured in
