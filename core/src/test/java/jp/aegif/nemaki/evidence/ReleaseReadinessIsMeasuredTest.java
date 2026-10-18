@@ -294,9 +294,15 @@ class ReleaseReadinessIsMeasuredTest {
                 + " tests sit in a file mentioning an excluded group, which leaves this bound "
                 + "with nothing to say");
 
-        Matcher stated = Pattern.compile("\\*\\*([0-9],[0-9]{3}) 本 green\\*\\*（2026")
+        // ANCHORED to the line that calls itself the latest. The pattern took the first dated
+        // total in the document, and there is more than one (3.4.0's 7,881 is recorded further
+        // down): if the order ever changed, this bound would read a figure that was never meant
+        // to be the current one (round-25 review, subagent P3-5).
+        Matcher stated = Pattern.compile(
+                "全ユニットの最新の実測は \\*\\*([0-9],[0-9]{3}) 本 green\\*\\*（2026")
                 .matcher(read(READINESS));
-        assertTrue(stated.find(), "the readiness document no longer states a dated unit total");
+        assertTrue(stated.find(), "the readiness document no longer states its latest unit total "
+                + "in the form this bound reads (「全ユニットの最新の実測は **N 本 green**（2026…）");
         int recorded = Integer.parseInt(stated.group(1).replace(",", ""));
         int floor = declared - possiblyExcluded;
         assertTrue(recorded >= floor,
@@ -550,6 +556,16 @@ class ReleaseReadinessIsMeasuredTest {
         while (everyId.find()) {
             declared++;
         }
+        int closers = 0;
+        Matcher closer = Pattern.compile("(?m)^\\s+\\),$").matcher(runner);
+        while (closer.find()) {
+            closers++;
+        }
+        assertEquals(declared, closers,
+                "this reader found " + closers + " dict closers and " + declared + " ids. Three "
+                        + "counts have to agree — opener, id and closer — because all three are "
+                        + "read from raw lines, and a crafted sabotage string could fake one of "
+                        + "them (round-25 review, Codex P2)");
         assertEquals(declared, dicts,
                 "this reader found " + dicts + " control dicts and the runner declares " + declared
                         + " ids. It reads raw lines, so a dict opener written another way (`dict (`)"
