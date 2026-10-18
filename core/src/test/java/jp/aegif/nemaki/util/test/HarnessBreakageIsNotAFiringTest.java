@@ -286,16 +286,32 @@ class HarnessBreakageIsNotAFiringTest {
         // subclass. `new HarnessBroken("...") {}` is reported by Surefire as `Outer$1`, which does
         // not end with the suffix, so a lock that could not look at its subject would be scored as
         // the guard firing — the exact harm this class exists to prevent (round-27 review: Codex
-        // P1, subagent P3-5; measured 0 live today out of 77 `new …HarnessBroken(` sites).
-        Pattern anonymous = Pattern.compile(
-                "new\\s+(?:[\\w.$]*\\.)?[\\w$]*" + suffix + "\\s*\\([^;{]*\\)\\s*\\{");
-        // Discriminating, before the sweep runs: the form has to match the anonymous shape and
-        // leave the ordinary throw alone, or a dead regex sweeps clean (this tree's own rule).
-        assertTrue(anonymous.matcher("throw new HarnessBroken(\"x\") {};").find(),
-                "this form no longer matches an anonymous subclass of the breakage type, so the "
-                        + "sweep below would clear the tree without looking for it");
-        assertFalse(anonymous.matcher("throw new HarnessBroken(\"x\");").find(),
-                "this form matches an ordinary throw, so it would refuse every honest breakage");
+        // P1, subagent P3-5). The sources hold 78 `new …HarnessBroken(` sites as this sweep's own
+        // reader counts them (literal text and comments stripped; 83 by a raw grep) and NONE of
+        // them is anonymous — the figure written here was the pre-batch one for a round
+        // (round-28 review, subagent P3-1).
+        // DRIVEN with every shape, positive and negative, because the first cut was a regex with
+        // `[^;{]*` in it: a brace in an argument cut it short, backtracking made an honest
+        // `new Consumer<HarnessBroken>() {}` match, and a diamond or a type-use annotation walked
+        // past it (round-28 review: Codex P1, subagent P3-6, both measured).
+        for (String anonymous : List.of(
+                "throw new HarnessBroken(\"x\") {};",
+                "throw new HarnessBroken<String>(\"x\") {};",
+                "throw new @Nullable HarnessBroken(\"x\") {};",
+                "throw new HarnessBroken(msg, new int[]{1}) {};",
+                "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };")) {
+            assertFalse(anonymousBreakages(anonymous, suffix).isEmpty(),
+                    "this sweep no longer sees an anonymous subclass of the breakage type in 「"
+                            + anonymous + "」, so it would clear the tree without looking for it");
+        }
+        for (String honest : List.of(
+                "throw new HarnessBroken(\"x\");",
+                "throw new HarnessBroken(\"x\", cause);",
+                "Stream.of(new HarnessBroken(\"a\")).forEach(new Consumer<HarnessBroken>() { });")) {
+            assertTrue(anonymousBreakages(honest, suffix).isEmpty(),
+                    "this sweep calls 「" + honest + "」 an anonymous subclass, so it refuses honest "
+                            + "source and the rule it enforces cannot be followed");
+        }
         List<String> misnamed = new ArrayList<>();
         int declarations = 0;
         for (Path root : testRoots()) {
@@ -315,9 +331,8 @@ class HarnessBreakageIsNotAFiringTest {
                         misnamed.add(file + " 「" + declared.group().trim() + "」");
                     }
                 }
-                Matcher inline = anonymous.matcher(code);
-                while (inline.find()) {
-                    misnamed.add(file + " 「" + inline.group().replace('\n', ' ').trim() + "」");
+                for (String inline : anonymousBreakages(code, suffix)) {
+                    misnamed.add(file + " 「" + inline.trim() + "」");
                 }
             }
             // PER ROOT, like this class's other sweeps: a total floor passes with every module
@@ -340,6 +355,46 @@ class HarnessBreakageIsNotAFiringTest {
                         + "broke» by that suffix, so throwing one of these is scored as a lock "
                         + "firing rather than as the lock being unable to look at its subject: "
                         + misnamed);
+    }
+
+    /**
+     * Every ANONYMOUS subclass of the breakage type this source declares, as the text declaring it.
+     *
+     * <p>Counted by balancing the argument list rather than by a regex: `[^;{]*` stopped at a brace
+     * inside an argument, and its backtracking matched an honest {@code new Consumer<HarnessBroken>()
+     * { }} — a false refusal of correct source (round-28 review: Codex P1, subagent P3-6).
+     *
+     * <p>The caller passes the suffix the RUNNER decides breakage by, so this stays in lockstep
+     * with it rather than with the name written here.
+     */
+    private static List<String> anonymousBreakages(String code, String suffix) {
+        List<String> found = new ArrayList<>();
+        Matcher opener = Pattern.compile("new\\s+(?:@[\\w.]+(?:\\s*\\([^)]*\\))?\\s+)*"
+                + "(?:[\\w.$]*\\.)?[\\w$]*" + suffix + "(?:\\s*<[^>]*>)?\\s*\\(").matcher(code);
+        while (opener.find()) {
+            int depth = 1;
+            int at = opener.end();
+            while (at < code.length() && depth > 0) {
+                char c = code.charAt(at++);
+                if (c == '(') {
+                    depth++;
+                } else if (c == ')') {
+                    depth--;
+                }
+            }
+            if (depth != 0) {
+                throw new HarnessBroken("a `new …" + suffix + "(` in this source never closes its "
+                        + "arguments, so this sweep cannot tell an anonymous subclass from a "
+                        + "plain throw");
+            }
+            while (at < code.length() && Character.isWhitespace(code.charAt(at))) {
+                at++;
+            }
+            if (at < code.length() && code.charAt(at) == '{') {
+                found.add(code.substring(opener.start(), at + 1).replace('\n', ' '));
+            }
+        }
+        return found;
     }
 
     @Test
@@ -744,6 +799,24 @@ class HarnessBreakageIsNotAFiringTest {
         // A comment and a processing instruction INSIDE the internal subset, each holding a `]`:
         // both are legal there, and a `]` in either ended the subset exactly as the quoted one did
         // (found with my own probe while fixing the quoted case, round 27).
+        // The two refusals this scan can reach, asserted as refusals: a comment or a processing
+        // instruction inside the declaration that never closes (round-28 review, subagent P3-2 —
+        // both arms were reachable and neither was asserted about).
+        String doctypeCommentNeverCloses = """
+                <!DOCTYPE project [<!-- never closed
+                <project><modules><module>real</module></modules></project>
+                """;
+        assertThrows(HarnessBroken.class, () -> modulesIn(doctypeCommentNeverCloses),
+                "a comment inside the DOCTYPE that never closes was read as if the sweep could "
+                        + "tell its text from its structure");
+        String doctypePiNeverCloses = """
+                <!DOCTYPE project [<?nemaki never closed
+                <project><modules><module>real</module></modules></project>
+                """;
+        assertThrows(HarnessBroken.class, () -> modulesIn(doctypePiNeverCloses),
+                "a processing instruction inside the DOCTYPE that never closes was read as if the "
+                        + "sweep could tell its text from its structure");
+
         String doctypeCommentInSubset = """
                 <!DOCTYPE project [<!-- ] --><!ENTITY g "<modules><module>ghost</module></modules>">]>
                 <project>
@@ -762,9 +835,13 @@ class HarnessBreakageIsNotAFiringTest {
         assertEquals(List.of("real"), modulesIn(doctypePiInSubset),
                 "the same through a processing instruction inside the internal subset");
 
-        // And a `>` inside a quoted system literal, which is legal XML as well.
+        // And a `>` inside a quoted system literal, which is legal XML as well. The `>` comes
+        // BEFORE the ghost markup on purpose: with it after, an implementation that cuts at the
+        // first `>` eats the ghost's own opening tag and every implementation answers [real], so
+        // the fixture measured nothing (round-28 review, subagent P2-1, measured on four
+        // implementations).
         String doctypeQuotedAngle = """
-                <!DOCTYPE project SYSTEM "urn:<modules><module>ghost</module></modules>">
+                <!DOCTYPE project SYSTEM "urn:a>b<modules><module>ghost</module></modules>">
                 <project>
                   <modules><module>real</module></modules>
                 </project>
@@ -799,6 +876,23 @@ class HarnessBreakageIsNotAFiringTest {
         assertEquals(List.of("src/locks/java", "src/test/java"),
                 candidatesOrRefusal(attributesOnTags),
                 "an attribute on <testSourceDirectory> dropped the declaration");
+
+        // WHITESPACE before the closing bracket of an end tag: `ETag ::= '</' Name S? '>'`, so
+        // `</modules >` is valid XML. The readers only tolerated attributes on the OPENING tag, so
+        // this dropped the modules in silence — a fail-open in a sweep (round-28 review, subagent
+        // P3-5, measured; 0 live in this tree's six poms).
+        String spaceBeforeTheClosingBracket = """
+                <project>
+                  <modules><module>real</module ></modules >
+                  <build><testSourceDirectory>src/locks/java</testSourceDirectory ></build >
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(spaceBeforeTheClosingBracket),
+                "`</modules >` is valid XML and every module in it disappeared, so this sweep would "
+                        + "report success for a module tree it never walked");
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(spaceBeforeTheClosingBracket),
+                "the same for the build's own test-source declaration");
 
         // DEDUPE: sixty-five profiles giving the same property the same value is a valid pom, and
         // without the dedupe the candidate list crosses 64 and the reader refuses it (round-25
@@ -1140,9 +1234,9 @@ class HarnessBreakageIsNotAFiringTest {
      * (round-23 review, Codex P2). {@link #modulesIn} is the other half and takes everything.
      */
     static List<String> requiredModulesIn(String pom) {
-        String text = structureOnly(pom).replaceAll("(?s)<profiles(?:\\s[^>]*)?>.*?</profiles>", "");
+        String text = structureOnly(pom).replaceAll("(?s)<profiles(?:\\s[^>]*)?>.*?</profiles\\s*>", "");
         List<String> modules = new ArrayList<>();
-        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules>").matcher(text);
+        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules\\s*>").matcher(text);
         while (block.find()) {
             Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
@@ -1169,7 +1263,7 @@ class HarnessBreakageIsNotAFiringTest {
         // directory Maven never looks for — an over-refusal of a valid pom, and the synthetic
         // fixture shared the misreading (round-20 review, Codex P2).
         List<String> modules = new ArrayList<>();
-        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules>").matcher(structureOnly(pom));
+        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules\\s*>").matcher(structureOnly(pom));
         while (block.find()) {
             Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
@@ -1201,9 +1295,9 @@ class HarnessBreakageIsNotAFiringTest {
         // inside it loses the real directory when a plugin's own configuration carries a POM
         // fragment of its own: the non-greedy <build>…</build> ends at the INNER closing tag
         // (round-24 review, subagent P3-3, measured).
-        String withoutPlugins = text.replaceAll("(?s)<plugins(?:\\s[^>]*)?>.*?</plugins>", "");
+        String withoutPlugins = text.replaceAll("(?s)<plugins(?:\\s[^>]*)?>.*?</plugins\\s*>", "");
         StringBuilder build = new StringBuilder();
-        Matcher builds = Pattern.compile("(?s)<build(?:\\s[^>]*)?>(.*?)</build>").matcher(withoutPlugins);
+        Matcher builds = Pattern.compile("(?s)<build(?:\\s[^>]*)?>(.*?)</build\\s*>").matcher(withoutPlugins);
         while (builds.find()) {
             build.append(builds.group(1));
         }
@@ -1242,7 +1336,7 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static List<String> resolveProperties(String raw, String pom) {
         StringBuilder properties = new StringBuilder();
-        Matcher block = Pattern.compile("(?s)<properties(?:\\s[^>]*)?>(.*?)</properties>").matcher(pom);
+        Matcher block = Pattern.compile("(?s)<properties(?:\\s[^>]*)?>(.*?)</properties\\s*>").matcher(pom);
         while (block.find()) {
             properties.append(block.group(1));
         }
@@ -1268,7 +1362,7 @@ class HarnessBreakageIsNotAFiringTest {
                 // sources were refused — an over-refusal of a valid pom (round-27 review,
                 // subagent P3-2, measured).
                 Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1))
-                        + "(?:\\s[^>]*)?>([^<]*)</" + Pattern.quote(property.group(1)) + ">")
+                        + "(?:\\s[^>]*)?>([^<]*)</" + Pattern.quote(property.group(1)) + "\\s*>")
                         .matcher(properties);
                 boolean any = false;
                 while (declared.find()) {
@@ -1520,6 +1614,6 @@ class HarnessBreakageIsNotAFiringTest {
         // Plain text: structureOnly has already unwrapped any CDATA into escaped text, so a
         // value containing `]` reads fine — the round-24 pattern forbade `]` and dropped
         // `<module><![CDATA[child]name]]></module>` in silence (round-25 review, Codex P1).
-        return "<" + name + "(?:\\s[^>]*)?>\\s*([^<]+?)\\s*</" + name + ">";
+        return "<" + name + "(?:\\s[^>]*)?>\\s*([^<]+?)\\s*</" + name + "\\s*>";
     }
 }
