@@ -317,6 +317,40 @@ class ReleaseReadinessIsMeasuredTest {
                         + "means the form it states it in changed (「全ユニットの最新の実測は "
                         + "**N 本 green**（20…）), and two means a stale line was left beside the "
                         + "new one (round-26 review, subagent P3-6; round-27 review, Codex P2)");
+        // WHICH TREE it measured, not only how many tests. This line said "round 28" in the same
+        // commit that recorded a round-29 run, and the same slip happened in rounds 20, 21 and 29:
+        // the bound above reads the NUMBER, which does not move when a round adds no test, so
+        // nothing noticed that the provenance was a round behind (round-30 review: subagent P2-2,
+        // Codex P3 — "discipline did not stop it four times" is the reason this is mechanical).
+        String batchPlan = read(Path.of("../docs/design/v3.4.1-plan.md"));
+        Matcher rounds = Pattern.compile("(?s)### 確認 (\\d+) 巡目(.*?)(?=\\n### |$)").matcher(batchPlan);
+        int newestRound = 0;
+        String newestFigure = null;
+        while (rounds.find()) {
+            Matcher gate = Pattern.compile("全ユニット \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本")
+                    .matcher(rounds.group(2));
+            if (gate.find() && Integer.parseInt(rounds.group(1)) > newestRound) {
+                newestRound = Integer.parseInt(rounds.group(1));
+                newestFigure = gate.group(1);
+            }
+        }
+        if (newestFigure == null) {
+            throw new HarnessBroken("the batch plan records no round with a 「全ユニット **N 本」 "
+                    + "figure, so this reader cannot tell which tree the readiness document should "
+                    + "be naming as the latest");
+        }
+        Matcher names = Pattern.compile(
+                "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
+                        + "[^（]*?\\*\\*確認 (\\d+) 巡目\\*\\*").matcher(read(READINESS));
+        assertTrue(names.find(),
+                "the readiness document's latest-measurement line no longer names the round it "
+                        + "measured, so nobody can tell which tree the figure belongs to");
+        assertEquals(newestRound + "/" + newestFigure, names.group(2) + "/" + names.group(1),
+                "the readiness document calls 確認 " + names.group(2) + " 巡目 (" + names.group(1)
+                        + " tests) its latest measurement while the batch plan's newest recorded "
+                        + "run is 確認 " + newestRound + " 巡目 (" + newestFigure + "). The two are "
+                        + "the same tree or one of them is wrong about which one it measured");
+
         int recorded = Integer.parseInt(totals.get(0).replace(",", ""));
         int floor = declared - possiblyExcluded;
         assertTrue(recorded >= floor,

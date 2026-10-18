@@ -297,20 +297,34 @@ class HarnessBreakageIsNotAFiringTest {
         // but still read type arguments with `<[^>]*>`, which stops at the first `>` of a NESTED
         // argument, and read a qualifier as `[\\w.$]*`, which an inner type behind type arguments
         // is not (round-29 review: Codex P1, subagent P3-2, both measured).
+        // EVERY SHAPE JAVAC ACCEPTS, and only those. Round 29 drove this with three shapes Java
+        // forbids (a generic Throwable, an inner type of a parameterized one) and in writing the
+        // parser for them dropped a shape it allows — a qualified type-use annotation (round-30
+        // review, subagent P1-1 and P2-1; each line below was compiled before it was written here).
         for (String anonymous : List.of(
                 "throw new HarnessBroken(\"x\") {};",
-                "throw new HarnessBroken<String>(\"x\") {};",
                 "throw new @Nullable HarnessBroken(\"x\") {};",
+                "throw new @jp.aegif.nemaki.util.test.Nn HarnessBroken(\"x\") {};",
+                "throw new @Nn(min = 1) HarnessBroken(\"x\") {};",
+                "throw new <String> HarnessBroken(\"x\", 1) {};",
                 "throw new HarnessBroken(msg, new int[]{1}) {};",
+                "throw new HarnessBroken(msg, new RuntimeException() {}) {};",
                 "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };",
-                "throw new RefusalHarnessBroken<Map<String,List<Integer>>>(\"x\") {};",
-                "throw new Outer<String>.RefusalHarnessBroken(m) {};",
-                "throw new @Size(min = f(1)) HarnessBroken(\"x\") {};",
+                "throw new Outer.InnerHarnessBroken(m) {};",
                 "throw new\n        HarnessBroken(\"x\") {};")) {
             assertFalse(anonymousBreakages(anonymous, suffix).isEmpty(),
                     "this sweep no longer sees an anonymous subclass of the breakage type in 「"
                             + anonymous + "」, so it would clear the tree without looking for it");
         }
+        // AND the refusal: a bracket that never closes is this reader unable to look, not «no
+        // breakage type here». Two of the three walks returned the unbalanced case as a silent
+        // skip until round 30 (round-30 review, subagent P3-2).
+        assertTrue(assertThrows(HarnessBroken.class,
+                        () -> anonymousBreakages("throw new HarnessBroken(x {};", suffix))
+                        .getMessage().contains("never closes"),
+                "an argument list that never closes was answered as if this reader had looked and "
+                        + "found no anonymous subclass");
+
         for (String honest : List.of(
                 "throw new HarnessBroken(\"x\");",
                 "throw new HarnessBroken(\"x\", cause);",
@@ -370,13 +384,23 @@ class HarnessBreakageIsNotAFiringTest {
     /**
      * Every ANONYMOUS subclass of the breakage type this source declares, as the text declaring it.
      *
-     * <p>Parsed rather than matched. Two regex cuts were measured wrong: `[^;{]*` stopped at a
-     * brace inside an argument and its backtracking refused an honest
-     * {@code new Consumer<HarnessBroken>() { }} (round-28 review), and `<[^>]*>` closed the type
-     * arguments at the first `>` of a NESTED one while a `[\w.$]*` qualifier could not describe an
-     * inner type behind type arguments (round-29 review: Codex P1, subagent P3-2). What this walks
-     * is the shape of the expression: annotations, the dotted type reference with balanced type
-     * arguments, the balanced argument list, and then — only then — an opening brace.
+     * <p>Parsed rather than matched. Two regex cuts were measured wrong: `[^;{]*` stopped at a brace
+     * inside an argument and its backtracking refused an honest
+     * {@code new Consumer<HarnessBroken>() { }} (round-28 review), and `<[^>]*>` closed type
+     * arguments at the first `>` of a nested one (round-29 review). What this walks is the shape of
+     * the expression: the constructor's own type arguments, type-use annotations with DOTTED names,
+     * the dotted type reference, the balanced argument list, and then — only then — a brace.
+     *
+     * <p>WHICH SHAPES CAN EXIST, measured with javac rather than assumed (round-30 review, subagent
+     * P2-1 — the round-29 rewrite covered shapes Java forbids and dropped one it allows):
+     * a breakage type can NEVER be generic ({@code class G<T> extends RuntimeException} is
+     * «a generic class may not extend java.lang.Throwable») and can never be an inner type of a
+     * parameterized one, so {@code new …HarnessBroken<String>(…) {}} and
+     * {@code new Outer<String>.InnerHarnessBroken(…) {}} are not source this sweep can meet. What
+     * IS reachable, and is driven below: a qualified type-use annotation, an annotation with
+     * constant arguments, the constructor's OWN type arguments ({@code new <String> H(…) {}} on a
+     * non-generic Throwable), and a dotted qualifier. The angle-skip after the type name stays as
+     * robustness, not as a claim about reachable source.
      *
      * <p>The caller passes the suffix the RUNNER decides breakage by, so this stays in lockstep
      * with it rather than with the name written here.
@@ -386,16 +410,24 @@ class HarnessBreakageIsNotAFiringTest {
         Matcher news = Pattern.compile("(?<![\\w$])new(?![\\w$])").matcher(code);
         while (news.find()) {
             int at = skipSpace(code, news.end());
+            // The CONSTRUCTOR's type arguments, which a non-generic Throwable may still declare:
+            // `new <String> HarnessBroken(…) {}` compiles, and both earlier cuts missed it — the
+            // one reachable `<…>` shape, while the rewrite chased unreachable ones (round-30
+            // review: subagent P3-1, Codex P1).
+            if (at < code.length() && code.charAt(at) == '<') {
+                at = skipSpace(code, balancedOrBreak(code, at, '<', '>', suffix));
+            }
             String simpleName = null;
             while (at < code.length()) {
                 if (code.charAt(at) == '@') {
-                    at = skipSpace(code, readIdentifier(code, at + 1));
+                    // DOTTED: `new @jp.aegif.nemaki.util.Nn HarnessBroken("x") { }` compiles, and
+                    // reading one segment made this reader answer «no breakage type here» — a
+                    // could-not-read reported as an absence, inside the class that enforces that
+                    // very rule (round-30 review, subagent P1-1: the round-28 regex read `@[\w.]+`
+                    // and the round-29 rewrite dropped it).
+                    at = skipSpace(code, readDottedIdentifier(code, at + 1));
                     if (at < code.length() && code.charAt(at) == '(') {
-                        at = skipBalanced(code, at, '(', ')');
-                        if (at < 0) {
-                            break;
-                        }
-                        at = skipSpace(code, at);
+                        at = skipSpace(code, balancedOrBreak(code, at, '(', ')', suffix));
                     }
                     continue;
                 }
@@ -407,12 +439,7 @@ class HarnessBreakageIsNotAFiringTest {
                 simpleName = code.substring(at, nameEnd);
                 at = skipSpace(code, nameEnd);
                 if (at < code.length() && code.charAt(at) == '<') {
-                    at = skipBalanced(code, at, '<', '>');
-                    if (at < 0) {
-                        simpleName = null;
-                        break;
-                    }
-                    at = skipSpace(code, at);
+                    at = skipSpace(code, balancedOrBreak(code, at, '<', '>', suffix));
                 }
                 if (at < code.length() && code.charAt(at) == '.') {
                     at = skipSpace(code, at + 1);
@@ -424,18 +451,42 @@ class HarnessBreakageIsNotAFiringTest {
                     || at >= code.length() || code.charAt(at) != '(') {
                 continue;               // array creation, a method reference, another type
             }
-            int afterArguments = skipBalanced(code, at, '(', ')');
-            if (afterArguments < 0) {
-                throw new HarnessBroken("a `new …" + suffix + "(` in this source never closes its "
-                        + "arguments, so this sweep cannot tell an anonymous subclass from a "
-                        + "plain throw");
-            }
-            int brace = skipSpace(code, afterArguments);
+            int brace = skipSpace(code, balancedOrBreak(code, at, '(', ')', suffix));
             if (brace < code.length() && code.charAt(brace) == '{') {
                 found.add(code.substring(news.start(), brace + 1).replace('\n', ' '));
             }
         }
         return found;
+    }
+
+    /**
+     * Past the matching close, or the harness is broken — never "nothing here".
+     *
+     * <p>Three places walked a bracket pair and two of them returned the unbalanced case as a
+     * silent skip, which reports «I could not read this» with the same value as «this is not a
+     * breakage type» (round-30 review, subagent P3-2).
+     */
+    private static int balancedOrBreak(String code, int at, char open, char close, String suffix) {
+        int past = skipBalanced(code, at, open, close);
+        if (past < 0) {
+            throw new HarnessBroken("a `new …" + suffix + "` in this source has a 「" + open
+                    + "」 that never closes, so this sweep cannot tell an anonymous subclass from "
+                    + "a plain throw");
+        }
+        return past;
+    }
+
+    /** `a.b.C`, as a type-use annotation is allowed to be written. */
+    private static int readDottedIdentifier(String code, int at) {
+        int end = readIdentifier(code, at);
+        while (end < code.length() && code.charAt(end) == '.') {
+            int next = readIdentifier(code, end + 1);
+            if (next == end + 1) {
+                return end;
+            }
+            end = next;
+        }
+        return end;
     }
 
     private static int skipSpace(String code, int at) {
