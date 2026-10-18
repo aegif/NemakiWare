@@ -162,7 +162,7 @@ class HarnessBreakageIsNotAFiringTest {
         List<String> offenders = new ArrayList<>();
         for (Path root : roots) {
             int inThisRoot = 0;
-            try (var walk = Files.walk(root)) {
+            try (var walk = walkOrBreak(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
                     String code = readOrBreak(file);
                     inThisRoot++;
@@ -210,7 +210,7 @@ class HarnessBreakageIsNotAFiringTest {
         List<String> conflating = new ArrayList<>();
         for (Path root : testRoots()) {
             int inThisRoot = 0;
-            try (var walk = Files.walk(root)) {
+            try (var walk = walkOrBreak(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
                     String code = readOrBreak(file);
                     inThisRoot++;
@@ -239,6 +239,73 @@ class HarnessBreakageIsNotAFiringTest {
                 "these locks reflect and convert to HarnessBroken with no InvocationTargetException "
                         + "clause of any kind, so whatever the subject threw is reported as the lock "
                         + "being unable to look at it: " + conflating);
+    }
+
+    @Test
+    @DisplayName("the refusal type's name satisfies the runner's own breakage predicate")
+    void theRefusalTypeIsStillExcludedByTheRunner() throws Exception {
+        // LOCKSTEP with the runner, not with a comment. The runner decides "the harness broke"
+        // with head.endsWith("HarnessBroken") on each line of the failure stanza, so the subtype's
+        // NAME is part of the rule: calling the next one RefusalNotABreakage would quietly undo
+        // round-25's fix and a bare call wrapped in assertDoesNotThrow would be scored as a firing
+        // (round-26 review, subagent P3-2).
+        String runner = readTextOrBreak(Path.of("../tools/negative-controls/run_negative_controls.py"));
+        Matcher predicate = Pattern.compile("head\\.endswith\\(\"([A-Za-z]+)\"\\)").matcher(runner);
+        assertTrue(predicate.find(),
+                "the runner no longer decides breakage by a type-name suffix, so this lock cannot "
+                        + "tell whether the refusal type is still excluded");
+        String suffix = predicate.group(1);
+        assertTrue(RefusalHarnessBroken.class.getSimpleName().endsWith(suffix),
+                "the refusal type is called " + RefusalHarnessBroken.class.getSimpleName()
+                        + " and the runner excludes a breakage by the suffix 「" + suffix + "」, so "
+                        + "this type's throws would be scored as the guard firing");
+        assertTrue(HarnessBroken.class.getSimpleName().endsWith(suffix),
+                "even HarnessBroken itself no longer matches the runner's suffix 「" + suffix
+                        + "」, so nothing in this tree is excluded as breakage any more");
+
+        // EVERY subtype, not only the one this class happens to declare. The first cut named
+        // RefusalHarnessBroken in a class literal, which locks that ONE name and leaves the next
+        // refusal type — written by whoever reads the comment above instead of the runner —
+        // unmeasured: a sibling called RefusalNotABreakage could be added beside it with this
+        // lock still green (that is what IN5 sabotages, and the narrow form could not be
+        // measured at all: renaming the class in one edit does not compile).
+        Pattern subtype = Pattern.compile(
+                "class\\s+([A-Za-z_$][\\w$]*)(?:<[^>]*>)?\\s+extends\\s+([\\w.$]*HarnessBroken)\\b");
+        List<String> misnamed = new ArrayList<>();
+        int declarations = 0;
+        for (Path root : testRoots()) {
+            int inThisRoot = 0;
+            try (var walk = walkOrBreak(root)) {
+                for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
+                    String code = JavaSource.withoutComments(readOrBreak(file));
+                    inThisRoot++;
+                    Matcher declared = subtype.matcher(code);
+                    while (declared.find()) {
+                        declarations++;
+                        if (!declared.group(1).endsWith(suffix)) {
+                            misnamed.add(file + " 「" + declared.group().trim() + "」");
+                        }
+                    }
+                }
+            }
+            // PER ROOT, like this class's other sweeps: a total floor passes with every module
+            // but core dropped.
+            if (inThisRoot == 0) {
+                throw new HarnessBroken("this reader read no test source under " + root
+                        + ", so whatever it cleared there it did not look at");
+            }
+        }
+        if (declarations == 0) {
+            throw new HarnessBroken("no subtype of HarnessBroken was found in this tree's test "
+                    + "sources, and this class declares one, so this sweep is not reading the "
+                    + "sources it is meant to read");
+        }
+
+        assertTrue(misnamed.isEmpty(),
+                "a subtype of HarnessBroken whose name does NOT end with 「" + suffix + "」. The "
+                        + "control runner decides «the harness broke» by that suffix, so throwing "
+                        + "one of these is scored as a lock firing rather than as the lock being "
+                        + "unable to look at its subject: " + misnamed);
     }
 
     @Test
@@ -353,7 +420,12 @@ class HarnessBreakageIsNotAFiringTest {
             assertEquals(Presence.ABSENT, classify(absent));
             // CANNOT_TELL: a directory whose parent denies traversal. Without this the fourth arm
             // was unmeasured and IK5 (which turns it into ABSENT) did not fire — the arm that
-            // carries this tree's whole rule (round-25, measured).
+            // carries this tree's whole rule (round-25, measured). It stays in THIS method with
+            // the other three answers, and the arms that cannot be measured on some machines
+            // (the symlink, the permission bits) say so with HarnessBroken — which is why the
+            // fixtures that do not depend on the environment live in their own test below
+            // (round-26 review, subagent P3-3: an unmeasurable arm was taking the measurable
+            // ones down with it).
             Path locked = Files.createDirectory(scratch.resolve("locked"));
             Path inside = Files.createDirectory(locked.resolve("inside"));
             Presence blocked;
@@ -402,40 +474,6 @@ class HarnessBreakageIsNotAFiringTest {
             }
         }
 
-        // DEDUPE: sixty-five profiles giving the same property the same value is a valid pom, and
-        // without the dedupe the candidate list crosses 64 and the reader refuses it (round-25
-        // review, subagent P3-3 — the guard was there, nothing measured it).
-        StringBuilder sameValue = new StringBuilder("<project>\n");
-        for (int i = 0; i < 65; i++) {
-            sameValue.append("  <profiles><profile><properties>")
-                    .append("<tests.root>src/locks/java</tests.root>")
-                    .append("</properties></profile></profiles>\n");
-        }
-        sameValue.append("  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>\n")
-                .append("</project>\n");
-        assertEquals(List.of("src/locks/java", "src/test/java"),
-                candidatesOrRefusal(sameValue.toString()),
-                "sixty-five profiles declaring the SAME value were refused as an explosion; the "
-                        + "candidates have to be deduped before the cap is read");
-
-        // And the combinatorial guard, which had no fixture either: five declarations of one
-        // property, each referring to the property again, multiplies past 64 on the third pass.
-        String explodes = """
-                <project>
-                  <properties>
-                    <tests.root>${tests.root}/a</tests.root>
-                    <tests.root>${tests.root}/b</tests.root>
-                    <tests.root>${tests.root}/c</tests.root>
-                    <tests.root>${tests.root}/d</tests.root>
-                    <tests.root>${tests.root}/e</tests.root>
-                  </properties>
-                  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>
-                </project>
-                """;
-        List<String> answer = candidatesOrRefusal(explodes);
-        assertEquals(1, answer.size(), "the explosion was not refused: " + answer);
-        assertTrue(answer.get(0).contains("more than 64"),
-                "the refusal does not say what it refused: " + answer);
     }
 
     @Test
@@ -558,6 +596,148 @@ class HarnessBreakageIsNotAFiringTest {
                 "a <testSourceDirectory> inside a plugin's own configuration was taken for the "
                         + "build's, so this sweep would read a directory Maven never compiles — an "
                         + "over-refusal of a valid pom (round-23 review, Codex P2)");
+
+        // THE FOUR CASES, as fixtures. They were measured once and written into a comment, so
+        // reverting the scanner to either earlier form left every assertion green — which is why
+        // this same defect changed hands three rounds running (round-26 review, subagent P1-1,
+        // who reverted both forms and measured zero failures).
+        String promotion = """
+                <project>
+                  <description><![CDATA[<modules><module>ghost</module></modules>]]></description>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(promotion),
+                "a <module> written inside CDATA — text to Maven — was read as structure, and the "
+                        + "reactor is then refused for a directory nobody declared");
+        assertEquals(List.of("real"), requiredModulesIn(promotion),
+                "the same promotion through the required-modules reader");
+
+        String cdataNamesProfiles = """
+                <project>
+                  <description><![CDATA[turn on <profiles> for the extras]]></description>
+                  <modules><module>core</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("core"), requiredModulesIn(cdataNamesProfiles),
+                "a CDATA section that merely MENTIONS <profiles> swallowed the real <modules>, so "
+                        + "a module that must exist was treated as optional");
+
+        String cdataNamesPlugins = """
+                <project>
+                  <description><![CDATA[configure <plugins> as usual]]></description>
+                  <build><testSourceDirectory>src/locks/java</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(cdataNamesPlugins),
+                "a CDATA section that mentions <plugins> swallowed the build's own declaration, so "
+                        + "the directory this module keeps its tests in was never read");
+
+        String cdataNamesComment = """
+                <project>
+                  <description><![CDATA[write <!-- to open a comment]]></description>
+                  <modules><module>real</module></modules>
+                  <build><testSourceDirectory>src/locks/java</testSourceDirectory></build>
+                  <!-- a normal trailing comment -->
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(cdataNamesComment),
+                "a CDATA section containing `<!--` let the comment stripper eat the real markup "
+                        + "that followed it — the fail-open a single left-to-right pass closes");
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(cdataNamesComment),
+                "the same, through the test-root reader");
+
+        String processingInstruction = """
+                <project>
+                  <?nemaki <modules><module>ghost</module></modules> ?>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(processingInstruction),
+                "a processing instruction is not structure, and its text was read as a module");
+
+        // The DOCTYPE's internal subset is the other place legal XML carries raw `<`: an entity
+        // declaration's value. Maven's reader never sees it as an element (round-26 review,
+        // subagent P3-4, which measured [ghost, real] here).
+        String doctypeInternalSubset = """
+                <!DOCTYPE project [<!ENTITY g "<modules><module>ghost</module></modules>">]>
+                <project>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(doctypeInternalSubset),
+                "an entity declared in the DOCTYPE's internal subset was read as structure, so a "
+                        + "valid pom would have been refused for a module nobody declared");
+        assertEquals(List.of("real"), requiredModulesIn(doctypeInternalSubset),
+                "the same, through the required-modules reader");
+
+        String attributesOnTags = """
+                <project>
+                  <modules combine.children="append"><module>real</module></modules>
+                  <build><testSourceDirectory xml:space="preserve">src/locks/java</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(attributesOnTags),
+                "an attribute on <modules> — combine.children is a Maven feature — made every "
+                        + "module in it disappear");
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(attributesOnTags),
+                "an attribute on <testSourceDirectory> dropped the declaration");
+
+        // DEDUPE: sixty-five profiles giving the same property the same value is a valid pom, and
+        // without the dedupe the candidate list crosses 64 and the reader refuses it (round-25
+        // review, subagent P3-3 — the guard was there, nothing measured it).
+        // ONE <profiles> container with sixty-five <profile> children — the shape Maven accepts.
+        // Sixty-five containers is not a valid pom, so a fixture built that way measured the
+        // reader's own looseness instead of a valid build (round-26 review, Codex P2).
+        StringBuilder sameValue = new StringBuilder("<project>\n  <profiles>\n");
+        for (int i = 0; i < 65; i++) {
+            sameValue.append("    <profile><id>p").append(i).append("</id><properties>")
+                    .append("<tests.root>src/locks/java</tests.root>")
+                    .append("</properties></profile>\n");
+        }
+        sameValue.append("  </profiles>\n")
+                .append("  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>\n")
+                .append("</project>\n");
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(sameValue.toString()),
+                "sixty-five profiles declaring the SAME value were refused as an explosion; the "
+                        + "candidates have to be deduped before the cap is read");
+
+        // And the combinatorial guard, which had no fixture either: five declarations of one
+        // property, each referring to the property again, multiplies past 64 on the third pass.
+        String explodes = """
+                <project>
+                  <properties>
+                    <tests.root>${tests.root}/a</tests.root>
+                    <tests.root>${tests.root}/b</tests.root>
+                    <tests.root>${tests.root}/c</tests.root>
+                    <tests.root>${tests.root}/d</tests.root>
+                    <tests.root>${tests.root}/e</tests.root>
+                  </properties>
+                  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>
+                </project>
+                """;
+        List<String> answer = candidatesOrRefusal(explodes);
+        assertEquals(1, answer.size(), "the explosion was not refused: " + answer);
+        assertTrue(answer.get(0).contains("more than 64"),
+                "the refusal does not say what it refused: " + answer);
+
+        String unbalancedCdata = """
+                <project>
+                  <description><![CDATA[<modules><module>ghost</module></modules></description>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        HarnessBroken unbalanced = assertThrows(HarnessBroken.class,
+                () -> modulesIn(unbalancedCdata),
+                "a CDATA section with no closer was answered from rather than refused: its text "
+                        + "reads as structure, so a module that exists only inside the comment-like "
+                        + "run was reported (measured round 26)");
+        assertTrue(unbalanced.getMessage().contains("unbalanced CDATA"),
+                "the refusal does not say what it could not read: " + unbalanced.getMessage());
 
         String cdata = """
                 <project>
@@ -839,9 +1019,9 @@ class HarnessBreakageIsNotAFiringTest {
      * (round-23 review, Codex P2). {@link #modulesIn} is the other half and takes everything.
      */
     static List<String> requiredModulesIn(String pom) {
-        String text = withoutXmlComments(pom).replaceAll("(?s)<profiles>.*?</profiles>", "");
+        String text = structureOnly(pom).replaceAll("(?s)<profiles(?:\\s[^>]*)?>.*?</profiles>", "");
         List<String> modules = new ArrayList<>();
-        Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(text);
+        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules>").matcher(text);
         while (block.find()) {
             Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
@@ -868,7 +1048,7 @@ class HarnessBreakageIsNotAFiringTest {
         // directory Maven never looks for — an over-refusal of a valid pom, and the synthetic
         // fixture shared the misreading (round-20 review, Codex P2).
         List<String> modules = new ArrayList<>();
-        Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(withoutXmlComments(pom));
+        Matcher block = Pattern.compile("(?s)<modules(?:\\s[^>]*)?>(.*?)</modules>").matcher(structureOnly(pom));
         while (block.find()) {
             Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
@@ -890,7 +1070,7 @@ class HarnessBreakageIsNotAFiringTest {
      * describing the fall-through (round-21 review, subagent P2-1).
      */
     static List<String> testRootCandidates(String pom, String named) {
-        String text = withoutXmlComments(pom);
+        String text = structureOnly(pom);
         List<String> candidates = new ArrayList<>();
         // Only where Maven looks for it: inside <build>, and not inside a plugin's own
         // <configuration> (a plugin may take an element of the same name as its own input, and
@@ -900,9 +1080,9 @@ class HarnessBreakageIsNotAFiringTest {
         // inside it loses the real directory when a plugin's own configuration carries a POM
         // fragment of its own: the non-greedy <build>…</build> ends at the INNER closing tag
         // (round-24 review, subagent P3-3, measured).
-        String withoutPlugins = text.replaceAll("(?s)<plugins>.*?</plugins>", "");
+        String withoutPlugins = text.replaceAll("(?s)<plugins(?:\\s[^>]*)?>.*?</plugins>", "");
         StringBuilder build = new StringBuilder();
-        Matcher builds = Pattern.compile("(?s)<build>(.*?)</build>").matcher(withoutPlugins);
+        Matcher builds = Pattern.compile("(?s)<build(?:\\s[^>]*)?>(.*?)</build>").matcher(withoutPlugins);
         while (builds.find()) {
             build.append(builds.group(1));
         }
@@ -941,7 +1121,7 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static List<String> resolveProperties(String raw, String pom) {
         StringBuilder properties = new StringBuilder();
-        Matcher block = Pattern.compile("(?s)<properties>(.*?)</properties>").matcher(pom);
+        Matcher block = Pattern.compile("(?s)<properties(?:\\s[^>]*)?>(.*?)</properties>").matcher(pom);
         while (block.find()) {
             properties.append(block.group(1));
         }
@@ -1039,6 +1219,16 @@ class HarnessBreakageIsNotAFiringTest {
         }
     }
 
+    /** The walk, or "this sweep could not look" — not an IOException the runner reads as a
+     * non-firing (round-26 review, subagent P3-7). */
+    private static java.util.stream.Stream<Path> walkOrBreak(Path root) {
+        try {
+            return Files.walk(root);
+        } catch (Exception e) {
+            throw new HarnessBroken("could not walk " + root, e);
+        }
+    }
+
     /** The real path, or "this sweep could not look" — not an IOException the runner reads as a
      * non-firing (round-21 review, subagent P3). */
     private static Path realPathOrBreak(Path path) {
@@ -1051,8 +1241,9 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     private static boolean containsJavaSources(Path directory) throws Exception {
-        if (classify(directory) != Presence.DIRECTORY) {
-            if (classify(directory) == Presence.CANNOT_TELL) {
+        Presence is = classify(directory);
+        if (is != Presence.DIRECTORY) {
+            if (is == Presence.CANNOT_TELL) {
                 // The same two meanings as the candidate check above: this one answered "no .java
                 // here" for "I could not look", and the refusal that depends on it then never
                 // fired (round-24 review, Codex P1 — the claim "the two were separated" was
@@ -1062,27 +1253,75 @@ class HarnessBreakageIsNotAFiringTest {
             }
             return false;
         }
-        try (var walk = Files.walk(directory)) {
+        try (var walk = walkOrBreak(directory)) {
             return walk.anyMatch(f -> f.toString().endsWith(".java"));
         }
     }
 
-    private static String withoutXmlComments(String pom) {
-        // Comments out, and CDATA content ESCAPED in place. Round 23 stripped the CDATA markers,
-        // which promoted the content to markup; round 24 moved the tolerance into the element
-        // patterns, which left the promotion open because the STRUCTURAL search (<modules>,
-        // <build>) still ran over the raw text — `<description><![CDATA[<modules><module>ghost
-        // </module></modules>]]></description>` still produced a module (round-25 review, Codex
-        // P1, reproduced). Escaping `<` and `>` inside the section keeps the content readable as
-        // text — which is all Maven treats it as — and invisible as structure.
-        Matcher section = Pattern.compile("(?s)<!\\[CDATA\\[(.*?)]]>").matcher(
-                pom.replaceAll("(?s)<!--.*?-->", ""));
-        StringBuilder out = new StringBuilder();
-        while (section.find()) {
-            section.appendReplacement(out, Matcher.quoteReplacement(
-                    section.group(1).replace("<", "&lt;").replace(">", "&gt;")));
+    /**
+     * The pom with everything that is NOT structure taken out, in ONE left-to-right pass.
+     *
+     * <p>Comments, processing instructions and the DOCTYPE declaration go; a CDATA section becomes
+     * its own text with {@code <} and {@code >} escaped, so it can be read as a value and never as
+     * markup. Something that opens and never closes is refused.
+     *
+     * <p>One pass because both orders were measured wrong. Stripping comments first let a
+     * {@code <!--} INSIDE a CDATA section swallow the real markup that followed it, up to the next
+     * real {@code -->} (round-26 review, subagent P1-2); stripping CDATA first lets a {@code ]]>}
+     * inside a comment do the same. A left-to-right scan takes whichever opens first, which is
+     * what an XML reader does.
+     *
+     * <p>Known limit, recorded rather than papered over: the CDATA text is ESCAPED, so an element
+     * whose value genuinely contains {@code <} reads as {@code &lt;} here, and entities in ordinary
+     * text are not decoded either. Structure safety is what this sweep needs; a module directory
+     * named with an angle bracket is not a case this tree has (round-26 review, Codex P1).
+     */
+    private static String structureOnly(String pom) {
+        StringBuilder out = new StringBuilder(pom.length());
+        int i = 0;
+        while (i < pom.length()) {
+            if (pom.startsWith("<!--", i)) {
+                int close = pom.indexOf("-->", i + 4);
+                if (close < 0) {
+                    throw new HarnessBroken("this pom has a comment that never closes, so this "
+                            + "sweep cannot tell its text from its structure");
+                }
+                i = close + 3;
+            } else if (pom.startsWith("<![CDATA[", i)) {
+                int close = pom.indexOf("]]>", i + 9);
+                if (close < 0) {
+                    throw new HarnessBroken("this pom has an unbalanced CDATA section, so this "
+                            + "sweep cannot tell its text from its structure");
+                }
+                out.append(pom, i + 9, close).toString();
+                int from = out.length() - (close - (i + 9));
+                String text = out.substring(from).replace("<", "&lt;").replace(">", "&gt;");
+                out.setLength(from);
+                out.append(text);
+                i = close + 3;
+            } else if (pom.startsWith("<?", i)) {
+                int close = pom.indexOf("?>", i + 2);
+                if (close < 0) {
+                    throw new HarnessBroken("this pom has a processing instruction that never "
+                            + "closes, so this sweep cannot tell its text from its structure");
+                }
+                i = close + 2;
+            } else if (pom.startsWith("<!DOCTYPE", i)) {
+                int subset = pom.indexOf('[', i);
+                int close = pom.indexOf('>', i);
+                if (subset >= 0 && close >= 0 && subset < close) {
+                    int subsetEnd = pom.indexOf(']', subset);
+                    close = subsetEnd < 0 ? -1 : pom.indexOf('>', subsetEnd);
+                }
+                if (close < 0) {
+                    throw new HarnessBroken("this pom has a DOCTYPE declaration that never closes, "
+                            + "so this sweep cannot tell its text from its structure");
+                }
+                i = close + 1;
+            } else {
+                out.append(pom.charAt(i++));
+            }
         }
-        section.appendTail(out);
         return out.toString();
     }
 
@@ -1094,13 +1333,18 @@ class HarnessBreakageIsNotAFiringTest {
      * P1). Round 23 answered that by stripping the CDATA markers from the whole pom, which
      * PROMOTED the content to structure — `<description><![CDATA[<modules><module>ghost</module>
      * </modules>]]></description>` then read as a real module and a valid pom was refused
-     * (round-24 review, Codex P1). So the tolerance belongs in the element patterns, one element
-     * at a time, where CDATA content can never be mistaken for markup.
+     * (round-24 review, Codex P1). Round 24 put the tolerance in these element patterns, one
+     * element at a time; round 25 took it back out, because the promotion was the BLOCK patterns
+     * reading CDATA text as structure and an element-by-element tolerance left that untouched.
+     * {@link #structureOnly} now neutralises CDATA for every reader, so this pattern reads plain
+     * text and nothing here knows about CDATA. The sentence that used to end this javadoc still
+     * described round 24's design, which is this tree's "the document is stronger than the code"
+     * defect in a javadoc (round-26 review, subagent P3-1).
      */
     private static String elementPattern(String name) {
-        // Plain text: withoutXmlComments has already unwrapped any CDATA into escaped text, so a
+        // Plain text: structureOnly has already unwrapped any CDATA into escaped text, so a
         // value containing `]` reads fine — the round-24 pattern forbade `]` and dropped
         // `<module><![CDATA[child]name]]></module>` in silence (round-25 review, Codex P1).
-        return "<" + name + ">\\s*([^<]+?)\\s*</" + name + ">";
+        return "<" + name + "(?:\\s[^>]*)?>\\s*([^<]+?)\\s*</" + name + ">";
     }
 }

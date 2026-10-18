@@ -298,11 +298,26 @@ class ReleaseReadinessIsMeasuredTest {
         // total in the document, and there is more than one (3.4.0's 7,881 is recorded further
         // down): if the order ever changed, this bound would read a figure that was never meant
         // to be the current one (round-25 review, subagent P3-5).
+        // `[0-9]{1,3},[0-9]{3}`, not one leading digit: at ten thousand tests the suite's own
+        // figure would stop matching and this bound would fail saying "the document no longer
+        // states it" — a FALSE reason, which is the shape this tree calls a could-not-read
+        // reported as an absence (round-26 review, subagent P3-6).
         Matcher stated = Pattern.compile(
-                "全ユニットの最新の実測は \\*\\*([0-9],[0-9]{3}) 本 green\\*\\*（2026")
+                "全ユニットの最新の実測は \\*\\*([0-9]{1,3},[0-9]{3}) 本 green\\*\\*（2026")
                 .matcher(read(READINESS));
         assertTrue(stated.find(), "the readiness document no longer states its latest unit total "
                 + "in the form this bound reads (「全ユニットの最新の実測は **N 本 green**（2026…）");
+        int recordedTotals = 1;
+        while (stated.find()) {
+            recordedTotals++;
+        }
+        assertEquals(1, recordedTotals,
+                "the readiness document calls " + recordedTotals + " figures its latest unit "
+                        + "total; this bound reads the first, so there has to be exactly one "
+                        + "(round-26 review, subagent P3-6 — the sibling that reads the sweep's "
+                        + "own control count learned the same thing)");
+        stated.reset();
+        assertTrue(stated.find());
         int recorded = Integer.parseInt(stated.group(1).replace(",", ""));
         int floor = declared - possiblyExcluded;
         assertTrue(recorded >= floor,
