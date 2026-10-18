@@ -323,35 +323,63 @@ class ReleaseReadinessIsMeasuredTest {
         // the bound above reads the NUMBER, which does not move when a round adds no test, so
         // nothing noticed that the provenance was a round behind (round-30 review: subagent P2-2,
         // Codex P3 — "discipline did not stop it four times" is the reason this is mechanical).
-        // THE GATE LINE, at the start of a line, and only one per round. Reading any 「全ユニット
-        // **N 本」 inside a section took whichever came first, so a record that QUOTES an older
-        // figure before its own gate paragraph would be read as that round's run; the heading was
-        // also unanchored, so a deeper heading could open a section the pattern never closed
-        // (round-31 review: Codex P2, subagent P3-5 — both measured today's tree as unambiguous,
-        // which is exactly when a reader like this one is cheap to harden).
-        String batchPlan = read(BATCH_PLAN);
+        // THE GATE LINE, at the start of its own line, in either of the two forms this plan uses,
+        // one per round, and never from inside a fenced block. Four ways this reader could answer
+        // about the wrong tree were measured in round 32 (Codex P2 ×3, subagent P2-3): a quoted
+        // 「**ゲートと実測**:」 in prose counted as a gate record; a second section for the SAME
+        // round was ignored instead of refused; a `## …` inside a fence closed a section early;
+        // and the sections that write 「**ゲートと実測**: **全ユニット N 本」 (rounds 16 and 17)
+        // read as "this round recorded no run", which would make the reader blame the readiness
+        // document for a run the plan DOES record.
+        String batchPlan = read(BATCH_PLAN).replaceAll("(?s)```.*?```", "");
         Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
                 .matcher(batchPlan);
         int newestRound = 0;
+        int saysItRan = 0;
+        int figuresRead = 0;
         String newestFigure = null;
+        Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
         while (rounds.find()) {
+            int round = Integer.parseInt(rounds.group(1));
+            if (!roundsSeen.add(round)) {
+                throw new HarnessBroken("the batch plan has more than one 確認 " + round
+                        + " 巡目 section, so this reader cannot tell which one records that "
+                        + "round's run");
+            }
             Matcher gate = Pattern.compile(
-                    "\\*\\*ゲートと実測\\*\\*: 全ユニット \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本")
+                    "(?m)^\\*\\*ゲートと実測\\*\\*: \\*?\\*?全ユニット "
+                            + "\\*?\\*?([0-9]{1,3}(?:,[0-9]{3})+) 本")
                     .matcher(rounds.group(2));
             List<String> figures = new ArrayList<>();
             while (gate.find()) {
                 figures.add(gate.group(1));
             }
             if (figures.size() > 1) {
-                throw new HarnessBroken("確認 " + rounds.group(1) + " 巡目 states " + figures.size()
+                throw new HarnessBroken("確認 " + round + " 巡目 states " + figures.size()
                         + " gate figures " + figures + ", so this reader cannot tell which run the "
                         + "readiness document should be naming");
             }
-            if (figures.size() == 1 && Integer.parseInt(rounds.group(1)) > newestRound) {
-                newestRound = Integer.parseInt(rounds.group(1));
-                newestFigure = figures.get(0);
+            if (Pattern.compile("(?m)^\\*\\*ゲートと実測\\*\\*:").matcher(rounds.group(2)).find()) {
+                saysItRan++;
+            }
+            if (figures.size() == 1) {
+                figuresRead++;
+                if (round > newestRound) {
+                    newestRound = round;
+                    newestFigure = figures.get(0);
+                }
             }
         }
+        // EVERY section that says it ran has to be READABLE here. Two sections write the figure
+        // with the bold on the other side (rounds 16 and 17), and the reader that took only one
+        // form answered «this round recorded no run» for them — a could-not-read with the value of
+        // an absence, which would then blame the readiness document for a run the plan does record
+        // (round-32 review, subagent P2-3). Asserted rather than refused, so a sabotage of the
+        // tolerance is measurable.
+        assertEquals(saysItRan, figuresRead,
+                saysItRan + " round sections state 「**ゲートと実測**:」 and this reader could read "
+                        + figuresRead + " figures. A section whose figure it cannot read is not a "
+                        + "section without a run");
         if (newestFigure == null) {
             throw new HarnessBroken("the batch plan records no round with a 「全ユニット **N 本」 "
                     + "figure, so this reader cannot tell which tree the readiness document should "

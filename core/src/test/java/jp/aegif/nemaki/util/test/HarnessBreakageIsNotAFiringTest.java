@@ -308,7 +308,7 @@ class HarnessBreakageIsNotAFiringTest {
                 "throw new @Nn(min = 1) HarnessBroken(\"x\") {};",
                 "throw new <String> HarnessBroken(\"x\", 1) {};",
                 "throw new <@A(v = 1 > 0) String> HarnessBroken(\"x\") {};",
-                "throw new FooHarnessBroken<String>(\"x\") {};",
+                "Object x = new FooHarnessBroken<String>(\"x\") {};",
                 "throw new HarnessBroken(msg, new int[]{1}) {};",
                 "throw new HarnessBroken(msg, new RuntimeException() {}) {};",
                 "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };",
@@ -319,8 +319,9 @@ class HarnessBreakageIsNotAFiringTest {
                             + anonymous + "」, so it would clear the tree without looking for it");
         }
         // AND the refusal: a bracket that never closes is this reader unable to look, not «no
-        // breakage type here». Two of the three walks returned the unbalanced case as a silent
-        // skip until round 30 (round-30 review, subagent P3-2).
+        // breakage type here». Two of the walks returned the unbalanced case as a silent skip
+        // until round 30 (round-30 review, subagent P3-2; this comment still said «three walks»
+        // after the count moved — round-32 review, subagent P3-1).
         assertTrue(assertThrows(HarnessBroken.class,
                         () -> anonymousBreakages("throw new HarnessBroken(x {};", suffix))
                         .getMessage().contains("never closes"),
@@ -338,6 +339,35 @@ class HarnessBreakageIsNotAFiringTest {
                     "this sweep calls 「" + honest + "」 an anonymous subclass, so it refuses honest "
                             + "source and the rule it enforces cannot be followed");
         }
+        // THE RESERVED NAME, driven both ways before the sweep runs. The first cut of this arm was
+        // a regex with no fixtures at all, and it let three legal declarations through (round-32
+        // review: Codex P1, subagent P2-2 and P3-4 — "the fixture-less regex buys exactly this").
+        Path aFile = Path.of("Some.java");
+        for (String violating : List.of(
+                "class NotAHarnessBroken extends @A RuntimeException { }",
+                "class FooHarnessBroken<T extends Map<String, Integer>> { }",
+                "record NotAHarnessBroken(@Size(min = 1) int x) { }",
+                "sealed interface FooHarnessBroken permits A, B { }",
+                "class HarnessBroken { }",
+                "class NotAHarnessBroken implements Serializable { }")) {
+            assertFalse(reservedNameViolations(violating, suffix, aFile).isEmpty(),
+                    "this sweep allows 「" + violating + "」, so a type the runner would read as a "
+                            + "breakage can be declared without being one");
+        }
+        for (String honest : List.of(
+                "static final class RefusalHarnessBroken extends HarnessBroken { }",
+                "class RefusalHarnessBroken extends jp.aegif.nemaki.util.test.HarnessBroken { }",
+                "class RefusalHarnessBroken extends @A HarnessBroken { }",
+                "class SomethingElse extends RuntimeException { }")) {
+            assertTrue(reservedNameViolations(honest, suffix, aFile).isEmpty(),
+                    "this sweep calls 「" + honest + "」 a reserved-name violation, so it refuses "
+                            + "correct source and the rule it enforces cannot be followed");
+        }
+        assertTrue(reservedNameViolations("public class HarnessBroken extends RuntimeException { }",
+                        suffix, Path.of("core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java"))
+                        .isEmpty(),
+                "the root breakage type itself is refused, which no tree can satisfy");
+
         List<String> misnamed = new ArrayList<>();
         List<String> reserved = new ArrayList<>();
         int declarations = 0;
@@ -358,24 +388,14 @@ class HarnessBreakageIsNotAFiringTest {
                         misnamed.add(file + " 「" + declared.group().trim() + "」");
                     }
                 }
-                // THE SUFFIX IS RESERVED, both ways. This sweep classifies by NAME because the
-                // runner does, so a type called …HarnessBroken that is not a breakage type at all
-                // makes the two disagree: an anonymous subclass of it is refused here while the
-                // runner would score its throws as a firing, and `class FooHarnessBroken<T>`
-                // (legal, as it extends nothing) is the only way the type-argument arm is reachable
-                // at all. Both reviewers arrived here from opposite ends (round-31 review: Codex P1
-                // called the refusal an over-refusal, subagent P3-3 found the arm reachable only
-                // through such a type). The rule that makes the two agree: the name belongs to
-                // breakage types.
-                Matcher named = Pattern.compile("(?:class|interface|enum|record)\\s+"
-                        + "([A-Za-z_$][\\w$]*" + suffix + ")(?:<[^>]*>)?(?:\\s*\\([^)]*\\))?"
-                        + "\\s*(?:(extends)\\s+([\\w.$]+)|implements|\\{)").matcher(code);
-                while (named.find()) {
-                    String extended = named.group(3);
-                    if (extended == null || !extended.endsWith(suffix)) {
-                        reserved.add(file + " 「" + named.group().replace('\n', ' ').trim() + "」");
-                    }
-                }
+                // THE SUFFIX IS RESERVED, both ways (round-31 review: Codex P1 called the sweep's
+                // refusal of `new NotAHarnessBroken() {}` an over-refusal, subagent P3-3 found the
+                // type-argument arm reachable only through such a type; the rule that makes both
+                // right is that the name belongs to breakage types). Parsed, not matched: the
+                // first cut was a regex and it let three legal declarations through — an annotated
+                // supertype, a bounded type parameter, a record header (round-32 review: Codex P1,
+                // subagent P2-2, both measured with javac).
+                reserved.addAll(reservedNameViolations(code, suffix, file));
                 for (String inline : anonymousBreakages(code, suffix)) {
                     misnamed.add(file + " 「" + inline.trim() + "」");
                 }
@@ -427,11 +447,13 @@ class HarnessBreakageIsNotAFiringTest {
      * {@code new Outer<String>.InnerHarnessBroken(…) {}} are not source this sweep can meet. What
      * IS reachable, and is driven below: a qualified type-use annotation, an annotation with
      * constant arguments, the constructor's OWN type arguments ({@code new <String> H(…) {}} on a
-     * non-generic Throwable), and a dotted qualifier. The angle-skip AFTER the type name is
-     * reachable only through a type named …HarnessBroken that is not a breakage type at all
-     * (`class FooHarnessBroken<T>` extending nothing compiles) — the sweep below now refuses
-     * that name outright, so the arm is driven by a fixture rather than by live source
-     * (round-31 review: subagent P3-3 measured the reachability, Codex P1 the over-refusal).
+     * non-generic Throwable), and a dotted qualifier. The angle-skip AFTER the type name RUNS
+     * for every `new Foo<Bar>(…)` in the tree; what it can only change the ANSWER for is a type
+     * named …HarnessBroken that is not a breakage type (`class FooHarnessBroken<T>` extending
+     * nothing compiles), and the reserved-name arm below refuses that name — so the arm is driven
+     * by a fixture rather than by live source (round-31 review: subagent P3-3 measured the
+     * reachability, Codex P1 the over-refusal; round-32 review, subagent P3-3 corrected «reachable»
+     * to «can change the answer»).
      *
      * <p>The caller passes the suffix the RUNNER decides breakage by, so this stays in lockstep
      * with it rather than with the name written here.
@@ -495,13 +517,14 @@ class HarnessBreakageIsNotAFiringTest {
     /**
      * Past the matching close, or the harness is broken — never "nothing here".
      *
-     * <p>FOUR places walk a bracket pair here (the constructor's type arguments, an annotation's
-     * arguments, the type's own type arguments, the argument list) and two of them returned the
-     * unbalanced case as a silent skip until round 30, which reports «I could not read this» with
-     * the same value as «this is not a breakage type» (round-30 review, subagent P3-2; the count
-     * said three until round-31 review, subagent P3-1 — the fourth was added in the same commit).
+     * <p>Every walk of a bracket pair in this class goes through here or through
+     * {@link #pastTypeArguments}, which refuses the same way: an unbalanced bracket is this reader
+     * unable to look, not «there is no breakage type here» (round-30 review, subagent P3-2 —
+     * two of the walks skipped silently until then). The COUNT is deliberately not written here:
+     * it moved in each of rounds 30, 31 and 32, and a number in a javadoc cannot be kept honest by
+     * a reader who is not counting (round-32 review, subagent P3-1 and P3-2).
      *
-     * <p>The refusal names WHAT it was walking, not a type: three of the four run before the name
+     * <p>The refusal names WHAT it was walking, not a type: the earlier walks run before any name
      * is known, so saying «a new …HarnessBroken» there was a wrong reason for a right refusal —
      * `new HashMap<String, Integer();` was refused with the breakage type's name in the message
      * (round-31 review, subagent P3-2, measured).
@@ -514,6 +537,70 @@ class HarnessBreakageIsNotAFiringTest {
                     + "type from a plain throw");
         }
         return past;
+    }
+
+    /**
+     * Declarations whose NAME ends with the runner's breakage suffix without being a breakage type.
+     *
+     * <p>Parsed from the declaration's own shape: the name, its type parameters (balanced, so a
+     * bound like {@code <T extends Map<String, Integer>>} does not end the list early), a record's
+     * header, and then every {@code extends} name up to the body — annotations and dots included.
+     * A regex form of this let three legal declarations through, each measured with javac:
+     * {@code class NotAHarnessBroken extends @A RuntimeException {}},
+     * {@code class FooHarnessBroken<T extends Map<String, Integer>> {}} and
+     * {@code record NotAHarnessBroken(@Size(min = 1) int x) {}} (round-32 review: Codex P1,
+     * subagent P2-2).
+     *
+     * <p>The ROOT is the exception: {@code HarnessBroken} itself extends RuntimeException, and it
+     * is recognised by its own file rather than by its name, so a second type called exactly
+     * {@code HarnessBroken} elsewhere is still a violation (subagent P2-2 measured that the regex
+     * allowed one).
+     */
+    private static List<String> reservedNameViolations(String code, String suffix, Path file) {
+        List<String> violations = new ArrayList<>();
+        Matcher declared = Pattern.compile("(?:class|interface|enum|record)\\s+"
+                + "([A-Za-z_$][\\w$]*)(?=[\\s<({])").matcher(code);
+        while (declared.find()) {
+            String name = declared.group(1);
+            if (!name.endsWith(suffix)) {
+                continue;
+            }
+            int at = skipSpace(code, declared.end());
+            if (at < code.length() && code.charAt(at) == '<') {
+                at = skipSpace(code, pastTypeArguments(code, at));
+            }
+            if (at < code.length() && code.charAt(at) == '(') {
+                at = skipSpace(code, balancedOrBreak(code, at, '(', ')', "record header"));
+            }
+            boolean extendsABreakage = false;
+            while (at < code.length() && code.charAt(at) != '{') {
+                if (code.startsWith("extends", at) && !Character.isJavaIdentifierPart(
+                        code.charAt(Math.min(at + "extends".length(), code.length() - 1)))) {
+                    int nameAt = skipSpace(code, at + "extends".length());
+                    while (nameAt < code.length() && code.charAt(nameAt) == '@') {
+                        nameAt = skipSpace(code, readDottedIdentifier(code, nameAt + 1));
+                        if (nameAt < code.length() && code.charAt(nameAt) == '(') {
+                            nameAt = skipSpace(code, balancedOrBreak(code, nameAt, '(', ')',
+                                    "annotation arguments"));
+                        }
+                    }
+                    int end = readDottedIdentifier(code, nameAt);
+                    if (code.substring(nameAt, end).endsWith(suffix)) {
+                        extendsABreakage = true;
+                    }
+                    at = end;
+                    continue;
+                }
+                at++;
+            }
+            boolean isTheRoot = name.equals(suffix)
+                    && file.getFileName().toString().equals(suffix + ".java");
+            if (!extendsABreakage && !isTheRoot) {
+                violations.add(file + " 「" + code.substring(declared.start(),
+                        Math.min(at + 1, code.length())).replace('\n', ' ').trim() + "」");
+            }
+        }
+        return violations;
     }
 
     /**
