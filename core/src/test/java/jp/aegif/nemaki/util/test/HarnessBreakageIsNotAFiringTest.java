@@ -741,6 +741,27 @@ class HarnessBreakageIsNotAFiringTest {
         assertEquals(List.of("real"), requiredModulesIn(doctypeQuotedBracket),
                 "the same, through the required-modules reader");
 
+        // A comment and a processing instruction INSIDE the internal subset, each holding a `]`:
+        // both are legal there, and a `]` in either ended the subset exactly as the quoted one did
+        // (found with my own probe while fixing the quoted case, round 27).
+        String doctypeCommentInSubset = """
+                <!DOCTYPE project [<!-- ] --><!ENTITY g "<modules><module>ghost</module></modules>">]>
+                <project>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(doctypeCommentInSubset),
+                "a `]` inside a comment in the DOCTYPE's internal subset ended the subset, so the "
+                        + "entity after it was read as structure");
+        String doctypePiInSubset = """
+                <!DOCTYPE project [<?nemaki ] ?><!ENTITY g "<modules><module>ghost</module></modules>">]>
+                <project>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(doctypePiInSubset),
+                "the same through a processing instruction inside the internal subset");
+
         // And a `>` inside a quoted system literal, which is legal XML as well.
         String doctypeQuotedAngle = """
                 <!DOCTYPE project SYSTEM "urn:<modules><module>ghost</module></modules>">
@@ -1426,6 +1447,31 @@ class HarnessBreakageIsNotAFiringTest {
                 char quote = 0;
                 boolean inSubset = false;
                 while (at < pom.length()) {
+                    // A comment or a processing instruction INSIDE the declaration, skipped whole:
+                    // the internal subset may hold both, and a `]` in either of them ended the
+                    // subset here exactly as the quoted `]` did — the same shape the two reviewers
+                    // found, measured on my own fix with `<!DOCTYPE p [<!-- ] -->…]>` → [ghost,
+                    // real], so it is closed in the same batch rather than written up as a limit.
+                    if (quote == 0 && pom.startsWith("<!--", at)) {
+                        int endsAt = pom.indexOf("-->", at + 4);
+                        if (endsAt < 0) {
+                            throw new HarnessBroken("this pom has a comment inside its DOCTYPE "
+                                    + "declaration that never closes, so this sweep cannot tell "
+                                    + "its text from its structure");
+                        }
+                        at = endsAt + 3;
+                        continue;
+                    }
+                    if (quote == 0 && pom.startsWith("<?", at)) {
+                        int endsAt = pom.indexOf("?>", at + 2);
+                        if (endsAt < 0) {
+                            throw new HarnessBroken("this pom has a processing instruction inside "
+                                    + "its DOCTYPE declaration that never closes, so this sweep "
+                                    + "cannot tell its text from its structure");
+                        }
+                        at = endsAt + 2;
+                        continue;
+                    }
                     char c = pom.charAt(at);
                     if (quote != 0) {
                         if (c == quote) {
