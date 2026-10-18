@@ -162,15 +162,13 @@ class HarnessBreakageIsNotAFiringTest {
         List<String> offenders = new ArrayList<>();
         for (Path root : roots) {
             int inThisRoot = 0;
-            try (var walk = walkOrBreak(root)) {
-                for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
-                    String code = readOrBreak(file);
-                    inThisRoot++;
-                    for (Pattern form : forms) {
-                        Matcher hit = form.matcher(code);
-                        while (hit.find()) {
-                            offenders.add(file + " 「" + hit.group().replace('\n', ' ').trim() + "」");
-                        }
+            for (Path file : javaSourcesOrBreak(root)) {
+                String code = readOrBreak(file);
+                inThisRoot++;
+                for (Pattern form : forms) {
+                    Matcher hit = form.matcher(code);
+                    while (hit.find()) {
+                        offenders.add(file + " 「" + hit.group().replace('\n', ' ').trim() + "」");
                     }
                 }
             }
@@ -210,21 +208,19 @@ class HarnessBreakageIsNotAFiringTest {
         List<String> conflating = new ArrayList<>();
         for (Path root : testRoots()) {
             int inThisRoot = 0;
-            try (var walk = walkOrBreak(root)) {
-                for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
-                    String code = readOrBreak(file);
-                    inThisRoot++;
-                    if (!code.contains(".invoke(") || !code.contains("new HarnessBroken(")) {
-                        continue;
-                    }
-                    boolean caught = Pattern.compile("catch\\s*\\([^)]*InvocationTargetException")
-                            .matcher(code).find();
-                    boolean asserted = Pattern.compile(
-                            "assertThrows\\s*\\(\\s*(?:[\\w.]*\\.)?InvocationTargetException\\s*\\.class")
-                            .matcher(code).find();
-                    if (!caught && !asserted) {
-                        conflating.add(file.toString());
-                    }
+            for (Path file : javaSourcesOrBreak(root)) {
+                String code = readOrBreak(file);
+                inThisRoot++;
+                if (!code.contains(".invoke(") || !code.contains("new HarnessBroken(")) {
+                    continue;
+                }
+                boolean caught = Pattern.compile("catch\\s*\\([^)]*InvocationTargetException")
+                        .matcher(code).find();
+                boolean asserted = Pattern.compile(
+                        "assertThrows\\s*\\(\\s*(?:[\\w.]*\\.)?InvocationTargetException\\s*\\.class")
+                        .matcher(code).find();
+                if (!caught && !asserted) {
+                    conflating.add(file.toString());
                 }
             }
             // PER ROOT, like its sibling: a total floor passes with every root but core dropped,
@@ -251,10 +247,25 @@ class HarnessBreakageIsNotAFiringTest {
         // (round-26 review, subagent P3-2).
         String runner = readTextOrBreak(Path.of("../tools/negative-controls/run_negative_controls.py"));
         Matcher predicate = Pattern.compile("head\\.endswith\\(\"([A-Za-z]+)\"\\)").matcher(runner);
-        assertTrue(predicate.find(),
-                "the runner no longer decides breakage by a type-name suffix, so this lock cannot "
-                        + "tell whether the refusal type is still excluded");
-        String suffix = predicate.group(1);
+        // EVERY place the runner writes this predicate, and they have to agree. Taking the FIRST
+        // match read whatever came earliest in 25,000 lines: a control whose `what=` quotes the
+        // predicate with outer single quotes would put prose ahead of the code, and this lock
+        // would then test the refusal type against a suffix the runner does not use
+        // (round-27 review, subagent P3-7 — one match today, at the runner's own decision).
+        java.util.Set<String> suffixes = new java.util.LinkedHashSet<>();
+        while (predicate.find()) {
+            suffixes.add(predicate.group(1));
+        }
+        if (suffixes.isEmpty()) {
+            throw new HarnessBroken("the runner no longer decides breakage by a type-name suffix "
+                    + "(head.endswith(\"…\")), so this lock cannot tell whether the refusal type is "
+                    + "still excluded");
+        }
+        assertEquals(1, suffixes.size(),
+                "the runner names more than one breakage suffix " + suffixes + ", so which one "
+                        + "decides is read from whichever line comes first — write the predicate "
+                        + "once, or this lock measures the wrong one");
+        String suffix = suffixes.iterator().next();
         assertTrue(RefusalHarnessBroken.class.getSimpleName().endsWith(suffix),
                 "the refusal type is called " + RefusalHarnessBroken.class.getSimpleName()
                         + " and the runner excludes a breakage by the suffix 「" + suffix + "」, so "
@@ -271,21 +282,42 @@ class HarnessBreakageIsNotAFiringTest {
         // measured at all: renaming the class in one edit does not compile).
         Pattern subtype = Pattern.compile(
                 "class\\s+([A-Za-z_$][\\w$]*)(?:<[^>]*>)?\\s+extends\\s+([\\w.$]*HarnessBroken)\\b");
+        // The other way a breakage type gets a name the runner does not recognise: an ANONYMOUS
+        // subclass. `new HarnessBroken("...") {}` is reported by Surefire as `Outer$1`, which does
+        // not end with the suffix, so a lock that could not look at its subject would be scored as
+        // the guard firing — the exact harm this class exists to prevent (round-27 review: Codex
+        // P1, subagent P3-5; measured 0 live today out of 77 `new …HarnessBroken(` sites).
+        Pattern anonymous = Pattern.compile(
+                "new\\s+(?:[\\w.$]*\\.)?[\\w$]*" + suffix + "\\s*\\([^;{]*\\)\\s*\\{");
+        // Discriminating, before the sweep runs: the form has to match the anonymous shape and
+        // leave the ordinary throw alone, or a dead regex sweeps clean (this tree's own rule).
+        assertTrue(anonymous.matcher("throw new HarnessBroken(\"x\") {};").find(),
+                "this form no longer matches an anonymous subclass of the breakage type, so the "
+                        + "sweep below would clear the tree without looking for it");
+        assertFalse(anonymous.matcher("throw new HarnessBroken(\"x\");").find(),
+                "this form matches an ordinary throw, so it would refuse every honest breakage");
         List<String> misnamed = new ArrayList<>();
         int declarations = 0;
         for (Path root : testRoots()) {
             int inThisRoot = 0;
-            try (var walk = walkOrBreak(root)) {
-                for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
-                    String code = JavaSource.withoutComments(readOrBreak(file));
-                    inThisRoot++;
-                    Matcher declared = subtype.matcher(code);
-                    while (declared.find()) {
-                        declarations++;
-                        if (!declared.group(1).endsWith(suffix)) {
-                            misnamed.add(file + " 「" + declared.group().trim() + "」");
-                        }
+            for (Path file : javaSourcesOrBreak(root)) {
+                // readOrBreak ALREADY strips literal text as well as comments
+                // (JavaSource.withoutLiteralText), so a declaration written INSIDE a string —
+                // a parser fixture, say — never reaches this sweep. Round 26 also called
+                // withoutComments on the result, which reads as if strings were kept and was
+                // the premise of a round-27 finding (Codex P2, premise measured false).
+                String code = readOrBreak(file);
+                inThisRoot++;
+                Matcher declared = subtype.matcher(code);
+                while (declared.find()) {
+                    declarations++;
+                    if (!declared.group(1).endsWith(suffix)) {
+                        misnamed.add(file + " 「" + declared.group().trim() + "」");
                     }
+                }
+                Matcher inline = anonymous.matcher(code);
+                while (inline.find()) {
+                    misnamed.add(file + " 「" + inline.group().replace('\n', ' ').trim() + "」");
                 }
             }
             // PER ROOT, like this class's other sweeps: a total floor passes with every module
@@ -302,10 +334,12 @@ class HarnessBreakageIsNotAFiringTest {
         }
 
         assertTrue(misnamed.isEmpty(),
-                "a subtype of HarnessBroken whose name does NOT end with 「" + suffix + "」. The "
-                        + "control runner decides «the harness broke» by that suffix, so throwing "
-                        + "one of these is scored as a lock firing rather than as the lock being "
-                        + "unable to look at its subject: " + misnamed);
+                "a breakage type whose runtime name does NOT end with 「" + suffix + "」 — either a "
+                        + "subtype declared under another name, or an ANONYMOUS subclass, which "
+                        + "Surefire reports as Outer$1. The control runner decides «the harness "
+                        + "broke» by that suffix, so throwing one of these is scored as a lock "
+                        + "firing rather than as the lock being unable to look at its subject: "
+                        + misnamed);
     }
 
     @Test
@@ -393,7 +427,7 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     @Test
-    @DisplayName("a path's four answers are told apart, and a property that explodes is refused")
+    @DisplayName("a path's four answers are told apart on a real filesystem")
     void theReaderTellsAbsentFromUnreadable() throws Exception {
         // DRIVEN on a real filesystem: three of these four answers could not be reached from this
         // reactor at all, and the round-23 cut classified two of them wrongly while claiming it had
@@ -403,15 +437,6 @@ class HarnessBreakageIsNotAFiringTest {
             Path directory = Files.createDirectory(scratch.resolve("adir"));
             Path file = Files.writeString(scratch.resolve("afile"), "x");
             Path absent = scratch.resolve("nothing-here");
-            Path dangling = scratch.resolve("dangling");
-            try {
-                Files.createSymbolicLink(dangling, scratch.resolve("also-nothing"));
-            } catch (Exception cannotLink) {
-                // A filesystem without symlinks is this lock being unable to look at its subject,
-                // not a finding (round-25 review, subagent P3-4).
-                throw new HarnessBroken("could not create a symlink under " + scratch
-                        + ", so the broken-symlink arm could not be measured", cannotLink);
-            }
 
             assertEquals(Presence.DIRECTORY, classify(directory));
             assertEquals(Presence.NOT_A_DIRECTORY, classify(file),
@@ -452,6 +477,18 @@ class HarnessBreakageIsNotAFiringTest {
                     "a path whose parent denies traversal was not reported as 「could not tell」 — "
                             + "it is the one answer this tree's rule is about");
 
+            // LAST, and created here rather than at the top: a filesystem without symlinks is
+            // this lock being unable to look at its subject, not a finding (round-25 review,
+            // subagent P3-4) — but creating it first took the three arms above down with it on
+            // such a machine, which is the same defect round 26 fixed for the pom fixtures and
+            // left here (round-27 review, subagent P3-3).
+            Path dangling = scratch.resolve("dangling");
+            try {
+                Files.createSymbolicLink(dangling, scratch.resolve("also-nothing"));
+            } catch (Exception cannotLink) {
+                throw new HarnessBroken("could not create a symlink under " + scratch
+                        + ", so the broken-symlink arm could not be measured", cannotLink);
+            }
             assertEquals(Presence.ABSENT, classify(dangling),
                     "a broken symlink: nothing is reachable through it, so absent is the honest "
                             + "answer — the comment that claimed notExists tells it apart from "
@@ -613,20 +650,33 @@ class HarnessBreakageIsNotAFiringTest {
         assertEquals(List.of("real"), requiredModulesIn(promotion),
                 "the same promotion through the required-modules reader");
 
+        // A REAL <profiles> after the mention, or the world where the span is eaten cannot
+        // happen: without a closing </profiles> the non-greedy strip has nothing to match and
+        // every implementation answers the same, right or wrong (round-27 review, subagent P2-2,
+        // who measured this fixture green on all three implementations).
         String cdataNamesProfiles = """
                 <project>
                   <description><![CDATA[turn on <profiles> for the extras]]></description>
                   <modules><module>core</module></modules>
+                  <profiles><profile><modules><module>extra</module></modules></profile></profiles>
                 </project>
                 """;
         assertEquals(List.of("core"), requiredModulesIn(cdataNamesProfiles),
-                "a CDATA section that merely MENTIONS <profiles> swallowed the real <modules>, so "
-                        + "a module that must exist was treated as optional");
+                "a CDATA section that merely MENTIONS <profiles> swallowed the real <modules> up to "
+                        + "the first real </profiles>, so a module that must exist was treated as "
+                        + "optional");
 
+        // A REAL <plugins> too, and AFTER the build's own declaration, so the eaten span covers
+        // something that matters (same finding).
         String cdataNamesPlugins = """
                 <project>
                   <description><![CDATA[configure <plugins> as usual]]></description>
-                  <build><testSourceDirectory>src/locks/java</testSourceDirectory></build>
+                  <build>
+                    <testSourceDirectory>src/locks/java</testSourceDirectory>
+                    <plugins><plugin><configuration>
+                      <testSourceDirectory>fixtures/java</testSourceDirectory>
+                    </configuration></plugin></plugins>
+                  </build>
                 </project>
                 """;
         assertEquals(List.of("src/locks/java", "src/test/java"),
@@ -672,6 +722,49 @@ class HarnessBreakageIsNotAFiringTest {
                         + "valid pom would have been refused for a module nobody declared");
         assertEquals(List.of("real"), requiredModulesIn(doctypeInternalSubset),
                 "the same, through the required-modules reader");
+
+        // The subset ends at the `]` that CLOSES it, not at the first one: a `]` inside an
+        // entity's value ended the declaration early and everything after it — including another
+        // entity's <modules> — came out as structure. Both reviewers measured [ghost, real] on
+        // the round-26 scanner, and the fixture above did not discriminate it because its first
+        // `]` happened to be the real end (round-27 review: Codex P1, subagent P2-1).
+        String doctypeQuotedBracket = """
+                <!DOCTYPE project [<!ENTITY bracket "]"><!ENTITY g "<modules><module>ghost</module></modules>">]>
+                <project>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(doctypeQuotedBracket),
+                "a `]` inside an entity's value ended the internal subset, so the entity after it "
+                        + "was read as structure and a valid pom is refused for a module nobody "
+                        + "declared");
+        assertEquals(List.of("real"), requiredModulesIn(doctypeQuotedBracket),
+                "the same, through the required-modules reader");
+
+        // And a `>` inside a quoted system literal, which is legal XML as well.
+        String doctypeQuotedAngle = """
+                <!DOCTYPE project SYSTEM "urn:<modules><module>ghost</module></modules>">
+                <project>
+                  <modules><module>real</module></modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(doctypeQuotedAngle),
+                "the DOCTYPE's quoted system literal was cut at the first `>` inside it, so the "
+                        + "rest of the literal was read as structure");
+
+        // A property declared WITH an attribute. Round 26 widened the blocks and the element
+        // reader and left the property-declaration pattern strict, so this valid pom was refused
+        // as unresolvable (round-27 review, subagent P3-2, measured).
+        String propertyWithAttribute = """
+                <project>
+                  <properties><tests.root xml:space="preserve">src/locks</tests.root></properties>
+                  <build><testSourceDirectory>${tests.root}/java</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(propertyWithAttribute),
+                "an attribute on a property's own declaration made it read as undeclared, and the "
+                        + "module's test sources were refused rather than read");
 
         String attributesOnTags = """
                 <project>
@@ -830,8 +923,13 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static List<String> scoredTypeNames() throws Exception {
         Path runner = Path.of("../tools/negative-controls/run_negative_controls.py");
-        if (!Files.exists(runner)) {
-            throw new HarnessBroken((Files.notExists(runner) ? "the control runner is not at "
+        // ONE look, read twice: asking Files.exists and then Files.notExists can straddle a
+        // change on disk and print the opposite reason to the one that applies. Both arms break
+        // the harness, so only the WORDING could be wrong — and a wrong reason is what this tree
+        // refuses to print (round-27 review, subagent P3-8).
+        Presence runnerIs = classify(runner);
+        if (runnerIs != Presence.NOT_A_DIRECTORY && runnerIs != Presence.DIRECTORY) {
+            throw new HarnessBroken((runnerIs == Presence.ABSENT ? "the control runner is not at "
                     : "could not tell whether the control runner is at ") + runner.toAbsolutePath()
                     + ", so this sweep cannot know which type names it scores");
         }
@@ -950,8 +1048,10 @@ class HarnessBreakageIsNotAFiringTest {
     private static void collectTestRoots(Path module, String named, List<Path> into,
             java.util.Set<Path> walked) throws Exception {
         Path pom = module.resolve("pom.xml");
-        if (!Files.exists(pom)) {
-            throw new HarnessBroken((Files.notExists(pom) ? "there is no pom at "
+        // ONE look here too (round-27 review, subagent P3-8).
+        Presence pomIs = classify(pom);
+        if (pomIs != Presence.NOT_A_DIRECTORY && pomIs != Presence.DIRECTORY) {
+            throw new HarnessBroken((pomIs == Presence.ABSENT ? "there is no pom at "
                     : "could not tell whether there is a pom at ") + pom.toAbsolutePath()
                     + ", so this sweep cannot know which modules exist");
         }
@@ -1141,8 +1241,14 @@ class HarnessBreakageIsNotAFiringTest {
                     next.add(value);
                     continue;
                 }
-                Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
-                        + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(properties);
+                // Attributes tolerated HERE too. Round 26 widened the blocks and the element
+                // reader and left this one declaration pattern strict, so a property declared as
+                // `<tests.root xml:space="preserve">` read as undeclared and the module's test
+                // sources were refused — an over-refusal of a valid pom (round-27 review,
+                // subagent P3-2, measured).
+                Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1))
+                        + "(?:\\s[^>]*)?>([^<]*)</" + Pattern.quote(property.group(1)) + ">")
+                        .matcher(properties);
                 boolean any = false;
                 while (declared.find()) {
                     next.add(stripBasedir(value.replace(property.group(), declared.group(1).trim())));
@@ -1221,9 +1327,14 @@ class HarnessBreakageIsNotAFiringTest {
 
     /** The walk, or "this sweep could not look" — not an IOException the runner reads as a
      * non-firing (round-26 review, subagent P3-7). */
-    private static java.util.stream.Stream<Path> walkOrBreak(Path root) {
-        try {
-            return Files.walk(root);
+    private static List<Path> javaSourcesOrBreak(Path root) {
+        // The LIST, not the stream: wrapping only `Files.walk(root)` covered opening the root and
+        // left the walk itself uncovered — a directory that becomes unreadable while the tree is
+        // being walked throws UncheckedIOException out of the terminal operation, which is not
+        // this sweep saying "I could not look" (round-27 review, Codex P3). The terminal operation
+        // runs inside the try now, so both failures speak with the same voice.
+        try (var walk = Files.walk(root)) {
+            return walk.filter(f -> f.toString().endsWith(".java")).toList();
         } catch (Exception e) {
             throw new HarnessBroken("could not walk " + root, e);
         }
@@ -1253,9 +1364,7 @@ class HarnessBreakageIsNotAFiringTest {
             }
             return false;
         }
-        try (var walk = walkOrBreak(directory)) {
-            return walk.anyMatch(f -> f.toString().endsWith(".java"));
-        }
+        return !javaSourcesOrBreak(directory).isEmpty();
     }
 
     /**
@@ -1293,7 +1402,7 @@ class HarnessBreakageIsNotAFiringTest {
                     throw new HarnessBroken("this pom has an unbalanced CDATA section, so this "
                             + "sweep cannot tell its text from its structure");
                 }
-                out.append(pom, i + 9, close).toString();
+                out.append(pom, i + 9, close);
                 int from = out.length() - (close - (i + 9));
                 String text = out.substring(from).replace("<", "&lt;").replace(">", "&gt;");
                 out.setLength(from);
@@ -1307,17 +1416,37 @@ class HarnessBreakageIsNotAFiringTest {
                 }
                 i = close + 2;
             } else if (pom.startsWith("<!DOCTYPE", i)) {
-                int subset = pom.indexOf('[', i);
-                int close = pom.indexOf('>', i);
-                if (subset >= 0 && close >= 0 && subset < close) {
-                    int subsetEnd = pom.indexOf(']', subset);
-                    close = subsetEnd < 0 ? -1 : pom.indexOf('>', subsetEnd);
+                // QUOTE-AWARE, and the internal subset tracked rather than ended at the first `]`.
+                // Taking `indexOf(']')` ended the subset inside an entity's VALUE —
+                // `<!ENTITY bracket "]">` — and everything after it, including another entity's
+                // `<modules>`, came out as structure: measured [ghost, real] by both reviewers in
+                // round 27 (Codex P1, subagent P2-1). `>` and `]` inside a quoted literal are
+                // legal XML, so neither can be read without following the quotes.
+                int at = i + "<!DOCTYPE".length();
+                char quote = 0;
+                boolean inSubset = false;
+                while (at < pom.length()) {
+                    char c = pom.charAt(at);
+                    if (quote != 0) {
+                        if (c == quote) {
+                            quote = 0;
+                        }
+                    } else if (c == '"' || c == '\'') {
+                        quote = c;
+                    } else if (c == '[') {
+                        inSubset = true;
+                    } else if (c == ']') {
+                        inSubset = false;
+                    } else if (c == '>' && !inSubset) {
+                        break;
+                    }
+                    at++;
                 }
-                if (close < 0) {
+                if (at >= pom.length()) {
                     throw new HarnessBroken("this pom has a DOCTYPE declaration that never closes, "
                             + "so this sweep cannot tell its text from its structure");
                 }
-                i = close + 1;
+                i = at + 1;
             } else {
                 out.append(pom.charAt(i++));
             }

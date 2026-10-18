@@ -298,27 +298,26 @@ class ReleaseReadinessIsMeasuredTest {
         // total in the document, and there is more than one (3.4.0's 7,881 is recorded further
         // down): if the order ever changed, this bound would read a figure that was never meant
         // to be the current one (round-25 review, subagent P3-5).
-        // `[0-9]{1,3},[0-9]{3}`, not one leading digit: at ten thousand tests the suite's own
-        // figure would stop matching and this bound would fail saying "the document no longer
-        // states it" — a FALSE reason, which is the shape this tree calls a could-not-read
-        // reported as an absence (round-26 review, subagent P3-6).
+        // Any number of thousands groups and ANY year: `[0-9],[0-9]{3}` would stop matching at ten
+        // thousand tests and this bound would then fail saying "the document no longer states it",
+        // a FALSE reason (round-26 review, subagent P3-6); pinning the tail to 「（2026」 meant a
+        // 2027 line could be ADDED beside the 2026 one with the uniqueness check below still
+        // counting one, so the bound would go on reading last year's figure (round-27 review,
+        // Codex P2).
         Matcher stated = Pattern.compile(
-                "全ユニットの最新の実測は \\*\\*([0-9]{1,3},[0-9]{3}) 本 green\\*\\*（2026")
+                "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]")
                 .matcher(read(READINESS));
-        assertTrue(stated.find(), "the readiness document no longer states its latest unit total "
-                + "in the form this bound reads (「全ユニットの最新の実測は **N 本 green**（2026…）");
-        int recordedTotals = 1;
+        List<String> totals = new ArrayList<>();
         while (stated.find()) {
-            recordedTotals++;
+            totals.add(stated.group(1));
         }
-        assertEquals(1, recordedTotals,
-                "the readiness document calls " + recordedTotals + " figures its latest unit "
-                        + "total; this bound reads the first, so there has to be exactly one "
-                        + "(round-26 review, subagent P3-6 — the sibling that reads the sweep's "
-                        + "own control count learned the same thing)");
-        stated.reset();
-        assertTrue(stated.find());
-        int recorded = Integer.parseInt(stated.group(1).replace(",", ""));
+        assertEquals(1, totals.size(),
+                "the readiness document calls " + totals.size() + " figures its latest unit total "
+                        + totals + "; this bound reads one, so there has to be exactly one — zero "
+                        + "means the form it states it in changed (「全ユニットの最新の実測は "
+                        + "**N 本 green**（20…）), and two means a stale line was left beside the "
+                        + "new one (round-26 review, subagent P3-6; round-27 review, Codex P2)");
+        int recorded = Integer.parseInt(totals.get(0).replace(",", ""));
         int floor = declared - possiblyExcluded;
         assertTrue(recorded >= floor,
                 "the readiness document records " + recorded + " unit tests; the sources "
