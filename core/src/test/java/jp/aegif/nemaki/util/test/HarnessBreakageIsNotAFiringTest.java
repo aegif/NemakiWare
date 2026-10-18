@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.util.test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -78,22 +79,18 @@ import org.junit.jupiter.api.Test;
  * how a meta-test checks that a lock fires. A {@code catch} form was swept for one round and only
  * ever refused those legitimate shapes (round-17 review: both reviewers).
  *
- * <p>Six limits, stated rather than implied. (1) The modules outside {@code core} have no
- * {@code HarnessBroken} on their test path, so a lock there can only avoid producing an assertion
- * type — its breakage reads to the runner as "did not fire" rather than being excluded by name.
- * (2) Saying breakage through an ASSERTION METHOD ({@code assertTrue(found > 0, "X is gone")})
- * cannot be swept at all: it is indistinguishable from an ordinary assertion, two predicates
- * measured it as 50 and 404 occurrences, and neither is the set. That half is residual R191.
- * (3) The forms read source text, so a type hidden from it is not seen: {@code var failure = …},
- * a helper that RETURNS one, {@code throw (AssertionError) t}, a collection of them.
- * (4) The reflection rule is per FILE — it requires a real {@code InvocationTargetException}
- * clause to exist, not that the clause sits around the right call; and a file whose reflection is
- * only FIXTURE (correctly converting {@code ReflectiveOperationException} to breakage) has to add
- * an explicit {@code InvocationTargetException} arm — saying breakage there too — to satisfy it.
- * (5) There is no exception path: a lock that genuinely needs to build one of those types cannot,
- * and would have to be argued in the residual. Today nothing needs to.
- * (6) The runner also scores nine PROSE markers ("Wanted but not invoked", …). Those are not
- * types; a lock that prints one in a message is scored as firing and no sweep sees it.
+ * <p>Two limits a lock's author has to know. (1) The modules outside {@code core} have no
+ * {@code HarnessBroken} on their test path, so a lock there can only avoid producing an
+ * assertion type — its breakage reads to the runner as "did not fire" rather than being
+ * excluded by name. (2) Saying breakage through an ASSERTION METHOD
+ * ({@code assertTrue(found > 0, "X is gone")}) cannot be swept at all: it is
+ * indistinguishable from an ordinary assertion, two predicates measured it as 50 and 404
+ * occurrences, and neither is the set. That half is residual R191.
+ *
+ * <p>The FULL list of limits lives in one place — the R189 row of
+ * {@code docs/design/fail-closed-reads.md} — and is deliberately not repeated here with a
+ * count: two consecutive rounds found this javadoc stating a number the canon's list had
+ * already outgrown (round-19 review, subagent P2-4).
  *
  * <p>And one cost of reading the runner's list: it is a DETECTION list being used as a
  * PROHIBITION list. A CamelCase marker added over there instantly forbids {@code new X(…)} in all
@@ -157,13 +154,11 @@ class HarnessBreakageIsNotAFiringTest {
         List<Path> roots = testRoots();
         List<Pattern> forms = scoredForms();
         List<String> offenders = new ArrayList<>();
-        int filesRead = 0;
         for (Path root : roots) {
             int inThisRoot = 0;
             try (var walk = Files.walk(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
                     String code = readOrBreak(file);
-                    filesRead++;
                     inThisRoot++;
                     for (Pattern form : forms) {
                         Matcher hit = form.matcher(code);
@@ -188,8 +183,9 @@ class HarnessBreakageIsNotAFiringTest {
                         + "harness is recorded as the guard tripping. Say it with HarnessBroken "
                         + "when the lock could not look at its subject, assert it with the "
                         + "assertion library when the production broke its promise, and write "
-                        + "`assertTrue`/`assertNotNull` instead of `assert`. The rule and its six "
-                        + "limits are in this class's javadoc: " + offenders);
+                        + "`assertTrue`/`assertNotNull` instead of `assert`. The rule is in this "
+                        + "class's javadoc and the limits in the canon's R189 row: "
+                        + offenders);
     }
 
     @Test
@@ -263,7 +259,11 @@ class HarnessBreakageIsNotAFiringTest {
                 "        assert found > 0 : \"the view answered nothing\";",
                 "        if (x) assert found > 0 : \"the view answered nothing\";",
                 "        assert m.equals(Map.of(\"a\", new int[]{1})) : \"the shape moved\";",
-                "        .orElseThrow(AssertionError::new);")) {
+                "        .orElseThrow(AssertionError::new);",
+                "        .orElseThrow(MySpecialAssertionError::new);",
+                "        assert(found > 0) : \"the view answered nothing\";",
+                "        assert!flag : \"the view answered nothing\";",
+                "        throw new @Nullable AssertionError(\"could not read\");")) {
             assertTrue(forms.stream().anyMatch(f -> f.matcher(slips).find()),
                     "this sweep does not see 「" + slips + "」, and the runner would score the "
                             + "harness breaking as a control firing");
@@ -284,7 +284,9 @@ class HarnessBreakageIsNotAFiringTest {
                 "assertTrue(found > 0, \"the view answered nothing\");",
                 "AssertionError thrown = Assertions.assertThrows(AssertionError.class, lock::run);",
                 "AssertionError thrown = org.junit.jupiter.api.Assertions.assertThrows(T.class, r);",
-                "assertThat(found).isGreaterThan(0);")) {
+                "assertThat(found).isGreaterThan(0);",
+                "AssertionError t = Assertions.<AssertionError>assertThrows(E.class, lock::run);",
+                "assertTrue(found > 0);")) {
             assertTrue(forms.stream().noneMatch(f -> f.matcher(fine).find()),
                     "this sweep calls 「" + fine + "」 an offender, so the rule it enforces cannot "
                             + "be followed");
@@ -309,6 +311,62 @@ class HarnessBreakageIsNotAFiringTest {
                 "the sweep does not read this module's own tests. 「contains(core/src/test/java)」 "
                         + "was the first form of this check and evidence-verifier-core satisfies "
                         + "it (round-17 review, subagent P3-1): " + roots);
+    }
+
+    @Test
+    @DisplayName("the pom readers take the union, and a comment that mentions a tag does not eat one")
+    void thePomReadersTakeTheUnion() {
+        // DRIVEN with synthetic poms. Three arms of this reader were added over two rounds and
+        // none of them could be reached by this tree's own poms (no module declares a
+        // testSourceDirectory, none nests a reactor), so they were asserted about rather than
+        // measured — the shape this tree calls an unreachable arm (round-19 review, subagent P3-3).
+        String commentMentionsModules = """
+                <project>
+                  <modules>
+                    <module>a</module>
+                    <!-- the optional ones live in <modules> inside <profiles> below -->
+                    <module>b</module>
+                  </modules>
+                  <profiles><profile><modules><module>optional</module></modules></profile></profiles>
+                </project>
+                """;
+        assertEquals(List.of("a", "b", "optional"), modulesIn(commentMentionsModules),
+                "a comment that merely mentions a tag changed which modules this sweep reads. The "
+                        + "round-18 form deleted everything from the comment to the real "
+                        + "</profiles>, which dropped real <module> lines in silence");
+
+        String profileOnly = """
+                <project>
+                  <profiles><profile><modules><module>extra</module></modules></profile></profiles>
+                </project>
+                """;
+        assertEquals(List.of("extra"), modulesIn(profileOnly),
+                "a module declared only inside a profile is not read. For a SWEEP, reading one the "
+                        + "active build would skip costs nothing and missing one is the defect");
+
+        String property = """
+                <project>
+                  <properties><tests.root>${project.basedir}/src/locks/java</tests.root></properties>
+                  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                testRootCandidates(property, "synthetic"),
+                "a property reference the pom itself declares is not resolved, and the round-18 "
+                        + "form refused the whole build for it");
+
+        String unresolvable = """
+                <project>
+                  <build><testSourceDirectory>${from.the.parent}</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/test/java"), testRootCandidates(unresolvable, "synthetic"),
+                "an unresolvable property drops the default too, so a module keeping its tests in "
+                        + "the usual place would not be read");
+
+        assertEquals(List.of("src/test/java"), testRootCandidates("<project/>", "synthetic"),
+                "the default is not a candidate, which is where every module of this build keeps "
+                        + "its tests");
     }
 
     /** Read it, or say the sweep could not look — not that it looked and found nothing. */
@@ -347,17 +405,25 @@ class HarnessBreakageIsNotAFiringTest {
         }
         String tuple = code.substring(at, closes);
         List<String> names = new ArrayList<>();
-        // BOTH quote styles and a qualified name reduced to its simple name: the runner's own
-        // readers use ["'] and this sweep undercounted by exactly that once already (round-18
-        // review, Codex P1).
+        // BOTH quote styles and a qualified name reduced to its simple name. The runner's own
+        // readers use ["'], and counting control ids with one of the two is how THIS tree's
+        // documents got two control counts wrong (that was a person counting, not this function —
+        // round-19 review, subagent P3-6). Here it is defence against a marker added the other
+        // way (round-18 review, Codex P1).
         Matcher marker = Pattern.compile("[\"']((?:[A-Za-z_][\\w]*\\.)*)([A-Z][A-Za-z0-9]+)[\"']")
                 .matcher(tuple);
         while (marker.find()) {
             names.add(marker.group(2));
         }
-        if (names.size() < 5) {
+        if (!names.contains("AssertionError") || !names.contains("AssertionFailedError")) {
+            // Not a size: those two are what every assertion in this tree lands as, so a tuple
+            // read without them was not read. A size floor passed a truncated list (a prose
+            // marker containing "))" cuts the span, and the self-test below reads the same cut
+            // list, so the two agree with each other and nobody notices — round-19 review,
+            // subagent P3-7).
             throw new HarnessBroken("the runner's marker tuple yielded " + names
-                    + "; it has more type names than that, so it was not read");
+                    + ", which does not include AssertionError and AssertionFailedError, so it "
+                    + "was not read");
         }
         return names;
     }
@@ -369,9 +435,15 @@ class HarnessBreakageIsNotAFiringTest {
         return List.of(
                 // BUILT, wherever it is built: `orElseThrow(() -> new AssertionError(…))` throws
                 // one without the word `throw` next to it, and five locks were written that way.
-                Pattern.compile("new\\s+" + qualifier + "(?:" + names + ")\\s*\\("),
+                Pattern.compile("new\\s+(?:@[\\w.]+\\s+)*" + qualifier + "(?:" + names
+                        + ")\\s*\\("),
                 // the constructor as a METHOD REFERENCE — `orElseThrow(AssertionError::new)` also
                 // builds one (round-18 review, subagent P3-2).
+                // No left boundary: the runner matches the NAME as a substring, so a type
+                // whose own name ends with one of these (MySpecialAssertionError) scores
+                // just the same. A boundary was added for one round on the reading that
+                // such a name is an over-refusal — IH5 fired nothing and taught the
+                // opposite (round-19 review, subagent P3-1, taken too far by me).
                 Pattern.compile(qualifier + "(?:" + names + ")\\s*::\\s*new"),
                 // held in a variable or field, which is the route to `throw it;` — but NOT the
                 // meta-test's `AssertionError thrown = assertThrows(…)`, which asserts rather than
@@ -381,29 +453,33 @@ class HarnessBreakageIsNotAFiringTest {
                 // P3-1).
                 Pattern.compile("(?:^|[\\s(,])" + qualifier + "(?:" + names
                         + ")\\s+[A-Za-z_$][\\w$]*\\s*(?:;|=(?!\\s*" + qualifier
-                        + "assertThrows))"),
+                        + "(?:<[^>]*>\\s*)?assertThrows))"),
                 // the `assert` STATEMENT: the JVM builds a java.lang.AssertionError and surefire
                 // enables assertions by default, so this is a firing with no `new` in sight
                 // (round-17 review, subagent P2-2; eight of them were in ConnectionTestGroup).
                 // Not anchored to the line start, and braces inside the expression are allowed —
                 // `if (x) assert y;` and `assert m.equals(Map.of("a", new int[]{1}));` are both
                 // assert statements (round-18 review: Codex P1, subagent P3-2).
-                Pattern.compile("(?:^|[\\s)}{;])assert\\s+[^;]*;"));
+                Pattern.compile("(?:^|[\\s)}{;])assert(?![\\w$])[^;]*;"));
     }
 
     /**
      * The test roots of every module this build has, read from the build itself.
      *
      * <p>Not a hand-written list: the first cut of this sweep hard-coded one directory and so never
-     * read the two verifier modules, where 224 controls run their tests. A module's own
-     * {@code <testSourceDirectory>} is honoured and nested reactors are followed, so a module that
-     * keeps its tests elsewhere is read rather than silently skipped (round-17 review, Codex P2) —
-     * and a module that has a {@code src/test} tree this method did not choose is refused rather
-     * than passed over.
+     * read the two verifier modules, where 224 controls run their tests.
+     *
+     * <p>It takes the UNION of everything a pom names — modules declared in a profile included,
+     * and both a declared {@code <testSourceDirectory>} and the default {@code src/test/java} — and
+     * adds every candidate that exists. For a sweep, reading a directory the active build would
+     * skip costs nothing, while missing one is the whole defect; the round-18 cut filtered profiles
+     * out and so could lose a module's tests in silence, and the regex that did the filtering ate
+     * real {@code <module>} lines when a COMMENT mentioned profiles (round-19 review: Codex P1,
+     * subagent P2-7).
      */
     private static List<Path> testRoots() throws Exception {
         List<Path> roots = new ArrayList<>();
-        collectTestRoots(Path.of(".."), roots);
+        collectTestRoots(Path.of(".."), "the reactor", roots);
         if (roots.size() < 2) {
             throw new HarnessBroken("the reactor pom yielded " + roots.size() + " test roots "
                     + roots + "; this build has more than that, so the pom was not read");
@@ -411,66 +487,107 @@ class HarnessBreakageIsNotAFiringTest {
         return roots;
     }
 
-    private static void collectTestRoots(Path reactor, List<Path> into) throws Exception {
-        Path pom = reactor.resolve("pom.xml");
+    private static void collectTestRoots(Path module, String named, List<Path> into)
+            throws Exception {
+        Path pom = module.resolve("pom.xml");
         if (!Files.exists(pom)) {
             throw new HarnessBroken("there is no pom at " + pom.toAbsolutePath()
                     + ", so this sweep cannot know which modules exist");
         }
-        String text = withoutProfiles(Files.readString(pom));
-        Matcher modules = Pattern.compile("<module>([^<]+)</module>").matcher(text);
-        while (modules.find()) {
-            Path module = reactor.resolve(modules.group(1).trim());
-            if (!Files.isDirectory(module)) {
-                throw new HarnessBroken("the reactor names module " + modules.group(1)
-                        + " and there is no such directory, so this sweep cannot say it read it");
-            }
-            Path modulePom = module.resolve("pom.xml");
-            String moduleText = Files.exists(modulePom)
-                    ? withoutProfiles(Files.readString(modulePom)) : "";
+        String text = Files.readString(pom);
 
-            // An aggregator can have BOTH its own tests and modules of its own, so take the root
-            // first and recurse after. The first cut did `continue` on a nested reactor, which
-            // skipped the aggregator's own tests in silence and made this method's own refusal
-            // below unreachable for that case (round-18 review: Codex P2, subagent P3-4).
-            Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
-                    .matcher(moduleText);
-            Path tests;
-            if (declared.find()) {
-                String raw = declared.group(1).trim();
-                String resolved = raw.replace("${project.basedir}/", "").replace("${basedir}/", "");
-                if (resolved.contains("${")) {
-                    throw new HarnessBroken("module " + modules.group(1) + " declares its test "
-                            + "sources as 「" + raw + "」 and this sweep cannot resolve that "
-                            + "property, so it will not claim to have read them");
-                }
-                tests = module.resolve(resolved);
-            } else {
-                tests = module.resolve("src/test/java");
-            }
+        // This module's own tests, whichever directory it keeps them in.
+        boolean took = false;
+        for (String candidate : testRootCandidates(text, named)) {
+            Path tests = module.resolve(candidate);
             if (Files.isDirectory(tests)) {
                 into.add(tests);
-            } else if (Files.isDirectory(module.resolve("src/test"))) {
-                throw new HarnessBroken("module " + modules.group(1) + " has a src/test tree and "
-                        + "this sweep chose " + tests + ", which does not exist — its tests would "
-                        + "be silently skipped");
+                took = true;
             }
-            if (moduleText.contains("<modules>")) {
-                collectTestRoots(module, into);
+        }
+        if (!took && containsJavaSources(module.resolve("src/test"))) {
+            throw new HarnessBroken("module " + named + " keeps .java files under "
+                    + module.resolve("src/test") + " and none of the directories this sweep "
+                    + "knows about (" + testRootCandidates(text, named) + ") exist — its tests "
+                    + "would be silently skipped");
+        }
+
+        for (String child : modulesIn(text)) {
+            Path childPath = module.resolve(child);
+            if (!Files.isDirectory(childPath)) {
+                throw new HarnessBroken("the pom of " + named + " names module " + child
+                        + " and there is no such directory, so this sweep cannot say it read it");
             }
+            collectTestRoots(childPath, child, into);
         }
     }
 
     /**
-     * The pom with its {@code <profiles>} removed.
+     * Every {@code <module>} a pom names, profiles included.
      *
-     * <p>A {@code <modules>} or {@code <testSourceDirectory>} inside a profile applies only when
-     * that profile is active, and this sweep has no idea which are. Reading them anyway made it
-     * recurse into modules the build is not using and pick a test directory the build does not use
-     * (round-18 review, Codex P2). What is left is the unconditional configuration, which is what
-     * "every module this build has" means for the gate this sweep runs in.
+     * <p>Comments go first: {@code <!-- the <modules> below … -->} would otherwise contribute a
+     * module that does not exist and this sweep would refuse the whole build.
      */
-    private static String withoutProfiles(String pom) {
-        return pom.replaceAll("(?s)<profiles>.*?</profiles>", "");
+    static List<String> modulesIn(String pom) {
+        List<String> modules = new ArrayList<>();
+        Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(withoutXmlComments(pom));
+        while (m.find()) {
+            modules.add(m.group(1).trim());
+        }
+        return modules;
+    }
+
+    /**
+     * The directories a pom's tests could be in: every {@code <testSourceDirectory>} it declares
+     * (profiles included) plus Maven's default.
+     *
+     * <p>A property reference is resolved against the pom's own {@code <properties>} — one pass,
+     * which is what a build file of this shape uses. One that still does not resolve is NOT a
+     * reason to refuse the build: the default is tried as well, and the refusal above only fires
+     * when .java files are sitting somewhere this sweep did not look (round-19 review, Codex P2).
+     */
+    static List<String> testRootCandidates(String pom, String named) {
+        String text = withoutXmlComments(pom);
+        List<String> candidates = new ArrayList<>();
+        Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
+                .matcher(text);
+        while (declared.find()) {
+            String resolved = resolveProperties(declared.group(1).trim(), text);
+            if (!resolved.contains("${")) {
+                candidates.add(resolved);
+            }
+        }
+        candidates.add("src/test/java");
+        return candidates;
+    }
+
+    /** {@code ${project.basedir}} and friends away, and one pass of the pom's own properties. */
+    private static String resolveProperties(String raw, String pom) {
+        String value = raw.replace("${project.basedir}/", "").replace("${basedir}/", "")
+                .replace("${pom.basedir}/", "").replace("${project.basedir}", "")
+                .replace("${basedir}", "");
+        Matcher property = Pattern.compile("\\$\\{([\\w.\\-]+)\\}").matcher(value);
+        while (property.find()) {
+            Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
+                    + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(pom);
+            if (declared.find()) {
+                value = value.replace(property.group(), declared.group(1).trim())
+                        .replace("${project.basedir}/", "").replace("${basedir}/", "");
+            }
+        }
+        return value;
+    }
+
+    private static boolean containsJavaSources(Path directory) throws Exception {
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        try (var walk = Files.walk(directory)) {
+            return walk.anyMatch(f -> f.toString().endsWith(".java"));
+        }
+    }
+
+    private static String withoutXmlComments(String pom) {
+        return pom.replaceAll("(?s)<!--.*?-->", "");
     }
 }

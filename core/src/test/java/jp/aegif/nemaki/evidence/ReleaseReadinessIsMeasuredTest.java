@@ -501,6 +501,39 @@ class ReleaseReadinessIsMeasuredTest {
      * had been put back).
      */
     @Test
+    @DisplayName("the canon's count of the sweep's own controls is the runner's")
+    void theSweepsOwnControlCountIsTheRunners() throws IOException {
+        // Written because the figure was wrong three rounds running (6 → 7 → 9): each time the
+        // controls added in the SAME batch were left out, and twice the count came from a grep
+        // that only knew single quotes while the runner reads both. Discipline did not stop it.
+        String runner = read(RUNNER);
+        String canon = read(CANON);
+
+        SortedSet<String> naming = new TreeSet<>();
+        Matcher control = Pattern.compile("(?s)id=[\"']([A-Z0-9]+)[\"'].*?test=[\"']([^\"']+)[\"']")
+                .matcher(runner);
+        while (control.find()) {
+            if ("HarnessBreakageIsNotAFiringTest".equals(control.group(2))) {
+                naming.add(control.group(1));
+            }
+        }
+        assertFalse(naming.isEmpty(),
+                "no control names the sweep at all, so this reader is measuring nothing");
+
+        Matcher stated = Pattern.compile(
+                "\\*\\*掃き取り自身を名指す control は (\\d+) 本\\*\\*（([^）]+)）").matcher(canon);
+        assertTrue(stated.find(),
+                "the canon no longer states how many controls name the sweep itself, which is the "
+                        + "figure that went wrong three rounds running");
+        assertEquals(naming.size(), Integer.parseInt(stated.group(1)),
+                "the canon says " + stated.group(1) + " controls name the sweep and the runner has "
+                        + naming.size() + ": " + naming);
+        assertEquals(naming, new TreeSet<>(List.of(stated.group(2).split("・"))),
+                "the canon lists different control ids than the runner declares for the sweep: "
+                        + naming);
+    }
+
+    @Test
     @DisplayName("the canon's gap count is the runner's")
     void theCanonsGapCountIsTheRunners() throws IOException {
         String runner = read(RUNNER);

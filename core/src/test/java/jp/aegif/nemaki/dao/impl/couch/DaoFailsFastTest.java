@@ -75,20 +75,30 @@ class DaoFailsFastTest {
         if (thrown[0] != null) {
             // TWO things reach here and this helper cannot tell them apart.
             //
-            // (a) The production throwing where it promised an answer: five tests in this class
+            // (a) The production throwing where it promised an answer: SIX tests in this class
             //     call it directly inside the worker and feed the result to an assertion
             //     (anEmptyFolderIsStillEmpty, anEmptyFolderStillCountsZero, anEmptyPageIsStillEmpty,
-            //     anUndecodableChildIsCounted, anAnsweredEmptyReduceStillCountsZero — the
-            //     over-throw controls), so the assertion is never evaluated.
+            //     anUndecodableChildIsCounted, anAnsweredEmptyReduceStillCountsZero and
+            //     aReadableFolderCountsNothingUnreadable — the over-throw controls), so the
+            //     assertion is never evaluated.
             // (b) This test's own fixture throwing: the mocks are built and stubbed INSIDE the
             //     worker too, so a broken stub or an NPE in setup lands in the same place.
             //
             // Round 16 called the arm breakage, round 17 called it the promise, and each round a
             // reviewer produced the other half. So it claims NEITHER: the throwable is carried out
-            // as it stands, with no assertion type and no HarnessBroken, which the runner scores
-            // as "did not fire" and a reader sees with the original cause attached. Narrowing each
-            // worker to the production call — the fix that would let this arm decide — is residual
-            // R193.
+            // as it stands, with no assertion type and no HarnessBroken.
+            //
+            // What that buys is NOT a different verdict. The runner treats this exactly as it
+            // treats HarnessBroken — both reach "not an assertion", and a control declared on this
+            // class would print FIRED FOR THE WRONG REASON either way (round-19 review, subagent
+            // P2-1, measured against run_negative_controls.py). The difference is the sentence a
+            // reader gets: this one does not tell them which side broke. And the verdict is not
+            // even guaranteed: the runner's assertion check is a plain substring search over the
+            // whole failure element, so a carried cause whose own text contains one of its markers
+            // would read as FIRED (its HarnessBroken check, by contrast, looks at the type prefix).
+            //
+            // Narrowing each worker to the production call — the fix that would let this arm
+            // decide — is residual R193.
             //
             // The sibling helper in CouchEvidenceLedgerStoreTest does say HarnessBroken, and the
             // reason is its CALLER, not this shape: its one caller wraps the production call in
