@@ -497,16 +497,19 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time the
      * controls added in the SAME batch were left out, and twice the count came from a grep that
      * only knew single quotes while the runner reads both. Discipline did not stop it; this does.
-     * The javadoc above belongs to the gap-count lock further down — inserting this method before
-     * that declaration orphaned it for one round (round-20 review, subagent P2-1; the fourth time
-     * this tree has made that edit).
+     * This javadoc is this method's own. The gap-count lock further down has its own again:
+     * inserting this method before that declaration orphaned the one that was there for a round
+     * (round-20 review, subagent P2-1; the fourth time this tree has made that edit).
      */
     @Test
     @DisplayName("the canon's count of the sweep's own controls is the runner's")
     void theSweepsOwnControlCountIsTheRunners() throws IOException {
-        // Written because the figure was wrong three rounds running (6 → 7 → 9): each time the
-        // controls added in the SAME batch were left out, and twice the count came from a grep
-        // that only knew single quotes while the runner reads both. Discipline did not stop it.
+        // Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time
+        // the controls added in the SAME batch were left out, and twice the count came from a grep
+        // that only knew single quotes while the runner reads both. What this stops is the figure
+        // IN THE CANON drifting; the records in v3.4.1-plan.md are read by nothing, and two stale
+        // copies sat there for a round (round-21 review, subagent P2-4 — "discipline did not stop
+        // it; this does" was stronger than the lock).
         String runner = read(RUNNER);
         String canon = read(CANON);
 

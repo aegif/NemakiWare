@@ -333,6 +333,20 @@ class HarnessBreakageIsNotAFiringTest {
                   <profiles><profile><modules><module>optional</module></modules></profile></profiles>
                 </project>
                 """;
+        String commentedOutModule = """
+                <project>
+                  <modules>
+                    <module>real</module>
+                    <!-- <module>ghost</module> -->
+                  </modules>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(commentedOutModule),
+                "a module commented OUT inside <modules> was taken, and this sweep would then "
+                        + "refuse the whole build for a directory nobody declared. The "
+                        + "comment-mentions-the-tag fixture below stopped discriminating this once "
+                        + "the reader was scoped to <modules> (round-21 review, subagent P3)");
+
         assertEquals(List.of("a", "b", "optional"), modulesIn(commentMentionsModules),
                 "a comment that merely mentions a tag changed which modules this sweep reads. The "
                         + "round-18 form deleted everything from the comment to the real "
@@ -454,11 +468,10 @@ class HarnessBreakageIsNotAFiringTest {
             // BOTH. The two names are the tuple's FIRST line, so every cut below line one leaves
             // them in place and a name check alone passes a truncated list — weaker than the size
             // floor it replaced (round-20 review, subagent P2-6, measured).
-            // Not a size: those two are what every assertion in this tree lands as, so a tuple
-            // read without them was not read. A size floor passed a truncated list (a prose
-            // marker containing "))" cuts the span, and the self-test below reads the same cut
-            // list, so the two agree with each other and nobody notices — round-19 review,
-            // subagent P3-7).
+            // Those two are what every assertion in this tree lands as, so a tuple read without
+            // them was not read; and the size is what catches a span cut after them (the tuple's
+            // first line is exactly those two). Round 19 replaced the size with the names, which
+            // was weaker; round 20 asked for both (round-19 subagent P3-7, round-20 subagent P2-6).
             throw new HarnessBroken("the runner's marker tuple yielded " + names
                     + ", which does not include AssertionError and AssertionFailedError, so it "
                     + "was not read");
@@ -517,9 +530,12 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static List<Path> testRoots() throws Exception {
         List<Path> roots = new ArrayList<>();
-        walked.clear();
-        walked.add(Path.of("..").toRealPath());
-        collectTestRoots(Path.of(".."), "the reactor", roots);
+        // The visited set travels with the walk. It was static and cleared on entry, which two
+        // tests running in parallel would have shared — the loser walking fewer modules and the
+        // sweep clearing them in silence (round-21 review, subagent P3).
+        java.util.Set<Path> walked = new java.util.HashSet<>();
+        walked.add(realPathOrBreak(Path.of("..")));
+        collectTestRoots(Path.of(".."), "the reactor", roots, walked);
         if (roots.size() < 2) {
             throw new HarnessBroken("the reactor pom yielded " + roots.size() + " test roots "
                     + roots + "; this build has more than that, so the pom was not read");
@@ -527,16 +543,14 @@ class HarnessBreakageIsNotAFiringTest {
         return roots;
     }
 
-    private static final java.util.Set<Path> walked = new java.util.HashSet<>();
-
-    private static void collectTestRoots(Path module, String named, List<Path> into)
-            throws Exception {
+    private static void collectTestRoots(Path module, String named, List<Path> into,
+            java.util.Set<Path> walked) throws Exception {
         Path pom = module.resolve("pom.xml");
         if (!Files.exists(pom)) {
             throw new HarnessBroken("there is no pom at " + pom.toAbsolutePath()
                     + ", so this sweep cannot know which modules exist");
         }
-        String text = Files.readString(pom);
+        String text = readTextOrBreak(pom);
 
         // This module's own tests, whichever directory it keeps them in.
         boolean took = false;
@@ -563,11 +577,10 @@ class HarnessBreakageIsNotAFiringTest {
             // `<module>.</module>` is legal text and would recurse for ever, and the same module
             // named both in <modules> and in a profile would walk the tree twice (round-20
             // review, subagent P3). Canonical paths, visited once.
-            Path canonical = childPath.toRealPath();
-            if (!walked.add(canonical)) {
+            if (!walked.add(realPathOrBreak(childPath))) {
                 continue;
             }
-            collectTestRoots(childPath, child, into);
+            collectTestRoots(childPath, child, into, walked);
         }
     }
 
@@ -597,10 +610,12 @@ class HarnessBreakageIsNotAFiringTest {
      * The directories a pom's tests could be in: every {@code <testSourceDirectory>} it declares
      * (profiles included) plus Maven's default.
      *
-     * <p>A property reference is resolved against the pom's own {@code <properties>} — one pass,
-     * which is what a build file of this shape uses. One that still does not resolve is NOT a
-     * reason to refuse the build: the default is tried as well, and the refusal above only fires
-     * when .java files are sitting somewhere this sweep did not look (round-19 review, Codex P2).
+     * <p>A property reference is resolved against the pom's own {@code <properties>}, every
+     * reference and every value each is given. One that STILL does not resolve — a parent pom's
+     * property, most likely — makes this method REFUSE: the sweep cannot name the directory, so it
+     * must not go on to say it read that module. Round 19 let it fall through to the default, which
+     * traded an over-refusal for a fail-open; round 20 restored the refusal and left this paragraph
+     * describing the fall-through (round-21 review, subagent P2-1).
      */
     static List<String> testRootCandidates(String pom, String named) {
         String text = withoutXmlComments(pom);
@@ -619,8 +634,9 @@ class HarnessBreakageIsNotAFiringTest {
                     // dropping it in favour of the default was trading an over-refusal for a
                     // fail-open).
                     throw new HarnessBroken("module " + named + " declares its test sources as 「"
-                            + declared.group(1).trim() + "」 and this pom does not declare that "
-                            + "property, so this sweep cannot say which directory it read");
+                            + declared.group(1).trim() + "」 and this sweep could not resolve 「"
+                            + resolved + "」 from this pom's own properties, so it cannot say which "
+                            + "directory it read");
                 }
                 candidates.add(resolved);
             }
@@ -638,30 +654,72 @@ class HarnessBreakageIsNotAFiringTest {
      * subagent P3).
      */
     private static List<String> resolveProperties(String raw, String pom) {
-        List<String> values = List.of(stripBasedir(raw));
-        Matcher property = Pattern.compile("\\$\\{([\\w.\\-]+)\\}").matcher(values.get(0));
-        if (!property.find()) {
-            return values;
-        }
-        List<String> resolved = new ArrayList<>();
         StringBuilder properties = new StringBuilder();
         Matcher block = Pattern.compile("(?s)<properties>(.*?)</properties>").matcher(pom);
         while (block.find()) {
             properties.append(block.group(1));
         }
-        Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
-                + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(properties);
-        while (declared.find()) {
-            resolved.add(stripBasedir(values.get(0).replace(property.group(),
-                    declared.group(1).trim())));
+
+        // EVERY reference, each of them possibly declared more than once (profiles). Round 20
+        // resolved the FIRST reference only and then refused anything still holding a `${`, so
+        // `${src.root}/${flavour}/java` — fully declared in the same pom — was refused with a
+        // message saying the pom does not declare the property (round-21 review, subagent P2-2,
+        // measured against the round-19 behaviour).
+        List<String> values = new ArrayList<>(List.of(stripBasedir(raw)));
+        for (int pass = 0; pass < 10; pass++) {
+            List<String> next = new ArrayList<>();
+            boolean moved = false;
+            for (String value : values) {
+                Matcher property = Pattern.compile("\\$\\{([\\w.\\-]+)\\}").matcher(value);
+                if (!property.find()) {
+                    next.add(value);
+                    continue;
+                }
+                Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
+                        + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(properties);
+                boolean any = false;
+                while (declared.find()) {
+                    next.add(stripBasedir(value.replace(property.group(), declared.group(1).trim())));
+                    any = true;
+                    moved = true;
+                }
+                if (!any) {
+                    next.add(value);        // nobody declares it; the caller decides what that means
+                }
+            }
+            values = next;
+            if (!moved) {
+                break;
+            }
         }
-        return resolved.isEmpty() ? values : resolved;
+        return values;
     }
 
     private static String stripBasedir(String value) {
         return value.replace("${project.basedir}/", "").replace("${basedir}/", "")
                 .replace("${pom.basedir}/", "").replace("${project.basedir}", "")
                 .replace("${basedir}", "").replace("${pom.basedir}", "");
+    }
+
+    /** The file's text, or "this sweep could not look" — a pom is not Java, so it does not go
+     * through the literal-stripping reader. */
+    private static String readTextOrBreak(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (Exception e) {
+            throw new HarnessBroken("could not read " + file + " while walking the reactor", e);
+        }
+    }
+
+    /** The real path, or "this sweep could not look" — not an IOException the runner reads as a
+     * non-firing (round-21 review, subagent P3). */
+    private static Path realPathOrBreak(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (Exception e) {
+            throw new HarnessBroken("could not resolve " + path + " to a real path while walking "
+                    + "the reactor", e);
+        }
     }
 
     private static boolean containsJavaSources(Path directory) throws Exception {
