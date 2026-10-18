@@ -24652,8 +24652,8 @@ CONTROLS = [
         id='JA5',
         what="the readiness document's latest-measurement line names a round other than the batch plan's newest recorded run — the provenance slipped a round behind four times (rounds 20, 21, 29 and 30) because the bound beside it reads only the NUMBER, which a round that adds no test does not move (round-30 review: subagent P2-2, Codex P3)",
         file='docs/design/v3.4-release-readiness.md',
-        find='本 green**（2026-10-19 完了、**確認 34 巡目**',
-        replace='本 green**（2026-10-19 完了、**確認 33 巡目**',
+        find='本 green**（2026-10-19 完了、**確認 35 巡目**',
+        replace='本 green**（2026-10-19 完了、**確認 34 巡目**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
@@ -24714,16 +24714,16 @@ CONTROLS = [
     ),
     dict(
         id='JG5',
-        what="the reserved-name reader stops reading an annotation before a supertype, so an "
-             "honest `class RefusalHarnessBroken extends @A HarnessBroken { }` — javac accepts "
-             "it — is refused as if it extended nothing. (Only the honest arm flips: without the "
-             "annotation skipped the name reads empty, which still does not end with the suffix, "
-             "so the violating fixtures stay violations — round-33 review, subagent P3-1 "
-             "corrected this control's own description)",
+        what="the annotation walk stops reading a DOTTED annotation name, so an honest "
+             "`class RefusalHarnessBroken extends @a.b.C HarnessBroken { }` reads as extending "
+             "nothing and is refused. The earlier form of this control emptied pastAnnotations "
+             "instead, which made the outer walk spin on the same character — it HUNG for 25 "
+             "seconds and the runner has no timeout handler, so the full sweep would have "
+             "burned its 900-second budget there (round-35 review, subagent P1-2, measured)",
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
-        find="        while (at < code.length() && code.charAt(at) == '@') {",
-        replace='        if (false) {',
+        find="    private static int pastAnnotations(String code, int at) {\n        while (at < code.length() && code.charAt(at) == '@') {\n            at = skipSpace(code, readDottedIdentifier(code, at + 1));",
+        replace="    private static int pastAnnotations(String code, int at) {\n        while (at < code.length() && code.charAt(at) == '@') {\n            at = skipSpace(code, readIdentifier(code, at + 1));",
         test='HarnessBreakageIsNotAFiringTest',
         expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
     ),
@@ -24773,7 +24773,7 @@ CONTROLS = [
              "which has its own control JP5 (round-34 review, subagent P3-①)",
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
-        find='        return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")\n                && (path.startsWith("/src/test/java/") || path.contains("/core/src/test/java/"));',
+        find='        return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")\n                && path.contains("/core/src/test/java/");',
         replace='        return path.endsWith("HarnessBroken.java");',
         test='HarnessBreakageIsNotAFiringTest',
         expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
@@ -24783,8 +24783,8 @@ CONTROLS = [
         what='the fence stripper stops anchoring to the start of a line, so a ``` written inside prose pairs with a real fence and seventeen lines of the newest round — its gate line among them — are deleted in silence: the reader then names the previous round and blames the readiness document (round-34 review, subagent P2-6, measured)',
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java',
-        find='        markdown = withoutSpans(markdown, "(?m)^ {0,3}```", "(?m)^ {0,3}```[^\\n]*", "a ``` fence");',
-        replace='        markdown = withoutSpans(markdown, "```", "```[^\\n]*", "a ``` fence");',
+        find='        Matcher opener = Pattern.compile("(?m)^[ \\\\t]{0,3}(`{3,}|~{3,})[^\\\\n]*$").matcher(markdown);',
+        replace='        Matcher opener = Pattern.compile("(`{3,}|~{3,})[^\\\\n]*").matcher(markdown);',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
@@ -24793,8 +24793,8 @@ CONTROLS = [
         what='the loose counter goes back to reading the gate LINE instead of the gate paragraph, so a wrapped gate line is counted by neither counter and a round that did run reads as a round that did not (round-34 review, subagent P2-4)',
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java',
-        find='                        && paragraph.contains("全ユニット")) {',
-        replace='                        && paragraph.split("\\n")[0].contains("全ユニット")) {',
+        find='                if (claimsARun && paragraph.contains("全ユニット")) {',
+        replace='                if (claimsARun && paragraph.split("\\\\n")[0].contains("全ユニット")) {',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
@@ -24803,8 +24803,8 @@ CONTROLS = [
         what='the HTML-comment stripper goes back to ignoring an opener that never closes, so a later `-->` deletes everything between it and the opener — and this plan already holds two unclosed `<!--` in prose about XML (round-34 review, subagent P2-3)',
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java',
-        find='        markdown = withoutSpans(markdown, "(?m)^ {0,3}<!--", "-->", "an HTML comment");',
-        replace='        markdown = markdown.replaceAll("(?s)<!--.*?-->", "");',
+        find='        return withoutSpans(markdown, Pattern.compile("<!--"), "-->", "an HTML comment");',
+        replace='        return markdown.replaceAll("(?s)<!--.*?-->", "");',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
