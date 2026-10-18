@@ -45,4 +45,15 @@ public class HarnessBroken extends RuntimeException {
     public HarnessBroken(String message, Throwable cause) {
         super(message, cause);
     }
+
+    /**
+     * For the common shape: a helper that cannot do its job because something it called threw.
+     *
+     * <p>Added when the locks that said this with {@code throw new AssertionError(e)} were converted
+     * (owner's decision 2026-10-16, residual R189): the runner scores a thrown AssertionError as a
+     * control firing, so breakage dressed as an assertion was recorded as "the guard worked".
+     */
+    public HarnessBroken(Throwable cause) {
+        super(String.valueOf(cause), cause);
+    }
 }

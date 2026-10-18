@@ -921,7 +921,7 @@ public class LineageHistoricalPublishMachineTest {
                     return intent;
                 }
             }
-            throw new AssertionError("no intent observed at " + sequence);
+            return org.junit.jupiter.api.Assertions.fail("no intent observed at " + sequence);
         }
     }
 

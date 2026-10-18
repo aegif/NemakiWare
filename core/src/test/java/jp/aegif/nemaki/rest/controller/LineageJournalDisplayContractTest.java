@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.controller;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -203,7 +204,7 @@ public class LineageJournalDisplayContractTest {
             m.setAccessible(true);
             return (Map<String, Object>) m.invoke(controller, record);
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
     }
 

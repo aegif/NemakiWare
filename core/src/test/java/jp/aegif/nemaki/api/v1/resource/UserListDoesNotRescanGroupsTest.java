@@ -148,6 +148,6 @@ class UserListDoesNotRescanGroupsTest {
                 return user;
             }
         }
-        throw new AssertionError("no user '" + userId + "' in the response");
+        return org.junit.jupiter.api.Assertions.fail("no user '" + userId + "' in the response");
     }
 }

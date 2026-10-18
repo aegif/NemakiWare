@@ -81,79 +81,38 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     @Test
-    @DisplayName("no test THROWS an AssertionError with one of the phrasings this sweep knows")
-    void noTestThrowsAnAssertionErrorWithAKnownBreakagePhrase() throws Exception {
-        // The sweep, not one file: the defect was a FAMILY — every reflection helper that
-        // reports "renamed or reshaped". A new one written in the old shape puts the runner
-        // back where it was, and nothing else would notice.
-        // Matched on a throw STATEMENT — one that starts its own line — not on the strings
-        // appearing near each other. Two earlier versions flagged THIS file: its detection
-        // logic carries both phrases as literals. A sweep that cannot survive reading itself
-        // would have been switched off within a day, and the family would drift back.
+    @DisplayName("no test throws an AssertionError at all — breakage says HarnessBroken, a failure asserts")
+    void noTestThrowsAnAssertionError() throws Exception {
+        // BY THE FORM, not by the wording (owner's decision 2026-10-16, residual R189). Three
+        // vocabularies were tried and each missed the next phrasing: "was renamed", then "missing
+        // for a source file", then "ends inside" — and `throw new AssertionError(e)` cannot be
+        // swept by words at all. The rule that needs no vocabulary: a lock never THROWS an
+        // AssertionError. Either it is asserting, and the assertion library says so (which the
+        // runner should score as a firing), or it could not look at its subject, and that is
+        // HarnessBroken (which the runner must not).
+        //
+        // Read with literals emptied, so this file's own needle — the string it looks for — is not
+        // an offender, and a product file's text quoted inside a test is not either.
         List<Path> offenders;
         try (var walk = Files.walk(Path.of("src/test/java"))) {
             offenders = walk.filter(p -> p.toString().endsWith(".java"))
                     .filter(p -> {
                         try {
-                            String text = Files.readString(p);
-                            String needle = "throw new AssertionError(";
-                            int at = text.indexOf(needle);
-                            while (at >= 0) {
-                                int lineStart = text.lastIndexOf('\n', at) + 1;
-                                boolean startsTheLine =
-                                        text.substring(lineStart, at).isBlank();
-                                String statement = text.substring(at,
-                                        Math.min(text.length(), at + 300));
-                                // The vocabulary, widened after a ledger audit found
-                                // CouchModelSerializationShapeTest signalling breakage with
-                                // "model class missing for a source file" — which neither of
-                                // the first two phrases matches. Anything that says the lock
-                                // cannot SEE its subject belongs to HarnessBroken.
-                                // Widened again in round 13 of the batch-18 review: a new source
-                                // reader said "ends inside a string literal … cannot vouch for
-                                // what they measured" with an AssertionError, and this sweep —
-                                // which exists so that a NEW member of the family is caught —
-                                // matched none of its words. Approximating a family by its
-                                // wording is weak; until the sweep can judge by type, every new
-                                // phrasing has to be added here.
-                                if (startsTheLine && (statement.contains("was renamed")
-                                        || statement.contains("reshaped")
-                                        || statement.contains("missing for a source file")
-                                        || statement.contains("nothing was checked")
-                                        || statement.contains("no longer exists")
-                                        || statement.contains("unbalanced braces")
-                                        || statement.contains("ends inside")
-                                        || statement.contains("cannot vouch")
-                                        || statement.contains("is gone"))) {
-                                    return true;
-                                }
-                                at = text.indexOf(needle, at + 1);
-                            }
-                            return false;
+                            return JavaSource.withoutLiteralText(Files.readString(p))
+                                    .contains("throw new AssertionError(");
                         } catch (Exception e) {
                             // A file this sweep cannot read is not a file it has cleared.
-                            // Returning false counted it as compliant, which is the same
-                            // "could not ask reported as an answer" the product code is
-                            // being held to.
-                            throw new HarnessBroken("could not read " + p + " while sweeping "
-                                    + "for AssertionError-signalled harness breakage", e);
+                            throw new HarnessBroken("could not read " + p + " while sweeping for "
+                                    + "thrown AssertionErrors", e);
                         }
                     })
                     .toList();
         }
 
         assertTrue(offenders.isEmpty(),
-                "these locks report harness breakage as an AssertionError, which the control "
-                        + "runner scores as a firing: " + offenders);
-        // What this does NOT say: that no such throw is left — nor that an assertion METHOD does
-        // not say the same thing. This looks for `throw new AssertionError(` at the start of a line,
-        // so `assertTrue(start > 0, "… is gone, so the test above proves nothing")` is outside it
-        // entirely (round-15 review, P1: EveryPersistedRenditionIsRecordedTest:142 does exactly
-        // that, with a word this sweep knows), and the runner scores AssertionFailedError as a
-        // firing too. Both shapes belong to residual R189. The judgement is the vocabulary above,
-        // and five throws whose meaning is breakage are written in words it does not know — the
-        // round-14 reviews counted them (residual R189, recorded and stopped). `throw new
-        // AssertionError(e)` cannot be swept by wording at all. Until this judges by type, the claim
-        // is "none in these phrasings", and the gap is the residual's.
+                "these locks THROW an AssertionError, which the control runner scores as a firing "
+                        + "even when the sabotage only broke the harness. Say it with HarnessBroken "
+                        + "when the lock could not look at its subject, or assert it with the "
+                        + "assertion library when the production broke its promise: " + offenders);
     }
 }

@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -355,7 +356,7 @@ public class LineageSequencingCouchIT {
             f.setAccessible(true);
             f.set(cursors, store);
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
         String repo = "v2-cursor-repo";
         assertEquals(true, cursors.advanceCursorMonotonic(
@@ -513,7 +514,7 @@ public class LineageSequencingCouchIT {
         assertEquals(true, g1 != null);
         try {
             store.requestReplay(recordId, "atlas");
-            throw new AssertionError("an in-progress request must refuse the second");
+            org.junit.jupiter.api.Assertions.fail("an in-progress request must refuse the second");
         } catch (LineageV2ReplayStore.ReplayRefusedException expected) {
             // in progress — the frozen expected set is {absent, ACKED}
         }
@@ -559,7 +560,7 @@ public class LineageSequencingCouchIT {
         store.claimForProjection(recordId, "atlas", Duration.ofMinutes(5));
         try {
             store.requestReplay(recordId, "atlas");
-            throw new AssertionError("a live PROJECTING claim must refuse replay");
+            org.junit.jupiter.api.Assertions.fail("a live PROJECTING claim must refuse replay");
         } catch (LineageV2ReplayStore.ReplayRefusedException expected) {
             // token-fenced claim is not stealable
         }
@@ -625,7 +626,7 @@ public class LineageSequencingCouchIT {
             f.setAccessible(true);
             f.set(store, provider);
         } catch (ReflectiveOperationException e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
 
         java.time.Instant cutoff = java.time.Instant.parse("2025-01-01T00:00:00Z");
@@ -688,7 +689,7 @@ public class LineageSequencingCouchIT {
             cloudant.putDocument(new com.ibm.cloud.cloudant.v1.model.PutDocumentOptions
                     .Builder().db(dbName).docId(headId).document(doc).build()).execute();
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
 
         List<LineageV2ReplayStore.ReplayRecovery> scan = store.findUnackedReplayRequests(1);
@@ -726,7 +727,7 @@ public class LineageSequencingCouchIT {
                 List.of(new LineageMaterializationDecision.V1Entry(eventId, digest)), 1000L);
         try {
             store.createDecisionIfAbsent(other);
-            throw new AssertionError("a different fact must not share the decision id");
+            org.junit.jupiter.api.Assertions.fail("a different fact must not share the decision id");
         } catch (LineageIntegrityException expected) {
         }
 
@@ -746,7 +747,7 @@ public class LineageSequencingCouchIT {
         assertEquals(eventKey, stored.event().eventKey());
         try {
             store.createMaterializedV1RowIfAbsent(event, "f".repeat(64));
-            throw new AssertionError("an occupant with a different digest must refuse");
+            org.junit.jupiter.api.Assertions.fail("an occupant with a different digest must refuse");
         } catch (LineageIntegrityException expected) {
         }
     }

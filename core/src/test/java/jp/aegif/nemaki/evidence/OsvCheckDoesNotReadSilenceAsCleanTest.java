@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.evidence;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -93,7 +94,7 @@ class OsvCheckDoesNotReadSilenceAsCleanTest {
             process = new ProcessBuilder(command).start();
         } catch (IOException noPython) {
             // NOT a skip: a build that cannot run the release's own check must not report it holds.
-            throw new AssertionError("python3 is not available, so osv-check.py could not be run", noPython);
+            throw new HarnessBroken("python3 is not available, so osv-check.py could not be run", noPython);
         }
         String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String err = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);

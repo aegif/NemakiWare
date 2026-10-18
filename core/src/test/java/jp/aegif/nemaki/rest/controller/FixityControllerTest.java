@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.controller;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.evidence.FixityLedgerRecorder;
 import jp.aegif.nemaki.fixity.FixityScanReport;
@@ -229,7 +230,7 @@ class FixityControllerTest {
                     "a deployment with no evidence ledger reported chained=false, which reads "
                             + "as a chain that refused the pass: " + body);
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
     }
 

@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.businesslogic;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl;
 import jp.aegif.nemaki.model.Aspect;
 import jp.aegif.nemaki.model.Content;
@@ -267,7 +268,7 @@ class EvidenceIsWritableOnlyByCaptureTest {
             merged = mergeThrough(service, aspectHolding(EVIDENCE_PROPERTY, "captured"),
                     List.of(), requestSetting(EVIDENCE_PROPERTY, "overwritten"));
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
 
         assertEquals(1, merged.size(), "the value was deleted: " + merged);

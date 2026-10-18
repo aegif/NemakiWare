@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.purview.journal;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -152,13 +153,13 @@ public class LineageJournalViewCoverageTest {
                         + "(" + mapFunction + ")(doc);\n"
                         + "JSON.stringify(emits);";
             } catch (tools.jackson.core.JacksonException e) {
-                throw new AssertionError(e);
+                throw new HarnessBroken(e);
             }
             Object result = cx.evaluateString(scope, script, viewName, 1, null);
             try {
                 return JSON.readValue(Context.toString(result), List.class);
             } catch (tools.jackson.core.JacksonException e) {
-                throw new AssertionError(e);
+                throw new HarnessBroken(e);
             }
         } finally {
             Context.exit();

@@ -73,7 +73,7 @@ class DaoFailsFastTest {
             throw err;
         }
         if (thrown[0] != null) {
-            throw new AssertionError("unexpected failure in the worker", thrown[0]);
+            org.junit.jupiter.api.Assertions.fail("unexpected failure in the worker", thrown[0]);
         }
     }
 

@@ -139,7 +139,13 @@ class EveryPersistedRenditionIsRecordedTest {
     void andItRecords() throws Exception {
         String text = source();
         int start = text.indexOf("private String " + RECORDING_METHOD + "(");
-        assertTrue(start > 0, RECORDING_METHOD + " is gone, so the test above proves nothing");
+        if (start <= 0) {
+            // HarnessBroken, not an assertion: the method this lock reads is not there, so
+            // it did not measure the production — and the runner must not score that as a
+            // control firing (owner's decision 2026-10-16, residual R189).
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(RECORDING_METHOD
+                    + " is gone, so this lock read nothing");
+        }
         int next = text.indexOf("\n\t/**", start);
         String body = next < 0 ? text.substring(start) : text.substring(start, next);
 

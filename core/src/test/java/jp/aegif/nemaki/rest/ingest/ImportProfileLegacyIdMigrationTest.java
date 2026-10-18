@@ -1801,7 +1801,7 @@ class ImportProfileLegacyIdMigrationTest {
                     // firing. The stub ends it deterministically on the fifth page instead
                     // (a correct listing asks for at most three: first, A, B).
                     if (++served[0] > 4) {
-                        throw new AssertionError("bookmark cycle followed: page " + served[0]
+                        org.junit.jupiter.api.Assertions.fail("bookmark cycle followed: page " + served[0]
                                 + " requested");
                     }
                     if (options.bookmark() == null) return first;

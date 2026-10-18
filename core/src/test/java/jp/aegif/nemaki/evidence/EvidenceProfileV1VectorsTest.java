@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.evidence;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -298,7 +299,7 @@ class EvidenceProfileV1VectorsTest {
         } catch (java.io.IOException noPython) {
             // NOT a skip. The whole point of this test is the cross-language claim; a build that
             // cannot check it must not report that it holds.
-            throw new AssertionError("python3 is not available, so the claim that the spec is "
+            throw new HarnessBroken("python3 is not available, so the claim that the spec is "
                     + "enough to reimplement from could not be checked here. It is not a claim "
                     + "this build may pass on faith.", noPython);
         }

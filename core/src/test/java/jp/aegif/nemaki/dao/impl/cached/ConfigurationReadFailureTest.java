@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.dao.impl.cached;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import jp.aegif.nemaki.model.Configuration;
 import jp.aegif.nemaki.util.cache.CacheService;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
@@ -255,7 +256,7 @@ class ConfigurationReadFailureTest {
                 map.put(e.getKey(), ctor.newInstance(conf.invoke(rec), 0L));
             }
         } catch (Exception e) {
-            throw new AssertionError(e);
+            throw new HarnessBroken(e);
         }
     }
 }

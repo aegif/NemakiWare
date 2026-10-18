@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.rest.purview.anchor;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -119,7 +120,7 @@ class TheGuardComesBeforeTheToggleTest {
                 return text.substring(open, i + 1);
             }
         }
-        throw new AssertionError("collectRevocationMaterial's body does not close");
+        throw new HarnessBroken("collectRevocationMaterial's body does not close");
     }
 
     private static String o52() throws IOException {

@@ -549,7 +549,7 @@ class AnchorServiceTest {
             }
 
             @Override public AnchorReceipt anchor(String hexDigest) {
-                throw new AssertionError("an unconfigured rung was contacted");
+                return org.junit.jupiter.api.Assertions.fail("an unconfigured rung was contacted");
             }
         };
         AnchorService service = serviceWithReceipts(

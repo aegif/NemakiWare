@@ -1,5 +1,6 @@
 package jp.aegif.nemaki.evidence;
 
+import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -664,7 +665,7 @@ class ReleaseReadinessIsMeasuredTest {
         try {
             return Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
-            throw new AssertionError("core/pom.xml could not be read: " + unreadable.getMessage());
+            throw new HarnessBroken("core/pom.xml could not be read: " + unreadable.getMessage());
         }
     }
 
@@ -689,7 +690,7 @@ class ReleaseReadinessIsMeasuredTest {
         try {
             type = Class.forName(className);
         } catch (ClassNotFoundException missing) {
-            throw new AssertionError("the R59 row names a test class that is not on the class path: " + className);
+            throw new HarnessBroken("the R59 row names a test class that is not on the class path: " + className);
         }
         // The same tag filters surefire runs under, so a tagged lock that the suite skips is not
         // counted as run (review, P3). The EFFECTIVE values: surefire forwards -D user

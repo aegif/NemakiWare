@@ -151,7 +151,7 @@ class CouchEvidenceLedgerStoreTest {
             throw error;
         }
         if (failure.get() != null) {
-            throw new AssertionError(failure.get());
+            org.junit.jupiter.api.Assertions.fail(failure.get());
         }
     }
 
