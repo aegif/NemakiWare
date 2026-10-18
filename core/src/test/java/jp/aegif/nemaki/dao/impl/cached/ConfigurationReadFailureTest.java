@@ -255,6 +255,12 @@ class ConfigurationReadFailureTest {
                 ctor.setAccessible(true);
                 map.put(e.getKey(), ctor.newInstance(conf.invoke(rec), 0L));
             }
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // The SUBJECT threw, which is the promise broken — not a lock that could
+            // not look at its subject. Converting this to HarnessBroken sent the
+            // reader to the test when the production had regressed (round-16 review).
+            org.junit.jupiter.api.Assertions.fail("the cache's own record itself threw " + e.getCause()
+                    + ", so what this lock measures never ran", e.getCause());
         } catch (Exception e) {
             throw new HarnessBroken(e);
         }

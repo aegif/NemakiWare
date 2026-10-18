@@ -147,11 +147,21 @@ class CouchEvidenceLedgerStoreTest {
         }, "vthread-exec-test");
         thread.start();
         thread.join(30_000);
+        if (thread.isAlive()) {
+            // join(timeout) RETURNS on timeout, and failure.get() is null then — so every
+            // assertion in the body was skipped and this helper reported success (round-16
+            // review, subagent P3). Which side hung, the harness or the production, is exactly
+            // what is not known here, so it is said as "could not measure".
+            throw new jp.aegif.nemaki.util.test.HarnessBroken("the worker was still running after 30s, so none "
+                    + "of the assertions in it ran");
+        }
         if (failure.get() instanceof AssertionError error) {
             throw error;
         }
         if (failure.get() != null) {
-            org.junit.jupiter.api.Assertions.fail(failure.get());
+            // Not an assertion (the arm above took those): a broken stub or a fixture that threw.
+            throw new jp.aegif.nemaki.util.test.HarnessBroken("the worker threw something that is not an assertion, "
+                    + "so this lock never got to look at its subject", failure.get());
         }
     }
 

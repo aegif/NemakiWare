@@ -267,6 +267,12 @@ class EvidenceIsWritableOnlyByCaptureTest {
         try {
             merged = mergeThrough(service, aspectHolding(EVIDENCE_PROPERTY, "captured"),
                     List.of(), requestSetting(EVIDENCE_PROPERTY, "overwritten"));
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // The SUBJECT threw, which is the promise broken — not a lock that could
+            // not look at its subject. Converting this to HarnessBroken sent the
+            // reader to the test when the production had regressed (round-16 review).
+            merged = org.junit.jupiter.api.Assertions.fail("mergeAspectProperties itself threw " + e.getCause()
+                    + ", so what this lock measures never ran", e.getCause());
         } catch (Exception e) {
             throw new HarnessBroken(e);
         }

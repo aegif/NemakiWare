@@ -645,7 +645,7 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
     /** The last write of the group: what it holds when the sync is done. */
     private static GroupItem the(List<GroupItem> groups, String id) {
         return groups.stream().filter(g -> (PREFIX + id).equals(g.getGroupId())).reduce((first, second) -> second)
-                .orElseThrow(() -> new AssertionError(PREFIX + id + " was not written: " + ids(groups)));
+                .orElseGet(() -> org.junit.jupiter.api.Assertions.fail(PREFIX + id + " was not written: " + ids(groups)));
     }
 
     private static String warningsOf(DirectorySyncResult result, String id) {

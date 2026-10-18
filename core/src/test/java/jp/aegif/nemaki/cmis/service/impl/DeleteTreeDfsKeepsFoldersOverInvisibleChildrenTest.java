@@ -142,6 +142,12 @@ class DeleteTreeDfsKeepsFoldersOverInvisibleChildrenTest {
                     Content.class, Boolean.class, Boolean.class, List.class);
             dfs.setAccessible(true);
             dfs.invoke(service, null, REPO, node, Boolean.TRUE, Boolean.TRUE, failedIds);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // The SUBJECT threw, which is the promise broken — not a lock that could
+            // not look at its subject. Converting this to HarnessBroken sent the
+            // reader to the test when the production had regressed (round-16 review).
+            org.junit.jupiter.api.Assertions.fail("deleteTreeDFS itself threw " + e.getCause()
+                    + ", so what this lock measures never ran", e.getCause());
         } catch (NoSuchMethodException e) {
             throw new HarnessBroken("deleteTreeDFS was renamed or reshaped — update this test "
                     + "to keep driving the walk production drives; without it the guard is "

@@ -23,6 +23,20 @@ import java.nio.file.Path;
 /**
  * Reading one method out of a source file, for the few tests that must assert on source.
  *
+ * <h2>Frozen (owner's decision, 2026-10-17)</h2>
+ *
+ * <p>Do not teach this reader anything new. Six consecutive review rounds found defects in the
+ * machinery that source-reading locks need — brace matching, stripping comments, stripping
+ * literal text, delimiting a catch clause, resolving a qualified constant, approximating a
+ * family of messages by its wording — and every guard added for that machinery turned out never
+ * to fire on this tree's real input. The locks that assert something about a WHOLE SET (every
+ * destructive consumer checks its listing, no test throws an AssertionError, every field name
+ * goes through the one escaping rule) have produced no defects and have no cheap behavioural
+ * substitute; the cost is in locks that read source text to assert a RUNTIME property. So this
+ * class stays as it is: a new lock either uses it as it stands, or is written as a
+ * behaviour-driven lock instead of growing a new reader. Recorded in
+ * {@code docs/design/v3.4.1-plan.md} (owner's decision, 2026-10-17).
+ *
  * <h2>Why this is shared code and not three inline helpers</h2>
  *
  * <p>A handful of defects live entirely in a query string or in an argument that never reaches

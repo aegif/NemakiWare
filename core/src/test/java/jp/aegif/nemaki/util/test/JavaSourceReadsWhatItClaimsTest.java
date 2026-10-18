@@ -21,6 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.List;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -138,5 +143,30 @@ class JavaSourceReadsWhatItClaimsTest {
             assertTrue(refused.getMessage().contains("ends inside"),
                     "the refusal does not say what was left open: " + refused.getMessage());
         }
+    }
+
+    @Test
+    @DisplayName("the reader is frozen: its public surface is exactly these five methods")
+    void theReaderIsFrozen() {
+        // The owner's decision of 2026-10-17 (R189, docs/design/v3.4.1-plan.md): this reader is not
+        // taught anything new. Six review rounds found the defects in the MACHINERY that
+        // source-reading locks need, and every guard written for that machinery never fired on real
+        // input. A sentence in a javadoc cannot hold that; a roster can. A sixth entry point means
+        // someone is growing the reader again, and the alternative — a behaviour-driven lock — has
+        // to be considered first.
+        List<String> surface = Arrays.stream(JavaSource.class.getDeclaredMethods())
+                .filter(m -> Modifier.isPublic(m.getModifiers()))
+                .map(Method::getName)
+                .distinct()
+                .sorted()
+                .toList();
+
+        assertEquals(
+                List.of("matchingClose", "methodBody", "read", "withoutComments", "withoutLiteralText"),
+                surface,
+                "the frozen reader grew (or lost) an entry point. If a new lock needs source-reading"
+                        + " machinery this class does not already have, write the lock as a"
+                        + " behaviour-driven one instead; if it truly cannot be, say so in the"
+                        + " residual and change this roster deliberately: " + surface);
     }
 }

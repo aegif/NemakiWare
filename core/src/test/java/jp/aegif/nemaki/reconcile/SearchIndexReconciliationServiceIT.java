@@ -320,7 +320,7 @@ public class SearchIndexReconciliationServiceIT {
         // 2. It is visible, with the context needed to act: which object, and why.
         SearchIndexReconciliationService.CorruptTaskRef ref = svc.listCorrupt(2000).stream()
                 .filter(c -> brokenId.equals(c.getDocId())).findFirst()
-                .orElseThrow(() -> new AssertionError("the corrupt entry VANISHED — containment must "
+                .orElseGet(() -> org.junit.jupiter.api.Assertions.fail("the corrupt entry VANISHED — containment must "
                         + "not become silence; that is the 7a failure mode this test exists for"));
         assertEquals("objBroken", ref.getObjectId(), "the operator needs the object id to re-index");
         assertEquals(repo, ref.getRepositoryId());

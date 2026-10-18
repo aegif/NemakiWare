@@ -56,6 +56,12 @@ class NavigationPagingArgumentsAreNotTruncatedTest {
             Method m = NavigationServiceImpl.class.getDeclaredMethod(method, BigInteger.class);
             m.setAccessible(true);
             return (Integer) m.invoke(null, value);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // The SUBJECT threw, which is the promise broken — not a lock that could
+            // not look at its subject. Converting this to HarnessBroken sent the
+            // reader to the test when the production had regressed (round-16 review).
+            return org.junit.jupiter.api.Assertions.fail("the method under test itself threw " + e.getCause()
+                    + ", so what this lock measures never ran", e.getCause());
         } catch (NoSuchMethodException e) {
             throw new HarnessBroken(method + " was renamed or reshaped — update this test "
                     + "with it, or the clamp is unmeasured", e);

@@ -69,7 +69,7 @@ class AuthenticityReportDoesNotLeakExceptionsTest {
 
     private static Section section(AuthenticityReport report, String name) {
         return report.sections().stream().filter(s -> name.equals(s.name())).findFirst()
-                .orElseThrow(() -> new AssertionError("no section " + name + " in " + report.asMap()));
+                .orElseGet(() -> org.junit.jupiter.api.Assertions.fail("no section " + name + " in " + report.asMap()));
     }
 
     private static void unavailableWithIncident(Section section) {

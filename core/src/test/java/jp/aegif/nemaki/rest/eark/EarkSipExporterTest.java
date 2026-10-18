@@ -1239,7 +1239,7 @@ class EarkSipExporterTest {
                 .sip();
         String premis = entriesOf(sip).entrySet().stream()
                 .filter(e -> e.getKey().endsWith("premis.xml")).map(Map.Entry::getValue)
-                .findFirst().orElseThrow(() -> new AssertionError(
+                .findFirst().orElseGet(() -> org.junit.jupiter.api.Assertions.fail(
                         "the package carries no PREMIS, so a verifier has nothing to check the "
                                 + "bytes against"));
 

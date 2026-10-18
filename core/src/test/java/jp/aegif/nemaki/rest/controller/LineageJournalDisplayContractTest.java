@@ -203,6 +203,12 @@ public class LineageJournalDisplayContractTest {
                     .getDeclaredMethod("recordToMap", LineageRecord.class);
             m.setAccessible(true);
             return (Map<String, Object>) m.invoke(controller, record);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            // The SUBJECT threw, which is the promise broken — not a lock that could
+            // not look at its subject. Converting this to HarnessBroken sent the
+            // reader to the test when the production had regressed (round-16 review).
+            return org.junit.jupiter.api.Assertions.fail("recordToMap itself threw " + e.getCause()
+                    + ", so what this lock measures never ran", e.getCause());
         } catch (ReflectiveOperationException e) {
             throw new HarnessBroken(e);
         }

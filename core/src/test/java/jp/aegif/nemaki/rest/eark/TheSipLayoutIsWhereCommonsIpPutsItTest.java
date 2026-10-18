@@ -293,7 +293,7 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
 
         String payload = entries.keySet().stream()
                 .filter(n -> n.contains("/data/") && !n.endsWith("/"))
-                .findFirst().orElseThrow(() -> new AssertionError(
+                .findFirst().orElseGet(() -> org.junit.jupiter.api.Assertions.fail(
                         "the package carries no payload: " + entries.keySet()));
         assertTrue(payload.endsWith(name),
                 "the zip entry is not the raw name, so this fixture no longer measures the "

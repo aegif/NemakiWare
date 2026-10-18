@@ -73,7 +73,11 @@ class DaoFailsFastTest {
             throw err;
         }
         if (thrown[0] != null) {
-            org.junit.jupiter.api.Assertions.fail("unexpected failure in the worker", thrown[0]);
+            // The arm above already rethrew anything that WAS an assertion, so what is left is by
+            // definition not one: a broken stub, a fixture that threw, an NPE in the harness. A
+            // fail(...) here reports it as the guard tripping (round-16 review, subagent P2).
+            throw new jp.aegif.nemaki.util.test.HarnessBroken("the worker threw something that is not an "
+                    + "assertion, so this lock never got to look at its subject", thrown[0]);
         }
     }
 
