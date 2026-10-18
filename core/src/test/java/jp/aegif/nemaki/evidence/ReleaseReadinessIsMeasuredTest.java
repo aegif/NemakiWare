@@ -3,6 +3,7 @@ package jp.aegif.nemaki.evidence;
 import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -323,72 +324,55 @@ class ReleaseReadinessIsMeasuredTest {
         // the bound above reads the NUMBER, which does not move when a round adds no test, so
         // nothing noticed that the provenance was a round behind (round-30 review: subagent P2-2,
         // Codex P3 — "discipline did not stop it four times" is the reason this is mechanical).
-        // THE GATE LINE, at the start of its own line, in either of the two forms this plan uses,
-        // one per round, and never from inside a fenced block. Four ways this reader could answer
-        // about the wrong tree were measured in round 32 (Codex P2 ×3, subagent P2-3): a quoted
-        // 「**ゲートと実測**:」 in prose counted as a gate record; a second section for the SAME
-        // round was ignored instead of refused; a `## …` inside a fence closed a section early;
-        // and the sections that write 「**ゲートと実測**: **全ユニット N 本」 (rounds 16 and 17)
-        // read as "this round recorded no run", which would make the reader blame the readiness
-        // document for a run the plan DOES record.
-        String batchPlan = withoutFencesAndComments(read(BATCH_PLAN));
-        Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
-                .matcher(batchPlan);
-        int newestRound = 0;
-        int saysItRan = 0;
-        int figuresRead = 0;
-        String newestFigure = null;
-        Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
-        while (rounds.find()) {
-            int round = Integer.parseInt(rounds.group(1));
-            if (!roundsSeen.add(round)) {
-                throw new HarnessBroken("the batch plan has more than one 確認 " + round
-                        + " 巡目 section, so this reader cannot tell which one records that "
-                        + "round's run");
-            }
-            Matcher gate = Pattern.compile(
-                    "(?m)^\\*\\*ゲートと実測\\*\\*: \\*?\\*?全ユニット "
-                            + "\\*?\\*?([0-9]{1,3}(?:,[0-9]{3})+) 本")
-                    .matcher(rounds.group(2));
-            List<String> figures = new ArrayList<>();
-            while (gate.find()) {
-                figures.add(gate.group(1));
-            }
-            if (figures.size() > 1) {
-                throw new HarnessBroken("確認 " + round + " 巡目 states " + figures.size()
-                        + " gate figures " + figures + ", so this reader cannot tell which run the "
-                        + "readiness document should be naming");
-            }
-            // COUNTED LOOSELY, and per occurrence: the figure is read from the start of a line
-            // and this is not, so a gate line written as a list item, a quotation or an indented
-            // line — all of which this plan uses elsewhere — shows up HERE and not there, and the
-            // assertion below is what notices. Sharing the anchor between the two counters made
-            // such a line vanish from both, which left the anchor itself unmeasured (round-33
-            // review: subagent P2-1 measured both halves, Codex P2 ×2).
-            Matcher claims = Pattern.compile(
-                    "(?m)^[\\s>*-]*\\*\\*ゲートと実測\\*\\*:[^\\n]*全ユニット")
-                    .matcher(rounds.group(2));
-            while (claims.find()) {
-                saysItRan++;
-            }
-            if (figures.size() == 1) {
-                figuresRead++;
-                if (round > newestRound) {
-                    newestRound = round;
-                    newestFigure = figures.get(0);
-                }
-            }
-        }
-        // EVERY section that says it ran has to be READABLE here. Two sections write the figure
-        // with the bold on the other side (rounds 16 and 17), and the reader that took only one
-        // form answered «this round recorded no run» for them — a could-not-read with the value of
-        // an absence, which would then blame the readiness document for a run the plan does record
-        // (round-32 review, subagent P2-3). Asserted rather than refused, so a sabotage of the
-        // tolerance is measurable.
-        assertEquals(saysItRan, figuresRead,
-                saysItRan + " gate lines state a 全ユニット figure and this reader could read "
-                        + figuresRead + " figures. A section whose figure it cannot read is not a "
-                        + "section without a run");
+        // THE GATE LINE of the newest round, read by a HELPER so that synthetic documents can
+        // drive it. Three guards were written «unmeasurable» in round 33 and that was wrong: a
+        // reader that takes the document as a String can be driven with a string, which is how
+        // this class's sibling sweep measures its own forms (round-34 review: Codex P3, subagent
+        // P3-③ and P3-④; the limit is withdrawn from the canon with them).
+        GateReading real = readNewestGate(read(BATCH_PLAN));
+        assertEquals(real.claimed(), real.read(),
+                real.claimed() + " gate paragraphs claim a 全ユニット figure and this reader could "
+                        + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
+                        + "a round without a run");
+        // DRIVEN, both ways, before the real document's answer is used.
+        assertEquals(1, readNewestGate("### 確認 9 巡目\n**ゲートと実測**: 全ユニット **1,000 本**\n")
+                        .read(),
+                "the canonical gate line is no longer read at all");
+        assertEquals(1, readNewestGate("### 確認 9 巡目\n**ゲートと実測**: **全ユニット 1,000 本**\n")
+                        .read(),
+                "the other bold form this plan uses is no longer read");
+        GateReading asAListItem = readNewestGate(
+                "### 確認 9 巡目\n- **ゲートと実測**: 全ユニット **1,000 本**\n");
+        assertEquals(1, asAListItem.claimed(),
+                "a gate line written as a list item is not even counted as a claim, so the two "
+                        + "counters agree by both missing it — the shape that left this reader "
+                        + "blaming the readiness document (round-34 review, subagent P2-1)");
+        assertEquals(0, asAListItem.read(), "the figure is read from a non-canonical line");
+        GateReading wrapped = readNewestGate(
+                "### 確認 9 巡目\n**ゲートと実測**: 失敗 0・skip 0 で\n全ユニット **1,000 本**\n");
+        assertEquals(1, wrapped.claimed(),
+                "a gate paragraph whose figure sits on its second line is not counted as a claim, "
+                        + "so a wrapped line goes silent (round-34 review, subagent P2-4)");
+        assertEquals(0, wrapped.read(), "the figure is read from the gate line itself");
+        assertThrows(HarnessBroken.class,
+                () -> readNewestGate("### 確認 9 巡目\n**ゲートと実測**: 全ユニット **1,000 本**\n"
+                        + "### 確認 9 巡目\n**ゲートと実測**: 全ユニット **2,000 本**\n"),
+                "two sections for the same round are read as one, so which of them records that "
+                        + "round's run is decided by their order");
+        assertThrows(HarnessBroken.class,
+                () -> readNewestGate("### 確認 9 巡目\n```\n### 確認 99 巡目\n"),
+                "a fence that never closes is read as prose, so a heading inside a code example "
+                        + "becomes a section");
+        assertThrows(HarnessBroken.class,
+                () -> readNewestGate("### 確認 9 巡目\n<!--\n### 確認 99 巡目\n"),
+                "an HTML comment that never closes is read as prose");
+        assertEquals(0, readNewestGate("### 確認 9 巡目\n   ```\n**ゲートと実測**: 全ユニット "
+                        + "**1,000 本**\n   ```\n").read(),
+                "an indented fence — valid markdown — is not stripped, so a gate line inside a "
+                        + "code example is read as a run (round-34 review, subagent P3-⑥)");
+
+        int newestRound = real.round();
+        String newestFigure = real.figure();
         if (newestFigure == null) {
             throw new HarnessBroken("the batch plan records no round with a gate line stating "
                     + "「全ユニット **N 本」 or 「**全ユニット N 本」, so this reader cannot tell "
@@ -416,37 +400,107 @@ class ReleaseReadinessIsMeasuredTest {
                         + "annotation count (parameterised tests) but never fall below this");
     }
 
+    /** What a plan document says about the newest run it records. */
+    private record GateReading(int round, String figure, int claimed, int read) { }
+
+    /**
+     * The newest round the plan records a unit run for, and how many gate paragraphs claim one.
+     *
+     * <p>Two counts, deliberately asymmetric. {@code claimed} is loose — a gate PARAGRAPH, however
+     * its line begins and wherever the figure sits inside it — and {@code read} is the canonical
+     * line this plan writes. Their difference is what tells «this reader could not read a run» from
+     * «this round recorded none»: sharing one pattern between them made a list item, a quotation,
+     * an indented line or a wrapped line vanish from both, and the reader then blamed the readiness
+     * document for a run the plan does record (round-33 review, subagent P2-1; round-34 review,
+     * subagent P2-4, each measured).
+     *
+     * <p>Takes the document as a String so that synthetic ones can drive it.
+     */
+    private static GateReading readNewestGate(String plan) {
+        String prose = withoutFencesAndComments(plan);
+        Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
+                .matcher(prose);
+        int newestRound = 0;
+        int claimed = 0;
+        int read = 0;
+        String newestFigure = null;
+        Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
+        while (rounds.find()) {
+            int round = Integer.parseInt(rounds.group(1));
+            if (!roundsSeen.add(round)) {
+                throw new HarnessBroken("the batch plan has more than one 確認 " + round
+                        + " 巡目 section, so this reader cannot tell which one records that "
+                        + "round's run");
+            }
+            String section = rounds.group(2);
+            // A PARAGRAPH, not a line: the figure may wrap onto the next one.
+            for (String paragraph : section.split("\n[ \t]*\n")) {
+                if (Pattern.compile("(?m)^[\\s>*+\\-|]*(?:\\d+[.)]\\s*)?\\*\\*ゲートと実測\\*\\*:")
+                        .matcher(paragraph).find()
+                        && paragraph.contains("全ユニット")) {
+                    claimed++;
+                }
+            }
+            Matcher gate = Pattern.compile(
+                    "(?m)^\\*\\*ゲートと実測\\*\\*: \\*?\\*?全ユニット "
+                            + "\\*?\\*?([0-9]{1,3}(?:,[0-9]{3})+) 本")
+                    .matcher(section);
+            List<String> figures = new ArrayList<>();
+            while (gate.find()) {
+                figures.add(gate.group(1));
+            }
+            if (figures.size() > 1) {
+                throw new HarnessBroken("確認 " + round + " 巡目 states " + figures.size()
+                        + " gate figures " + figures + ", so this reader cannot tell which run the "
+                        + "readiness document should be naming");
+            }
+            if (figures.size() == 1) {
+                read++;
+                if (round > newestRound) {
+                    newestRound = round;
+                    newestFigure = figures.get(0);
+                }
+            }
+        }
+        return new GateReading(newestRound, newestFigure, claimed, read);
+    }
+
     /**
      * The document with fenced blocks and HTML comments taken out, or a refusal.
      *
-     * <p>Only ``` was stripped at first, and the strip was a non-greedy pair: a `~~~` fence, a
-     * comment, or an ODD number of line-start fences each left a `### …` heading that is not a
-     * section —
-     * the odd case deleted ten of seventeen sections and the reader then refused the readiness
-     * document for a round the plan does record (round-33 review: Codex P2, subagent P3-4, both
-     * measured). An unbalanced fence is this reader unable to read the document, which is not the
-     * same as the document saying nothing.
+     * <p>Both constructs count only when they OPEN A LINE (markdown allows up to three spaces of
+     * indent), and each opener must close: counting the delimiter anywhere refused this very
+     * document for mentioning ``` in a table cell, counting only column zero left an indented
+     * fence in place, and stripping HTML comments with a non-greedy pair ignored an unclosed
+     * {@code <!--} — of which this plan already holds two — so a later {@code -->} would have
+     * deleted everything between them in silence (round-33 review, Codex P2 and subagent P3-4;
+     * round-34 review, subagent P2-3 and P3-⑥, each measured).
      */
     private static String withoutFencesAndComments(String markdown) {
-        for (String fence : List.of("```", "~~~")) {
-            // AT THE START OF A LINE. Counting the delimiter anywhere refused this very document:
-            // a round record that MENTIONS ``` inside a table cell made the count odd, and the
-            // reader then said it could not tell prose from code — a false refusal of a correct
-            // document, measured the moment this guard first ran (round 33).
-            Matcher opener = Pattern.compile("(?m)^" + Pattern.quote(fence)).matcher(markdown);
-            int count = 0;
-            while (opener.find()) {
-                count++;
+        markdown = withoutSpans(markdown, "(?m)^ {0,3}<!--", "-->", "an HTML comment");
+        markdown = withoutSpans(markdown, "(?m)^ {0,3}```", "(?m)^ {0,3}```[^\n]*", "a ``` fence");
+        return withoutSpans(markdown, "(?m)^ {0,3}~~~", "(?m)^ {0,3}~~~[^\n]*", "a ~~~ fence");
+    }
+
+    /** Every opener-to-closer span removed, or a refusal naming the one that never closes. */
+    private static String withoutSpans(String markdown, String opener, String closer, String what) {
+        StringBuilder prose = new StringBuilder();
+        int at = 0;
+        while (true) {
+            Matcher open = Pattern.compile(opener).matcher(markdown);
+            if (!open.find(at)) {
+                prose.append(markdown, at, markdown.length());
+                return prose.toString();
             }
-            if (count % 2 != 0) {
-                throw new HarnessBroken("the batch plan opens 「" + fence + "」 at the start of a "
-                        + "line " + count + " times, an odd number, so this reader cannot tell its "
+            Matcher close = Pattern.compile(closer).matcher(markdown);
+            if (!close.find(open.end())) {
+                throw new HarnessBroken("the batch plan opens " + what + " at offset "
+                        + open.start() + " and never closes it, so this reader cannot tell its "
                         + "prose from its code");
             }
-            markdown = markdown.replaceAll("(?ms)^" + Pattern.quote(fence) + ".*?^"
-                    + Pattern.quote(fence) + "[^\n]*", "");
+            prose.append(markdown, at, open.start());
+            at = close.end();
         }
-        return markdown.replaceAll("(?s)<!--.*?-->", "");
     }
 
     /**

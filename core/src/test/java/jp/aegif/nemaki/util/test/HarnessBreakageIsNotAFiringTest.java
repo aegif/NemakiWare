@@ -353,7 +353,8 @@ class HarnessBreakageIsNotAFiringTest {
                 "record NotAHarnessBroken(@Size(min = 1) int x) { }",
                 "sealed interface FooHarnessBroken permits A, B { }",
                 "class HarnessBroken { }",
-                "class NotAHarnessBroken implements Serializable { }")) {
+                "class NotAHarnessBroken implements Serializable { }",
+                "class NotAHarnessBroken implements @A(v = 0 < 1) Runnable { }")) {
             assertFalse(reservedNameViolations(violating, suffix, aFile).isEmpty(),
                     "this sweep allows 「" + violating + "」, so a type the runner would read as a "
                             + "breakage can be declared without being one");
@@ -377,16 +378,30 @@ class HarnessBreakageIsNotAFiringTest {
         // THE ROOT'S EXEMPTION, bounded: by path, and top level only. The base name alone let a
         // nested type inside that file and a same-named file in another module call themselves the
         // root (round-33 review: Codex P1, subagent P2-2, both measured).
+        // NESTED, written the way it would really be written — on its own line inside the root's
+        // own file. The one-line form passed for the wrong reason: the outer `class Other {` sat
+        // on the same line, which the line-prefix test caught by accident (round-34 review,
+        // subagent P1-1).
         assertFalse(reservedNameViolations(
-                        "class Other { static class HarnessBroken extends AssertionError { } }",
+                        "public class Root extends RuntimeException {\n"
+                                + "    public class HarnessBroken extends AssertionError { }\n}",
                         suffix, rootFile).isEmpty(),
                 "a NESTED type called exactly HarnessBroken inside the root's own file is allowed, "
                         + "so a breakage name can be taken by something that is not the root");
+        // ANOTHER MODULE, with the root's own package path — the shape a path suffix let through
+        // (round-34 review: Codex P1, subagent P1-1).
         assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
-                        Path.of("evidence-verifier-core/src/test/java/x/HarnessBroken.java"))
-                        .isEmpty(),
-                "a same-named file in another module is read as the root, so the breakage name can "
-                        + "be taken there");
+                        Path.of("../evidence-verifier-core/src/test/java/jp/aegif/nemaki/util/"
+                                + "test/HarnessBroken.java")).isEmpty(),
+                "a file with the root's own package path in another module is read as the root, so "
+                        + "the breakage name can be taken there");
+        // AND the root itself, with an annotation on its declaration line: the line-prefix test
+        // refused this, which no tree can satisfy (round-34 review, subagent P2-2).
+        assertTrue(reservedNameViolations(
+                        "import x.Y;\n@SuppressWarnings(\"\") public class HarnessBroken "
+                                + "extends RuntimeException { }", suffix, rootFile).isEmpty(),
+                "the root breakage type is refused when its declaration carries an annotation or "
+                        + "follows an import");
 
         List<String> misnamed = new ArrayList<>();
         List<String> reserved = new ArrayList<>();
@@ -608,6 +623,15 @@ class HarnessBreakageIsNotAFiringTest {
             // read the bound of a wildcard inside an `implements` type argument as this type's own
             // supertype (round-33 review: Codex P1, subagent P1-1, four shapes measured).
             while (at < code.length() && code.charAt(at) != '{') {
+                if (code.charAt(at) == '@') {
+                    // An annotation's ARGUMENTS first: `implements @A(v = 0 < 1) Runnable` is legal
+                    // Java, and testing for `<` before stepping over them made this reader refuse
+                    // the whole sweep with «a 「<」 never closes» — a readable declaration turned
+                    // into a refusal, and one such file stops both arms (round-34 review,
+                    // subagent P2-1, measured).
+                    at = skipSpace(code, pastAnnotations(code, at));
+                    continue;
+                }
                 if (code.charAt(at) == '<') {
                     // NEVER inside type arguments: `implements Map<String, List<? extends X>>` has
                     // an `extends` in it that belongs to a wildcard, not to this declaration
@@ -647,7 +671,7 @@ class HarnessBreakageIsNotAFiringTest {
                 bodyAt++;
             }
             boolean isTheRoot = name.equals(suffix) && isTheRootFile(file)
-                    && startsAtColumnZero(code, declared.start());
+                    && isTopLevel(code, declared.start());
             if (!extendsABreakage && !isTheRoot) {
                 violations.add(file + " 「" + code.substring(declared.start(),
                         Math.min(bodyAt + 1, code.length())).replace('\n', ' ').trim() + "」");
@@ -656,17 +680,46 @@ class HarnessBreakageIsNotAFiringTest {
         return violations;
     }
 
-    /** The one file the root breakage type may live in, by path rather than by base name. */
+    /**
+     * The one file the root breakage type may live in — its MODULE as well as its package.
+     *
+     * <p>A path suffix alone let another module hold the name: a file at
+     * {@code evidence-verifier-core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java}
+     * read as the root (round-34 review: Codex P1, subagent P1-1, measured). The sweep runs from
+     * core, so core's own root is 「src/test/java/…」 and every other module's begins with 「../」.
+     */
     private static boolean isTheRootFile(Path file) {
-        return file.toString().replace('\\', '/')
-                .endsWith("jp/aegif/nemaki/util/test/HarnessBroken.java");
+        String path = "/" + file.toString().replace('\\', '/');
+        return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")
+                && (path.startsWith("/src/test/java/") || path.contains("/core/src/test/java/"));
     }
 
-    /** Whether a declaration is top level here: its line holds only modifiers before it. */
-    private static boolean startsAtColumnZero(String code, int at) {
-        int lineStart = code.lastIndexOf('\n', Math.max(at - 1, 0)) + 1;
-        String before = code.substring(lineStart, at).trim();
-        return before.isEmpty() || before.matches("(?:public|final|abstract|sealed|non-sealed|\\s)+");
+    /**
+     * Whether a declaration is top level, by BRACE DEPTH rather than by what its line begins with.
+     *
+     * <p>Reading the line's prefix was wrong in both directions, each measured: a nested
+     * {@code public class HarnessBroken extends AssertionError { }} on its own line read as top
+     * level (the fixture that was supposed to catch it only passed because it put the outer class
+     * on the SAME line), and an honest
+     * {@code @SuppressWarnings("") public class HarnessBroken extends RuntimeException { }} read as
+     * nested — which refused the root itself. Reading the previous line when the declaration began
+     * at column 0 even threw a raw {@code StringIndexOutOfBoundsException}, the one thing this
+     * class exists to prevent (round-34 review, subagent P1-1 and P2-2).
+     *
+     * <p>The code reaching here has had its literals and comments removed, so a brace in a string
+     * cannot move the depth.
+     */
+    private static boolean isTopLevel(String code, int at) {
+        int depth = 0;
+        for (int i = 0; i < at; i++) {
+            char c = code.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            }
+        }
+        return depth == 0;
     }
 
     /** Past any annotations (with their arguments) at this position. */
