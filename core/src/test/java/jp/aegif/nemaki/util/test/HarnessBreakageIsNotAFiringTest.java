@@ -286,20 +286,27 @@ class HarnessBreakageIsNotAFiringTest {
         // subclass. `new HarnessBroken("...") {}` is reported by Surefire as `Outer$1`, which does
         // not end with the suffix, so a lock that could not look at its subject would be scored as
         // the guard firing — the exact harm this class exists to prevent (round-27 review: Codex
-        // P1, subagent P3-5). The sources hold 78 `new …HarnessBroken(` sites as this sweep's own
-        // reader counts them (literal text and comments stripped; 83 by a raw grep) and NONE of
-        // them is anonymous — the figure written here was the pre-batch one for a round
-        // (round-28 review, subagent P3-1).
-        // DRIVEN with every shape, positive and negative, because the first cut was a regex with
-        // `[^;{]*` in it: a brace in an argument cut it short, backtracking made an honest
+        // P1, subagent P3-5). NONE of this tree's test sources holds one (measured at every HEAD
+        // since; the count of `new …HarnessBroken(` sites is NOT written here any more — it moves
+        // with every edit to this very file, and the figure was a generation stale twice running:
+        // round-28 review subagent P3-1, round-29 review subagent P2-1).
+        // DRIVEN with every shape, positive and negative. The first cut was a regex with `[^;{]*`
+        // in it: a brace in an argument cut it short, backtracking made an honest
         // `new Consumer<HarnessBroken>() {}` match, and a diamond or a type-use annotation walked
-        // past it (round-28 review: Codex P1, subagent P3-6, both measured).
+        // past it (round-28 review: Codex P1, subagent P3-6). The second cut counted parentheses
+        // but still read type arguments with `<[^>]*>`, which stops at the first `>` of a NESTED
+        // argument, and read a qualifier as `[\\w.$]*`, which an inner type behind type arguments
+        // is not (round-29 review: Codex P1, subagent P3-2, both measured).
         for (String anonymous : List.of(
                 "throw new HarnessBroken(\"x\") {};",
                 "throw new HarnessBroken<String>(\"x\") {};",
                 "throw new @Nullable HarnessBroken(\"x\") {};",
                 "throw new HarnessBroken(msg, new int[]{1}) {};",
-                "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };")) {
+                "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };",
+                "throw new RefusalHarnessBroken<Map<String,List<Integer>>>(\"x\") {};",
+                "throw new Outer<String>.RefusalHarnessBroken(m) {};",
+                "throw new @Size(min = f(1)) HarnessBroken(\"x\") {};",
+                "throw new\n        HarnessBroken(\"x\") {};")) {
             assertFalse(anonymousBreakages(anonymous, suffix).isEmpty(),
                     "this sweep no longer sees an anonymous subclass of the breakage type in 「"
                             + anonymous + "」, so it would clear the tree without looking for it");
@@ -307,6 +314,9 @@ class HarnessBreakageIsNotAFiringTest {
         for (String honest : List.of(
                 "throw new HarnessBroken(\"x\");",
                 "throw new HarnessBroken(\"x\", cause);",
+                "throw new HarnessBroken(new RuntimeException() {});",
+                "HarnessBroken[] all = new HarnessBroken[]{};",
+                "Supplier<HarnessBroken> s = RefusalHarnessBroken::new;",
                 "Stream.of(new HarnessBroken(\"a\")).forEach(new Consumer<HarnessBroken>() { });")) {
             assertTrue(anonymousBreakages(honest, suffix).isEmpty(),
                     "this sweep calls 「" + honest + "」 an anonymous subclass, so it refuses honest "
@@ -360,41 +370,107 @@ class HarnessBreakageIsNotAFiringTest {
     /**
      * Every ANONYMOUS subclass of the breakage type this source declares, as the text declaring it.
      *
-     * <p>Counted by balancing the argument list rather than by a regex: `[^;{]*` stopped at a brace
-     * inside an argument, and its backtracking matched an honest {@code new Consumer<HarnessBroken>()
-     * { }} — a false refusal of correct source (round-28 review: Codex P1, subagent P3-6).
+     * <p>Parsed rather than matched. Two regex cuts were measured wrong: `[^;{]*` stopped at a
+     * brace inside an argument and its backtracking refused an honest
+     * {@code new Consumer<HarnessBroken>() { }} (round-28 review), and `<[^>]*>` closed the type
+     * arguments at the first `>` of a NESTED one while a `[\w.$]*` qualifier could not describe an
+     * inner type behind type arguments (round-29 review: Codex P1, subagent P3-2). What this walks
+     * is the shape of the expression: annotations, the dotted type reference with balanced type
+     * arguments, the balanced argument list, and then — only then — an opening brace.
      *
      * <p>The caller passes the suffix the RUNNER decides breakage by, so this stays in lockstep
      * with it rather than with the name written here.
      */
     private static List<String> anonymousBreakages(String code, String suffix) {
         List<String> found = new ArrayList<>();
-        Matcher opener = Pattern.compile("new\\s+(?:@[\\w.]+(?:\\s*\\([^)]*\\))?\\s+)*"
-                + "(?:[\\w.$]*\\.)?[\\w$]*" + suffix + "(?:\\s*<[^>]*>)?\\s*\\(").matcher(code);
-        while (opener.find()) {
-            int depth = 1;
-            int at = opener.end();
-            while (at < code.length() && depth > 0) {
-                char c = code.charAt(at++);
-                if (c == '(') {
-                    depth++;
-                } else if (c == ')') {
-                    depth--;
+        Matcher news = Pattern.compile("(?<![\\w$])new(?![\\w$])").matcher(code);
+        while (news.find()) {
+            int at = skipSpace(code, news.end());
+            String simpleName = null;
+            while (at < code.length()) {
+                if (code.charAt(at) == '@') {
+                    at = skipSpace(code, readIdentifier(code, at + 1));
+                    if (at < code.length() && code.charAt(at) == '(') {
+                        at = skipBalanced(code, at, '(', ')');
+                        if (at < 0) {
+                            break;
+                        }
+                        at = skipSpace(code, at);
+                    }
+                    continue;
                 }
+                int nameEnd = readIdentifier(code, at);
+                if (nameEnd == at) {
+                    simpleName = null;
+                    break;
+                }
+                simpleName = code.substring(at, nameEnd);
+                at = skipSpace(code, nameEnd);
+                if (at < code.length() && code.charAt(at) == '<') {
+                    at = skipBalanced(code, at, '<', '>');
+                    if (at < 0) {
+                        simpleName = null;
+                        break;
+                    }
+                    at = skipSpace(code, at);
+                }
+                if (at < code.length() && code.charAt(at) == '.') {
+                    at = skipSpace(code, at + 1);
+                    continue;           // a qualified or inner type: the LAST segment is the name
+                }
+                break;
             }
-            if (depth != 0) {
+            if (simpleName == null || !simpleName.endsWith(suffix)
+                    || at >= code.length() || code.charAt(at) != '(') {
+                continue;               // array creation, a method reference, another type
+            }
+            int afterArguments = skipBalanced(code, at, '(', ')');
+            if (afterArguments < 0) {
                 throw new HarnessBroken("a `new …" + suffix + "(` in this source never closes its "
                         + "arguments, so this sweep cannot tell an anonymous subclass from a "
                         + "plain throw");
             }
-            while (at < code.length() && Character.isWhitespace(code.charAt(at))) {
-                at++;
-            }
-            if (at < code.length() && code.charAt(at) == '{') {
-                found.add(code.substring(opener.start(), at + 1).replace('\n', ' '));
+            int brace = skipSpace(code, afterArguments);
+            if (brace < code.length() && code.charAt(brace) == '{') {
+                found.add(code.substring(news.start(), brace + 1).replace('\n', ' '));
             }
         }
         return found;
+    }
+
+    private static int skipSpace(String code, int at) {
+        while (at < code.length() && Character.isWhitespace(code.charAt(at))) {
+            at++;
+        }
+        return at;
+    }
+
+    private static int readIdentifier(String code, int at) {
+        if (at >= code.length() || !Character.isJavaIdentifierStart(code.charAt(at))) {
+            return at;
+        }
+        int end = at + 1;
+        while (end < code.length() && Character.isJavaIdentifierPart(code.charAt(end))) {
+            end++;
+        }
+        return end;
+    }
+
+    /** Past the matching close, or -1 when it never closes. */
+    private static int skipBalanced(String code, int at, char open, char close) {
+        int depth = 0;
+        while (at < code.length()) {
+            char c = code.charAt(at++);
+            if (c == open) {
+                depth++;
+            } else if (c == close) {
+                depth--;
+                if (depth == 0) {
+                    return at;
+                }
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -806,16 +882,23 @@ class HarnessBreakageIsNotAFiringTest {
                 <!DOCTYPE project [<!-- never closed
                 <project><modules><module>real</module></modules></project>
                 """;
-        assertThrows(HarnessBroken.class, () -> modulesIn(doctypeCommentNeverCloses),
-                "a comment inside the DOCTYPE that never closes was read as if the sweep could "
-                        + "tell its text from its structure");
+        // THE REASON, not just the type: with the dedicated arm removed the scan runs to the end
+        // of the pom and the GENERAL refusal («DOCTYPE declaration that never closes») throws the
+        // same type, so a type-only assertThrows was satisfied by a sibling arm — both reviewers
+        // measured it green with the arm gone (round-29 review: Codex P3, subagent P3-1).
+        assertTrue(assertThrows(HarnessBroken.class, () -> modulesIn(doctypeCommentNeverCloses))
+                        .getMessage().contains("comment inside its DOCTYPE"),
+                "a comment inside the DOCTYPE that never closes was refused for another reason, so "
+                        + "the arm that reads comments there is not what this fixture measures");
         String doctypePiNeverCloses = """
                 <!DOCTYPE project [<?nemaki never closed
                 <project><modules><module>real</module></modules></project>
                 """;
-        assertThrows(HarnessBroken.class, () -> modulesIn(doctypePiNeverCloses),
-                "a processing instruction inside the DOCTYPE that never closes was read as if the "
-                        + "sweep could tell its text from its structure");
+        assertTrue(assertThrows(HarnessBroken.class, () -> modulesIn(doctypePiNeverCloses))
+                        .getMessage().contains("processing instruction inside its DOCTYPE"),
+                "a processing instruction inside the DOCTYPE that never closes was refused for "
+                        + "another reason, so the arm that reads one there is not what this "
+                        + "fixture measures");
 
         String doctypeCommentInSubset = """
                 <!DOCTYPE project [<!-- ] --><!ENTITY g "<modules><module>ghost</module></modules>">]>
