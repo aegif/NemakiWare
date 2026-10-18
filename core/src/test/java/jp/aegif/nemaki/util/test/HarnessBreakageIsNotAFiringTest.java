@@ -345,6 +345,10 @@ class HarnessBreakageIsNotAFiringTest {
         Path aFile = Path.of("Some.java");
         for (String violating : List.of(
                 "class NotAHarnessBroken extends @A RuntimeException { }",
+                "class FalseHarnessBroken extends RuntimeException "
+                        + "implements Supplier<List<? extends HarnessBroken>> { }",
+                "interface FooHarnessBroken extends Supplier<List<? extends HarnessBroken>> { }",
+                "abstract class FooHarnessBroken implements Map<String, List<? extends HarnessBroken>> { }",
                 "class FooHarnessBroken<T extends Map<String, Integer>> { }",
                 "record NotAHarnessBroken(@Size(min = 1) int x) { }",
                 "sealed interface FooHarnessBroken permits A, B { }",
@@ -356,6 +360,9 @@ class HarnessBreakageIsNotAFiringTest {
         }
         for (String honest : List.of(
                 "static final class RefusalHarnessBroken extends HarnessBroken { }",
+                "class RefusalHarnessBroken extends p.@A HarnessBroken { }",
+                "interface AHarnessBroken extends B, CHarnessBroken { }",
+                "interface BHarnessBroken extends CHarnessBroken, D { }",
                 "class RefusalHarnessBroken extends jp.aegif.nemaki.util.test.HarnessBroken { }",
                 "class RefusalHarnessBroken extends @A HarnessBroken { }",
                 "class SomethingElse extends RuntimeException { }")) {
@@ -363,10 +370,23 @@ class HarnessBreakageIsNotAFiringTest {
                     "this sweep calls 「" + honest + "」 a reserved-name violation, so it refuses "
                             + "correct source and the rule it enforces cannot be followed");
         }
+        Path rootFile = Path.of("core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java");
         assertTrue(reservedNameViolations("public class HarnessBroken extends RuntimeException { }",
-                        suffix, Path.of("core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java"))
-                        .isEmpty(),
+                        suffix, rootFile).isEmpty(),
                 "the root breakage type itself is refused, which no tree can satisfy");
+        // THE ROOT'S EXEMPTION, bounded: by path, and top level only. The base name alone let a
+        // nested type inside that file and a same-named file in another module call themselves the
+        // root (round-33 review: Codex P1, subagent P2-2, both measured).
+        assertFalse(reservedNameViolations(
+                        "class Other { static class HarnessBroken extends AssertionError { } }",
+                        suffix, rootFile).isEmpty(),
+                "a NESTED type called exactly HarnessBroken inside the root's own file is allowed, "
+                        + "so a breakage name can be taken by something that is not the root");
+        assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
+                        Path.of("evidence-verifier-core/src/test/java/x/HarnessBroken.java"))
+                        .isEmpty(),
+                "a same-named file in another module is read as the root, so the breakage name can "
+                        + "be taken there");
 
         List<String> misnamed = new ArrayList<>();
         List<String> reserved = new ArrayList<>();
@@ -544,24 +564,35 @@ class HarnessBreakageIsNotAFiringTest {
      *
      * <p>Parsed from the declaration's own shape: the name, its type parameters (balanced, so a
      * bound like {@code <T extends Map<String, Integer>>} does not end the list early), a record's
-     * header, and then every {@code extends} name up to the body — annotations and dots included.
-     * A regex form of this let three legal declarations through, each measured with javac:
+     * header, and then THE FIRST {@code extends} clause only — its comma-separated names, each of
+     * which may carry annotations between its dots.
+     *
+     * <p>Three shapes a regex form let through, each measured with javac:
      * {@code class NotAHarnessBroken extends @A RuntimeException {}},
      * {@code class FooHarnessBroken<T extends Map<String, Integer>> {}} and
      * {@code record NotAHarnessBroken(@Size(min = 1) int x) {}} (round-32 review: Codex P1,
-     * subagent P2-2).
+     * subagent P2-2). And three the first PARSE got wrong in turn, also measured with javac
+     * (round-33 review: Codex P1 ×3, subagent P1-1 and P2-2):
+     * {@code class FalseHarnessBroken extends RuntimeException implements Supplier<List<? extends
+     * HarnessBroken>> {}} read the wildcard's bound as its supertype — a regression against the
+     * regex it replaced; {@code class RefusalHarnessBroken extends p.@A HarnessBroken {}} was
+     * refused because the dotted name stopped at the annotation; and an {@code interface} whose
+     * extends list put the breakage type after a comma answered differently from one that put it
+     * first.
      *
-     * <p>The ROOT is the exception: {@code HarnessBroken} itself extends RuntimeException, and it
-     * is recognised by its own file rather than by its name, so a second type called exactly
-     * {@code HarnessBroken} elsewhere is still a violation (subagent P2-2 measured that the regex
-     * allowed one).
+     * <p>The ROOT is the exception, and it is recognised by its PATH and by being top level:
+     * {@code core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java}. Recognising it by
+     * the file's base name alone let a nested {@code HarnessBroken} inside that file, and a
+     * same-named file in another module, declare themselves the root (round-33 review: Codex P1,
+     * subagent P2-2 — and the javadoc here claimed the opposite, which this tree counts as a code
+     * bug).
      */
     private static List<String> reservedNameViolations(String code, String suffix, Path file) {
         List<String> violations = new ArrayList<>();
-        Matcher declared = Pattern.compile("(?:class|interface|enum|record)\\s+"
+        Matcher declared = Pattern.compile("(?:^|[^\\w$.])(class|interface|enum|record)\\s+"
                 + "([A-Za-z_$][\\w$]*)(?=[\\s<({])").matcher(code);
         while (declared.find()) {
-            String name = declared.group(1);
+            String name = declared.group(2);
             if (!name.endsWith(suffix)) {
                 continue;
             }
@@ -573,34 +604,112 @@ class HarnessBreakageIsNotAFiringTest {
                 at = skipSpace(code, balancedOrBreak(code, at, '(', ')', "record header"));
             }
             boolean extendsABreakage = false;
+            // THE FIRST extends CLAUSE, nothing else. Walking every `extends` token up to the body
+            // read the bound of a wildcard inside an `implements` type argument as this type's own
+            // supertype (round-33 review: Codex P1, subagent P1-1, four shapes measured).
             while (at < code.length() && code.charAt(at) != '{') {
-                if (code.startsWith("extends", at) && !Character.isJavaIdentifierPart(
-                        code.charAt(Math.min(at + "extends".length(), code.length() - 1)))) {
-                    int nameAt = skipSpace(code, at + "extends".length());
-                    while (nameAt < code.length() && code.charAt(nameAt) == '@') {
-                        nameAt = skipSpace(code, readDottedIdentifier(code, nameAt + 1));
-                        if (nameAt < code.length() && code.charAt(nameAt) == '(') {
-                            nameAt = skipSpace(code, balancedOrBreak(code, nameAt, '(', ')',
-                                    "annotation arguments"));
-                        }
-                    }
-                    int end = readDottedIdentifier(code, nameAt);
-                    if (code.substring(nameAt, end).endsWith(suffix)) {
-                        extendsABreakage = true;
-                    }
-                    at = end;
+                if (code.charAt(at) == '<') {
+                    // NEVER inside type arguments: `implements Map<String, List<? extends X>>` has
+                    // an `extends` in it that belongs to a wildcard, not to this declaration
+                    // (round-33 review: Codex P1, subagent P1-1).
+                    at = skipSpace(code, pastTypeArguments(code, at));
                     continue;
+                }
+                if (code.startsWith("extends", at)
+                        && (at + 7 >= code.length()
+                                || !Character.isJavaIdentifierPart(code.charAt(at + 7)))) {
+                    at = skipSpace(code, at + "extends".length());
+                    while (at < code.length()) {
+                        at = skipSpace(code, pastAnnotations(code, at));
+                        int end = readAnnotatedDottedIdentifier(code, at);
+                        if (end == at) {
+                            break;                      // not a name: the clause is over
+                        }
+                        if (lastSegment(code.substring(at, end)).endsWith(suffix)) {
+                            extendsABreakage = true;
+                        }
+                        at = skipSpace(code, end);
+                        if (at < code.length() && code.charAt(at) == '<') {
+                            at = skipSpace(code, pastTypeArguments(code, at));
+                        }
+                        if (at < code.length() && code.charAt(at) == ',') {
+                            at = skipSpace(code, at + 1);
+                            continue;                   // an interface may extend several
+                        }
+                        break;
+                    }
+                    break;                              // one extends clause per declaration
                 }
                 at++;
             }
-            boolean isTheRoot = name.equals(suffix)
-                    && file.getFileName().toString().equals(suffix + ".java");
+            int bodyAt = at;
+            while (bodyAt < code.length() && code.charAt(bodyAt) != '{') {
+                bodyAt++;
+            }
+            boolean isTheRoot = name.equals(suffix) && isTheRootFile(file)
+                    && startsAtColumnZero(code, declared.start());
             if (!extendsABreakage && !isTheRoot) {
                 violations.add(file + " 「" + code.substring(declared.start(),
-                        Math.min(at + 1, code.length())).replace('\n', ' ').trim() + "」");
+                        Math.min(bodyAt + 1, code.length())).replace('\n', ' ').trim() + "」");
             }
         }
         return violations;
+    }
+
+    /** The one file the root breakage type may live in, by path rather than by base name. */
+    private static boolean isTheRootFile(Path file) {
+        return file.toString().replace('\\', '/')
+                .endsWith("jp/aegif/nemaki/util/test/HarnessBroken.java");
+    }
+
+    /** Whether a declaration is top level here: its line holds only modifiers before it. */
+    private static boolean startsAtColumnZero(String code, int at) {
+        int lineStart = code.lastIndexOf('\n', Math.max(at - 1, 0)) + 1;
+        String before = code.substring(lineStart, at).trim();
+        return before.isEmpty() || before.matches("(?:public|final|abstract|sealed|non-sealed|\\s)+");
+    }
+
+    /** Past any annotations (with their arguments) at this position. */
+    private static int pastAnnotations(String code, int at) {
+        while (at < code.length() && code.charAt(at) == '@') {
+            at = skipSpace(code, readDottedIdentifier(code, at + 1));
+            if (at < code.length() && code.charAt(at) == '(') {
+                at = skipSpace(code, balancedOrBreak(code, at, '(', ')', "annotation arguments"));
+            }
+        }
+        return at;
+    }
+
+    /**
+     * Past a dotted type name whose segments may carry annotations: {@code p.@A HarnessBroken}.
+     *
+     * <p>Reading the dots without the annotations refused that name, which javac accepts
+     * (round-33 review, Codex P1).
+     */
+    private static int readAnnotatedDottedIdentifier(String code, int at) {
+        int end = readIdentifier(code, at);
+        if (end == at) {
+            return at;
+        }
+        while (true) {
+            int afterDot = skipSpace(code, end);
+            if (afterDot >= code.length() || code.charAt(afterDot) != '.') {
+                return end;
+            }
+            int next = skipSpace(code, pastAnnotations(code, skipSpace(code, afterDot + 1)));
+            int segment = readIdentifier(code, next);
+            if (segment == next) {
+                return end;
+            }
+            end = segment;
+        }
+    }
+
+    /** The simple name of a dotted reference, annotations and spaces removed. */
+    private static String lastSegment(String dotted) {
+        String[] parts = dotted.replaceAll("@[\\w.]+(?:\\s*\\([^)]*\\))?", "")
+                .replaceAll("\\s+", "").split("\\.");
+        return parts[parts.length - 1];
     }
 
     /**

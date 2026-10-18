@@ -331,7 +331,7 @@ class ReleaseReadinessIsMeasuredTest {
         // and the sections that write 「**ゲートと実測**: **全ユニット N 本」 (rounds 16 and 17)
         // read as "this round recorded no run", which would make the reader blame the readiness
         // document for a run the plan DOES record.
-        String batchPlan = read(BATCH_PLAN).replaceAll("(?s)```.*?```", "");
+        String batchPlan = withoutFencesAndComments(read(BATCH_PLAN));
         Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
                 .matcher(batchPlan);
         int newestRound = 0;
@@ -359,7 +359,16 @@ class ReleaseReadinessIsMeasuredTest {
                         + " gate figures " + figures + ", so this reader cannot tell which run the "
                         + "readiness document should be naming");
             }
-            if (Pattern.compile("(?m)^\\*\\*ゲートと実測\\*\\*:").matcher(rounds.group(2)).find()) {
+            // COUNTED LOOSELY, and per occurrence: the figure is read from the start of a line
+            // and this is not, so a gate line written as a list item, a quotation or an indented
+            // line — all of which this plan uses elsewhere — shows up HERE and not there, and the
+            // assertion below is what notices. Sharing the anchor between the two counters made
+            // such a line vanish from both, which left the anchor itself unmeasured (round-33
+            // review: subagent P2-1 measured both halves, Codex P2 ×2).
+            Matcher claims = Pattern.compile(
+                    "(?m)^[\\s>*-]*\\*\\*ゲートと実測\\*\\*:[^\\n]*全ユニット")
+                    .matcher(rounds.group(2));
+            while (claims.find()) {
                 saysItRan++;
             }
             if (figures.size() == 1) {
@@ -377,13 +386,13 @@ class ReleaseReadinessIsMeasuredTest {
         // (round-32 review, subagent P2-3). Asserted rather than refused, so a sabotage of the
         // tolerance is measurable.
         assertEquals(saysItRan, figuresRead,
-                saysItRan + " round sections state 「**ゲートと実測**:」 and this reader could read "
+                saysItRan + " gate lines state a 全ユニット figure and this reader could read "
                         + figuresRead + " figures. A section whose figure it cannot read is not a "
                         + "section without a run");
         if (newestFigure == null) {
-            throw new HarnessBroken("the batch plan records no round with a 「全ユニット **N 本」 "
-                    + "figure, so this reader cannot tell which tree the readiness document should "
-                    + "be naming as the latest");
+            throw new HarnessBroken("the batch plan records no round with a gate line stating "
+                    + "「全ユニット **N 本」 or 「**全ユニット N 本」, so this reader cannot tell "
+                    + "which tree the readiness document should be naming as the latest");
         }
         Matcher names = Pattern.compile(
                 "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
@@ -405,6 +414,39 @@ class ReleaseReadinessIsMeasuredTest {
                         + possiblyExcluded + " can be removed by the excluded groups, so a real "
                         + "run cannot be below " + floor + ". A recorded run can EXCEED the "
                         + "annotation count (parameterised tests) but never fall below this");
+    }
+
+    /**
+     * The document with fenced blocks and HTML comments taken out, or a refusal.
+     *
+     * <p>Only ``` was stripped at first, and the strip was a non-greedy pair: a `~~~` fence, a
+     * comment, or an ODD number of line-start fences each left a `### …` heading that is not a
+     * section —
+     * the odd case deleted ten of seventeen sections and the reader then refused the readiness
+     * document for a round the plan does record (round-33 review: Codex P2, subagent P3-4, both
+     * measured). An unbalanced fence is this reader unable to read the document, which is not the
+     * same as the document saying nothing.
+     */
+    private static String withoutFencesAndComments(String markdown) {
+        for (String fence : List.of("```", "~~~")) {
+            // AT THE START OF A LINE. Counting the delimiter anywhere refused this very document:
+            // a round record that MENTIONS ``` inside a table cell made the count odd, and the
+            // reader then said it could not tell prose from code — a false refusal of a correct
+            // document, measured the moment this guard first ran (round 33).
+            Matcher opener = Pattern.compile("(?m)^" + Pattern.quote(fence)).matcher(markdown);
+            int count = 0;
+            while (opener.find()) {
+                count++;
+            }
+            if (count % 2 != 0) {
+                throw new HarnessBroken("the batch plan opens 「" + fence + "」 at the start of a "
+                        + "line " + count + " times, an odd number, so this reader cannot tell its "
+                        + "prose from its code");
+            }
+            markdown = markdown.replaceAll("(?ms)^" + Pattern.quote(fence) + ".*?^"
+                    + Pattern.quote(fence) + "[^\n]*", "");
+        }
+        return markdown.replaceAll("(?s)<!--.*?-->", "");
     }
 
     /**
