@@ -147,6 +147,13 @@ public class ContentServiceImpl implements ContentService {
 	 * {@code ContentDaoService}, not through this service, so there is no cycle.
 	 */
 	private jp.aegif.nemaki.cmis.factory.auth.ApiKeyService apiKeyService;
+
+	/** Used only to take a deleted user's RSS feed tokens out of the store (R170, batch 19). */
+	private jp.aegif.nemaki.rss.RssTokenService rssTokenService;
+
+	public void setRssTokenService(jp.aegif.nemaki.rss.RssTokenService rssTokenService) {
+		this.rssTokenService = rssTokenService;
+	}
 	// TypeManager obtained via SpringContext to avoid circular dependency
 	// private TypeManager typeManager;
 	private RenditionManager renditionManager;
@@ -995,19 +1002,34 @@ public class ContentServiceImpl implements ContentService {
 	 * the security boundary holds without this.
 	 */
 	private void revokeCredentialsOf(String repositoryId, String userId) {
-		if (apiKeyService == null || userId == null) {
+		if (userId == null) {
 			return;
 		}
-		try {
-			int revoked = apiKeyService.revokeApiKeysOf(repositoryId, userId);
-			if (revoked > 0) {
-				log.info("Revoked " + revoked + " API key(s) of the deleted user " + userId
-						+ " in repository " + repositoryId);
+		if (apiKeyService != null) {
+			try {
+				int revoked = apiKeyService.revokeApiKeysOf(repositoryId, userId);
+				if (revoked > 0) {
+					log.info("Revoked " + revoked + " API key(s) of the deleted user " + userId
+							+ " in repository " + repositoryId);
+				}
+			} catch (Exception failed) {
+				log.warn("Could not revoke the API keys of the deleted user " + userId
+						+ " in repository " + repositoryId + "; they cannot authenticate, but the"
+						+ " rows stay in the store: " + failed.getMessage());
 			}
-		} catch (Exception failed) {
-			log.warn("Could not revoke the API keys of the deleted user " + userId
-					+ " in repository " + repositoryId + "; they cannot authenticate, but the rows"
-					+ " stay in the store: " + failed.getMessage());
+		}
+		if (rssTokenService != null) {
+			try {
+				int revoked = rssTokenService.revokeTokensOf(repositoryId, userId);
+				if (revoked > 0) {
+					log.info("Revoked " + revoked + " RSS feed token(s) of the deleted user "
+							+ userId + " in repository " + repositoryId);
+				}
+			} catch (Exception failed) {
+				log.warn("Could not revoke the RSS feed tokens of the deleted user " + userId
+						+ " in repository " + repositoryId + "; they cannot be validated, but the"
+						+ " rows stay in the store: " + failed.getMessage());
+			}
 		}
 	}
 

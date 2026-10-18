@@ -47,6 +47,19 @@ public class RssTokenServiceTest {
         // on every other one. Validation now reads through, so the tests wire the store
         // production always has.
         tokenService.setRssTokenDaoService(new InMemoryRssTokenDao());
+        // A feed token is bound to the account DOCUMENT it is issued for (R170, 3.4.1 batch 19), so
+        // the service reads the user: without this no token can be issued at all, and every test
+        // here would fail on that instead of on what it is about.
+        jp.aegif.nemaki.dao.ContentDaoService users =
+                org.mockito.Mockito.mock(jp.aegif.nemaki.dao.ContentDaoService.class);
+        jp.aegif.nemaki.model.UserItem account = new jp.aegif.nemaki.model.UserItem(
+                "account-document", "nemaki:user", "testuser", "testuser", "hash", false, null);
+        account.setSubTypeProperties(new java.util.ArrayList<>());
+        org.mockito.Mockito.when(users.getUserItemById(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(account);
+        tokenService.setContentDaoService(users);
     }
 
     /** A store, not a cache: every read goes to it, which is the point of the change. */
