@@ -79,10 +79,10 @@ import org.junit.jupiter.api.Test;
  * how a meta-test checks that a lock fires. A {@code catch} form was swept for one round and only
  * ever refused those legitimate shapes (round-17 review: both reviewers).
  *
- * <p>Two limits a lock's author has to know. (1) The modules outside {@code core} have no
+ * <p>The limits a lock's author has to know. The modules outside {@code core} have no
  * {@code HarnessBroken} on their test path, so a lock there can only avoid producing an
  * assertion type — its breakage reads to the runner as "did not fire" rather than being
- * excluded by name. (2) Saying breakage through an ASSERTION METHOD
+ * excluded by name. And saying breakage through an ASSERTION METHOD
  * ({@code assertTrue(found > 0, "X is gone")}) cannot be swept at all: it is
  * indistinguishable from an ordinary assertion, two predicates measured it as 50 and 404
  * occurrences, and neither is the set. That half is residual R191.
