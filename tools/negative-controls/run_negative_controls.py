@@ -9774,8 +9774,8 @@ CONTROLS = [
         id='GN3',
         what="the canon's second statement of the sweep boundary drifts from the first — the lock read only the first once",
         file='docs/design/fail-closed-reads.md',
-        find='**9 回目以後に足した control は 488 本**（通し未実施）（境界 QJ4）。',
-        replace='**9 回目以後に足した control は 488 本**（通し未実施）（境界 QI4）。',
+        find='**9 回目以後に足した control は 491 本**（通し未実施）（境界 QJ4）。',
+        replace='**9 回目以後に足した control は 491 本**（通し未実施）（境界 QI4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
     ),
@@ -9894,8 +9894,8 @@ CONTROLS = [
         id='GY3',
         what='after a sweep that ran every control, the readiness document still marks the added-since-sweep count unswept',
         file='docs/design/v3.4-release-readiness.md',
-        find='**9 回目以後に足した control は 488 本**（通し未実施）（境界 QJ4、正典 §5）。',
-        replace='**9 回目以後に足した control は 488 本**（境界 QJ4、正典 §5）。',
+        find='**9 回目以後に足した control は 491 本**（通し未実施）（境界 QJ4、正典 §5）。',
+        replace='**9 回目以後に足した control は 491 本**（境界 QJ4、正典 §5）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -10895,7 +10895,7 @@ CONTROLS = [
         what="the canon's summary states a never-swept count the runner does not have, so the next full sweep is scoped from a wrong figure",
         file='docs/design/fail-closed-reads.md',
         # Re-pointed after the fifth sweep: the never-swept set is now "added since the sweep".
-        find='  **9 回目以後に足した control は 488 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 491 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         replace='  **9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10909,7 +10909,7 @@ CONTROLS = [
         # so the ids above it stay 0 and the cross-check (declared − swept vs ids above) passes;
         # what fails is the stated count against the runner's (measured 2026-10-01: "states the
         # never-swept count as 5 and the runner declares 0"). KP3 takes the same count in §1.
-        find='**9 回目以後に足した control は 488 本**（通し未実施）（境界 QJ4）。',
+        find='**9 回目以後に足した control は 491 本**（通し未実施）（境界 QJ4）。',
         replace='**9 回目以後に足した control は 5 本**（通し未実施）（境界 QJ4）。',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -10965,8 +10965,8 @@ CONTROLS = [
         id='LN3',
         what='after a sweep that ran every control, the canon still marks the added-since-sweep count unswept, so a finished sweep reads as outstanding',
         file='docs/design/fail-closed-reads.md',
-        find='  **9 回目以後に足した control は 488 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
-        replace='  **9 回目以後に足した control は 488 本**（境界 QJ4 — 9 回目時点の最大 ID。',
+        find='  **9 回目以後に足した control は 491 本**（通し未実施）（境界 QJ4 — 9 回目時点の最大 ID。',
+        replace='  **9 回目以後に足した control は 491 本**（境界 QJ4 — 9 回目時点の最大 ID。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
     ),
@@ -11820,7 +11820,7 @@ CONTROLS = [
         id='LB3',
         what="the plan states a never-swept count the runner does not have — the third document a per-file lock did not read",
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='9 回目以後に足した control は **488 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
+        find='9 回目以後に足した control は **491 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         replace='9 回目以後に足した control は **5 本**（通し未実施）。\n1 本ずつの ID 指定実測は',
         test='EverySupportedCouchDbIsMeasuredTest',
         expect_fail=['theRecordedNumbersAreTheRealOnes'],
@@ -13874,7 +13874,7 @@ CONTROLS = [
         what="the readiness table states a control total the runner does not declare",
         module='core',
         file='docs/design/v3.4-release-readiness.md',
-        find='| 通し negative-control | 各回の記録は正典 §5 | 2211 本 |',
+        find='| 通し negative-control | 各回の記録は正典 §5 | 2214 本 |',
         replace='| 通し negative-control | 各回の記録は正典 §5 | 1139 本 |',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -13959,7 +13959,7 @@ CONTROLS = [
         what="the plan states an added-since-sweep count that is not the runner's total less the sweep",
         module='core',
         file='docs/design/v3.4.0-evidence-and-residuals-plan.md',
-        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **488 本**（通し未実施）。',
+        find='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **491 本**（通し未実施）。',
         replace='すべて発火した（日時は正典 §5）。9 回目以後に足した control は **100 本**（通し未実施）。',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['aFinishedSweepOfFewerControlsDoesNotReadAsTodays'],
@@ -13969,7 +13969,7 @@ CONTROLS = [
         what="the SECOND reader of the canon's control total stops comparing it with the runner (EverySupportedCouchDbIsMeasuredTest has compared it all along — this control measures the redundant check, not a gap)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='- コントロール **2211**（2026-10-19 時点）',
+        find='- コントロール **2214**（2026-10-19 時点）',
         replace='- コントロール **1150**（2026-09-23 時点）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessControlCountIsTheRunners'],
@@ -24467,7 +24467,7 @@ CONTROLS = [
         what="the canon's count of the controls that name the sweep stops being compared with the runner — the figure that was written wrong three rounds running (6, then 7, then 9)",
         module='core',
         file='docs/design/fail-closed-reads.md',
-        find='**掃き取り自身を名指す control は 33 本**（HX5・HY5・HZ5・IA5・IC5・ID5・IE5・IF5・IG5・IH5・IJ5・IK5・IL5・IM5・IN5・IO5・IP5・IQ5・IR5・IS5・IT5・IU5・IV5・IW5・IX5・IY5・IZ5・JB5・JD5・JE5・JG5・MR・MS）',
+        find='**掃き取り自身を名指す control は 36 本**（HX5・HY5・HZ5・IA5・IC5・ID5・IE5・IF5・IG5・IH5・IJ5・IK5・IL5・IM5・IN5・IO5・IP5・IQ5・IR5・IS5・IT5・IU5・IV5・IW5・IX5・IY5・IZ5・JB5・JD5・JE5・JG5・JI5・JJ5・JK5・MR・MS）',
         replace='**掃き取り自身を名指す control は 6 本**（HX5・HY5・HZ5・IA5・IC5・ID5）',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theSweepsOwnControlCountIsTheRunners'],
@@ -24652,8 +24652,8 @@ CONTROLS = [
         id='JA5',
         what="the readiness document's latest-measurement line names a round other than the batch plan's newest recorded run — the provenance slipped a round behind four times (rounds 20, 21, 29 and 30) because the bound beside it reads only the NUMBER, which a round that adds no test does not move (round-30 review: subagent P2-2, Codex P3)",
         file='docs/design/v3.4-release-readiness.md',
-        find='本 green**（2026-10-19 完了、**確認 32 巡目**',
-        replace='本 green**（2026-10-19 完了、**確認 31 巡目**',
+        find='本 green**（2026-10-19 完了、**確認 33 巡目**',
+        replace='本 green**（2026-10-19 完了、**確認 32 巡目**',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
@@ -24714,11 +24714,16 @@ CONTROLS = [
     ),
     dict(
         id='JG5',
-        what='the reserved-name arm stops reading annotations before a supertype, so `class NotAHarnessBroken extends @A RuntimeException { }` — javac accepts it — is not refused while an honest `extends @A HarnessBroken` is (round-32 review: Codex P1, subagent P2-2, both measured with javac)',
+        what="the reserved-name reader stops reading an annotation before a supertype, so an "
+             "honest `class RefusalHarnessBroken extends @A HarnessBroken { }` — javac accepts "
+             "it — is refused as if it extended nothing. (Only the honest arm flips: without the "
+             "annotation skipped the name reads empty, which still does not end with the suffix, "
+             "so the violating fixtures stay violations — round-33 review, subagent P3-1 "
+             "corrected this control's own description)",
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
-        find="                    while (nameAt < code.length() && code.charAt(nameAt) == '@') {",
-        replace='                    if (false) {',
+        find="        while (at < code.length() && code.charAt(at) == '@') {",
+        replace='        if (false) {',
         test='HarnessBreakageIsNotAFiringTest',
         expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
     ),
@@ -24732,6 +24737,48 @@ CONTROLS = [
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['theReadinessUnitTotalIsAtLeastTheSources'],
     ),
+    dict(
+        id='JI5',
+        what="the reserved-name reader walks INTO type arguments again, so the `extends` that "
+             "belongs to a wildcard bound inside `implements Map<String, List<? extends "
+             "HarnessBroken>>` is read as the declaration's own supertype and a type that is not "
+             "a breakage type keeps the name (round-33 review: Codex P1, subagent P1-1, four "
+             "shapes measured with javac). The first form of this control removed the "
+             "implements/permits break instead and did not fire — Java puts `extends` before "
+             "both, so with type arguments skipped that break cannot change an answer; it was "
+             "removed rather than kept as an arm no control can reach",
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
+        find="                if (code.charAt(at) == '<') {\n                    // NEVER inside type arguments: `implements Map<String, List<? extends X>>` has\n                    // an `extends` in it that belongs to a wildcard, not to this declaration\n                    // (round-33 review: Codex P1, subagent P1-1).\n                    at = skipSpace(code, pastTypeArguments(code, at));\n                    continue;\n                }",
+        replace='                if (false) {\n                    // NEVER inside type arguments: `implements Map<String, List<? extends X>>` has\n                    // an `extends` in it that belongs to a wildcard, not to this declaration\n                    // (round-33 review: Codex P1, subagent P1-1).\n                    at = skipSpace(code, pastTypeArguments(code, at));\n                    continue;\n                }',
+        test='HarnessBreakageIsNotAFiringTest',
+        expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
+    ),
+    dict(
+        id='JJ5',
+        what="the reserved-name reader stops reading annotations between the dots of a supertype's name, so `class RefusalHarnessBroken extends p.@A HarnessBroken { }` — javac accepts it — is refused as if it did not extend a breakage type (round-33 review, Codex P1)",
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
+        find='            int next = skipSpace(code, pastAnnotations(code, skipSpace(code, afterDot + 1)));',
+        replace='            int next = skipSpace(code, afterDot + 1);',
+        test='HarnessBreakageIsNotAFiringTest',
+        expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
+    ),
+    dict(
+        id='JK5',
+        what="the root breakage type is recognised by its file's base name again, so a nested type called exactly HarnessBroken inside that file — or a same-named file in another module — declares itself the root and takes the name the runner reads as a breakage (round-33 review: Codex P1, subagent P2-2)",
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
+        find='        return file.toString().replace(\'\\\\\', \'/\')\n                .endsWith("jp/aegif/nemaki/util/test/HarnessBroken.java");',
+        replace='        return file.getFileName().toString().equals("HarnessBroken.java");',
+        test='HarnessBreakageIsNotAFiringTest',
+        expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
+    ),
+    # JL5 is retired: it sabotaged the LOOSE counter that notices a gate line this reader
+    # cannot read (a list item, a quotation, an indented line). Measured DID NOT FIRE —
+    # every gate line in the plan is canonical today, so the loose counter sees exactly
+    # what the anchored one sees, and a fixture written the other way would make the
+    # invariant itself fail. The limit is recorded in the canon's R189 row (round 33).
 ]
 
 
