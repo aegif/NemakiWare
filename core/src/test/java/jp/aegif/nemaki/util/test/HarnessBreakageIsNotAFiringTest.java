@@ -307,6 +307,8 @@ class HarnessBreakageIsNotAFiringTest {
                 "throw new @jp.aegif.nemaki.util.test.Nn HarnessBroken(\"x\") {};",
                 "throw new @Nn(min = 1) HarnessBroken(\"x\") {};",
                 "throw new <String> HarnessBroken(\"x\", 1) {};",
+                "throw new <@A(v = 1 > 0) String> HarnessBroken(\"x\") {};",
+                "throw new FooHarnessBroken<String>(\"x\") {};",
                 "throw new HarnessBroken(msg, new int[]{1}) {};",
                 "throw new HarnessBroken(msg, new RuntimeException() {}) {};",
                 "throw new jp.aegif.nemaki.util.test.RefusalHarnessBroken(m) { };",
@@ -337,6 +339,7 @@ class HarnessBreakageIsNotAFiringTest {
                             + "source and the rule it enforces cannot be followed");
         }
         List<String> misnamed = new ArrayList<>();
+        List<String> reserved = new ArrayList<>();
         int declarations = 0;
         for (Path root : testRoots()) {
             int inThisRoot = 0;
@@ -355,6 +358,24 @@ class HarnessBreakageIsNotAFiringTest {
                         misnamed.add(file + " 「" + declared.group().trim() + "」");
                     }
                 }
+                // THE SUFFIX IS RESERVED, both ways. This sweep classifies by NAME because the
+                // runner does, so a type called …HarnessBroken that is not a breakage type at all
+                // makes the two disagree: an anonymous subclass of it is refused here while the
+                // runner would score its throws as a firing, and `class FooHarnessBroken<T>`
+                // (legal, as it extends nothing) is the only way the type-argument arm is reachable
+                // at all. Both reviewers arrived here from opposite ends (round-31 review: Codex P1
+                // called the refusal an over-refusal, subagent P3-3 found the arm reachable only
+                // through such a type). The rule that makes the two agree: the name belongs to
+                // breakage types.
+                Matcher named = Pattern.compile("(?:class|interface|enum|record)\\s+"
+                        + "([A-Za-z_$][\\w$]*" + suffix + ")(?:<[^>]*>)?(?:\\s*\\([^)]*\\))?"
+                        + "\\s*(?:(extends)\\s+([\\w.$]+)|implements|\\{)").matcher(code);
+                while (named.find()) {
+                    String extended = named.group(3);
+                    if (extended == null || !extended.endsWith(suffix)) {
+                        reserved.add(file + " 「" + named.group().replace('\n', ' ').trim() + "」");
+                    }
+                }
                 for (String inline : anonymousBreakages(code, suffix)) {
                     misnamed.add(file + " 「" + inline.trim() + "」");
                 }
@@ -371,6 +392,13 @@ class HarnessBreakageIsNotAFiringTest {
                     + "sources, and this class declares one, so this sweep is not reading the "
                     + "sources it is meant to read");
         }
+
+        assertTrue(reserved.isEmpty(),
+                "a type whose name ends with 「" + suffix + "」 that is not a breakage type. This "
+                        + "sweep and the control runner both classify by that suffix, so such a "
+                        + "type makes an honest anonymous subclass of it read as a breakage the "
+                        + "runner cannot recognise — and makes this sweep refuse correct source: "
+                        + reserved);
 
         assertTrue(misnamed.isEmpty(),
                 "a breakage type whose runtime name does NOT end with 「" + suffix + "」 — either a "
@@ -399,8 +427,11 @@ class HarnessBreakageIsNotAFiringTest {
      * {@code new Outer<String>.InnerHarnessBroken(…) {}} are not source this sweep can meet. What
      * IS reachable, and is driven below: a qualified type-use annotation, an annotation with
      * constant arguments, the constructor's OWN type arguments ({@code new <String> H(…) {}} on a
-     * non-generic Throwable), and a dotted qualifier. The angle-skip after the type name stays as
-     * robustness, not as a claim about reachable source.
+     * non-generic Throwable), and a dotted qualifier. The angle-skip AFTER the type name is
+     * reachable only through a type named …HarnessBroken that is not a breakage type at all
+     * (`class FooHarnessBroken<T>` extending nothing compiles) — the sweep below now refuses
+     * that name outright, so the arm is driven by a fixture rather than by live source
+     * (round-31 review: subagent P3-3 measured the reachability, Codex P1 the over-refusal).
      *
      * <p>The caller passes the suffix the RUNNER decides breakage by, so this stays in lockstep
      * with it rather than with the name written here.
@@ -415,7 +446,7 @@ class HarnessBreakageIsNotAFiringTest {
             // one reachable `<…>` shape, while the rewrite chased unreachable ones (round-30
             // review: subagent P3-1, Codex P1).
             if (at < code.length() && code.charAt(at) == '<') {
-                at = skipSpace(code, balancedOrBreak(code, at, '<', '>', suffix));
+                at = skipSpace(code, pastTypeArguments(code, at));
             }
             String simpleName = null;
             while (at < code.length()) {
@@ -427,7 +458,8 @@ class HarnessBreakageIsNotAFiringTest {
                     // and the round-29 rewrite dropped it).
                     at = skipSpace(code, readDottedIdentifier(code, at + 1));
                     if (at < code.length() && code.charAt(at) == '(') {
-                        at = skipSpace(code, balancedOrBreak(code, at, '(', ')', suffix));
+                        at = skipSpace(code, balancedOrBreak(code, at, '(', ')',
+                                "annotation arguments"));
                     }
                     continue;
                 }
@@ -439,7 +471,7 @@ class HarnessBreakageIsNotAFiringTest {
                 simpleName = code.substring(at, nameEnd);
                 at = skipSpace(code, nameEnd);
                 if (at < code.length() && code.charAt(at) == '<') {
-                    at = skipSpace(code, balancedOrBreak(code, at, '<', '>', suffix));
+                    at = skipSpace(code, pastTypeArguments(code, at));
                 }
                 if (at < code.length() && code.charAt(at) == '.') {
                     at = skipSpace(code, at + 1);
@@ -451,7 +483,8 @@ class HarnessBreakageIsNotAFiringTest {
                     || at >= code.length() || code.charAt(at) != '(') {
                 continue;               // array creation, a method reference, another type
             }
-            int brace = skipSpace(code, balancedOrBreak(code, at, '(', ')', suffix));
+            int brace = skipSpace(code, balancedOrBreak(code, at, '(', ')',
+                    "argument list"));
             if (brace < code.length() && code.charAt(brace) == '{') {
                 found.add(code.substring(news.start(), brace + 1).replace('\n', ' '));
             }
@@ -462,18 +495,55 @@ class HarnessBreakageIsNotAFiringTest {
     /**
      * Past the matching close, or the harness is broken — never "nothing here".
      *
-     * <p>Three places walked a bracket pair and two of them returned the unbalanced case as a
-     * silent skip, which reports «I could not read this» with the same value as «this is not a
-     * breakage type» (round-30 review, subagent P3-2).
+     * <p>FOUR places walk a bracket pair here (the constructor's type arguments, an annotation's
+     * arguments, the type's own type arguments, the argument list) and two of them returned the
+     * unbalanced case as a silent skip until round 30, which reports «I could not read this» with
+     * the same value as «this is not a breakage type» (round-30 review, subagent P3-2; the count
+     * said three until round-31 review, subagent P3-1 — the fourth was added in the same commit).
+     *
+     * <p>The refusal names WHAT it was walking, not a type: three of the four run before the name
+     * is known, so saying «a new …HarnessBroken» there was a wrong reason for a right refusal —
+     * `new HashMap<String, Integer();` was refused with the breakage type's name in the message
+     * (round-31 review, subagent P3-2, measured).
      */
-    private static int balancedOrBreak(String code, int at, char open, char close, String suffix) {
+    private static int balancedOrBreak(String code, int at, char open, char close, String walking) {
         int past = skipBalanced(code, at, open, close);
         if (past < 0) {
-            throw new HarnessBroken("a `new …" + suffix + "` in this source has a 「" + open
-                    + "」 that never closes, so this sweep cannot tell an anonymous subclass from "
-                    + "a plain throw");
+            throw new HarnessBroken("a 「" + open + "」 in this source's " + walking + " never "
+                    + "closes, so this sweep cannot tell an anonymous subclass of the breakage "
+                    + "type from a plain throw");
         }
         return past;
+    }
+
+    /**
+     * Past a type-argument list, with each annotation's own arguments stepped over.
+     *
+     * <p>`>` is legal inside a type-use annotation's constant expression —
+     * {@code new <@A(v = 1 > 0) String> HarnessBroken("x") {}} compiles — and counting brackets
+     * through it closed the list early, so the anonymous subclass after it was not seen
+     * (round-31 review, Codex P1, confirmed with javac here).
+     */
+    private static int pastTypeArguments(String code, int at) {
+        int depth = 0;
+        while (at < code.length()) {
+            char c = code.charAt(at);
+            if (c == '(') {
+                at = balancedOrBreak(code, at, '(', ')', "annotation arguments");
+                continue;
+            }
+            at++;
+            if (c == '<') {
+                depth++;
+            } else if (c == '>') {
+                depth--;
+                if (depth == 0) {
+                    return at;
+                }
+            }
+        }
+        throw new HarnessBroken("a 「<」 in this source's type arguments never closes, so this "
+                + "sweep cannot tell an anonymous subclass of the breakage type from a plain throw");
     }
 
     /** `a.b.C`, as a type-use annotation is allowed to be written. */

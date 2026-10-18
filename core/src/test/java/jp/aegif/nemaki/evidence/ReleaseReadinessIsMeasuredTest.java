@@ -53,6 +53,7 @@ class ReleaseReadinessIsMeasuredTest {
 
     private static final Path CANON = Path.of("../docs/design/fail-closed-reads.md");
     private static final Path PLAN = Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md");
+    private static final Path BATCH_PLAN = Path.of("../docs/design/v3.4.1-plan.md");
     private static final Path READINESS = Path.of("../docs/design/v3.4-release-readiness.md");
     private static final Path SPEC = Path.of("../docs/design/evidence-profile-v1.md");
     private static final Path RUNNER = Path.of("../tools/negative-controls/run_negative_controls.py");
@@ -322,16 +323,33 @@ class ReleaseReadinessIsMeasuredTest {
         // the bound above reads the NUMBER, which does not move when a round adds no test, so
         // nothing noticed that the provenance was a round behind (round-30 review: subagent P2-2,
         // Codex P3 — "discipline did not stop it four times" is the reason this is mechanical).
-        String batchPlan = read(Path.of("../docs/design/v3.4.1-plan.md"));
-        Matcher rounds = Pattern.compile("(?s)### 確認 (\\d+) 巡目(.*?)(?=\\n### |$)").matcher(batchPlan);
+        // THE GATE LINE, at the start of a line, and only one per round. Reading any 「全ユニット
+        // **N 本」 inside a section took whichever came first, so a record that QUOTES an older
+        // figure before its own gate paragraph would be read as that round's run; the heading was
+        // also unanchored, so a deeper heading could open a section the pattern never closed
+        // (round-31 review: Codex P2, subagent P3-5 — both measured today's tree as unambiguous,
+        // which is exactly when a reader like this one is cheap to harden).
+        String batchPlan = read(BATCH_PLAN);
+        Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
+                .matcher(batchPlan);
         int newestRound = 0;
         String newestFigure = null;
         while (rounds.find()) {
-            Matcher gate = Pattern.compile("全ユニット \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本")
+            Matcher gate = Pattern.compile(
+                    "\\*\\*ゲートと実測\\*\\*: 全ユニット \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本")
                     .matcher(rounds.group(2));
-            if (gate.find() && Integer.parseInt(rounds.group(1)) > newestRound) {
+            List<String> figures = new ArrayList<>();
+            while (gate.find()) {
+                figures.add(gate.group(1));
+            }
+            if (figures.size() > 1) {
+                throw new HarnessBroken("確認 " + rounds.group(1) + " 巡目 states " + figures.size()
+                        + " gate figures " + figures + ", so this reader cannot tell which run the "
+                        + "readiness document should be naming");
+            }
+            if (figures.size() == 1 && Integer.parseInt(rounds.group(1)) > newestRound) {
                 newestRound = Integer.parseInt(rounds.group(1));
-                newestFigure = gate.group(1);
+                newestFigure = figures.get(0);
             }
         }
         if (newestFigure == null) {
