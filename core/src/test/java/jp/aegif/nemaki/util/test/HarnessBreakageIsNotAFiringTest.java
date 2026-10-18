@@ -105,40 +105,31 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     @Test
-    @DisplayName("no test BUILDS an AssertionError at all — breakage says HarnessBroken, a failure asserts")
+    @DisplayName("no test BUILDS a type whose NAME the control runner scores as a firing")
     void noTestThrowsAnAssertionError() throws Exception {
         // BY THE FORM, not by the wording (owner's decision 2026-10-16, residual R189). Three
-        // vocabularies were tried and each missed the next phrasing: "was renamed", then "missing
-        // for a source file", then "ends inside" — and `throw new AssertionError(e)` cannot be
-        // swept by words at all. The rule that needs no vocabulary: a lock never THROWS an
-        // AssertionError. Either it is asserting, and the assertion library says so (which the
-        // runner should score as a firing), or it could not look at its subject, and that is
-        // HarnessBroken (which the runner must not).
+        // vocabularies were tried and each missed the next phrasing, and `new AssertionError(e)`
+        // cannot be swept by words at all. The rule that needs no vocabulary: a lock never BUILDS
+        // one of the types the runner scores. Either it is asserting, and the assertion library
+        // says so, or it could not look at its subject, and that is HarnessBroken.
         //
-        // EVERY module's tests and every form the runner scores, not one directory and one exact
-        // string. The first cut of this sweep walked core/src/test/java only and matched the
-        // literal "throw new AssertionError(", while the runner scores a firing on the TYPE NAME
-        // appearing anywhere in the failure stanza — "AssertionFailedError", "AssertionError",
-        // "MockitoAssertionError" (run_negative_controls.py, failure_is_assertion). 224 controls
-        // run tests in evidence-verifier-core and evidence-verifier-cli, which that cut never
-        // read at all, and a qualified name, an extra space, a caught-and-rethrown one or a
-        // variable of that type all walked through it (round-16 review, Codex P1).
+        // The type names come FROM THE RUNNER (scoredTypeNames), so a new marker over there is
+        // covered here without an edit. The first two cuts of this sweep were narrower than the
+        // runner twice over — one exact string, then only names containing "Assertion…Error"
+        // while the runner also scores WantedButNotInvoked, TooFewActualInvocations and the rest
+        // (round-17 review: Codex P1).
         List<Path> roots = testRoots();
+        List<Pattern> forms = scoredForms();
         List<String> offenders = new ArrayList<>();
         int filesRead = 0;
         for (Path root : roots) {
+            int inThisRoot = 0;
             try (var walk = Files.walk(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
-                    String code;
-                    try {
-                        code = JavaSource.withoutLiteralText(Files.readString(file));
-                    } catch (Exception e) {
-                        // A file this sweep cannot read is not a file it has cleared.
-                        throw new HarnessBroken("could not read " + file + " while sweeping for "
-                                + "thrown AssertionErrors", e);
-                    }
+                    String code = readOrBreak(file);
                     filesRead++;
-                    for (Pattern form : THROWN_ASSERTION_FORMS) {
+                    inThisRoot++;
+                    for (Pattern form : forms) {
                         Matcher hit = form.matcher(code);
                         while (hit.find()) {
                             offenders.add(file + " 「" + hit.group().replace('\n', ' ').trim() + "」");
@@ -146,20 +137,20 @@ class HarnessBreakageIsNotAFiringTest {
                     }
                 }
             }
+            // PER ROOT, not a total: 742 of this tree's 761 test sources are in core, so a total
+            // floor passes with every other module's tests dropped (round-17 review, subagent P3).
+            if (inThisRoot == 0) {
+                throw new HarnessBroken("the sweep read no test source under " + root
+                        + ", so whatever it cleared there it did not look at");
+            }
         }
 
-        // A sweep that read nothing clears everything. It has happened in this tree twice from a
-        // path that moved, so the floor is asserted rather than assumed.
-        assertTrue(filesRead > 500,
-                "this sweep read only " + filesRead + " test sources from " + roots
-                        + ", so whatever it cleared it did not look at");
-
         assertTrue(offenders.isEmpty(),
-                "these locks BUILD (or hold, or catch) an AssertionError, which the control runner "
-                        + "scores as a firing even when the sabotage only broke the harness. Say it "
-                        + "with HarnessBroken when the lock could not look at its subject, or assert "
-                        + "it with the assertion library when the production broke its promise: "
-                        + offenders);
+                "these locks BUILD (or hold) a type the control runner scores as a firing, so a "
+                        + "sabotage that only broke the harness is recorded as the guard tripping. "
+                        + "Say it with HarnessBroken when the lock could not look at its subject, "
+                        + "or assert it with the assertion library when the production broke its "
+                        + "promise: " + offenders);
     }
 
     @Test
@@ -168,122 +159,184 @@ class HarnessBreakageIsNotAFiringTest {
         // The other half of the same classification. `Method.invoke` wraps whatever the SUBJECT
         // threw in InvocationTargetException, so a `catch (Exception e) { throw new
         // HarnessBroken(e); }` around a reflective call reports a production regression as "this
-        // lock could not look at its subject" — and sends the reader to fix the test (round-16
-        // review, Codex P2). Three sites did exactly that, and five more caught only
-        // NoSuchMethodException and let the wrapper escape unexplained.
+        // lock could not look at its subject" (round-16 review, Codex P2).
         //
         // The rule, by file so that no brace matching is needed: a test that reflects AND converts
-        // to HarnessBroken has to NAME InvocationTargetException. What this does not prove: that
-        // the clause is placed around the right call — only that the distinction was considered.
+        // to HarnessBroken must have a REAL InvocationTargetException clause — a catch of it, or an
+        // assertThrows of it. Naming the type was enough at first, which an unused import
+        // satisfies (round-17 review, subagent P3-3). What this still does not prove: that the
+        // clause is placed around the right call.
         List<String> conflating = new ArrayList<>();
+        int filesRead = 0;
         for (Path root : testRoots()) {
             try (var walk = Files.walk(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
-                    String code = JavaSource.withoutLiteralText(Files.readString(file));
-                    if (code.contains(".invoke(") && code.contains("new HarnessBroken(")
-                            && !code.contains("InvocationTargetException")) {
+                    String code = readOrBreak(file);
+                    filesRead++;
+                    if (!code.contains(".invoke(") || !code.contains("new HarnessBroken(")) {
+                        continue;
+                    }
+                    boolean caught = Pattern.compile("catch\\s*\\([^)]*InvocationTargetException")
+                            .matcher(code).find();
+                    boolean asserted = Pattern.compile(
+                            "assertThrows\\s*\\(\\s*(?:[\\w.]*\\.)?InvocationTargetException\\s*\\.class")
+                            .matcher(code).find();
+                    if (!caught && !asserted) {
                         conflating.add(file.toString());
                     }
                 }
             }
         }
+        if (filesRead < 1) {
+            throw new HarnessBroken("this reader walked " + testRoots() + " and read no sources");
+        }
 
         assertTrue(conflating.isEmpty(),
-                "these locks reflect and convert to HarnessBroken without ever naming "
-                        + "InvocationTargetException, so whatever the subject threw is reported as "
-                        + "the lock being unable to look at it: " + conflating);
+                "these locks reflect and convert to HarnessBroken with no InvocationTargetException "
+                        + "clause of any kind, so whatever the subject threw is reported as the lock "
+                        + "being unable to look at it: " + conflating);
     }
 
     @Test
     @DisplayName("the sweep's forms match every shape the runner scores, and its roots cover every module's tests")
     void theSweepMatchesWhatTheRunnerScores() throws Exception {
-        // What the first cut let through, each one a shape the runner scores as a firing
-        // (round-16 review, Codex P1). Without this the sweep passes by matching nothing.
+        // What earlier cuts let through, each one a shape the runner scores as a firing (round-16
+        // and round-17 reviews). Without this the sweep passes by matching nothing.
+        List<Pattern> forms = scoredForms();
         for (String slips : List.of(
                 "throw new AssertionError(\"x\");",
                 "throw new AssertionError (\"x\");",
-                "    .orElseThrow(() -> new AssertionError(\"the entry vanished\"));",
-                "    AssertionError failure = new AssertionError(\"x\");",
                 "throw new\n        AssertionError(\"x\");",
                 "throw new java.lang.AssertionError(e);",
                 "throw new AssertionFailedError(\"x\");",
                 "throw new org.opentest4j.AssertionFailedError(\"x\");",
                 "throw new MockitoAssertionError(\"x\");",
+                "throw new NeverWantedButInvoked(\"the fixture is gone\");",
+                "throw new org.mockito.exceptions.verification.WantedButNotInvoked(\"x\");",
+                "throw new TooFewActualInvocations(\"x\");",
+                "        .orElseThrow(() -> new AssertionError(\"the entry vanished\"));",
                 "        AssertionError failure = somethingThatBuildsOne();",
-                "        } catch (AssertionError e) {")) {
-            assertTrue(THROWN_ASSERTION_FORMS.stream().anyMatch(f -> f.matcher(slips).find()),
+                "        AssertionError _failure = somethingThatBuildsOne();",
+                "        AssertionError Failure = somethingThatBuildsOne();",
+                "        assert found > 0 : \"the view answered nothing\";")) {
+            assertTrue(forms.stream().anyMatch(f -> f.matcher(slips).find()),
                     "this sweep does not see 「" + slips + "」, and the runner would score the "
                             + "harness breaking as a control firing");
         }
 
         // And it must not call the ordinary ways of ASSERTING an AssertionError an offender, or
-        // the rule cannot be kept at all.
+        // the rule cannot be kept at all. Rethrowing one the SUBJECT threw is correct and stays
+        // out: this tree writes it as `instanceof AssertionError e` and a catch of it is how a
+        // meta-test checks a lock fires (round-17 review: Codex P2, subagent P2-2).
         for (String fine : List.of(
                 "assertThrows(AssertionError.class, () -> lock.run());",
+                "AssertionError thrown = assertThrows(AssertionError.class, () -> lock.run());",
                 "throw new HarnessBroken(\"could not read \" + file, e);",
                 "assertFalse(HarnessBroken.class.isAssignableFrom(AssertionError.class));",
-                "Class<?> type = AssertionFailedError.class;")) {
-            assertTrue(THROWN_ASSERTION_FORMS.stream().noneMatch(f -> f.matcher(fine).find()),
+                "Class<?> type = AssertionFailedError.class;",
+                "if (thrown instanceof AssertionError e) {\n    throw e;\n}",
+                "} catch (AssertionError expected) {\n    assertEquals(\"x\", expected.getMessage());\n}",
+                "assertTrue(found > 0, \"the view answered nothing\");")) {
+            assertTrue(forms.stream().noneMatch(f -> f.matcher(fine).find()),
                     "this sweep calls 「" + fine + "」 an offender, so the rule it enforces cannot "
                             + "be followed");
         }
 
+        // Every type-like marker the runner scores is covered by a form. This is what keeps the
+        // two in lockstep rather than in sync by hand.
+        for (String type : scoredTypeNames()) {
+            String built = "throw new " + type + "(\"x\");";
+            assertTrue(forms.stream().anyMatch(f -> f.matcher(built).find()),
+                    "the runner scores 「" + type + "」 as a firing and this sweep does not see a "
+                            + "lock building one");
+        }
+
         List<String> roots = testRoots().stream().map(Path::toString).toList();
-        assertTrue(roots.stream().anyMatch(r -> r.contains("evidence-verifier-core")),
-                "the sweep does not read evidence-verifier-core's tests, where 210 controls run "
-                        + "theirs: " + roots);
-        assertTrue(roots.stream().anyMatch(r -> r.contains("evidence-verifier-cli")),
-                "the sweep does not read evidence-verifier-cli's tests, where 14 controls run "
-                        + "theirs: " + roots);
-        assertTrue(roots.stream().anyMatch(r -> r.startsWith("src/test/java")
-                        || r.contains("core/src/test/java")),
-                "the sweep does not read this module's own tests: " + roots);
+        for (String module : List.of("evidence-verifier-core", "evidence-verifier-cli", "common")) {
+            assertTrue(roots.stream().anyMatch(r -> r.contains("/" + module + "/")),
+                    "the sweep does not read " + module + "'s tests: " + roots);
+        }
+        assertTrue(roots.stream().anyMatch(r -> r.equals("src/test/java")
+                        || r.endsWith("/core/src/test/java")),
+                "the sweep does not read this module's own tests. 「contains(core/src/test/java)」 "
+                        + "was the first form of this check and evidence-verifier-core satisfies "
+                        + "it (round-17 review, subagent P3-1): " + roots);
+    }
+
+    /** Read it, or say the sweep could not look — not that it looked and found nothing. */
+    private static String readOrBreak(Path file) {
+        try {
+            return JavaSource.withoutLiteralText(Files.readString(file));
+        } catch (Exception e) {
+            throw new HarnessBroken("could not read " + file + " while sweeping for locks that "
+                    + "build a type the runner scores", e);
+        }
     }
 
     /**
-     * Every form that puts an assertion type's NAME into a failure stanza by the test's own hand.
+     * The type names the control runner scores as a firing, read from the runner itself.
      *
-     * <p>The runner matches the name as a substring, so the simple name is what matters and a
-     * qualified one matters just as much. {@code \w*Assertion\w*Error} covers
-     * {@code AssertionError}, {@code AssertionFailedError} and Mockito's
-     * {@code MockitoAssertionError} — all three are in the runner's marker list.
+     * <p>Its judgement is a substring match on the failure stanza, so what matters is the simple
+     * name. The markers that are prose ("Wanted but not invoked") are not types and are not swept:
+     * a lock cannot build those by name, only print them.
      */
-    private static final List<Pattern> THROWN_ASSERTION_FORMS = List.of(
-            // BUILT, wherever it is built: `orElseThrow(() -> new AssertionError(…))` throws one
-            // without the word `throw` next to it, and five locks were written that way
-            // (round-16 review: both reviewers, independently, on the same line)
-            Pattern.compile("new\\s+(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*\\w*Assertion\\w*Error\\s*\\("),
-            // held in a variable or field, which is the route to `throw it;`
-            Pattern.compile("(?:^|[\\s(,])(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*\\w*Assertion\\w*Error\\s+[a-z][\\w$]*\\s*(?:=|;)"),
-            // caught, which is the route to rethrowing one the harness produced
-            Pattern.compile("catch\\s*\\([^)]*\\w*Assertion\\w*Error"));
+    private static List<String> scoredTypeNames() throws Exception {
+        Path runner = Path.of("../tools/negative-controls/run_negative_controls.py");
+        if (!Files.exists(runner)) {
+            throw new HarnessBroken("the control runner is not at " + runner.toAbsolutePath()
+                    + ", so this sweep cannot know which type names it scores");
+        }
+        String code = Files.readString(runner);
+        int at = code.indexOf("return any(marker in failure_text for marker in (");
+        if (at < 0) {
+            throw new HarnessBroken("the runner no longer has the marker tuple this sweep reads "
+                    + "(failure_is_assertion), so the two cannot be kept in lockstep");
+        }
+        String tuple = code.substring(at, code.indexOf("))", at));
+        List<String> names = new ArrayList<>();
+        Matcher marker = Pattern.compile("\"([A-Z][A-Za-z0-9]+)\"").matcher(tuple);
+        while (marker.find()) {
+            names.add(marker.group(1));
+        }
+        if (names.size() < 5) {
+            throw new HarnessBroken("the runner's marker tuple yielded " + names
+                    + "; it has more type names than that, so it was not read");
+        }
+        return names;
+    }
+
+    /** The forms that put one of those names into a failure stanza by the test's own hand. */
+    private static List<Pattern> scoredForms() throws Exception {
+        String names = String.join("|", scoredTypeNames());
+        String qualifier = "(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*";
+        return List.of(
+                // BUILT, wherever it is built: `orElseThrow(() -> new AssertionError(…))` throws
+                // one without the word `throw` next to it, and five locks were written that way.
+                Pattern.compile("new\\s+" + qualifier + "(?:" + names + ")\\s*\\("),
+                // held in a variable or field, which is the route to `throw it;` — but NOT the
+                // meta-test's `AssertionError thrown = assertThrows(…)`, which asserts rather
+                // than builds (round-17 review, subagent P3-10).
+                Pattern.compile("(?:^|[\\s(,])" + qualifier + "(?:" + names
+                        + ")\\s+[A-Za-z_$][\\w$]*\\s*(?:;|=(?!\\s*assertThrows))"),
+                // the `assert` STATEMENT: the JVM builds a java.lang.AssertionError and surefire
+                // enables assertions by default, so this is a firing with no `new` in sight
+                // (round-17 review, subagent P2-2; eight of them were in ConnectionTestGroup).
+                Pattern.compile("(?m)^\\s*assert\\s+[^;{]*;"));
+    }
 
     /**
      * The test roots of every module this build has, read from the build itself.
      *
-     * <p>Not a hand-written list: the first cut of this sweep hard-coded one directory and so
-     * never read the two verifier modules, where 224 controls run their tests.
+     * <p>Not a hand-written list: the first cut of this sweep hard-coded one directory and so never
+     * read the two verifier modules, where 224 controls run their tests. A module's own
+     * {@code <testSourceDirectory>} is honoured and nested reactors are followed, so a module that
+     * keeps its tests elsewhere is read rather than silently skipped (round-17 review, Codex P2) —
+     * and a module that has a {@code src/test} tree this method did not choose is refused rather
+     * than passed over.
      */
     private static List<Path> testRoots() throws Exception {
-        Path pom = Path.of("../pom.xml");
-        if (!Files.exists(pom)) {
-            throw new HarnessBroken("the reactor pom is not at " + pom.toAbsolutePath()
-                    + ", so this sweep cannot know which modules exist");
-        }
         List<Path> roots = new ArrayList<>();
-        Matcher modules = Pattern.compile("<module>([^<]+)</module>")
-                .matcher(Files.readString(pom));
-        while (modules.find()) {
-            Path module = Path.of("..", modules.group(1).trim());
-            if (!Files.isDirectory(module)) {
-                throw new HarnessBroken("the reactor names module " + modules.group(1)
-                        + " and there is no such directory, so this sweep cannot say it read it");
-            }
-            Path tests = module.resolve("src/test/java");
-            if (Files.isDirectory(tests)) {
-                roots.add(tests);
-            }
-        }
+        collectTestRoots(Path.of(".."), roots);
         if (roots.size() < 2) {
             throw new HarnessBroken("the reactor pom yielded " + roots.size() + " test roots "
                     + roots + "; this build has more than that, so the pom was not read");
@@ -291,4 +344,38 @@ class HarnessBreakageIsNotAFiringTest {
         return roots;
     }
 
+    private static void collectTestRoots(Path reactor, List<Path> into) throws Exception {
+        Path pom = reactor.resolve("pom.xml");
+        if (!Files.exists(pom)) {
+            throw new HarnessBroken("there is no pom at " + pom.toAbsolutePath()
+                    + ", so this sweep cannot know which modules exist");
+        }
+        String text = Files.readString(pom);
+        Matcher modules = Pattern.compile("<module>([^<]+)</module>").matcher(text);
+        while (modules.find()) {
+            Path module = reactor.resolve(modules.group(1).trim());
+            if (!Files.isDirectory(module)) {
+                throw new HarnessBroken("the reactor names module " + modules.group(1)
+                        + " and there is no such directory, so this sweep cannot say it read it");
+            }
+            Path modulePom = module.resolve("pom.xml");
+            String moduleText = Files.exists(modulePom) ? Files.readString(modulePom) : "";
+            if (moduleText.contains("<modules>")) {
+                collectTestRoots(module, into);        // a nested reactor
+                continue;
+            }
+            Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
+                    .matcher(moduleText);
+            Path tests = declared.find()
+                    ? module.resolve(declared.group(1).trim().replace("${project.basedir}/", ""))
+                    : module.resolve("src/test/java");
+            if (Files.isDirectory(tests)) {
+                into.add(tests);
+            } else if (Files.isDirectory(module.resolve("src/test"))) {
+                throw new HarnessBroken("module " + modules.group(1) + " has a src/test tree and "
+                        + "this sweep chose " + tests + ", which does not exist — its tests would "
+                        + "be silently skipped");
+            }
+        }
+    }
 }

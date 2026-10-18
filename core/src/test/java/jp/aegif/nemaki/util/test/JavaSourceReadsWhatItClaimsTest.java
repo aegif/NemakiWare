@@ -21,8 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -146,27 +149,49 @@ class JavaSourceReadsWhatItClaimsTest {
     }
 
     @Test
-    @DisplayName("the reader is frozen: its public surface is exactly these five methods")
+    @DisplayName("the reader is frozen: its public surface is exactly these five signatures")
     void theReaderIsFrozen() {
         // The owner's decision of 2026-10-17 (R189, docs/design/v3.4.1-plan.md): this reader is not
         // taught anything new. Six review rounds found the defects in the MACHINERY that
         // source-reading locks need, and every guard written for that machinery never fired on real
-        // input. A sentence in a javadoc cannot hold that; a roster can. A sixth entry point means
-        // someone is growing the reader again, and the alternative — a behaviour-driven lock — has
-        // to be considered first.
-        List<String> surface = Arrays.stream(JavaSource.class.getDeclaredMethods())
-                .filter(m -> Modifier.isPublic(m.getModifiers()))
-                .map(Method::getName)
-                .distinct()
-                .sorted()
-                .toList();
+        // input. A sentence in a javadoc cannot hold that; a roster can.
+        //
+        // BY SIGNATURE, and fields and nested types too. The first cut compared distinct METHOD
+        // NAMES, so `read(Path)` beside `read(String)` — an overload is how a reader grows in
+        // practice — left the roster at five and the lock green (round-17 review: Codex P2,
+        // subagent P3-5).
+        List<String> surface = new ArrayList<>();
+        for (Method m : JavaSource.class.getDeclaredMethods()) {
+            if (Modifier.isPublic(m.getModifiers())) {
+                surface.add(m.getName() + Arrays.stream(m.getParameterTypes())
+                        .map(Class::getSimpleName).toList());
+            }
+        }
+        for (Field f : JavaSource.class.getDeclaredFields()) {
+            if (Modifier.isPublic(f.getModifiers())) {
+                surface.add("field " + f.getName());
+            }
+        }
+        for (Class<?> nested : JavaSource.class.getDeclaredClasses()) {
+            if (Modifier.isPublic(nested.getModifiers())) {
+                surface.add("type " + nested.getSimpleName());
+            }
+        }
+        for (Constructor<?> c : JavaSource.class.getDeclaredConstructors()) {
+            if (Modifier.isPublic(c.getModifiers())) {
+                surface.add("constructor " + Arrays.stream(c.getParameterTypes())
+                        .map(Class::getSimpleName).toList());
+            }
+        }
+        surface.sort(null);
 
         assertEquals(
-                List.of("matchingClose", "methodBody", "read", "withoutComments", "withoutLiteralText"),
+                List.of("matchingClose[String, int]", "methodBody[String, String]", "read[String]",
+                        "withoutComments[String]", "withoutLiteralText[String]"),
                 surface,
-                "the frozen reader grew (or lost) an entry point. If a new lock needs source-reading"
-                        + " machinery this class does not already have, write the lock as a"
-                        + " behaviour-driven one instead; if it truly cannot be, say so in the"
-                        + " residual and change this roster deliberately: " + surface);
+                "the frozen reader grew (or lost) part of its public surface. If a new lock needs"
+                        + " source-reading machinery this class does not already have, write the"
+                        + " lock as a behaviour-driven one instead; if it truly cannot be, say so in"
+                        + " the residual and change this roster deliberately: " + surface);
     }
 }

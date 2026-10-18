@@ -1,5 +1,7 @@
 package jp.aegif.nemaki.cmis.tck.tests;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Disabled;
 import org.apache.chemistry.opencmis.client.api.Session;
@@ -38,9 +40,9 @@ public class ConnectionTestGroup extends TckSuite {
             var rootFolder = session.getRootFolder();
 
             // Verify basic connectivity
-            assert repositories.size() > 0 : "No repositories found";
-            assert session.getRepositoryInfo().getName() != null : "Repository name is null";
-            assert rootFolder.getName() != null : "Root folder name is null";
+            assertFalse(repositories.isEmpty(), "No repositories found");
+            assertNotNull(session.getRepositoryInfo().getName(), "Repository name is null");
+            assertNotNull(rootFolder.getName(), "Root folder name is null");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -65,13 +67,13 @@ public class ConnectionTestGroup extends TckSuite {
             var repositories = factory.getRepositories(parameters);
 
             // Verify repository information is accessible
-            assert !repositories.isEmpty() : "No repositories found";
+            assertFalse(repositories.isEmpty(), "No repositories found");
 
             var repo = repositories.get(0);
-            assert repo.getName() != null : "Repository name is null";
-            assert repo.getId() != null : "Repository ID is null";
-            assert repo.getVendorName() != null : "Vendor name is null";
-            assert repo.getProductName() != null : "Product name is null";
+            assertNotNull(repo.getName(), "Repository name is null");
+            assertNotNull(repo.getId(), "Repository ID is null");
+            assertNotNull(repo.getVendorName(), "Vendor name is null");
+            assertNotNull(repo.getProductName(), "Product name is null");
 
         } catch (Exception e) {
             e.printStackTrace();

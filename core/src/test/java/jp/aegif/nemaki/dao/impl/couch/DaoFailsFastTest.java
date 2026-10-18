@@ -73,11 +73,20 @@ class DaoFailsFastTest {
             throw err;
         }
         if (thrown[0] != null) {
-            // The arm above already rethrew anything that WAS an assertion, so what is left is by
-            // definition not one: a broken stub, a fixture that threw, an NPE in the harness. A
-            // fail(...) here reports it as the guard tripping (round-16 review, subagent P2).
-            throw new jp.aegif.nemaki.util.test.HarnessBroken("the worker threw something that is not an "
-                    + "assertion, so this lock never got to look at its subject", thrown[0]);
+            // NOT "by definition the harness", which round 16 wrote here. In THIS class the worker
+            // bodies call the production directly and feed the result to an assertion —
+            // anEmptyFolderIsStillEmpty, anEmptyFolderStillCountsZero, anEmptyPageIsStillEmpty,
+            // anUndecodableChildIsCounted and anAnsweredEmptyReduceStillCountsZero are the
+            // over-throw controls — so a production that starts throwing where it promised an
+            // empty answer lands HERE, with the assertion never evaluated. Reporting that as
+            // harness breakage is the runner reading "did not fire" for a real regression
+            // (round-17 review: both reviewers, with the call sites listed).
+            //
+            // The sibling helper in CouchEvidenceLedgerStoreTest keeps HarnessBroken, and the
+            // reason is the CALLER, not the shape: its one caller wraps the production call in
+            // assertThrows, so nothing the production throws can reach that arm.
+            org.junit.jupiter.api.Assertions.fail("the worker threw " + thrown[0]
+                    + " instead of answering, so the assertion in it never ran", thrown[0]);
         }
     }
 
