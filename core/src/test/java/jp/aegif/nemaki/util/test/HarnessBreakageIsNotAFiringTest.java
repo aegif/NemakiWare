@@ -263,7 +263,10 @@ class HarnessBreakageIsNotAFiringTest {
                 "        .orElseThrow(MySpecialAssertionError::new);",
                 "        assert(found > 0) : \"the view answered nothing\";",
                 "        assert!flag : \"the view answered nothing\";",
-                "        throw new @Nullable AssertionError(\"could not read\");")) {
+                "        throw new @Nullable AssertionError(\"could not read\");",
+                "        throw new @Size(min = 1) AssertionError(\"could not read\");",
+                "        .orElseThrow(AssertionErrorFactory::new);",
+                "            case 1:assert found > 0 : \"the view answered nothing\";")) {
             assertTrue(forms.stream().anyMatch(f -> f.matcher(slips).find()),
                     "this sweep does not see 「" + slips + "」, and the runner would score the "
                             + "harness breaking as a control firing");
@@ -360,9 +363,40 @@ class HarnessBreakageIsNotAFiringTest {
                   <build><testSourceDirectory>${from.the.parent}</testSourceDirectory></build>
                 </project>
                 """;
-        assertEquals(List.of("src/test/java"), testRootCandidates(unresolvable, "synthetic"),
-                "an unresolvable property drops the default too, so a module keeping its tests in "
-                        + "the usual place would not be read");
+        HarnessBroken refused = assertThrows(HarnessBroken.class,
+                () -> testRootCandidates(unresolvable, "synthetic"),
+                "a property this pom does not declare was passed over in favour of the default, so "
+                        + "the sweep would go on to say it read a module whose tests may sit in a "
+                        + "directory it cannot name — an over-refusal traded for a fail-open");
+        assertTrue(refused.getMessage().contains("${from.the.parent}"),
+                "the refusal does not name the property nobody can resolve: "
+                        + refused.getMessage());
+
+        String twoProfiles = """
+                <project>
+                  <profiles>
+                    <profile><properties><tests.root>src/a</tests.root></properties></profile>
+                    <profile><properties><tests.root>src/b</tests.root></properties></profile>
+                  </profiles>
+                  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/a", "src/b", "src/test/java"),
+                testRootCandidates(twoProfiles, "synthetic"),
+                "two profiles give the same property different directories and only the first was "
+                        + "taken, so the other profile's .java files were never read");
+
+        String pluginConfiguration = """
+                <project>
+                  <modules><module>real</module></modules>
+                  <build><plugins><plugin><configuration>
+                    <module>jpms.name.not.a.maven.module</module>
+                  </configuration></plugin></plugins></build>
+                </project>
+                """;
+        assertEquals(List.of("real"), modulesIn(pluginConfiguration),
+                "a <module> in a plugin's own configuration was taken for a reactor module, and "
+                        + "this reader then demanded a directory Maven never looks for");
 
         assertEquals(List.of("src/test/java"), testRootCandidates("<project/>", "synthetic"),
                 "the default is not a candidate, which is where every module of this build keeps "
@@ -415,7 +449,11 @@ class HarnessBreakageIsNotAFiringTest {
         while (marker.find()) {
             names.add(marker.group(2));
         }
-        if (!names.contains("AssertionError") || !names.contains("AssertionFailedError")) {
+        if (names.size() < 5 || !names.contains("AssertionError")
+                || !names.contains("AssertionFailedError")) {
+            // BOTH. The two names are the tuple's FIRST line, so every cut below line one leaves
+            // them in place and a name check alone passes a truncated list — weaker than the size
+            // floor it replaced (round-20 review, subagent P2-6, measured).
             // Not a size: those two are what every assertion in this tree lands as, so a tuple
             // read without them was not read. A size floor passed a truncated list (a prose
             // marker containing "))" cuts the span, and the self-test below reads the same cut
@@ -435,8 +473,8 @@ class HarnessBreakageIsNotAFiringTest {
         return List.of(
                 // BUILT, wherever it is built: `orElseThrow(() -> new AssertionError(…))` throws
                 // one without the word `throw` next to it, and five locks were written that way.
-                Pattern.compile("new\\s+(?:@[\\w.]+\\s+)*" + qualifier + "(?:" + names
-                        + ")\\s*\\("),
+                Pattern.compile("new\\s+(?:@[\\w.]+(?:\\s*\\([^)]*\\))?\\s+)*" + qualifier
+                        + "(?:" + names + ")\\s*\\("),
                 // the constructor as a METHOD REFERENCE — `orElseThrow(AssertionError::new)` also
                 // builds one (round-18 review, subagent P3-2).
                 // No left boundary: the runner matches the NAME as a substring, so a type
@@ -444,7 +482,7 @@ class HarnessBreakageIsNotAFiringTest {
                 // just the same. A boundary was added for one round on the reading that
                 // such a name is an over-refusal — IH5 fired nothing and taught the
                 // opposite (round-19 review, subagent P3-1, taken too far by me).
-                Pattern.compile(qualifier + "(?:" + names + ")\\s*::\\s*new"),
+                Pattern.compile(qualifier + "(?:" + names + ")[\\w$]*\\s*::\\s*new"),
                 // held in a variable or field, which is the route to `throw it;` — but NOT the
                 // meta-test's `AssertionError thrown = assertThrows(…)`, which asserts rather than
                 // builds. The exclusion takes a QUALIFIED call too: this tree writes
@@ -460,7 +498,7 @@ class HarnessBreakageIsNotAFiringTest {
                 // Not anchored to the line start, and braces inside the expression are allowed —
                 // `if (x) assert y;` and `assert m.equals(Map.of("a", new int[]{1}));` are both
                 // assert statements (round-18 review: Codex P1, subagent P3-2).
-                Pattern.compile("(?:^|[\\s)}{;])assert(?![\\w$])[^;]*;"));
+                Pattern.compile("(?:^|[\\s)}{;:])assert(?![\\w$])[^;]*;"));
     }
 
     /**
@@ -479,6 +517,8 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static List<Path> testRoots() throws Exception {
         List<Path> roots = new ArrayList<>();
+        walked.clear();
+        walked.add(Path.of("..").toRealPath());
         collectTestRoots(Path.of(".."), "the reactor", roots);
         if (roots.size() < 2) {
             throw new HarnessBroken("the reactor pom yielded " + roots.size() + " test roots "
@@ -486,6 +526,8 @@ class HarnessBreakageIsNotAFiringTest {
         }
         return roots;
     }
+
+    private static final java.util.Set<Path> walked = new java.util.HashSet<>();
 
     private static void collectTestRoots(Path module, String named, List<Path> into)
             throws Exception {
@@ -518,6 +560,13 @@ class HarnessBreakageIsNotAFiringTest {
                 throw new HarnessBroken("the pom of " + named + " names module " + child
                         + " and there is no such directory, so this sweep cannot say it read it");
             }
+            // `<module>.</module>` is legal text and would recurse for ever, and the same module
+            // named both in <modules> and in a profile would walk the tree twice (round-20
+            // review, subagent P3). Canonical paths, visited once.
+            Path canonical = childPath.toRealPath();
+            if (!walked.add(canonical)) {
+                continue;
+            }
             collectTestRoots(childPath, child, into);
         }
     }
@@ -529,10 +578,17 @@ class HarnessBreakageIsNotAFiringTest {
      * module that does not exist and this sweep would refuse the whole build.
      */
     static List<String> modulesIn(String pom) {
+        // INSIDE <modules> only. A plugin's own free-form configuration may carry a <module>
+        // element of its own (a JPMS name, for one), and taking those made this reader demand a
+        // directory Maven never looks for — an over-refusal of a valid pom, and the synthetic
+        // fixture shared the misreading (round-20 review, Codex P2).
         List<String> modules = new ArrayList<>();
-        Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(withoutXmlComments(pom));
-        while (m.find()) {
-            modules.add(m.group(1).trim());
+        Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(withoutXmlComments(pom));
+        while (block.find()) {
+            Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(block.group(1));
+            while (m.find()) {
+                modules.add(m.group(1).trim());
+            }
         }
         return modules;
     }
@@ -552,8 +608,20 @@ class HarnessBreakageIsNotAFiringTest {
         Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
                 .matcher(text);
         while (declared.find()) {
-            String resolved = resolveProperties(declared.group(1).trim(), text);
-            if (!resolved.contains("${")) {
+            // EVERY value a property is given, not the first: two profiles can set the same
+            // property to different directories, and taking the first silently dropped the other
+            // one's tests (round-20 review, Codex P2).
+            for (String resolved : resolveProperties(declared.group(1).trim(), text)) {
+                if (resolved.contains("${")) {
+                    // A property this pom does not declare — a parent's, most likely. Refusing is
+                    // the point: the sweep must not go on to say it read this module when a
+                    // directory it cannot name may hold the tests (round-20 review, subagent P2-4;
+                    // dropping it in favour of the default was trading an over-refusal for a
+                    // fail-open).
+                    throw new HarnessBroken("module " + named + " declares its test sources as 「"
+                            + declared.group(1).trim() + "」 and this pom does not declare that "
+                            + "property, so this sweep cannot say which directory it read");
+                }
                 candidates.add(resolved);
             }
         }
@@ -561,21 +629,39 @@ class HarnessBreakageIsNotAFiringTest {
         return candidates;
     }
 
-    /** {@code ${project.basedir}} and friends away, and one pass of the pom's own properties. */
-    private static String resolveProperties(String raw, String pom) {
-        String value = raw.replace("${project.basedir}/", "").replace("${basedir}/", "")
-                .replace("${pom.basedir}/", "").replace("${project.basedir}", "")
-                .replace("${basedir}", "");
-        Matcher property = Pattern.compile("\\$\\{([\\w.\\-]+)\\}").matcher(value);
-        while (property.find()) {
-            Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
-                    + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(pom);
-            if (declared.find()) {
-                value = value.replace(property.group(), declared.group(1).trim())
-                        .replace("${project.basedir}/", "").replace("${basedir}/", "");
-            }
+    /**
+     * {@code ${project.basedir}} and friends away, and one pass of the pom's own properties —
+     * every value each property is given, since profiles can give it several.
+     *
+     * <p>The property is looked up inside {@code <properties>} blocks only. Searching the whole
+     * pom resolved {@code ${name}} from the project's {@code <name>} element (round-20 review,
+     * subagent P3).
+     */
+    private static List<String> resolveProperties(String raw, String pom) {
+        List<String> values = List.of(stripBasedir(raw));
+        Matcher property = Pattern.compile("\\$\\{([\\w.\\-]+)\\}").matcher(values.get(0));
+        if (!property.find()) {
+            return values;
         }
-        return value;
+        List<String> resolved = new ArrayList<>();
+        StringBuilder properties = new StringBuilder();
+        Matcher block = Pattern.compile("(?s)<properties>(.*?)</properties>").matcher(pom);
+        while (block.find()) {
+            properties.append(block.group(1));
+        }
+        Matcher declared = Pattern.compile("<" + Pattern.quote(property.group(1)) + ">"
+                + "([^<]*)</" + Pattern.quote(property.group(1)) + ">").matcher(properties);
+        while (declared.find()) {
+            resolved.add(stripBasedir(values.get(0).replace(property.group(),
+                    declared.group(1).trim())));
+        }
+        return resolved.isEmpty() ? values : resolved;
+    }
+
+    private static String stripBasedir(String value) {
+        return value.replace("${project.basedir}/", "").replace("${basedir}/", "")
+                .replace("${pom.basedir}/", "").replace("${project.basedir}", "")
+                .replace("${basedir}", "").replace("${pom.basedir}", "");
     }
 
     private static boolean containsJavaSources(Path directory) throws Exception {

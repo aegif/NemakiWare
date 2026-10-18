@@ -492,13 +492,14 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The canon's "N gaps in this range" is counted from the runner, not asserted.
+     * The canon's count of the controls that name the sweep is the runner's.
      *
-     * <p>Neither this number nor the verifier's test count was read by anything — the one
-     * measured number in reach of a lock was the control total (Codex, twentieth review, P3).
-     * A retired or resurrected control moves the gap count, and a stale figure then reads as a
-     * measurement: the canon already carried a wrong one for two rounds (it said 13 while RB3
-     * had been put back).
+     * <p>Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time the
+     * controls added in the SAME batch were left out, and twice the count came from a grep that
+     * only knew single quotes while the runner reads both. Discipline did not stop it; this does.
+     * The javadoc above belongs to the gap-count lock further down — inserting this method before
+     * that declaration orphaned it for one round (round-20 review, subagent P2-1; the fourth time
+     * this tree has made that edit).
      */
     @Test
     @DisplayName("the canon's count of the sweep's own controls is the runner's")
@@ -509,12 +510,30 @@ class ReleaseReadinessIsMeasuredTest {
         String runner = read(RUNNER);
         String canon = read(CANON);
 
+        // BY POSITION, on the anchored declaration lines its siblings use. `id=…(?s).*?test=…`
+        // walks past the end of its own dict: FV3's sabotage text contains `-Dtest='…'`, so that
+        // control was read as naming "!MultiThreadTest,…" and never as naming its own test class
+        // — a control whose sabotage quotes a `test=` line would have dropped out of this count
+        // in silence (round-20 review: subagent P2-2 measured it, Codex P3 named the shape).
         SortedSet<String> naming = new TreeSet<>();
-        Matcher control = Pattern.compile("(?s)id=[\"']([A-Z0-9]+)[\"'].*?test=[\"']([^\"']+)[\"']")
-                .matcher(runner);
-        while (control.find()) {
-            if ("HarnessBreakageIsNotAFiringTest".equals(control.group(2))) {
-                naming.add(control.group(1));
+        Matcher declaration = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
+        List<int[]> starts = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        while (declaration.find()) {
+            starts.add(new int[] { declaration.start(), declaration.end() });
+            ids.add(declaration.group(1));
+        }
+        Matcher declaredTest = Pattern.compile("(?m)^\\s+test=[\"']([^\"']+)[\"'],").matcher(runner);
+        while (declaredTest.find()) {
+            int at = declaredTest.start();
+            int owner = -1;
+            for (int i = 0; i < starts.size(); i++) {
+                if (starts.get(i)[0] < at) {
+                    owner = i;
+                }
+            }
+            if (owner >= 0 && "HarnessBreakageIsNotAFiringTest".equals(declaredTest.group(1))) {
+                naming.add(ids.get(owner));
             }
         }
         assertFalse(naming.isEmpty(),
@@ -522,17 +541,33 @@ class ReleaseReadinessIsMeasuredTest {
 
         Matcher stated = Pattern.compile(
                 "\\*\\*掃き取り自身を名指す control は (\\d+) 本\\*\\*（([^）]+)）").matcher(canon);
-        assertTrue(stated.find(),
-                "the canon no longer states how many controls name the sweep itself, which is the "
-                        + "figure that went wrong three rounds running");
-        assertEquals(naming.size(), Integer.parseInt(stated.group(1)),
-                "the canon says " + stated.group(1) + " controls name the sweep and the runner has "
-                        + naming.size() + ": " + naming);
-        assertEquals(naming, new TreeSet<>(List.of(stated.group(2).split("・"))),
-                "the canon lists different control ids than the runner declares for the sweep: "
-                        + naming);
+        int statements = 0;
+        while (stated.find()) {
+            // EVERY copy. The sibling that reads the sweep boundary learned this the same way:
+            // reading only the first let a second one drift unread (round-20 review, subagent
+            // P2-3, which found two stale copies of this very figure in the plan).
+            statements++;
+            assertEquals(naming.size(), Integer.parseInt(stated.group(1)),
+                    "the canon says " + stated.group(1) + " controls name the sweep and the runner "
+                            + "has " + naming.size() + ": " + naming);
+            assertEquals(naming, new TreeSet<>(List.of(stated.group(2).split("・"))),
+                    "the canon lists different control ids than the runner declares for the sweep: "
+                            + naming);
+        }
+        assertEquals(1, statements,
+                "the canon states this figure " + statements + " times; it is the single source for "
+                        + "it, so there has to be exactly one");
     }
 
+    /**
+     * The canon's "N gaps in this range" is counted from the runner, not asserted.
+     *
+     * <p>Neither this number nor the verifier's test count was read by anything — the one
+     * measured number in reach of a lock was the control total (Codex, twentieth review, P3).
+     * A retired or resurrected control moves the gap count, and a stale figure then reads as a
+     * measurement: the canon already carried a wrong one for two rounds (it said 13 while RB3
+     * had been put back).
+     */
     @Test
     @DisplayName("the canon's gap count is the runner's")
     void theCanonsGapCountIsTheRunners() throws IOException {
