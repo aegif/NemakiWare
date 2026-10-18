@@ -497,7 +497,11 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time the
      * controls added in the SAME batch were left out, and twice the count came from a grep that
      * only knew single quotes while the runner reads both. What this stops is the figure IN THE
-     * CANON drifting — the records in {@code v3.4.1-plan.md} are read by nothing.
+     * CANON drifting; no lock compares the PLAN's copies of it with the runner, which is why
+     * two stale ones sat there for a round. (The plan is not unread — {@code
+     * NoForbiddenClaimShipsTest} walks every .md under docs — it is unread BY A NUMBER CHECK;
+     * saying otherwise was the fourth time this tree claimed a gap without grepping for the
+     * existing reader, round-23 review, subagent P2-2.)
      * This javadoc is this method's own. The gap-count lock further down has its own again:
      * inserting this method before that declaration orphaned the one that was there for a round
      * (round-20 review, subagent P2-1; the fourth time this tree has made that edit).
@@ -510,7 +514,8 @@ class ReleaseReadinessIsMeasuredTest {
         // that only knew single quotes while the runner reads both. What this stops is the figure
         // IN THE CANON drifting; the records in v3.4.1-plan.md are read by nothing, and two stale
         // copies sat there for a round (round-21 review, subagent P2-4 — "discipline did not stop
-        // it; this does" was stronger than the lock).
+        // it; this does" was stronger than the lock). The plan IS read by the forbidden-claim
+        // sweep; what no lock does is compare its NUMBERS with the runner.
         String runner = read(RUNNER);
         String canon = read(CANON);
 
@@ -519,27 +524,30 @@ class ReleaseReadinessIsMeasuredTest {
         // control was read as naming "!MultiThreadTest,…" and never as naming its own test class
         // — a control whose sabotage quotes a `test=` line would have dropped out of this count
         // in silence (round-20 review: subagent P2-2 measured it, Codex P3 named the shape).
+        // WITHIN ONE dict. Pairing a `test=` with "the id above it" reads the wrong control as
+        // soon as a dict puts `test=` first — valid Python, and then the id of the PREVIOUS
+        // control is credited and this one drops out (round-23 review, Codex P2).
         SortedSet<String> naming = new TreeSet<>();
-        Matcher declaration = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
-        List<int[]> starts = new ArrayList<>();
-        List<String> ids = new ArrayList<>();
-        while (declaration.find()) {
-            starts.add(new int[] { declaration.start(), declaration.end() });
-            ids.add(declaration.group(1));
-        }
-        Matcher declaredTest = Pattern.compile("(?m)^\\s+test=[\"']([^\"']+)[\"'],").matcher(runner);
-        while (declaredTest.find()) {
-            int at = declaredTest.start();
-            int owner = -1;
-            for (int i = 0; i < starts.size(); i++) {
-                if (starts.get(i)[0] < at) {
-                    owner = i;
-                }
+        Matcher dict = Pattern.compile("(?m)^    dict\\($").matcher(runner);
+        int dicts = 0;
+        while (dict.find()) {
+            int end = runner.indexOf("\n    ),", dict.end());
+            if (end < 0) {
+                throw new HarnessBroken("a control dict starting at " + dict.start()
+                        + " does not close, so this reader cannot pair its id with its test");
             }
-            if (owner >= 0 && "HarnessBreakageIsNotAFiringTest".equals(declaredTest.group(1))) {
-                naming.add(ids.get(owner));
+            String body = runner.substring(dict.end(), end);
+            dicts++;
+            Matcher id = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(body);
+            Matcher test = Pattern.compile("(?m)^\\s+test=[\"']([^\"']+)[\"'],").matcher(body);
+            if (id.find() && test.find()
+                    && "HarnessBreakageIsNotAFiringTest".equals(test.group(1))) {
+                naming.add(id.group(1));
             }
         }
+        assertTrue(dicts > 2000,
+                "this reader found " + dicts + " control dicts in the runner, which is fewer than "
+                        + "it declares — the shape it reads has changed");
         assertFalse(naming.isEmpty(),
                 "no control names the sweep at all, so this reader is measuring nothing");
 

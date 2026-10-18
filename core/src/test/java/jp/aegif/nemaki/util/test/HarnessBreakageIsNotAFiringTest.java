@@ -16,7 +16,6 @@
  */
 package jp.aegif.nemaki.util.test;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -422,6 +421,31 @@ class HarnessBreakageIsNotAFiringTest {
                 "two profiles give the same property different directories and only the first was "
                         + "taken, so the other profile's .java files were never read");
 
+        String pluginTestSourceDirectory = """
+                <project>
+                  <build>
+                    <testSourceDirectory>src/locks/java</testSourceDirectory>
+                    <plugins><plugin><configuration>
+                      <testSourceDirectory>fixtures/java</testSourceDirectory>
+                    </configuration></plugin></plugins>
+                  </build>
+                </project>
+                """;
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                candidatesOrRefusal(pluginTestSourceDirectory),
+                "a <testSourceDirectory> inside a plugin's own configuration was taken for the "
+                        + "build's, so this sweep would read a directory Maven never compiles — an "
+                        + "over-refusal of a valid pom (round-23 review, Codex P2)");
+
+        String cdata = """
+                <project>
+                  <modules><module><![CDATA[guard-module]]></module></modules>
+                </project>
+                """;
+        assertEquals(List.of("guard-module"), modulesIn(cdata),
+                "a module written as CDATA — ordinary character content to Maven — was dropped in "
+                        + "silence, which is the fail-open shape this reader exists to avoid");
+
         String pluginConfiguration = """
                 <project>
                   <modules><module>real</module></modules>
@@ -451,8 +475,16 @@ class HarnessBreakageIsNotAFiringTest {
     private static List<String> candidatesOrRefusal(String pom) {
         try {
             return testRootCandidates(pom, "synthetic");
-        } catch (HarnessBroken refused) {
-            return List.of("refused: " + refused.getMessage());
+        } catch (HarnessBroken broken) {
+            // ONLY the refusal this arm measures. Converting every HarnessBroken would make a
+            // genuine breakage — a pom that cannot be read, once this reader starts reading parent
+            // poms — come out as an assertion failure, which the runner scores as a firing: the
+            // very confusion this class exists to prevent (round-23 review, subagent P2-1).
+            String message = String.valueOf(broken.getMessage());
+            if (!message.contains("could not resolve") && !message.contains("more than 64")) {
+                throw broken;
+            }
+            return List.of("refused: " + message);
         }
     }
 
@@ -511,12 +543,17 @@ class HarnessBreakageIsNotAFiringTest {
             // them was not read; and the size is what catches a span cut after them (the tuple's
             // first line is exactly those two). Round 19 replaced the size with the names, which
             // was weaker; round 20 asked for both (round-19 subagent P3-7, round-20 subagent P2-6).
+            List<String> missing = new ArrayList<>();
+            if (!names.contains("AssertionError")) {
+                missing.add("AssertionError");
+            }
+            if (!names.contains("AssertionFailedError")) {
+                missing.add("AssertionFailedError");
+            }
             throw new HarnessBroken("the runner's marker tuple yielded " + names + " ("
-                    + names.size() + " names)" + (names.contains("AssertionError")
-                            && names.contains("AssertionFailedError")
-                                    ? ", which is fewer than this tuple has — the span was cut"
-                                    : ", which does not include AssertionError and "
-                                            + "AssertionFailedError")
+                    + names.size() + " names)" + (missing.isEmpty()
+                            ? ", which is fewer than this tuple has — the span was cut"
+                            : ", which does not include " + missing)
                     + ", so it was not read");
         }
         return names;
@@ -545,7 +582,7 @@ class HarnessBreakageIsNotAFiringTest {
                 // `org.junit.jupiter.api.Assertions.assertThrows(…)` in places, and the first cut
                 // of the exclusion only knew the bare name (round-18 review: Codex P1, subagent
                 // P3-1).
-                Pattern.compile("(?:^|[\\s(,])" + qualifier + "(?:" + names
+                Pattern.compile("(?:^|[\\s(,{};])" + qualifier + "(?:" + names
                         + ")\\s+[A-Za-z_$][\\w$]*\\s*(?:;|=(?!\\s*" + qualifier
                         + "(?:<[^>]*>\\s*)?assertThrows))"),
                 // the `assert` STATEMENT: the JVM builds a java.lang.AssertionError and surefire
@@ -602,6 +639,13 @@ class HarnessBreakageIsNotAFiringTest {
             if (Files.isDirectory(tests)) {
                 into.add(tests);
                 took = true;
+            } else if (!Files.notExists(tests)) {
+                // isDirectory answers false both for "it is not there" and for "I could not
+                // tell" (a permission error, a broken symlink, a filesystem hiccup). notExists
+                // is the API that says the second one apart, and this tree's whole rule is that
+                // the two must not share a value (round-23 review, Codex P1).
+                throw new HarnessBroken("could not tell whether " + tests + " is a directory, so "
+                        + "this sweep will not record it as absent");
             }
         }
         if (!took && containsJavaSources(module.resolve("src/test"))) {
@@ -614,8 +658,19 @@ class HarnessBreakageIsNotAFiringTest {
         for (String child : modulesIn(text)) {
             Path childPath = module.resolve(child);
             if (!Files.isDirectory(childPath)) {
+                if (!requiredModulesIn(text).contains(child)) {
+                    // Named only by a profile. A profile that is off in this checkout may well
+                    // have no directory, and refusing the whole reactor for it is an
+                    // over-refusal of a valid build (round-23 review, Codex P2).
+                    continue;
+                }
+                if (!Files.notExists(childPath)) {
+                    throw new HarnessBroken("could not tell whether the module directory "
+                            + childPath + " exists, so this sweep will not record it as absent");
+                }
                 throw new HarnessBroken("the pom of " + named + " names module " + child
-                        + " and there is no such directory, so this sweep cannot say it read it");
+                        + " in its own <modules> and there is no such directory, so this sweep "
+                        + "cannot say it read it");
             }
             // `<module>.</module>` is legal text and would recurse for ever, and the same module
             // named both in <modules> and in a profile would walk the tree twice (round-20
@@ -633,6 +688,20 @@ class HarnessBreakageIsNotAFiringTest {
      * <p>Comments go first: {@code <!-- the <modules> below … -->} would otherwise contribute a
      * module that does not exist and this sweep would refuse the whole build.
      */
+    /** The modules a pom names in its own {@code <modules>} — the ones that must exist. */
+    static List<String> requiredModulesIn(String pom) {
+        String text = withoutXmlComments(pom).replaceAll("(?s)<profiles>.*?</profiles>", "");
+        List<String> modules = new ArrayList<>();
+        Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(text);
+        while (block.find()) {
+            Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(block.group(1));
+            while (m.find()) {
+                modules.add(m.group(1).trim());
+            }
+        }
+        return modules;
+    }
+
     static List<String> modulesIn(String pom) {
         // INSIDE <modules> only. A plugin's own free-form configuration may carry a <module>
         // element of its own (a JPMS name, for one), and taking those made this reader demand a
@@ -663,8 +732,17 @@ class HarnessBreakageIsNotAFiringTest {
     static List<String> testRootCandidates(String pom, String named) {
         String text = withoutXmlComments(pom);
         List<String> candidates = new ArrayList<>();
+        // Only where Maven looks for it: inside <build>, and not inside a plugin's own
+        // <configuration> (a plugin may take an element of the same name as its own input, and
+        // reading those made this sweep walk a directory the build never compiles — round-23
+        // review, Codex P2).
+        StringBuilder build = new StringBuilder();
+        Matcher builds = Pattern.compile("(?s)<build>(.*?)</build>").matcher(text);
+        while (builds.find()) {
+            build.append(builds.group(1).replaceAll("(?s)<plugins>.*?</plugins>", ""));
+        }
         Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
-                .matcher(text);
+                .matcher(build);
         while (declared.find()) {
             // EVERY value a property is given, not the first: two profiles can set the same
             // property to different directories, and taking the first silently dropped the other
@@ -730,6 +808,15 @@ class HarnessBreakageIsNotAFiringTest {
                     next.add(value);        // nobody declares it; the caller decides what that means
                 }
             }
+            if (next.size() > 64) {
+                // Each pass multiplies by the number of declarations, so five profiles declaring
+                // one property with a self-reference reaches nine million values before the pass
+                // limit — it would hang or run out of memory rather than refuse (round-23 review,
+                // subagent P3-4, measured). A sweep that cannot enumerate the candidates says so.
+                throw new HarnessBroken("resolving 「" + raw + "」 against this pom's properties "
+                        + "produced more than 64 candidate directories, so this sweep cannot say "
+                        + "which one it read");
+            }
             values = next;
             if (!moved) {
                 break;
@@ -775,6 +862,10 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     private static String withoutXmlComments(String pom) {
-        return pom.replaceAll("(?s)<!--.*?-->", "");
+        // CDATA out too: `<module><![CDATA[guard]]></module>` is ordinary character content to
+        // Maven, and `[^<]+` stops at the `<` of the CDATA opener — the element then reads as
+        // absent and the module is dropped in silence (round-23 review, Codex P1).
+        return pom.replaceAll("(?s)<!--.*?-->", "")
+                .replaceAll("(?s)<!\\[CDATA\\[(.*?)]]>", "$1");
     }
 }
