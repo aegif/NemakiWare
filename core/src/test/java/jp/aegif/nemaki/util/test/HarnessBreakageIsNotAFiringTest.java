@@ -52,21 +52,57 @@ import org.junit.jupiter.api.Test;
  * <p><strong>Breakage says {@link HarnessBroken}; a failure asserts.</strong> If your lock could
  * not look at its subject — the method was renamed, the file is not there, the source does not
  * parse — throw {@code HarnessBroken}. If the production broke the promise your lock measures,
- * use the assertion library ({@code assertX}, or {@code Assertions.fail(msg, cause)}), and never
- * build an assertion type yourself: the sweep below forbids {@code new AssertionError(…)} in any
- * form, because the control runner scores that type's NAME in a failure stanza as "the guard
- * tripped". A reflective call needs both arms — {@code InvocationTargetException} is the SUBJECT
- * throwing (assert), anything else is the lock being unable to look (breakage).
+ * use the assertion library ({@code assertX}, or {@code Assertions.fail(msg, cause)}).
  *
- * <p>Two limits, stated rather than implied. (1) The modules outside {@code core} have no
- * {@code HarnessBroken} on their test path, so a lock there can only avoid throwing an assertion
+ * <p><strong>Never produce one of those types yourself.</strong> The control runner decides a
+ * control fired by looking for the type's NAME in the failure stanza, so the sweep below forbids,
+ * in any test source of any module:
+ *
+ * <ul>
+ *   <li>{@code new AssertionError(…)} and the other nine type names the runner scores — however
+ *       qualified, spaced or wrapped ({@code orElseThrow(() -> new AssertionError(…))} counts),
+ *       including the constructor as a method reference ({@code AssertionError::new});</li>
+ *   <li>a variable or field OF one of those types (that is the route to {@code throw it;}) —
+ *       {@code AssertionError thrown = assertThrows(…)} is fine, qualified or not, because it
+ *       asserts rather than builds;</li>
+ *   <li>the Java {@code assert} STATEMENT. Surefire enables assertions, so the JVM builds a
+ *       {@code java.lang.AssertionError} and the runner scores it — with no {@code new} anywhere
+ *       in the source. Write {@code assertTrue} / {@code assertNotNull} instead.</li>
+ * </ul>
+ *
+ * <p>A reflective call needs both arms — {@code InvocationTargetException} is the SUBJECT throwing
+ * (assert), anything else is the lock being unable to look (breakage).
+ *
+ * <p>Rethrowing an assertion the SUBJECT threw is correct and deliberately not swept: this tree
+ * writes it as {@code if (t instanceof AssertionError e) throw e;}, and a {@code catch} of one is
+ * how a meta-test checks that a lock fires. A {@code catch} form was swept for one round and only
+ * ever refused those legitimate shapes (round-17 review: both reviewers).
+ *
+ * <p>Six limits, stated rather than implied. (1) The modules outside {@code core} have no
+ * {@code HarnessBroken} on their test path, so a lock there can only avoid producing an assertion
  * type — its breakage reads to the runner as "did not fire" rather than being excluded by name.
  * (2) Saying breakage through an ASSERTION METHOD ({@code assertTrue(found > 0, "X is gone")})
  * cannot be swept at all: it is indistinguishable from an ordinary assertion, two predicates
  * measured it as 50 and 404 occurrences, and neither is the set. That half is residual R191.
+ * (3) The forms read source text, so a type hidden from it is not seen: {@code var failure = …},
+ * a helper that RETURNS one, {@code throw (AssertionError) t}, a collection of them.
+ * (4) The reflection rule is per FILE — it requires a real {@code InvocationTargetException}
+ * clause to exist, not that the clause sits around the right call; and a file whose reflection is
+ * only FIXTURE (correctly converting {@code ReflectiveOperationException} to breakage) has to add
+ * an explicit {@code InvocationTargetException} arm — saying breakage there too — to satisfy it.
+ * (5) There is no exception path: a lock that genuinely needs to build one of those types cannot,
+ * and would have to be argued in the residual. Today nothing needs to.
+ * (6) The runner also scores nine PROSE markers ("Wanted but not invoked", …). Those are not
+ * types; a lock that prints one in a message is scored as firing and no sweep sees it.
+ *
+ * <p>And one cost of reading the runner's list: it is a DETECTION list being used as a
+ * PROHIBITION list. A CamelCase marker added over there instantly forbids {@code new X(…)} in all
+ * of this tree's test sources — which is right for assertion types and would be wrong for, say,
+ * {@code NullPointerException} (round-18 review, subagent P3-5).
  *
  * <p>Previously this rule lived in a {@code //} comment inside the sweep, where a new lock's
- * author would not read it (round-16 review, subagent P3).
+ * author would not read it (round-16 review, subagent P3); the {@code assert}-statement clause
+ * went back into a method comment for one round and is here now (round-18 review, subagent P2).
  */
 class HarnessBreakageIsNotAFiringTest {
 
@@ -146,11 +182,14 @@ class HarnessBreakageIsNotAFiringTest {
         }
 
         assertTrue(offenders.isEmpty(),
-                "these locks BUILD (or hold) a type the control runner scores as a firing, so a "
-                        + "sabotage that only broke the harness is recorded as the guard tripping. "
-                        + "Say it with HarnessBroken when the lock could not look at its subject, "
-                        + "or assert it with the assertion library when the production broke its "
-                        + "promise: " + offenders);
+                "these locks PRODUCE a type the control runner scores as a firing — by building "
+                        + "one, by holding one in a variable, or with a Java `assert` statement, "
+                        + "which makes the JVM build one — so a sabotage that only broke the "
+                        + "harness is recorded as the guard tripping. Say it with HarnessBroken "
+                        + "when the lock could not look at its subject, assert it with the "
+                        + "assertion library when the production broke its promise, and write "
+                        + "`assertTrue`/`assertNotNull` instead of `assert`. The rule and its six "
+                        + "limits are in this class's javadoc: " + offenders);
     }
 
     @Test
@@ -167,12 +206,12 @@ class HarnessBreakageIsNotAFiringTest {
         // satisfies (round-17 review, subagent P3-3). What this still does not prove: that the
         // clause is placed around the right call.
         List<String> conflating = new ArrayList<>();
-        int filesRead = 0;
         for (Path root : testRoots()) {
+            int inThisRoot = 0;
             try (var walk = Files.walk(root)) {
                 for (Path file : walk.filter(f -> f.toString().endsWith(".java")).toList()) {
                     String code = readOrBreak(file);
-                    filesRead++;
+                    inThisRoot++;
                     if (!code.contains(".invoke(") || !code.contains("new HarnessBroken(")) {
                         continue;
                     }
@@ -186,9 +225,12 @@ class HarnessBreakageIsNotAFiringTest {
                     }
                 }
             }
-        }
-        if (filesRead < 1) {
-            throw new HarnessBroken("this reader walked " + testRoots() + " and read no sources");
+            // PER ROOT, like its sibling: a total floor passes with every root but core dropped,
+            // and this reader had the weaker form for a round (round-18 review, subagent P3-3).
+            if (inThisRoot == 0) {
+                throw new HarnessBroken("this reader read no test source under " + root
+                        + ", so whatever it cleared there it did not look at");
+            }
         }
 
         assertTrue(conflating.isEmpty(),
@@ -218,7 +260,10 @@ class HarnessBreakageIsNotAFiringTest {
                 "        AssertionError failure = somethingThatBuildsOne();",
                 "        AssertionError _failure = somethingThatBuildsOne();",
                 "        AssertionError Failure = somethingThatBuildsOne();",
-                "        assert found > 0 : \"the view answered nothing\";")) {
+                "        assert found > 0 : \"the view answered nothing\";",
+                "        if (x) assert found > 0 : \"the view answered nothing\";",
+                "        assert m.equals(Map.of(\"a\", new int[]{1})) : \"the shape moved\";",
+                "        .orElseThrow(AssertionError::new);")) {
             assertTrue(forms.stream().anyMatch(f -> f.matcher(slips).find()),
                     "this sweep does not see 「" + slips + "」, and the runner would score the "
                             + "harness breaking as a control firing");
@@ -236,7 +281,10 @@ class HarnessBreakageIsNotAFiringTest {
                 "Class<?> type = AssertionFailedError.class;",
                 "if (thrown instanceof AssertionError e) {\n    throw e;\n}",
                 "} catch (AssertionError expected) {\n    assertEquals(\"x\", expected.getMessage());\n}",
-                "assertTrue(found > 0, \"the view answered nothing\");")) {
+                "assertTrue(found > 0, \"the view answered nothing\");",
+                "AssertionError thrown = Assertions.assertThrows(AssertionError.class, lock::run);",
+                "AssertionError thrown = org.junit.jupiter.api.Assertions.assertThrows(T.class, r);",
+                "assertThat(found).isGreaterThan(0);")) {
             assertTrue(forms.stream().noneMatch(f -> f.matcher(fine).find()),
                     "this sweep calls 「" + fine + "」 an offender, so the rule it enforces cannot "
                             + "be followed");
@@ -292,11 +340,20 @@ class HarnessBreakageIsNotAFiringTest {
             throw new HarnessBroken("the runner no longer has the marker tuple this sweep reads "
                     + "(failure_is_assertion), so the two cannot be kept in lockstep");
         }
-        String tuple = code.substring(at, code.indexOf("))", at));
+        int closes = code.indexOf("))", at);
+        if (closes < 0) {
+            throw new HarnessBroken("the runner's marker tuple does not close, so this sweep "
+                    + "cannot read which type names it scores");
+        }
+        String tuple = code.substring(at, closes);
         List<String> names = new ArrayList<>();
-        Matcher marker = Pattern.compile("\"([A-Z][A-Za-z0-9]+)\"").matcher(tuple);
+        // BOTH quote styles and a qualified name reduced to its simple name: the runner's own
+        // readers use ["'] and this sweep undercounted by exactly that once already (round-18
+        // review, Codex P1).
+        Matcher marker = Pattern.compile("[\"']((?:[A-Za-z_][\\w]*\\.)*)([A-Z][A-Za-z0-9]+)[\"']")
+                .matcher(tuple);
         while (marker.find()) {
-            names.add(marker.group(1));
+            names.add(marker.group(2));
         }
         if (names.size() < 5) {
             throw new HarnessBroken("the runner's marker tuple yielded " + names
@@ -313,15 +370,25 @@ class HarnessBreakageIsNotAFiringTest {
                 // BUILT, wherever it is built: `orElseThrow(() -> new AssertionError(…))` throws
                 // one without the word `throw` next to it, and five locks were written that way.
                 Pattern.compile("new\\s+" + qualifier + "(?:" + names + ")\\s*\\("),
+                // the constructor as a METHOD REFERENCE — `orElseThrow(AssertionError::new)` also
+                // builds one (round-18 review, subagent P3-2).
+                Pattern.compile(qualifier + "(?:" + names + ")\\s*::\\s*new"),
                 // held in a variable or field, which is the route to `throw it;` — but NOT the
-                // meta-test's `AssertionError thrown = assertThrows(…)`, which asserts rather
-                // than builds (round-17 review, subagent P3-10).
+                // meta-test's `AssertionError thrown = assertThrows(…)`, which asserts rather than
+                // builds. The exclusion takes a QUALIFIED call too: this tree writes
+                // `org.junit.jupiter.api.Assertions.assertThrows(…)` in places, and the first cut
+                // of the exclusion only knew the bare name (round-18 review: Codex P1, subagent
+                // P3-1).
                 Pattern.compile("(?:^|[\\s(,])" + qualifier + "(?:" + names
-                        + ")\\s+[A-Za-z_$][\\w$]*\\s*(?:;|=(?!\\s*assertThrows))"),
+                        + ")\\s+[A-Za-z_$][\\w$]*\\s*(?:;|=(?!\\s*" + qualifier
+                        + "assertThrows))"),
                 // the `assert` STATEMENT: the JVM builds a java.lang.AssertionError and surefire
                 // enables assertions by default, so this is a firing with no `new` in sight
                 // (round-17 review, subagent P2-2; eight of them were in ConnectionTestGroup).
-                Pattern.compile("(?m)^\\s*assert\\s+[^;{]*;"));
+                // Not anchored to the line start, and braces inside the expression are allowed —
+                // `if (x) assert y;` and `assert m.equals(Map.of("a", new int[]{1}));` are both
+                // assert statements (round-18 review: Codex P1, subagent P3-2).
+                Pattern.compile("(?:^|[\\s)}{;])assert\\s+[^;]*;"));
     }
 
     /**
@@ -350,7 +417,7 @@ class HarnessBreakageIsNotAFiringTest {
             throw new HarnessBroken("there is no pom at " + pom.toAbsolutePath()
                     + ", so this sweep cannot know which modules exist");
         }
-        String text = Files.readString(pom);
+        String text = withoutProfiles(Files.readString(pom));
         Matcher modules = Pattern.compile("<module>([^<]+)</module>").matcher(text);
         while (modules.find()) {
             Path module = reactor.resolve(modules.group(1).trim());
@@ -359,16 +426,28 @@ class HarnessBreakageIsNotAFiringTest {
                         + " and there is no such directory, so this sweep cannot say it read it");
             }
             Path modulePom = module.resolve("pom.xml");
-            String moduleText = Files.exists(modulePom) ? Files.readString(modulePom) : "";
-            if (moduleText.contains("<modules>")) {
-                collectTestRoots(module, into);        // a nested reactor
-                continue;
-            }
+            String moduleText = Files.exists(modulePom)
+                    ? withoutProfiles(Files.readString(modulePom)) : "";
+
+            // An aggregator can have BOTH its own tests and modules of its own, so take the root
+            // first and recurse after. The first cut did `continue` on a nested reactor, which
+            // skipped the aggregator's own tests in silence and made this method's own refusal
+            // below unreachable for that case (round-18 review: Codex P2, subagent P3-4).
             Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
                     .matcher(moduleText);
-            Path tests = declared.find()
-                    ? module.resolve(declared.group(1).trim().replace("${project.basedir}/", ""))
-                    : module.resolve("src/test/java");
+            Path tests;
+            if (declared.find()) {
+                String raw = declared.group(1).trim();
+                String resolved = raw.replace("${project.basedir}/", "").replace("${basedir}/", "");
+                if (resolved.contains("${")) {
+                    throw new HarnessBroken("module " + modules.group(1) + " declares its test "
+                            + "sources as 「" + raw + "」 and this sweep cannot resolve that "
+                            + "property, so it will not claim to have read them");
+                }
+                tests = module.resolve(resolved);
+            } else {
+                tests = module.resolve("src/test/java");
+            }
             if (Files.isDirectory(tests)) {
                 into.add(tests);
             } else if (Files.isDirectory(module.resolve("src/test"))) {
@@ -376,6 +455,22 @@ class HarnessBreakageIsNotAFiringTest {
                         + "this sweep chose " + tests + ", which does not exist — its tests would "
                         + "be silently skipped");
             }
+            if (moduleText.contains("<modules>")) {
+                collectTestRoots(module, into);
+            }
         }
+    }
+
+    /**
+     * The pom with its {@code <profiles>} removed.
+     *
+     * <p>A {@code <modules>} or {@code <testSourceDirectory>} inside a profile applies only when
+     * that profile is active, and this sweep has no idea which are. Reading them anyway made it
+     * recurse into modules the build is not using and pick a test directory the build does not use
+     * (round-18 review, Codex P2). What is left is the unconditional configuration, which is what
+     * "every module this build has" means for the gate this sweep runs in.
+     */
+    private static String withoutProfiles(String pom) {
+        return pom.replaceAll("(?s)<profiles>.*?</profiles>", "");
     }
 }

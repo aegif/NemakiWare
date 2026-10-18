@@ -73,20 +73,29 @@ class DaoFailsFastTest {
             throw err;
         }
         if (thrown[0] != null) {
-            // NOT "by definition the harness", which round 16 wrote here. In THIS class the worker
-            // bodies call the production directly and feed the result to an assertion —
-            // anEmptyFolderIsStillEmpty, anEmptyFolderStillCountsZero, anEmptyPageIsStillEmpty,
-            // anUndecodableChildIsCounted and anAnsweredEmptyReduceStillCountsZero are the
-            // over-throw controls — so a production that starts throwing where it promised an
-            // empty answer lands HERE, with the assertion never evaluated. Reporting that as
-            // harness breakage is the runner reading "did not fire" for a real regression
-            // (round-17 review: both reviewers, with the call sites listed).
+            // TWO things reach here and this helper cannot tell them apart.
             //
-            // The sibling helper in CouchEvidenceLedgerStoreTest keeps HarnessBroken, and the
-            // reason is the CALLER, not the shape: its one caller wraps the production call in
-            // assertThrows, so nothing the production throws can reach that arm.
-            org.junit.jupiter.api.Assertions.fail("the worker threw " + thrown[0]
-                    + " instead of answering, so the assertion in it never ran", thrown[0]);
+            // (a) The production throwing where it promised an answer: five tests in this class
+            //     call it directly inside the worker and feed the result to an assertion
+            //     (anEmptyFolderIsStillEmpty, anEmptyFolderStillCountsZero, anEmptyPageIsStillEmpty,
+            //     anUndecodableChildIsCounted, anAnsweredEmptyReduceStillCountsZero — the
+            //     over-throw controls), so the assertion is never evaluated.
+            // (b) This test's own fixture throwing: the mocks are built and stubbed INSIDE the
+            //     worker too, so a broken stub or an NPE in setup lands in the same place.
+            //
+            // Round 16 called the arm breakage, round 17 called it the promise, and each round a
+            // reviewer produced the other half. So it claims NEITHER: the throwable is carried out
+            // as it stands, with no assertion type and no HarnessBroken, which the runner scores
+            // as "did not fire" and a reader sees with the original cause attached. Narrowing each
+            // worker to the production call — the fix that would let this arm decide — is residual
+            // R193.
+            //
+            // The sibling helper in CouchEvidenceLedgerStoreTest does say HarnessBroken, and the
+            // reason is its CALLER, not this shape: its one caller wraps the production call in
+            // assertThrows, so only (b) can reach it.
+            throw new IllegalStateException("the worker threw instead of answering, so the "
+                    + "assertion in it never ran; whether that is the production breaking its "
+                    + "promise or this test's own fixture is not decided here", thrown[0]);
         }
     }
 
