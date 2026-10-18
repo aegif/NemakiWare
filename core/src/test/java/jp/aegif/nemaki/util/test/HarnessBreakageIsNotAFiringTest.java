@@ -366,6 +366,7 @@ class HarnessBreakageIsNotAFiringTest {
                 "interface BHarnessBroken extends CHarnessBroken, D { }",
                 "class RefusalHarnessBroken extends jp.aegif.nemaki.util.test.HarnessBroken { }",
                 "class RefusalHarnessBroken extends @A HarnessBroken { }",
+                "class RefusalHarnessBroken extends @a.b.C HarnessBroken { }",
                 "class SomethingElse extends RuntimeException { }")) {
             assertTrue(reservedNameViolations(honest, suffix, aFile).isEmpty(),
                     "this sweep calls 「" + honest + "」 a reserved-name violation, so it refuses "
@@ -388,6 +389,30 @@ class HarnessBreakageIsNotAFiringTest {
                         suffix, rootFile).isEmpty(),
                 "a NESTED type called exactly HarnessBroken inside the root's own file is allowed, "
                         + "so a breakage name can be taken by something that is not the root");
+        // NO SPACE between the brace and the keyword, in both directions — legal Java, and the
+        // off-by-one in the top-level test answered wrongly for both (round-35 review, subagent
+        // P2-1, each compiled).
+        assertFalse(reservedNameViolations(
+                        "public class HarnessBroken extends RuntimeException { }\n"
+                                + "class Other {class HarnessBroken extends AssertionError { } }",
+                        suffix, rootFile).isEmpty(),
+                "a nested type written without a space after the brace declares itself the root");
+        assertTrue(reservedNameViolations(
+                        "interface Pre { }class HarnessBroken extends RuntimeException { }",
+                        suffix, rootFile).isEmpty(),
+                "the root is refused when another declaration closes right before it");
+        // AND the depth arithmetic itself, which nothing drove (round-35 review, subagent P3-2).
+        assertTrue(reservedNameViolations(
+                        "class Pre { void m() { } }\npublic class HarnessBroken "
+                                + "extends RuntimeException { }", suffix, rootFile).isEmpty(),
+                "a balanced declaration before the root leaves the depth count wrong, so the root "
+                        + "reads as nested");
+        // THE PACKAGE half of the root's path, which lost its only fixture when the module half
+        // got one (round-35 review, subagent P2-2).
+        assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
+                        Path.of("../core/src/test/java/jp/aegif/nemaki/evidence/HarnessBroken.java"))
+                        .isEmpty(),
+                "a file in the right module but the wrong package is read as the root");
         // ANOTHER MODULE, with the root's own package path — the shape a path suffix let through
         // (round-34 review: Codex P1, subagent P1-1).
         assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
@@ -670,8 +695,14 @@ class HarnessBreakageIsNotAFiringTest {
             while (bodyAt < code.length() && code.charAt(bodyAt) != '{') {
                 bodyAt++;
             }
+            // group(1) — the KEYWORD's own position. `declared.start()` is the delimiter the
+            // pattern consumed before it, so a `{` or `}` sitting right there was not counted:
+            // `class Other {class HarnessBroken extends AssertionError { } }` read as top level
+            // (fail-open) and `interface Pre { }class HarnessBroken extends RuntimeException { }`
+            // read as nested, which refused the real root (round-35 review, subagent P2-1, both
+            // measured and both legal Java).
             boolean isTheRoot = name.equals(suffix) && isTheRootFile(file)
-                    && isTopLevel(code, declared.start());
+                    && isTopLevel(code, declared.start(1));
             if (!extendsABreakage && !isTheRoot) {
                 violations.add(file + " 「" + code.substring(declared.start(),
                         Math.min(bodyAt + 1, code.length())).replace('\n', ' ').trim() + "」");
@@ -690,8 +721,12 @@ class HarnessBreakageIsNotAFiringTest {
      */
     private static boolean isTheRootFile(Path file) {
         String path = "/" + file.toString().replace('\\', '/');
+        // ONE arm: the sweep walks from `..`, so every root is 「../<module>/src/test/java」 and
+        // the 「src/test/java/…」 form was never reached — measured by dropping it and seeing no
+        // fixture fail (round-35 review, subagent P3-1). 「/core/」 with both slashes, so that a
+        // module whose name merely ends in core does not match.
         return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")
-                && (path.startsWith("/src/test/java/") || path.contains("/core/src/test/java/"));
+                && path.contains("/core/src/test/java/");
     }
 
     /**

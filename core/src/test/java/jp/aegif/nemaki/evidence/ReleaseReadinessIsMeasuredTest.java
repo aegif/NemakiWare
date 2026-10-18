@@ -329,11 +329,6 @@ class ReleaseReadinessIsMeasuredTest {
         // reader that takes the document as a String can be driven with a string, which is how
         // this class's sibling sweep measures its own forms (round-34 review: Codex P3, subagent
         // P3-③ and P3-④; the limit is withdrawn from the canon with them).
-        GateReading real = readNewestGate(read(BATCH_PLAN));
-        assertEquals(real.claimed(), real.read(),
-                real.claimed() + " gate paragraphs claim a 全ユニット figure and this reader could "
-                        + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
-                        + "a round without a run");
         // DRIVEN, both ways, before the real document's answer is used.
         assertEquals(1, readNewestGate("### 確認 9 巡目\n**ゲートと実測**: 全ユニット **1,000 本**\n")
                         .read(),
@@ -366,10 +361,66 @@ class ReleaseReadinessIsMeasuredTest {
         assertThrows(HarnessBroken.class,
                 () -> readNewestGate("### 確認 9 巡目\n<!--\n### 確認 99 巡目\n"),
                 "an HTML comment that never closes is read as prose");
+        // MID-LINE comments, measured by both reviewers as hiding a whole fake section
+        // (round-35 review: Codex P2, subagent P2-3 — both got round=99 out of the round-34 reader).
+        GateReading hidden = readNewestGate("### 確認 9 巡目\n"
+                + "**ゲートと実測**: 全ユニット **1,000 本**\n\nprose <!--\n"
+                + "### 確認 99 巡目\n**ゲートと実測**: 全ユニット **9,999 本**\n-->\n");
+        assertEquals(9, hidden.round(),
+                "a section hidden inside a mid-line HTML comment is read as a real one, so a "
+                        + "figure nobody recorded becomes «the newest run»");
+        assertEquals("1,000", hidden.figure(), "the figure comes from the commented-out section");
+        // A GATE LINE IN A TABLE CELL that is not the first cell (round-35 review, Codex P2).
+        assertEquals(1, readNewestGate("### 確認 9 巡目\n"
+                        + "| status | **ゲートと実測**: 全ユニット **1,000 本** |\n").claimed(),
+                "a gate line in a table cell other than the first is not counted as a claim, so "
+                        + "the round reads as one that never ran");
+        // A FOUR-SPACE indented code block is a code block, not a gate line (round-35 review:
+        // Codex P2, subagent P3-3 — counting it refused a correct document).
+        GateReading indentedBlock = readNewestGate("### 確認 9 巡目\n"
+                + "**ゲートと実測**: 全ユニット **1,000 本**\n\n"
+                + "    **ゲートと実測**: 全ユニット **9,999 本**\n");
+        assertEquals(indentedBlock.claimed(), indentedBlock.read(),
+                "a four-space indented line is counted as a gate claim, so a code example makes "
+                        + "this reader refuse a document that is correct");
+        // A MENTION of a fence is not a fence: this plan talks about ``` inside backticks, and the
+        // fence reader must not pair a mention with a real fence — the shape that made control JM5
+        // a no-op (round-35 review, subagent P1-1, measured). Compared as a VALUE because a
+        // refusal here is HarnessBroken, which the control runner excludes by name.
+        String mentioned;
+        try {
+            mentioned = String.valueOf(readNewestGate("### 確認 9 巡目\nprose ``` inline\n"
+                    + "**ゲートと実測**: 全ユニット **1,000 本**\n\n```\ncode\n```\n").read());
+        } catch (HarnessBroken refused) {
+            mentioned = "refused: " + refused.getMessage();
+        }
+        assertEquals("1", mentioned,
+                "a ``` MENTIONED in prose was paired with a real fence, so the gate paragraph "
+                        + "between them was deleted — and both counters dropped together, which is "
+                        + "why nothing noticed (round-35 review, subagent P1-1)");
         assertEquals(0, readNewestGate("### 確認 9 巡目\n   ```\n**ゲートと実測**: 全ユニット "
                         + "**1,000 本**\n   ```\n").read(),
                 "an indented fence — valid markdown — is not stripped, so a gate line inside a "
                         + "code example is read as a run (round-34 review, subagent P3-⑥)");
+
+        // THE OTHER FENCE CHARACTER and an ORDERED list item: both arms existed with nothing
+        // driving them (round-35 review, subagent P3-4).
+        assertEquals(0, readNewestGate("### 確認 9 巡目\n~~~\n**ゲートと実測**: 全ユニット "
+                        + "**1,000 本**\n~~~\n").read(),
+                "a ~~~ fenced example is read as a run");
+        assertEquals(1, readNewestGate("### 確認 9 巡目\n1. **ゲートと実測**: 全ユニット "
+                        + "**1,000 本**\n").claimed(),
+                "a gate line written as an ordered list item is not counted as a claim");
+
+        // THE REAL DOCUMENT LAST. Reading it first meant a sabotage that makes this reader
+        // refuse the real plan never reached the synthetic drives, so the control measuring the
+        // fence anchor was scored «the harness broke» instead of «the guard fired» (round 35,
+        // measured with control JM5).
+        GateReading real = readNewestGate(read(BATCH_PLAN));
+        assertEquals(real.claimed(), real.read(),
+                real.claimed() + " gate paragraphs claim a 全ユニット figure and this reader could "
+                        + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
+                        + "a round without a run");
 
         int newestRound = real.round();
         String newestFigure = real.figure();
@@ -417,7 +468,7 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>Takes the document as a String so that synthetic ones can drive it.
      */
     private static GateReading readNewestGate(String plan) {
-        String prose = withoutFencesAndComments(plan);
+        String prose = asProse(plan);
         Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
                 .matcher(prose);
         int newestRound = 0;
@@ -435,9 +486,23 @@ class ReleaseReadinessIsMeasuredTest {
             String section = rounds.group(2);
             // A PARAGRAPH, not a line: the figure may wrap onto the next one.
             for (String paragraph : section.split("\n[ \t]*\n")) {
-                if (Pattern.compile("(?m)^[\\s>*+\\-|]*(?:\\d+[.)]\\s*)?\\*\\*ゲートと実測\\*\\*:")
-                        .matcher(paragraph).find()
-                        && paragraph.contains("全ユニット")) {
+                // THREE SPACES of indent at most — a four-space or tab indented line is a code
+                // block, and counting it made this reader refuse a correct document (round-35
+                // review: Codex P2, subagent P3-3). Table cells are reached by splitting the
+                // line: the marker is not always in the first one (round-35 review, Codex P2).
+                boolean claimsARun = false;
+                for (String line : paragraph.split("\n")) {
+                    for (String cell : line.split("\\|")) {
+                        // The bullet or number must be THERE if extra spaces follow it, or three
+                        // spaces plus a bullet's worth of padding reaches four — which is a code
+                        // block (round-35 review: Codex P2, measured as claimed 2 / read 1).
+                        if (Pattern.compile("^ {0,3}(?:[>*+\\-] *)?(?:\\d+[.)] *)?"
+                                        + "\\*\\*ゲートと実測\\*\\*:").matcher(cell).find()) {
+                            claimsARun = true;
+                        }
+                    }
+                }
+                if (claimsARun && paragraph.contains("全ユニット")) {
                     claimed++;
                 }
             }
@@ -466,40 +531,93 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The document with fenced blocks and HTML comments taken out, or a refusal.
+     * The document's PROSE: inline code, fenced blocks and HTML comments taken out, or a refusal.
      *
-     * <p>Both constructs count only when they OPEN A LINE (markdown allows up to three spaces of
-     * indent), and each opener must close: counting the delimiter anywhere refused this very
-     * document for mentioning ``` in a table cell, counting only column zero left an indented
-     * fence in place, and stripping HTML comments with a non-greedy pair ignored an unclosed
-     * {@code <!--} — of which this plan already holds two — so a later {@code -->} would have
-     * deleted everything between them in silence (round-33 review, Codex P2 and subagent P3-4;
-     * round-34 review, subagent P2-3 and P3-⑥, each measured).
+     * <p>In this order, and the order is the point. Inline code goes first because this plan talks
+     * ABOUT markdown — it mentions ``` and {@code <!--} inside backticks — and a mention is not a
+     * construct; counting delimiters anywhere refused the document for one of those mentions
+     * (round 33), and counting only line-start ones left a mid-line {@code <!--} able to hide a
+     * whole fake section (round-35 review: Codex P2, subagent P2-3, both measured round=99).
+     * Fences go next, because a comment delimiter inside a fence is code; a fence may be three or
+     * more backticks or tildes and closes with at least as many of the same (round-35 review,
+     * Codex P2). Comments go last, from anywhere, and an opener that never closes is a refusal:
+     * ignoring it let a later {@code -->} delete everything between (round-34 review, subagent
+     * P2-3).
+     *
+     * <p>What is deliberately NOT stripped: a four-space or tab indented code block. The loose
+     * counter below limits itself to three spaces of indent instead, so such a block cannot be
+     * read as a gate line (round-35 review: Codex P2, subagent P3-3).
      */
-    private static String withoutFencesAndComments(String markdown) {
-        markdown = withoutSpans(markdown, "(?m)^ {0,3}<!--", "-->", "an HTML comment");
-        markdown = withoutSpans(markdown, "(?m)^ {0,3}```", "(?m)^ {0,3}```[^\n]*", "a ``` fence");
-        return withoutSpans(markdown, "(?m)^ {0,3}~~~", "(?m)^ {0,3}~~~[^\n]*", "a ~~~ fence");
+    private static String asProse(String markdown) {
+        markdown = withoutInlineCode(markdown);
+        markdown = withoutFences(markdown);
+        return withoutSpans(markdown, Pattern.compile("<!--"), "-->", "an HTML comment");
+    }
+
+    /** Backtick spans removed, so a mention of a construct is not read as one. */
+    private static String withoutInlineCode(String markdown) {
+        StringBuilder prose = new StringBuilder();
+        // ONE LINE: a code span does not cross a paragraph, and letting it cross lines made the
+        // span reach from a MENTION of ``` to a real fence and swallow the gate paragraph between
+        // them — the reader then refused the document for an unclosed fence (measured while
+        // driving these fixtures, round 35).
+        Matcher span = Pattern.compile("(?<!`)(`+)(?!`)([^\\n]+?)(?<!`)\\1(?!`)")
+                .matcher(markdown);
+        int at = 0;
+        while (span.find()) {
+            prose.append(markdown, at, span.start());
+            at = span.end();
+        }
+        return prose.append(markdown, at, markdown.length()).toString();
+    }
+
+    /**
+     * Fenced blocks removed: three or more backticks or tildes, closed by at least as many.
+     *
+     * <p>An opener that never closes is a refusal — a heading inside an unclosed example would
+     * otherwise read as a section.
+     */
+    private static String withoutFences(String markdown) {
+        StringBuilder prose = new StringBuilder();
+        Matcher opener = Pattern.compile("(?m)^[ \\t]{0,3}(`{3,}|~{3,})[^\\n]*$").matcher(markdown);
+        int at = 0;
+        while (opener.find(at)) {
+            String delimiter = opener.group(1);
+            // The closer is built from the delimiter CHARACTER, not from a quoted span: a
+            // `\Q`\E{3,}` quantifies the end of the quote rather than the backtick, so the real
+            // fence never matched its own closer and the reader refused the document (measured
+            // while driving the fence fixtures, round 35).
+            Matcher closer = Pattern.compile("(?m)^[ \\t]{0,3}" + delimiter.charAt(0)
+                    + "{" + delimiter.length() + ",}[ \\t]*$").matcher(markdown);
+            if (!closer.find(opener.end())) {
+                throw new HarnessBroken("the batch plan opens a 「" + delimiter + "」 fence at "
+                        + "offset " + opener.start() + " and never closes it, so this reader "
+                        + "cannot tell its prose from its code");
+            }
+            prose.append(markdown, at, opener.start());
+            at = closer.end();
+        }
+        return prose.append(markdown, at, markdown.length()).toString();
     }
 
     /** Every opener-to-closer span removed, or a refusal naming the one that never closes. */
-    private static String withoutSpans(String markdown, String opener, String closer, String what) {
+    private static String withoutSpans(String markdown, Pattern opener, String closer, String what) {
         StringBuilder prose = new StringBuilder();
         int at = 0;
         while (true) {
-            Matcher open = Pattern.compile(opener).matcher(markdown);
+            Matcher open = opener.matcher(markdown);
             if (!open.find(at)) {
                 prose.append(markdown, at, markdown.length());
                 return prose.toString();
             }
-            Matcher close = Pattern.compile(closer).matcher(markdown);
-            if (!close.find(open.end())) {
+            int closes = markdown.indexOf(closer, open.end());
+            if (closes < 0) {
                 throw new HarnessBroken("the batch plan opens " + what + " at offset "
                         + open.start() + " and never closes it, so this reader cannot tell its "
                         + "prose from its code");
             }
             prose.append(markdown, at, open.start());
-            at = close.end();
+            at = closes + closer.length();
         }
     }
 
