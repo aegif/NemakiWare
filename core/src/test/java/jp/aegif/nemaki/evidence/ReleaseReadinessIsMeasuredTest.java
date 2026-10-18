@@ -512,10 +512,10 @@ class ReleaseReadinessIsMeasuredTest {
         // Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time
         // the controls added in the SAME batch were left out, and twice the count came from a grep
         // that only knew single quotes while the runner reads both. What this stops is the figure
-        // IN THE CANON drifting; the records in v3.4.1-plan.md are read by nothing, and two stale
-        // copies sat there for a round (round-21 review, subagent P2-4 — "discipline did not stop
-        // it; this does" was stronger than the lock). The plan IS read by the forbidden-claim
-        // sweep; what no lock does is compare its NUMBERS with the runner.
+        // IN THE CANON drifting; no lock compares the PLAN's copies of this figure with the
+        // runner, which is why two stale ones sat there for a round (round-21 review, subagent
+        // P2-4 — "discipline did not stop it; this does" was stronger than the lock). The plan IS
+        // read, by the forbidden-claim sweep; what no lock does is compare its NUMBERS.
         String runner = read(RUNNER);
         String canon = read(CANON);
 
@@ -528,7 +528,7 @@ class ReleaseReadinessIsMeasuredTest {
         // soon as a dict puts `test=` first — valid Python, and then the id of the PREVIOUS
         // control is credited and this one drops out (round-23 review, Codex P2).
         SortedSet<String> naming = new TreeSet<>();
-        Matcher dict = Pattern.compile("(?m)^    dict\\($").matcher(runner);
+        Matcher dict = Pattern.compile("(?m)^\\s*dict\\($").matcher(runner);
         int dicts = 0;
         while (dict.find()) {
             int end = runner.indexOf("\n    ),", dict.end());
@@ -545,9 +545,16 @@ class ReleaseReadinessIsMeasuredTest {
                 naming.add(id.group(1));
             }
         }
-        assertTrue(dicts > 2000,
-                "this reader found " + dicts + " control dicts in the runner, which is fewer than "
-                        + "it declares — the shape it reads has changed");
+        int declared = 0;
+        Matcher everyId = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(runner);
+        while (everyId.find()) {
+            declared++;
+        }
+        assertEquals(declared, dicts,
+                "this reader found " + dicts + " control dicts and the runner declares " + declared
+                        + " ids. It reads raw lines, so a dict opener written another way (`dict (`)"
+                        + " or a `test=` line sitting inside a sabotage string moves the two apart —"
+                        + " and then this count is of something else (round-24 review, Codex P2)");
         assertFalse(naming.isEmpty(),
                 "no control names the sweep at all, so this reader is measuring nothing");
 

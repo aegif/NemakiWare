@@ -79,6 +79,12 @@ import org.junit.jupiter.api.Test;
  * how a meta-test checks that a lock fires. A {@code catch} form was swept for one round and only
  * ever refused those legitimate shapes (round-17 review: both reviewers).
  *
+ * <p>Adding an arm to {@code thePomReadersTakeTheUnion}: an arm that expects a LIST of
+ * candidates goes through {@code candidatesOrRefusal} (the reader's refusal is one of the answers
+ * it compares, and a thrown {@code HarnessBroken} would be excluded by the runner before it looked
+ * for an assertion); an arm that measures the REFUSAL itself uses {@code assertThrows}. The rule
+ * lived only in the plan for a round (round-24 review, subagent P3-5).
+ *
  * <p>The limits a lock's author has to know. The modules outside {@code core} have no
  * {@code HarnessBroken} on their test path, so a lock there can only avoid producing an
  * assertion type — its breakage reads to the runner as "did not fire" rather than being
@@ -256,6 +262,7 @@ class HarnessBreakageIsNotAFiringTest {
                 "        AssertionError failure = somethingThatBuildsOne();",
                 "        AssertionError _failure = somethingThatBuildsOne();",
                 "        AssertionError Failure = somethingThatBuildsOne();",
+                "        } catch (Exception e) {AssertionError failure = f();throw failure;}",
                 "        assert found > 0 : \"the view answered nothing\";",
                 "        if (x) assert found > 0 : \"the view answered nothing\";",
                 "        assert m.equals(Map.of(\"a\", new int[]{1})) : \"the shape moved\";",
@@ -314,6 +321,61 @@ class HarnessBreakageIsNotAFiringTest {
                 "the sweep does not read this module's own tests. 「contains(core/src/test/java)」 "
                         + "was the first form of this check and evidence-verifier-core satisfies "
                         + "it (round-17 review, subagent P3-1): " + roots);
+    }
+
+    @Test
+    @DisplayName("a path's four answers are told apart, and a property that explodes is refused")
+    void theReaderTellsAbsentFromUnreadable() throws Exception {
+        // DRIVEN on a real filesystem: three of these four answers could not be reached from this
+        // reactor at all, and the round-23 cut classified two of them wrongly while claiming it had
+        // separated them (round-24 review, subagent P2-4).
+        Path scratch = Files.createTempDirectory("nw-presence");
+        try {
+            Path directory = Files.createDirectory(scratch.resolve("adir"));
+            Path file = Files.writeString(scratch.resolve("afile"), "x");
+            Path absent = scratch.resolve("nothing-here");
+            Path dangling = scratch.resolve("dangling");
+            Files.createSymbolicLink(dangling, scratch.resolve("also-nothing"));
+
+            assertEquals(Presence.DIRECTORY, classify(directory));
+            assertEquals(Presence.NOT_A_DIRECTORY, classify(file),
+                    "a path that exists and is a file was not told apart — the round-23 cut "
+                            + "refused it as 「could not tell」, which is a false reason");
+            assertEquals(Presence.ABSENT, classify(absent));
+            assertEquals(Presence.ABSENT, classify(dangling),
+                    "a broken symlink: nothing is reachable through it, so absent is the honest "
+                            + "answer — the comment that claimed notExists tells it apart from "
+                            + "absent was wrong");
+        } finally {
+            try (var walk = Files.walk(scratch)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (Exception ignored) {
+                        // a scratch directory that will not go is not this lock's subject
+                    }
+                });
+            }
+        }
+
+        // And the combinatorial guard, which had no fixture either: five declarations of one
+        // property, each referring to the property again, multiplies past 64 on the third pass.
+        String explodes = """
+                <project>
+                  <properties>
+                    <tests.root>${tests.root}/a</tests.root>
+                    <tests.root>${tests.root}/b</tests.root>
+                    <tests.root>${tests.root}/c</tests.root>
+                    <tests.root>${tests.root}/d</tests.root>
+                    <tests.root>${tests.root}/e</tests.root>
+                  </properties>
+                  <build><testSourceDirectory>${tests.root}</testSourceDirectory></build>
+                </project>
+                """;
+        List<String> answer = candidatesOrRefusal(explodes);
+        assertEquals(1, answer.size(), "the explosion was not refused: " + answer);
+        assertTrue(answer.get(0).contains("more than 64"),
+                "the refusal does not say what it refused: " + answer);
     }
 
     @Test
@@ -480,11 +542,26 @@ class HarnessBreakageIsNotAFiringTest {
             // genuine breakage — a pom that cannot be read, once this reader starts reading parent
             // poms — come out as an assertion failure, which the runner scores as a firing: the
             // very confusion this class exists to prevent (round-23 review, subagent P2-1).
-            String message = String.valueOf(broken.getMessage());
-            if (!message.contains("could not resolve") && !message.contains("more than 64")) {
+            if (!(broken instanceof RefusedToName)) {
                 throw broken;
             }
-            return List.of("refused: " + message);
+            return List.of("refused: " + broken.getMessage());
+        }
+    }
+
+    /**
+     * The reader refusing to name a test-source directory — its own answer, not a breakage of the
+     * harness.
+     *
+     * <p>A type rather than a phrase: {@code candidatesOrRefusal} matched the refusal by the words
+     * in its message, so rewording the refusal would have made the helper rethrow and the lock die
+     * of breakage instead of asserting (round-24, found while reading my own change).
+     */
+    static final class RefusedToName extends HarnessBroken {
+        private static final long serialVersionUID = 1L;
+
+        RefusedToName(String message) {
+            super(message);
         }
     }
 
@@ -508,7 +585,8 @@ class HarnessBreakageIsNotAFiringTest {
     private static List<String> scoredTypeNames() throws Exception {
         Path runner = Path.of("../tools/negative-controls/run_negative_controls.py");
         if (!Files.exists(runner)) {
-            throw new HarnessBroken("the control runner is not at " + runner.toAbsolutePath()
+            throw new HarnessBroken((Files.notExists(runner) ? "the control runner is not at "
+                    : "could not tell whether the control runner is at ") + runner.toAbsolutePath()
                     + ", so this sweep cannot know which type names it scores");
         }
         String code = readTextOrBreak(runner);
@@ -627,7 +705,8 @@ class HarnessBreakageIsNotAFiringTest {
             java.util.Set<Path> walked) throws Exception {
         Path pom = module.resolve("pom.xml");
         if (!Files.exists(pom)) {
-            throw new HarnessBroken("there is no pom at " + pom.toAbsolutePath()
+            throw new HarnessBroken((Files.notExists(pom) ? "there is no pom at "
+                    : "could not tell whether there is a pom at ") + pom.toAbsolutePath()
                     + ", so this sweep cannot know which modules exist");
         }
         String text = readTextOrBreak(pom);
@@ -636,16 +715,16 @@ class HarnessBreakageIsNotAFiringTest {
         boolean took = false;
         for (String candidate : testRootCandidates(text, named)) {
             Path tests = module.resolve(candidate);
-            if (Files.isDirectory(tests)) {
-                into.add(tests);
-                took = true;
-            } else if (!Files.notExists(tests)) {
-                // isDirectory answers false both for "it is not there" and for "I could not
-                // tell" (a permission error, a broken symlink, a filesystem hiccup). notExists
-                // is the API that says the second one apart, and this tree's whole rule is that
-                // the two must not share a value (round-23 review, Codex P1).
-                throw new HarnessBroken("could not tell whether " + tests + " is a directory, so "
-                        + "this sweep will not record it as absent");
+            switch (classify(tests)) {
+                case DIRECTORY -> {
+                    into.add(tests);
+                    took = true;
+                }
+                case ABSENT, NOT_A_DIRECTORY -> {
+                    // Both are answers: nothing is there, or something that is not a directory is.
+                }
+                case CANNOT_TELL -> throw new HarnessBroken("could not tell what " + tests
+                        + " is, so this sweep will not record it as absent");
             }
         }
         if (!took && containsJavaSources(module.resolve("src/test"))) {
@@ -658,15 +737,18 @@ class HarnessBreakageIsNotAFiringTest {
         for (String child : modulesIn(text)) {
             Path childPath = module.resolve(child);
             if (!Files.isDirectory(childPath)) {
+                if (classify(childPath) == Presence.CANNOT_TELL) {
+                    // BEFORE the skip: a profile-only module whose directory cannot be read was
+                    // skipped in silence, so none of its locks were ever swept (round-24 review,
+                    // subagent P2-4c).
+                    throw new HarnessBroken("could not tell what the module directory " + childPath
+                            + " is, so this sweep will not skip it as absent");
+                }
                 if (!requiredModulesIn(text).contains(child)) {
                     // Named only by a profile. A profile that is off in this checkout may well
                     // have no directory, and refusing the whole reactor for it is an
                     // over-refusal of a valid build (round-23 review, Codex P2).
                     continue;
-                }
-                if (!Files.notExists(childPath)) {
-                    throw new HarnessBroken("could not tell whether the module directory "
-                            + childPath + " exists, so this sweep will not record it as absent");
                 }
                 throw new HarnessBroken("the pom of " + named + " names module " + child
                         + " in its own <modules> and there is no such directory, so this sweep "
@@ -683,18 +765,18 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     /**
-     * Every {@code <module>} a pom names, profiles included.
+     * The modules a pom names in its own {@code <modules>} — the ones that must exist.
      *
-     * <p>Comments go first: {@code <!-- the <modules> below … -->} would otherwise contribute a
-     * module that does not exist and this sweep would refuse the whole build.
+     * <p>Profiles are left out here on purpose: a profile that is off in this checkout may name a
+     * module with no directory, and refusing the whole reactor for that is an over-refusal
+     * (round-23 review, Codex P2). {@link #modulesIn} is the other half and takes everything.
      */
-    /** The modules a pom names in its own {@code <modules>} — the ones that must exist. */
     static List<String> requiredModulesIn(String pom) {
         String text = withoutXmlComments(pom).replaceAll("(?s)<profiles>.*?</profiles>", "");
         List<String> modules = new ArrayList<>();
         Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(text);
         while (block.find()) {
-            Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(block.group(1));
+            Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
                 modules.add(m.group(1).trim());
             }
@@ -702,6 +784,15 @@ class HarnessBreakageIsNotAFiringTest {
         return modules;
     }
 
+    /**
+     * Every {@code <module>} a pom names, profiles included.
+     *
+     * <p>Comments go first: {@code <!-- the <modules> below … -->} would otherwise contribute a
+     * module that does not exist and this sweep would refuse the whole build. This javadoc sat
+     * above {@link #requiredModulesIn} for one round — the method was inserted before this
+     * declaration, which is the fifth time this tree has made that edit (round-24 review,
+     * subagent P2-1; the detector that catches it does not read test sources).
+     */
     static List<String> modulesIn(String pom) {
         // INSIDE <modules> only. A plugin's own free-form configuration may carry a <module>
         // element of its own (a JPMS name, for one), and taking those made this reader demand a
@@ -710,7 +801,7 @@ class HarnessBreakageIsNotAFiringTest {
         List<String> modules = new ArrayList<>();
         Matcher block = Pattern.compile("(?s)<modules>(.*?)</modules>").matcher(withoutXmlComments(pom));
         while (block.find()) {
-            Matcher m = Pattern.compile("<module>([^<]+)</module>").matcher(block.group(1));
+            Matcher m = Pattern.compile(elementPattern("module")).matcher(block.group(1));
             while (m.find()) {
                 modules.add(m.group(1).trim());
             }
@@ -736,12 +827,17 @@ class HarnessBreakageIsNotAFiringTest {
         // <configuration> (a plugin may take an element of the same name as its own input, and
         // reading those made this sweep walk a directory the build never compiles — round-23
         // review, Codex P2).
+        // Plugins out FIRST, then the build blocks. Taking <build> first and stripping plugins
+        // inside it loses the real directory when a plugin's own configuration carries a POM
+        // fragment of its own: the non-greedy <build>…</build> ends at the INNER closing tag
+        // (round-24 review, subagent P3-3, measured).
+        String withoutPlugins = text.replaceAll("(?s)<plugins>.*?</plugins>", "");
         StringBuilder build = new StringBuilder();
-        Matcher builds = Pattern.compile("(?s)<build>(.*?)</build>").matcher(text);
+        Matcher builds = Pattern.compile("(?s)<build>(.*?)</build>").matcher(withoutPlugins);
         while (builds.find()) {
-            build.append(builds.group(1).replaceAll("(?s)<plugins>.*?</plugins>", ""));
+            build.append(builds.group(1));
         }
-        Matcher declared = Pattern.compile("<testSourceDirectory>([^<]+)</testSourceDirectory>")
+        Matcher declared = Pattern.compile(elementPattern("testSourceDirectory"))
                 .matcher(build);
         while (declared.find()) {
             // EVERY value a property is given, not the first: two profiles can set the same
@@ -754,7 +850,7 @@ class HarnessBreakageIsNotAFiringTest {
                     // directory it cannot name may hold the tests (round-20 review, subagent P2-4;
                     // dropping it in favour of the default was trading an over-refusal for a
                     // fail-open).
-                    throw new HarnessBroken("module " + named + " declares its test sources as 「"
+                    throw new RefusedToName("module " + named + " declares its test sources as 「"
                             + declared.group(1).trim() + "」 and this sweep could not resolve 「"
                             + resolved + "」 from this pom's own properties, so it cannot say which "
                             + "directory it read");
@@ -808,12 +904,13 @@ class HarnessBreakageIsNotAFiringTest {
                     next.add(value);        // nobody declares it; the caller decides what that means
                 }
             }
+            next = new ArrayList<>(new java.util.LinkedHashSet<>(next));
             if (next.size() > 64) {
                 // Each pass multiplies by the number of declarations, so five profiles declaring
                 // one property with a self-reference reaches nine million values before the pass
                 // limit — it would hang or run out of memory rather than refuse (round-23 review,
                 // subagent P3-4, measured). A sweep that cannot enumerate the candidates says so.
-                throw new HarnessBroken("resolving 「" + raw + "」 against this pom's properties "
+                throw new RefusedToName("resolving 「" + raw + "」 against this pom's properties "
                         + "produced more than 64 candidate directories, so this sweep cannot say "
                         + "which one it read");
             }
@@ -829,6 +926,35 @@ class HarnessBreakageIsNotAFiringTest {
         return value.replace("${project.basedir}/", "").replace("${basedir}/", "")
                 .replace("${pom.basedir}/", "").replace("${project.basedir}", "")
                 .replace("${basedir}", "").replace("${pom.basedir}", "");
+    }
+
+    /** What a path is, with "I could not tell" kept apart from "it is not there". */
+    enum Presence { DIRECTORY, NOT_A_DIRECTORY, ABSENT, CANNOT_TELL }
+
+    /**
+     * Which of the four a path is.
+     *
+     * <p>{@code isDirectory} answers false for three different things, and the round-23 cut used
+     * {@code notExists} to split them — which gets two of them wrong: a BROKEN SYMLINK reports
+     * notExists == true (so it read as "absent" though nothing could be read through it), and a
+     * path that exists and is a FILE was refused as "could not tell" though it is perfectly
+     * knowable (round-24 review, subagent P2-4b, measured against the syscalls). Reading the
+     * attributes answers all four.
+     */
+    static Presence classify(Path path) {
+        try {
+            if (Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class)
+                    .isDirectory()) {
+                return Presence.DIRECTORY;
+            }
+            return Presence.NOT_A_DIRECTORY;
+        } catch (java.nio.file.NoSuchFileException absent) {
+            // A broken symlink lands here too — nothing is reachable through it, and the sweep
+            // cannot read what is not there, so "absent" is the honest answer for both.
+            return Presence.ABSENT;
+        } catch (java.io.IOException cannotTell) {
+            return Presence.CANNOT_TELL;
+        }
     }
 
     /** The file's text, or "this sweep could not look" — a pom is not Java, so it does not go
@@ -854,6 +980,14 @@ class HarnessBreakageIsNotAFiringTest {
 
     private static boolean containsJavaSources(Path directory) throws Exception {
         if (!Files.isDirectory(directory)) {
+            if (!Files.notExists(directory)) {
+                // The same two meanings as the candidate check above: this one answered "no .java
+                // here" for "I could not look", and the refusal that depends on it then never
+                // fired (round-24 review, Codex P1 — the claim "the two were separated" was
+                // true of one call site only).
+                throw new HarnessBroken("could not tell whether " + directory + " is a directory, "
+                        + "so this sweep will not report it as holding no sources");
+            }
             return false;
         }
         try (var walk = Files.walk(directory)) {
@@ -862,10 +996,21 @@ class HarnessBreakageIsNotAFiringTest {
     }
 
     private static String withoutXmlComments(String pom) {
-        // CDATA out too: `<module><![CDATA[guard]]></module>` is ordinary character content to
-        // Maven, and `[^<]+` stops at the `<` of the CDATA opener — the element then reads as
-        // absent and the module is dropped in silence (round-23 review, Codex P1).
-        return pom.replaceAll("(?s)<!--.*?-->", "")
-                .replaceAll("(?s)<!\\[CDATA\\[(.*?)]]>", "$1");
+        return pom.replaceAll("(?s)<!--.*?-->", "");
+    }
+
+    /**
+     * The element's text, whether it is written plainly or wrapped in CDATA.
+     *
+     * <p>CDATA is ordinary character content to Maven, and `[^<]+` stops at the `<` of the opener,
+     * so `<module><![CDATA[guard]]></module>` read as an absent element (round-23 review, Codex
+     * P1). Round 23 answered that by stripping the CDATA markers from the whole pom, which
+     * PROMOTED the content to structure — `<description><![CDATA[<modules><module>ghost</module>
+     * </modules>]]></description>` then read as a real module and a valid pom was refused
+     * (round-24 review, Codex P1). So the tolerance belongs in the element patterns, one element
+     * at a time, where CDATA content can never be mistaken for markup.
+     */
+    private static String elementPattern(String name) {
+        return "<" + name + ">\\s*(?:<!\\[CDATA\\[)?([^<\\]]+?)(?:]]>)?\\s*</" + name + ">";
     }
 }
