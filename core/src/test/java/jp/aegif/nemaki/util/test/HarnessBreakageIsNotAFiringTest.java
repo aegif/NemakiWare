@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.util.test;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -368,7 +369,7 @@ class HarnessBreakageIsNotAFiringTest {
                 </project>
                 """;
         assertEquals(List.of("src/locks/java", "src/test/java"),
-                testRootCandidates(property, "synthetic"),
+                candidatesOrRefusal(property),
                 "a property reference the pom itself declares is not resolved, and the round-18 "
                         + "form refused the whole build for it");
 
@@ -386,6 +387,27 @@ class HarnessBreakageIsNotAFiringTest {
                 "the refusal does not name the property nobody can resolve: "
                         + refused.getMessage());
 
+        String twoReferences = """
+                <project>
+                  <properties>
+                    <src.root>${project.basedir}/src</src.root>
+                    <flavour>locks</flavour>
+                  </properties>
+                  <build><testSourceDirectory>${src.root}/${flavour}/java</testSourceDirectory></build>
+                </project>
+                """;
+        assertEquals(List.of("src/locks/java", "src/test/java"),
+                // The REFUSAL is one of the answers this arm compares, not a harness breakage:
+                // an unresolved reference makes testRootCandidates throw, and both
+                // assertDoesNotThrow and a bare call leave `Caused by: HarnessBroken` in the
+                // stanza, which the runner excludes before it looks for an assertion — the control
+                // was scored FIRED FOR THE WRONG REASON twice that way.
+                candidatesOrRefusal(twoReferences),
+                "a value with TWO property references the pom itself declares was not resolved. "
+                        + "Round 20 resolved the first reference only and then refused the rest as "
+                        + "unresolvable, so this very pom was refused — and nothing measured it, so "
+                        + "reverting the fix left every test green (round-22 review, subagent P2-3)");
+
         String twoProfiles = """
                 <project>
                   <profiles>
@@ -396,7 +418,7 @@ class HarnessBreakageIsNotAFiringTest {
                 </project>
                 """;
         assertEquals(List.of("src/a", "src/b", "src/test/java"),
-                testRootCandidates(twoProfiles, "synthetic"),
+                candidatesOrRefusal(twoProfiles),
                 "two profiles give the same property different directories and only the first was "
                         + "taken, so the other profile's .java files were never read");
 
@@ -412,9 +434,26 @@ class HarnessBreakageIsNotAFiringTest {
                 "a <module> in a plugin's own configuration was taken for a reactor module, and "
                         + "this reader then demanded a directory Maven never looks for");
 
-        assertEquals(List.of("src/test/java"), testRootCandidates("<project/>", "synthetic"),
+        assertEquals(List.of("src/test/java"),
+                candidatesOrRefusal("<project/>"),
                 "the default is not a candidate, which is where every module of this build keeps "
                         + "its tests");
+    }
+
+    /**
+     * What the pom reader answers for this pom — a list of candidates, or the refusal as a value.
+     *
+     * <p>The refusal is part of the contract these arms measure (an unresolvable property must not
+     * be passed over), so it is compared rather than thrown: a thrown {@code HarnessBroken} lands
+     * in the failure stanza as a cause, and the control runner excludes anything whose stanza names
+     * that type before it looks for an assertion.
+     */
+    private static List<String> candidatesOrRefusal(String pom) {
+        try {
+            return testRootCandidates(pom, "synthetic");
+        } catch (HarnessBroken refused) {
+            return List.of("refused: " + refused.getMessage());
+        }
     }
 
     /** Read it, or say the sweep could not look — not that it looked and found nothing. */
@@ -440,7 +479,7 @@ class HarnessBreakageIsNotAFiringTest {
             throw new HarnessBroken("the control runner is not at " + runner.toAbsolutePath()
                     + ", so this sweep cannot know which type names it scores");
         }
-        String code = Files.readString(runner);
+        String code = readTextOrBreak(runner);
         int at = code.indexOf("return any(marker in failure_text for marker in (");
         if (at < 0) {
             throw new HarnessBroken("the runner no longer has the marker tuple this sweep reads "
@@ -472,9 +511,13 @@ class HarnessBreakageIsNotAFiringTest {
             // them was not read; and the size is what catches a span cut after them (the tuple's
             // first line is exactly those two). Round 19 replaced the size with the names, which
             // was weaker; round 20 asked for both (round-19 subagent P3-7, round-20 subagent P2-6).
-            throw new HarnessBroken("the runner's marker tuple yielded " + names
-                    + ", which does not include AssertionError and AssertionFailedError, so it "
-                    + "was not read");
+            throw new HarnessBroken("the runner's marker tuple yielded " + names + " ("
+                    + names.size() + " names)" + (names.contains("AssertionError")
+                            && names.contains("AssertionFailedError")
+                                    ? ", which is fewer than this tuple has — the span was cut"
+                                    : ", which does not include AssertionError and "
+                                            + "AssertionFailedError")
+                    + ", so it was not read");
         }
         return names;
     }

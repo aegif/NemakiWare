@@ -496,7 +496,8 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>Written because the figure was wrong four rounds running (6 → 7 → 9 → 12): each time the
      * controls added in the SAME batch were left out, and twice the count came from a grep that
-     * only knew single quotes while the runner reads both. Discipline did not stop it; this does.
+     * only knew single quotes while the runner reads both. What this stops is the figure IN THE
+     * CANON drifting — the records in {@code v3.4.1-plan.md} are read by nothing.
      * This javadoc is this method's own. The gap-count lock further down has its own again:
      * inserting this method before that declaration orphaned the one that was there for a round
      * (round-20 review, subagent P2-1; the fourth time this tree has made that edit).
