@@ -137,6 +137,23 @@ public class ContentServiceImpl implements ContentService {
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private ContentDaoService contentDaoService;
+
+	/**
+	 * Used only to take a deleted user's API keys out of the store (R170, batch 19).
+	 *
+	 * <p>Optional on purpose: a context that does not wire it still deletes users, and the
+	 * credentials of a deleted account are refused by their own store either way. The direction
+	 * of this dependency matters — {@code ApiKeyService} reads users through
+	 * {@code ContentDaoService}, not through this service, so there is no cycle.
+	 */
+	private jp.aegif.nemaki.cmis.factory.auth.ApiKeyService apiKeyService;
+
+	/** Used only to take a deleted user's RSS feed tokens out of the store (R170, batch 19). */
+	private jp.aegif.nemaki.rss.RssTokenService rssTokenService;
+
+	public void setRssTokenService(jp.aegif.nemaki.rss.RssTokenService rssTokenService) {
+		this.rssTokenService = rssTokenService;
+	}
 	// TypeManager obtained via SpringContext to avoid circular dependency
 	// private TypeManager typeManager;
 	private RenditionManager renditionManager;
@@ -859,6 +876,38 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public void stampPasswordChange(jp.aegif.nemaki.model.UserItem user, String newHash,
+			boolean bumpGeneration) {
+		if (user == null || newHash == null) {
+			throw new IllegalArgumentException("a password change needs a user and a hash");
+		}
+		// The generation first, the password last, and the password written ONCE: writing it before
+		// the generation can be read leaves the new password on the object the caller is about to
+		// save with the generation unchanged — the change takes effect and invalidates nothing (its
+		// own lock caught that). One call also lets the lock below count the writers.
+		if (bumpGeneration) {
+			Long current = jp.aegif.nemaki.util.AuthenticationUtil.accountGeneration(user);
+			if (current == null) {
+				// Unknown is not zero: raising from a value nobody can read would invent a number,
+				// and the save guard below the DAO refuses an unreadable generation anyway (R170).
+				throw new IllegalStateException("the credential generation of user "
+						+ user.getUserId()
+						+ " cannot be read, so this password change cannot invalidate what it should");
+			}
+			java.util.List<jp.aegif.nemaki.model.Property> properties =
+					user.getSubTypeProperties() == null ? new java.util.ArrayList<>()
+							: new java.util.ArrayList<>(user.getSubTypeProperties());
+			properties.removeIf(p -> jp.aegif.nemaki.util.AuthenticationUtil.CREDENTIAL_GENERATION_KEY
+					.equals(p.getKey()));
+			properties.add(new jp.aegif.nemaki.model.Property(
+					jp.aegif.nemaki.util.AuthenticationUtil.CREDENTIAL_GENERATION_KEY,
+					Long.toString(current + 1)));
+			user.setSubTypeProperties(properties);
+		}
+		user.setPassowrd(newHash);
+	}
+
+	@Override
 	public void applyUserUpdate(String repositoryId, jp.aegif.nemaki.model.UserItem user, String actorUsername) {
 		// The built-in administrator stays an administrator (R115). This is the one demotion
 		// this method can refuse from the merged user alone: what was stored is not known here
@@ -891,6 +940,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		removeUserFromAllGroups(repositoryId, userId);
 		delete(new jp.aegif.nemaki.cmis.factory.SystemCallContext(repositoryId), repositoryId, user.getId(), false);
+		revokeCredentialsOf(repositoryId, userId);
 		return true;
 	}
 
@@ -932,6 +982,55 @@ public class ContentServiceImpl implements ContentService {
 		}
 		removeUserFromAllGroups(deletion.callContext(), deletion.repositoryId(), deletion.item().getUserId());
 		delete(deletion.callContext(), deletion.repositoryId(), deletion.item().getId(), deletedWithParent);
+		// The CMIS way of deleting a user does not go through deleteUser, so the housekeeping has to
+		// be here as well (R170): otherwise the API keys of a user deleted this way stay in the
+		// store. They cannot authenticate — credentialBinding refuses them once the document is
+		// gone — but an operator listing keys would see rows nobody can use.
+		revokeCredentialsOf(deletion.repositoryId(), deletion.item().getUserId());
+	}
+
+	/**
+	 * Best-effort housekeeping after a user is gone: takes their credentials out of the stores.
+	 *
+	 * <p>AFTER the delete, deliberately (R170, batch 19 design §4.7). Revoking first and deleting
+	 * second loses the keys of a user who then turns out to be undeletable, and buys nothing: what
+	 * stops a credential of a deleted account is the comparison in the credential's own store
+	 * ({@code AuthenticationUtil.credentialBinding} answers {@code ACCOUNT_CANNOT_ACT} when the
+	 * account is gone, and {@code WRONG_ACCOUNT} when the same user id names a new document).
+	 *
+	 * <p>Which is also why a failure here is logged and not propagated: the delete has happened and
+	 * the security boundary holds without this.
+	 */
+	private void revokeCredentialsOf(String repositoryId, String userId) {
+		if (userId == null) {
+			return;
+		}
+		if (apiKeyService != null) {
+			try {
+				int revoked = apiKeyService.revokeApiKeysOf(repositoryId, userId);
+				if (revoked > 0) {
+					log.info("Revoked " + revoked + " API key(s) of the deleted user " + userId
+							+ " in repository " + repositoryId);
+				}
+			} catch (Exception failed) {
+				log.warn("Could not revoke the API keys of the deleted user " + userId
+						+ " in repository " + repositoryId + "; they cannot authenticate, but the"
+						+ " rows stay in the store: " + failed.getMessage());
+			}
+		}
+		if (rssTokenService != null) {
+			try {
+				int revoked = rssTokenService.revokeTokensOf(repositoryId, userId);
+				if (revoked > 0) {
+					log.info("Revoked " + revoked + " RSS feed token(s) of the deleted user "
+							+ userId + " in repository " + repositoryId);
+				}
+			} catch (Exception failed) {
+				log.warn("Could not revoke the RSS feed tokens of the deleted user " + userId
+						+ " in repository " + repositoryId + "; they cannot be validated, but the"
+						+ " rows stay in the store: " + failed.getMessage());
+			}
+		}
 	}
 
 	/** Refuses to delete a protected user (R115): the built-in accounts, and {@code actor} itself. */
@@ -5329,6 +5428,10 @@ public class ContentServiceImpl implements ContentService {
 	public void setRepositoryInfoMap(RepositoryInfoMap repositoryInfoMap) {
 		this.repositoryInfoMap = repositoryInfoMap;
 		initDelegates();
+	}
+
+	public void setApiKeyService(jp.aegif.nemaki.cmis.factory.auth.ApiKeyService apiKeyService) {
+		this.apiKeyService = apiKeyService;
 	}
 
 	public void setContentDaoService(ContentDaoService contentDaoService) {

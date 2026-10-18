@@ -1467,7 +1467,21 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public UserItem update(String repositoryId, UserItem userItem) {
-		UserItem updated = nonCachedContentDaoService.update(repositoryId, userItem);
+		UserItem updated;
+		try {
+			updated = nonCachedContentDaoService.update(repositoryId, userItem);
+		} catch (RuntimeException refused) {
+			// The caches hold the very instance the caller mutated: getUserItemById returns what is
+			// in the cache, so a password change edits the cached object and then saves it. When the
+			// save is refused — the generation guard below this layer, a conflict, anything — the
+			// cache would keep the value CouchDB does not have, and the credential check would then
+			// refuse every live credential of that account until the entry expired. That is an
+			// over-refusal, which this tree weighs the same as letting one through (R170, 3.4.1).
+			nemakiCachePool.get(repositoryId).getUserItemCache().remove(userItem.getUserId());
+			nemakiCachePool.get(repositoryId).getContentCache().remove(userItem.getId());
+			nemakiCachePool.get(repositoryId).getObjectDataCache().remove(userItem.getId());
+			throw refused;
+		}
 		jp.aegif.nemaki.util.cache.PrincipalGeneration.advance(repositoryId);
 		nemakiCachePool.get(repositoryId).getContentCache().put(updated.getId(), updated);
 		nemakiCachePool.get(repositoryId).getUserItemCache().put(updated.getUserId(), updated);

@@ -355,9 +355,20 @@ public class McpAuthenticationHandler {
             return McpAuthResult.failure("Invalid or expired token");
         }
 
-        if (!mayStillAct(repositoryId, session.getUserId())) {
+        // The account this session was opened FOR must still be there, not disabled, and still the
+        // same document at the same generation (3.4.1, zero-trust P0 and R170). credentialBinding
+        // answers ACCOUNT_CANNOT_ACT for the first two, so this subsumes mayStillAct here.
+        if (contentService == null) {
             sessionTokens.remove(token);
-            log.info("MCP session ended: the account no longer exists or is disabled");
+            log.warn("MCP: the account's state cannot be read (no content service), so its session is refused");
+            return McpAuthResult.failure("Invalid or expired token");
+        }
+        AuthenticationUtil.CredentialBinding binding = AuthenticationUtil.credentialBinding(
+                session.getAccountId(), session.getCredentialGeneration(),
+                contentService.getUserItemById(repositoryId, session.getUserId()), true);
+        if (binding != AuthenticationUtil.CredentialBinding.OK) {
+            sessionTokens.remove(token);
+            log.info("MCP session ended: {}", binding);
             return McpAuthResult.failure("Invalid or expired token");
         }
 
@@ -439,7 +450,11 @@ public class McpAuthenticationHandler {
 
         // Generate a secure session token
         String sessionToken = generateSessionToken();
-        McpSession session = new McpSession(username, repositoryId, Instant.now().plusSeconds(sessionTtlSeconds));
+        McpSession session = openSessionFor(repositoryId, username);
+        if (session == null) {
+            // The account cannot be bound (R170), so a session opened now could never authenticate.
+            return McpLoginResult.failure("Authentication failed");
+        }
         sessionTokens.put(sessionToken, session);
 
         log.info("MCP login successful for user '{}' in repository '{}'", username, repositoryId);
@@ -464,8 +479,38 @@ public class McpAuthenticationHandler {
      * Package-private: intended for testing only.
      */
     void registerSessionToken(String token, String userId, String repositoryId) {
-        McpSession session = new McpSession(userId, repositoryId, Instant.now().plusSeconds(sessionTtlSeconds));
+        McpSession session = openSessionFor(repositoryId, userId);
+        if (session == null) {
+            throw new IllegalStateException("No account document for user '" + userId
+                    + "', so a session opened now could never authenticate");
+        }
         sessionTokens.put(token, session);
+    }
+
+    /**
+     * A session bound to the account DOCUMENT it is opened for, or null when it cannot be bound.
+     *
+     * <p>Null rather than an unbound session: {@code authenticateSessionToken} refuses a session that
+     * records no account, so handing one back would say "logged in" for a token that never works
+     * (R170, 3.4.1). Without the content service nothing can be bound either — the same answer as
+     * {@code mayStillAct} gives when it cannot read the account's state.
+     */
+    private McpSession openSessionFor(String repositoryId, String userId) {
+        if (contentService == null) {
+            log.warn("MCP: the account cannot be read (no content service), so no session is opened");
+            return null;
+        }
+        jp.aegif.nemaki.model.UserItem account = contentService.getUserItemById(repositoryId, userId);
+        if (account == null || account.getId() == null) {
+            return null;
+        }
+        Long generation = AuthenticationUtil.accountGeneration(account);
+        if (generation == null) {
+            log.warn("MCP: the credential generation of the account cannot be read, so no session is opened");
+            return null;
+        }
+        return new McpSession(userId, repositoryId, Instant.now().plusSeconds(sessionTtlSeconds),
+                account.getId(), generation);
     }
 
     /**
@@ -476,7 +521,9 @@ public class McpAuthenticationHandler {
         McpSession session = sessionTokens.get(token);
         if (session != null) {
             // Replace with an expired session
-            sessionTokens.put(token, new McpSession(session.getUserId(), session.getRepositoryId(), Instant.now().minusSeconds(1)));
+            sessionTokens.put(token, new McpSession(session.getUserId(), session.getRepositoryId(),
+                    Instant.now().minusSeconds(1), session.getAccountId(),
+                    session.getCredentialGeneration()));
         }
     }
 
@@ -494,11 +541,25 @@ public class McpAuthenticationHandler {
         private final String userId;
         private final String repositoryId;
         private final Instant expiresAt;
+        /** The UserItem DOCUMENT this session was opened for, and its generation then (R170). */
+        private final String accountId;
+        private final Long credentialGeneration;
 
-        McpSession(String userId, String repositoryId, Instant expiresAt) {
+        McpSession(String userId, String repositoryId, Instant expiresAt,
+                String accountId, Long credentialGeneration) {
             this.userId = userId;
             this.repositoryId = repositoryId;
             this.expiresAt = expiresAt;
+            this.accountId = accountId;
+            this.credentialGeneration = credentialGeneration;
+        }
+
+        String getAccountId() {
+            return accountId;
+        }
+
+        Long getCredentialGeneration() {
+            return credentialGeneration;
         }
 
         String getUserId() {
@@ -538,7 +599,11 @@ public class McpAuthenticationHandler {
 
         // Generate a secure session token
         String sessionToken = generateSessionToken();
-        McpSession session = new McpSession(userId, repositoryId, Instant.now().plusSeconds(sessionTtlSeconds));
+        McpSession session = openSessionFor(repositoryId, userId);
+        if (session == null) {
+            // Bound to the account document or not opened at all (R170).
+            return McpLoginResult.failure("Invalid API key");
+        }
         sessionTokens.put(sessionToken, session);
 
         log.info("MCP API key login successful for user '{}' in repository '{}'", userId, repositoryId);
@@ -600,11 +665,12 @@ public class McpAuthenticationHandler {
         pendingCloudLogins.remove(requestId);
 
         String sessionToken = generateSessionToken();
-        McpSession session = new McpSession(
-            request.getUserId(),
-            request.getRepositoryId(),
-            Instant.now().plusSeconds(sessionTtlSeconds)
-        );
+        McpSession session = openSessionFor(request.getRepositoryId(), request.getUserId());
+        if (session == null) {
+            // A cloud login for a name with no account document opens nothing (R170): the session
+            // would be refused on its first use, and the caller would be told it had logged in.
+            return McpLoginResult.failure("Login failed");
+        }
         sessionTokens.put(sessionToken, session);
 
         log.info("MCP cloud login successful for user '{}' in repository '{}'",

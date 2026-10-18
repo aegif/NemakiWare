@@ -53,6 +53,14 @@ public class CouchRssToken extends CouchNodeBase {
     @JsonProperty("userId")
     private String userId;
 
+    /** The id of the UserItem document this token was issued for (R170). */
+    @JsonProperty("accountId")
+    private String accountId;
+
+    /** The account's credential generation when it was issued, as text (R170). */
+    @JsonProperty("credentialGeneration")
+    private String credentialGeneration;
+
     @JsonProperty("name")
     private String name;
 
@@ -90,6 +98,15 @@ public class CouchRssToken extends CouchNodeBase {
             }
             if (properties.containsKey("repositoryId")) {
                 this.repositoryId = (String) properties.get("repositoryId");
+            }
+            if (properties.containsKey("accountId")) {
+                this.accountId = (String) properties.get("accountId");
+            }
+            if (properties.containsKey("credentialGeneration")) {
+                // As text, whatever is stored: a damaged value has to reach the rule and be refused
+                // there rather than break the read (R170).
+                Object generation = properties.get("credentialGeneration");
+                this.credentialGeneration = generation == null ? null : generation.toString();
             }
             if (properties.containsKey("userId")) {
                 this.userId = (String) properties.get("userId");
@@ -144,6 +161,8 @@ public class CouchRssToken extends CouchNodeBase {
         this.token = rssToken.getToken();
         this.repositoryId = rssToken.getRepositoryId();
         this.userId = rssToken.getUserId();
+        this.accountId = rssToken.getAccountId();
+        this.credentialGeneration = rssToken.getCredentialGeneration();
         this.name = rssToken.getName();
         this.folderIds = rssToken.getFolderIds();
         this.documentIds = rssToken.getDocumentIds();
@@ -166,6 +185,8 @@ public class CouchRssToken extends CouchNodeBase {
         rssToken.setToken(token);
         rssToken.setRepositoryId(repositoryId);
         rssToken.setUserId(userId);
+        rssToken.setAccountId(accountId);
+        rssToken.setCredentialGeneration(credentialGeneration);
         rssToken.setName(name);
         rssToken.setFolderIds(folderIds);
         rssToken.setDocumentIds(documentIds);
@@ -204,6 +225,22 @@ public class CouchRssToken extends CouchNodeBase {
 
     public void setRepositoryId(String repositoryId) {
         this.repositoryId = repositoryId;
+    }
+
+    public String getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(String accountId) {
+        this.accountId = accountId;
+    }
+
+    public String getCredentialGeneration() {
+        return credentialGeneration;
+    }
+
+    public void setCredentialGeneration(String credentialGeneration) {
+        this.credentialGeneration = credentialGeneration;
     }
 
     public String getUserId() {

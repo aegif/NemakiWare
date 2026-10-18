@@ -75,6 +75,18 @@
         <property name="webhookService">
             <ref bean="WebhookService" />
         </property>
+        <!-- Only so that deleting a user takes their API keys out of the store (R170). The
+             credentials of a deleted account are refused by their own store regardless; this
+             keeps unusable rows out. ApiKeyService reads users through ContentDaoService, so
+             wiring it here does not create a cycle. -->
+        <property name="apiKeyService">
+            <ref bean="apiKeyService" />
+        </property>
+        <!-- Same reason as apiKeyService: deleting a user takes their feed tokens out of the
+             store (R170). RssTokenService reads users through ContentDaoService, so no cycle. -->
+        <property name="rssTokenService">
+            <ref bean="rssTokenService" />
+        </property>
 			<!-- P3-2: explicit, not @Autowired. Every other dependency of this bean is an
 		     explicit <property>, and an annotation here would rely on a component-scan
 		     element elsewhere in this file continuing to register the post-processor. A
@@ -152,6 +164,12 @@
 	<bean id="rssTokenService" class="jp.aegif.nemaki.rss.RssTokenService">
 		<property name="rssTokenDaoService">
 			<ref bean="RssTokenDaoService" />
+		</property>
+		<!-- Reads the user documents so a feed token is bound to the ACCOUNT, not to the name
+		     (R170). The DAO, not contentService: deleting a user calls into the revocation side
+		     of this bean, so depending on the service would close a cycle. -->
+		<property name="contentDaoService">
+			<ref bean="ContentDaoService" />
 		</property>
 	</bean>
 

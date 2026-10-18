@@ -56,6 +56,19 @@ public class RssTokenService {
     // query — the right price for an access decision.
     
     private RssTokenDaoService rssTokenDaoService;
+
+    /**
+     * Read-only access to the user documents, to bind a feed token to the ACCOUNT (R170, 3.4.1).
+     *
+     * <p>The DAO, not {@code ContentService}: the service layer calls into the revocation side of
+     * this class when a user is deleted, so depending on it here would close a cycle (the same
+     * reason the API key store reads users through the DAO).
+     */
+    private jp.aegif.nemaki.dao.ContentDaoService contentDaoService;
+
+    public void setContentDaoService(jp.aegif.nemaki.dao.ContentDaoService contentDaoService) {
+        this.contentDaoService = contentDaoService;
+    }
     
     private int defaultExpiryDays = DEFAULT_EXPIRY_DAYS;
     private int maxExpiryDays = MAX_EXPIRY_DAYS;
@@ -101,8 +114,29 @@ public class RssTokenService {
         Calendar expiresAt = Calendar.getInstance();
         expiresAt.add(Calendar.DAY_OF_MONTH, days);
         
+        // R170: a feed token belongs to the account DOCUMENT it was issued for, not to the user
+        // NAME. Deleting a user and creating the same id again would otherwise hand the new account
+        // the old holder's feed. A token that records no account cannot be validated, so refuse to
+        // issue one rather than hand back a URL that never works.
+        if (contentDaoService == null) {
+            throw new IllegalStateException(
+                    "the user store is not wired; a feed token cannot be bound to an account");
+        }
+        jp.aegif.nemaki.model.UserItem account = contentDaoService.getUserItemById(repositoryId, userId);
+        if (account == null || account.getId() == null) {
+            throw new IllegalStateException("No account document for user '" + userId
+                    + "', so a feed token issued now could never be validated");
+        }
+        Long accountGeneration = jp.aegif.nemaki.util.AuthenticationUtil.accountGeneration(account);
+        if (accountGeneration == null) {
+            throw new IllegalStateException("The credential generation of user '" + userId
+                    + "' cannot be read, so a feed token issued now could not be compared with it");
+        }
+
         RssToken token = new RssToken.Builder()
             .id(tokenId)
+            .accountId(account.getId())
+            .credentialGeneration(Long.toString(accountGeneration))
             .token(tokenValue)
             .repositoryId(repositoryId)
             .userId(userId)
@@ -155,7 +189,23 @@ public class RssTokenService {
             log.debug("validateToken: token is invalid or expired");
             return null;
         }
-        
+
+        // R170: and it must still be the same account DOCUMENT. The generation is NOT compared —
+        // a feed token is not derived from the password (§3 of the batch-19 design). A token whose
+        // account cannot be read is refused: unknown is not "no restriction".
+        if (contentDaoService == null) {
+            throw new IllegalStateException(
+                    "the user store is not wired; a feed token cannot be checked against its account");
+        }
+        jp.aegif.nemaki.util.AuthenticationUtil.CredentialBinding binding =
+                jp.aegif.nemaki.util.AuthenticationUtil.credentialBinding(token.getAccountId(),
+                        token.getCredentialGeneration(),
+                        contentDaoService.getUserItemById(repositoryId, token.getUserId()), false);
+        if (binding != jp.aegif.nemaki.util.AuthenticationUtil.CredentialBinding.OK) {
+            log.info("validateToken: refused — " + binding);
+            return null;
+        }
+
         return token;
     }
     
@@ -166,6 +216,30 @@ public class RssTokenService {
      * @param userId The user ID
      * @return List of tokens for the user
      */
+    /**
+     * Revokes every feed token of a user and answers how many (R170, batch 19).
+     *
+     * <p>Housekeeping, not the boundary: what stops the token of a deleted account is the
+     * comparison in {@link #validateToken}. This keeps rows nobody can use out of the store, and
+     * gives the delete a number to log. Looked up by the user NAME, because a token issued before
+     * 3.4.1 records no accountId and looking up by that would leave exactly those behind.
+     */
+    public int revokeTokensOf(String repositoryId, String userId) {
+        if (userId == null || rssTokenDaoService == null) {
+            return 0;
+        }
+        List<RssToken> tokens = rssTokenDaoService.getByUserId(repositoryId, userId);
+        if (tokens == null) {
+            return 0;
+        }
+        int revoked = 0;
+        for (RssToken token : tokens) {
+            rssTokenDaoService.delete(repositoryId, token.getId());
+            revoked++;
+        }
+        return revoked;
+    }
+
     public List<RssToken> getTokensForUser(String repositoryId, String userId) {
         if (rssTokenDaoService == null) {
             // The administrator revokes from this list; a memory-only subset of it is a

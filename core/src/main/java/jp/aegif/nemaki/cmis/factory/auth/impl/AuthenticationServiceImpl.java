@@ -191,9 +191,19 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		}
 
 		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
-			// The account the token was issued to must still be there, and not disabled (3.4.1, zero-trust P0).
-			if (!AuthenticationUtil.mayStillAct(contentService.getUserItemById(callContext.getRepositoryId(), userName))) {
-				log.info("Token authentication refused: the account no longer exists or is disabled");
+			// The account the token was issued FOR must still be there, not disabled, and still the
+			// same account document at the same generation (3.4.1, zero-trust P0 and R170). The
+			// token itself is read here because validateToken answers with a name only, and a name
+			// is what R170 is about: it can resolve to a different document than the one the token
+			// was issued for.
+			UserItem account = contentService.getUserItemById(callContext.getRepositoryId(), userName);
+			Token issued = tokenService.getToken(app, callContext.getRepositoryId(), userName);
+			AuthenticationUtil.CredentialBinding binding = AuthenticationUtil.credentialBinding(
+					issued == null ? null : issued.getAccountId(),
+					issued == null ? null : issued.getCredentialGeneration(),
+					account, true);
+			if (binding != AuthenticationUtil.CredentialBinding.OK) {
+				log.info("Token authentication refused: " + binding);
 				return false;
 			}
 			if (authenticateAdminByToken(callContext.getRepositoryId(), userName)) {
@@ -514,7 +524,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 					
 					try {
 						// ユーザーのパスワードハッシュをBCryptに更新
-						u.setPassowrd(result.getNewHash());
+						// bumpGeneration = false: the user did not change their password, so raising the
+						// generation would end the session of the person who just logged in (R170).
+						contentService.stampPasswordChange(u, result.getNewHash(), false);
 						contentDaoService.update(repositoryId, u);
 						
 						log.info("SECURITY UPGRADE COMPLETED: User password hash updated to BCrypt for user: " + userId);

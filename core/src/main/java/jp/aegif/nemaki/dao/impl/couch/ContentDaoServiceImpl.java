@@ -2522,6 +2522,8 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 			throw new IllegalArgumentException("UserItem " + userItem.getId() + " has no revision - " +
 				"objects must maintain revision state per Ektorp patterns");
 		}
+
+		refuseALowerCredentialGeneration(repositoryId, userItem);
 		
 		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for user " + userItem.getId());
 		
@@ -2532,6 +2534,47 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		UserItem result = update.convert();
 		log.debug("Update completed, new revision: " + result.getRevision());
 		return result;
+	}
+
+	/**
+	 * Refuses a save that would lower or drop the account's credential generation (R170, 3.4.1).
+	 *
+	 * <p>The generation is what makes a password change end the sessions it opened. A PUT that
+	 * replaces the whole document — the old REST user update, a restore, an import — can drop the
+	 * field or write an older value without meaning to, and every credential the change invalidated
+	 * would start working again. Silently.
+	 *
+	 * <p>Here rather than in a service: {@code ContentDaoService#update(String, UserItem)} has two
+	 * callers ({@code ContentServiceImpl.updateInternal} and the MD5-to-BCrypt upgrade in
+	 * {@code AuthenticationServiceImpl}), and the second goes through no service at all. The read is
+	 * from CouchDB, not through the cache: the caller usually holds the very instance the cache has,
+	 * so a cached read would compare the new value with itself.
+	 *
+	 * <p>Absent on either side counts as 0, so dropping the field is refused exactly when the stored
+	 * value is above 0. A stored value that is not a non-negative integer cannot be compared at all
+	 * and the save is refused: guessing would un-invalidate credentials (fail-open).
+	 */
+	private void refuseALowerCredentialGeneration(String repositoryId, UserItem userItem) {
+		CouchUserItem stored;
+		try {
+			stored = connectorPool.getClient(repositoryId).get(CouchUserItem.class, userItem.getId());
+		} catch (Exception notThere) {
+			// A document this read cannot find is a create in progress or a deleted one; there is no
+			// earlier generation to go below.
+			log.debug("No stored user document to compare the credential generation with: "
+					+ userItem.getId());
+			return;
+		}
+		if (stored == null) {
+			return;
+		}
+		jp.aegif.nemaki.util.AuthenticationUtil.GenerationSave verdict =
+				jp.aegif.nemaki.util.AuthenticationUtil.generationSave(stored.convert(), userItem);
+		if (verdict != jp.aegif.nemaki.util.AuthenticationUtil.GenerationSave.OK) {
+			throw new IllegalStateException("Refusing to save user " + userItem.getId()
+					+ ": " + verdict + " — the credential generation is what makes a password change"
+					+ " end the sessions it opened, and this save would let them work again");
+		}
 	}
 
 	@Override

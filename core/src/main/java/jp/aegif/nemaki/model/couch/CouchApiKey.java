@@ -63,6 +63,14 @@ public class CouchApiKey extends CouchNodeBase {
     @JsonProperty("active")
     private boolean active;
 
+    /** The id of the UserItem document this key was issued for (R170). */
+    @JsonProperty("accountId")
+    private String accountId;
+
+    /** The account's credential generation when this key was issued, as text (R170). */
+    @JsonProperty("credentialGeneration")
+    private String credentialGeneration;
+
     public CouchApiKey() {
         super();
     }
@@ -80,6 +88,12 @@ public class CouchApiKey extends CouchNodeBase {
             this.keyPrefix = (String) properties.get("keyPrefix");
             this.name = (String) properties.get("name");
             this.description = (String) properties.get("description");
+            this.accountId = (String) properties.get("accountId");
+            // Whatever is stored, as text: the rule refuses a value it cannot read as a
+            // non-negative integer, and that refusal belongs in the rule rather than here (a cast
+            // would make a damaged key a 500 where the answer is a refusal).
+            Object generation = properties.get("credentialGeneration");
+            this.credentialGeneration = generation == null ? null : generation.toString();
 
             // Handle lastUsed date field
             if (properties.containsKey("lastUsed")) {
@@ -115,6 +129,8 @@ public class CouchApiKey extends CouchNodeBase {
         setLastUsed(apiKey.getLastUsed());
         setExpiresAt(apiKey.getExpiresAt());
         setActive(apiKey.isActive());
+        setAccountId(apiKey.getAccountId());
+        setCredentialGeneration(apiKey.getCredentialGeneration());
     }
 
     /**
@@ -142,11 +158,29 @@ public class CouchApiKey extends CouchNodeBase {
         apiKey.setLastUsed(getLastUsed());
         apiKey.setExpiresAt(getExpiresAt());
         apiKey.setActive(isActive());
+        apiKey.setAccountId(getAccountId());
+        apiKey.setCredentialGeneration(getCredentialGeneration());
 
         return apiKey;
     }
 
     // Getters and setters
+
+    public String getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(String accountId) {
+        this.accountId = accountId;
+    }
+
+    public String getCredentialGeneration() {
+        return credentialGeneration;
+    }
+
+    public void setCredentialGeneration(String credentialGeneration) {
+        this.credentialGeneration = credentialGeneration;
+    }
 
     public String getUserId() {
         return userId;

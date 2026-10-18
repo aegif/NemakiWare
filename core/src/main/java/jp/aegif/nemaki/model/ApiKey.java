@@ -67,6 +67,29 @@ public class ApiKey extends NodeBase {
     /** Whether this key is active (can be used for authentication) */
     private boolean active;
 
+    /**
+     * The id of the {@code UserItem} DOCUMENT this key was issued for (R170, 3.4.1).
+     *
+     * <p>{@link #userId} is a NAME: deleting a user and creating the same name again handed the new
+     * account every key the old one had. This field is what the key is bound to, and
+     * {@code AuthenticationUtil.credentialBinding} refuses a key whose binding is absent or names
+     * another document.
+     */
+    private String accountId;
+
+    /**
+     * The account's {@code nemaki:credentialGeneration} when this key was issued.
+     *
+     * <p>Written for every store (so one rule writes them all, and an administrator revoking "every
+     * credential of this person" has the field to work with), but NOT compared for API keys: a human
+     * changing their password must not stop an automation (owner's decision, 2026-10-16).
+     *
+     * <p>Text rather than a number on purpose: a damaged value has to reach the rule, which refuses
+     * it. Typed as a long it would be a deserialization failure instead — a 500 where the answer is
+     * a refusal.
+     */
+    private String credentialGeneration;
+
     public ApiKey() {
         setType(NodeType.API_KEY.value());
         this.active = true;
@@ -77,6 +100,22 @@ public class ApiKey extends NodeBase {
         this.userId = userId;
         this.repositoryId = repositoryId;
         this.name = name;
+    }
+
+    public String getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(String accountId) {
+        this.accountId = accountId;
+    }
+
+    public String getCredentialGeneration() {
+        return credentialGeneration;
+    }
+
+    public void setCredentialGeneration(String credentialGeneration) {
+        this.credentialGeneration = credentialGeneration;
     }
 
     public String getUserId() {

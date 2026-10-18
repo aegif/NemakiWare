@@ -44,6 +44,17 @@ public class RssToken {
     private Calendar createdAt;
     private Calendar expiresAt;
     private boolean enabled;
+
+    /** The id of the UserItem DOCUMENT this feed token was issued for (R170, 3.4.1). */
+    private String accountId;
+
+    /**
+     * The account's credential generation when it was issued (R170, 3.4.1).
+     *
+     * <p>Written, not compared: a feed token is not derived from the password, so a password change
+     * must not stop a feed its owner set up. What is compared is {@link #accountId}.
+     */
+    private String credentialGeneration;
     
     public RssToken() {
         this.enabled = true;
@@ -200,6 +211,22 @@ public class RssToken {
     /**
      * Builder class for RssToken.
      */
+    public String getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(String accountId) {
+        this.accountId = accountId;
+    }
+
+    public String getCredentialGeneration() {
+        return credentialGeneration;
+    }
+
+    public void setCredentialGeneration(String credentialGeneration) {
+        this.credentialGeneration = credentialGeneration;
+    }
+
     public static class Builder {
         private final RssToken token;
         
@@ -207,6 +234,16 @@ public class RssToken {
             this.token = new RssToken();
         }
         
+        public Builder accountId(String accountId) {
+            token.setAccountId(accountId);
+            return this;
+        }
+
+        public Builder credentialGeneration(String credentialGeneration) {
+            token.setCredentialGeneration(credentialGeneration);
+            return this;
+        }
+
         public Builder id(String id) {
             token.setId(id);
             return this;

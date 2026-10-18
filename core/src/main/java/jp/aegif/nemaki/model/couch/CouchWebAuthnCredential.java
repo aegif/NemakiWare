@@ -24,6 +24,14 @@ public class CouchWebAuthnCredential extends CouchNodeBase {
 	@JsonProperty("userId")
 	private String userId;
 
+	/** The id of the UserItem document this passkey was registered for (R170). */
+	@JsonProperty("accountId")
+	private String accountId;
+
+	/** The account's credential generation when it was registered, as text (R170). */
+	@JsonProperty("credentialGeneration")
+	private String credentialGeneration;
+
 	@JsonProperty("credentialId")
 	private String credentialId;
 
@@ -67,6 +75,11 @@ public class CouchWebAuthnCredential extends CouchNodeBase {
 			this.aaguid = (String) properties.get("aaguid");
 			this.displayName = (String) properties.get("displayName");
 			this.objectType = (String) properties.get("objectType");
+			this.accountId = (String) properties.get("accountId");
+			// As text, whatever is stored: a value the rule cannot read has to reach the rule and be
+			// refused there, not blow up the read (R170).
+			Object generation = properties.get("credentialGeneration");
+			this.credentialGeneration = generation == null ? null : generation.toString();
 
 			Object signCountObj = properties.get("signCount");
 			if (signCountObj instanceof Number) {
@@ -107,6 +120,8 @@ public class CouchWebAuthnCredential extends CouchNodeBase {
 		setDiscoverable(credential.isDiscoverable());
 		setCreatedAt(credential.getCreatedAt());
 		setObjectType(credential.getObjectType());
+		setAccountId(credential.getAccountId());
+		setCredentialGeneration(credential.getCredentialGeneration());
 	}
 
 	public WebAuthnCredential convert() {
@@ -121,10 +136,28 @@ public class CouchWebAuthnCredential extends CouchNodeBase {
 		credential.setDiscoverable(isDiscoverable());
 		credential.setCreatedAt(getCreatedAt());
 		credential.setObjectType(getObjectType());
+		credential.setAccountId(getAccountId());
+		credential.setCredentialGeneration(getCredentialGeneration());
 		return credential;
 	}
 
 	// Getters and Setters
+
+	public String getAccountId() {
+		return accountId;
+	}
+
+	public void setAccountId(String accountId) {
+		this.accountId = accountId;
+	}
+
+	public String getCredentialGeneration() {
+		return credentialGeneration;
+	}
+
+	public void setCredentialGeneration(String credentialGeneration) {
+		this.credentialGeneration = credentialGeneration;
+	}
 
 	public String getUserId() {
 		return userId;
