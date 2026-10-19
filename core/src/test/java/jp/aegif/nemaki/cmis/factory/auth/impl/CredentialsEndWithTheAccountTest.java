@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -170,6 +172,36 @@ class CredentialsEndWithTheAccountTest {
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(recreated);
         assertFalse(assertDoesNotThrow(this::withSession),
                 "the session token of the DELETED alice logged in as the recreated one");
+    }
+
+    @Test
+    @DisplayName("the registered token is read ONCE, so a token registered in between is not the one checked")
+    void theRegisteredTokenIsReadOnce() {
+        // The window R194 is about: the login compared the presented token with the registered one,
+        // and then read the registered token AGAIN to ask whether it is bound to this account. If the
+        // same user id was deleted and recreated in between — which is what R170 is about — the second
+        // read answered with the NEW token, whose binding is to the NEW account, so the OLD token the
+        // caller presented logged in as the recreated user.
+        Token recreated = new Token("alice", "session-2", System.currentTimeMillis() + 60_000);
+        recreated.setAccountId("alice-doc-recreated");
+        recreated.setCredentialGeneration(0L);
+        TokenService races = mock(TokenService.class);
+        // The FIRST answer is the token the caller presented; the second is the one registered after.
+        Token presented = new Token("alice", "session-1", System.currentTimeMillis() + 60_000);
+        presented.setAccountId(ACCOUNT_DOCUMENT);
+        presented.setCredentialGeneration(0L);
+        when(races.getToken("", "bedroom", "alice")).thenReturn(presented, recreated);
+        when(races.validateToken("", "bedroom", "session-1")).thenReturn("alice");
+        service.setTokenService(races);
+        UserItem recreatedAccount = account(null, "alice-doc-recreated", null);
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(recreatedAccount);
+
+        assertFalse(assertDoesNotThrow(this::withSession),
+                "the token of the DELETED alice logged in as the recreated one: the binding was"
+                        + " checked against a token registered after the comparison");
+        // The mechanism, not just the outcome: one read is what makes the two questions about the
+        // same token.
+        verify(races, times(1)).getToken("", "bedroom", "alice");
     }
 
     @Test

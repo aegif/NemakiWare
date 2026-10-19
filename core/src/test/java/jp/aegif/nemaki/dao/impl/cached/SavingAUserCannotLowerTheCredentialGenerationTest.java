@@ -135,6 +135,22 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
         assertTrue(guardBody.contains("generationSave("),
                 "the guard does not use the one rule, so a second reading of 'absent' or"
                         + " 'unreadable' can drift from it");
+
+        // AND «could not read» is not «there is nothing stored» (R195 — both reviewers, batch-19's
+        // confirmation round). Two shapes, because get(Class, String) reports a read it could not
+        // make BOTH ways: by throwing, and by answering null — its own javadoc says "during a
+        // CouchDB outage every object looks absent".
+        int caught = guardBody.indexOf("catch (");
+        assertTrue(caught > 0, "the guard no longer catches the read's failure, so this lock is not "
+                + "reading the arm it is about");
+        String afterCatch = guardBody.substring(caught);
+        assertTrue(afterCatch.contains("throw ") && afterCatch.indexOf("throw ") < afterCatch.indexOf("return"),
+                "the guard lets the save through when the stored document could not be READ, which is"
+                        + " how a generation goes backwards during an outage: " + guardBody);
+        assertTrue(guardBody.contains("existsStrict("),
+                "the guard treats a null answer as «not there» without the strict ask. get(Class,"
+                        + " String) answers null for a document it could not read as well as for one"
+                        + " that is absent, so a save is authorised by an outage: " + guardBody);
     }
 
     @Test
