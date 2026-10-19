@@ -693,22 +693,40 @@ class ReleaseReadinessIsMeasuredTest {
 
         // AND the residual says so, in the canon.
         String canon = read(CANON);
-        int row = canon.indexOf("| R212 |");
-        assertTrue(row > 0, "R212 is not in the canon, so the withdrawal has no residual behind it");
-        String text = canon.substring(row, canon.indexOf("\n", row));
+        // THE ROW, anchored to a line start: 「| R212 |」 anywhere matched prose quoting a row
+        // fragment, and a fake fragment placed earlier would be read instead of the real row
+        // (batch-33 review, Codex P2-2 — latent today, the file has exactly one).
+        Matcher r212 = Pattern.compile("(?m)^\\| R212 \\|.*$").matcher(canon);
+        assertTrue(r212.find(), "R212 is not a row in the canon, so the withdrawal has no residual "
+                + "behind it");
+        String text = r212.group();
+        assertFalse(r212.find(), "the canon has two R212 rows, so this lock cannot tell which one "
+                + "records the withdrawal");
         // THE COMPLETED POSITIVE FORM. 「the word 取り下げ appears」 was satisfied by a row saying
         // 取り下げていない, 錠を戻した, 取り下げなかった, 取り下げを撤回した, … — 10 of 13 negations
         // measured green, and widening the forbidden list chases an infinite set (batch-31 review
         // subagent P2-1; batch-32 review: both reviewers again). Requiring 「取り下げた」 discriminated
         // all 14 rows the reviewer measured, because every negation of it reads differently.
         //
-        // KNOWN LIMIT: this demands that one wording. A row that says the same thing another way
-        // (「取り下げ済み」) is refused — the over-refusal direction, which is the safe one here:
-        // a refusal is read by a person, and a false green is not.
+        // BOTH HALVES. Requiring the completed positive form alone was WEAKER than the enumeration
+        // it replaced: a row saying 「…取り下げた。なお錠を戻した」 passed the new arm and had fired
+        // under the old one (batch-33 review: both reviewers, each measured it). So the positive
+        // form is required AND the resurrection wordings are still forbidden.
+        //
+        // KNOWN LIMITS, both directions:
+        //   - a row that says the same thing another way (「取り下げ済み」) is REFUSED — the
+        //     over-refusal direction, which is the safe one: a refusal is read by a person.
+        //   - a row that quotes the positive form and then negates it in words neither list knows
+        //     (「「取り下げた」という記録は誤りで…」) is GREEN. Natural-language negation is an
+        //     infinite set; what a word check can do is make the common rewrites loud.
         assertTrue(text.contains("取り下げた"),
                 "the R212 row does not say, in that form, that the lock WAS withdrawn. If it was "
                         + "reinstated, delete the withdrawal note and this method; if the row just "
                         + "says it differently, this arm demands 「取り下げた」: " + text);
+        for (String back : new String[] { "錠を戻した", "錠を復活", "取り下げを撤回", "取り下げを取り消" }) {
+            assertFalse(text.contains(back), "the R212 row says 「" + back + "」 while this lock "
+                    + "asserts the withdrawal stands. One of the two is wrong — decide: " + text);
+        }
     }
 
     /**
