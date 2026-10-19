@@ -473,14 +473,22 @@ public class AuthResource {
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
                 user = getOrCreateUser(repositoryId, username, binding);
-                // THE SAME RULE, asked of the account this login will ACT AS — the one getOrCreateUser
-                // answered with, which is the account it FOUND when one appeared between this method's
-                // read and its own. That is an EXISTING account, and without this ask it was entered
-                // with no rule applied and 「unset ⇒ allowed」 decided alone (R209). The ACCOUNT, not a
-                // second store read: a store read here refuses a legitimate first login during
-                // provisioning, because StartupPhase is process-wide (batch-25 review, Codex P2-4).
+                // THE SAME RULE, asked of the account AS THE STORE HAS IT. getOrCreateUser answers
+                // with the account it FOUND when one appeared between this method's read and its own,
+                // and that is an EXISTING account — without this ask it was entered with no rule
+                // applied and 「unset ⇒ allowed」 decided alone (R209).
+                //
+                // The STORE'S copy, not the instance the creation handed back: that instance always
+                // carries 「cloud」 and the 「oidc」 mark, so the rule is vacuous for it, and an
+                // authorisation decision read from a copy that is not the store's lets in an account
+                // the store has disabled. It was asked of `user` for one batch (batch-26 review:
+                // Codex P1, subagent P2-4). Refusing a null answer is fail-closed, and it is the only
+                // check that covers a login carrying no subject — the read-back is guarded on the
+                // binding being present. The provisioning window is residual R211 and is not caused
+                // by this ask (getOrCreateUser itself re-reads through the view before returning).
                 if (user != null) {
-                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(user,
+                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
+                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(stored,
                             jp.aegif.nemaki.rest.SsoLogin.OIDC, binding);
                     if (refusedNew != null) {
                         logger.info("API v1: OIDC login refused for the account the creation answered"
@@ -496,8 +504,7 @@ public class AuthResource {
                     // login carrying a subject must store a binding and read it back. A login carrying
                     // NO subject is residual R208.
                     if (binding != null && !binding.isBlank()
-                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(
-                                    contentService.getUserItemByIdFromStore(repositoryId, username),
+                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
                                     jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
                         logger.warning("API v1: OIDC login refused — the account created for "
                                 + username + " does not carry the binding");

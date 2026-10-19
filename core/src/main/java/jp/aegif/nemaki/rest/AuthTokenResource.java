@@ -1086,18 +1086,24 @@ public class AuthTokenResource extends ResourceBase{
 				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return null;
 			}
-			// THE SAME RULE, asked of the account this login will ACT AS — the one getOrCreateUser
-			// answered with. It is not always 「the account we just made」: when one appeared between
-			// this method's read and its own (another request, or a cache that filled), getOrCreateUser
-			// answers with the account it FOUND, and that is an EXISTING account. Without this ask it
+			// THE SAME RULE, asked of the account AS THE STORE HAS IT. getOrCreateUser answers with
+			// the account it FOUND when one appeared between this method's read and its own (another
+			// request, or a cache that filled), and that is an EXISTING account. Without this ask it
 			// was entered with no rule applied and 「unset ⇒ allowed」 decided alone (R209).
 			//
-			// The ACCOUNT, not a second read of the store: a store read here refuses a legitimate
-			// first login during provisioning, because StartupPhase is process-wide and a view that is
-			// not deployed yet makes every read answer null (batch-25 review, Codex P2-4). 「Is the
-			// creation in the store」 is a different question, and the binding read-back below is
-			// where it is asked.
-			String refusedNew = SsoLogin.refusal(created, route, binding);
+			// Asked of the STORE'S copy, not of the instance the creation handed back. That instance
+			// always carries 「cloud」 and this route's mark, so the rule is vacuous for it; and an
+			// authorisation decision read from a copy that is not the store's lets in an account the
+			// store has disabled, while the read-back below compares only the binding. Both reviewers
+			// said so in the same round after one version of this code did exactly that: it was asked
+			// of {@code created} for one batch (batch-26 review: Codex P1, subagent P2-4).
+			//
+			// Refusing a null answer is the fail-closed direction, and it is the ONLY check that
+			// covers a login carrying no subject at all — the read-back below is guarded on the
+			// binding being present. The provisioning window (R211) refuses a legitimate first login
+			// here, and refuses it two statements later as well, so it is not this ask that causes it.
+			UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);
+			String refusedNew = SsoLogin.refusal(stored, route, binding);
 			if (refusedNew != null) {
 				logger.info("{} login refused for the account the creation answered with: {}",
 						SsoLogin.label(route), refusedNew);
@@ -1117,9 +1123,12 @@ public class AuthTokenResource extends ResourceBase{
 			// with no nemaki:authRoute. What bounds the damage is not the shape but the rule: an
 			// adopting login carrying a subject must store a binding and read it back before it
 			// proceeds. A login carrying NO subject is residual R208 and is not bounded by that.
+			//
+			// Nor does this path WRITE a binding onto an account it only FOUND: only the
+			// existing-account arm below does that, so a race that finds an unbound 「cloud」 account
+			// refuses a login the rule allows. Residual R210.
 			if (binding != null && !binding.isBlank()
-					&& !binding.equals(SsoLogin.boundSubject(
-							contentService.getUserItemByIdFromStore(repositoryId, userName), route))) {
+					&& !binding.equals(SsoLogin.boundSubject(stored, route))) {
 				logger.warn("{} login refused: the account created for {} does not carry the binding",
 						SsoLogin.label(route), userName);
 				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
