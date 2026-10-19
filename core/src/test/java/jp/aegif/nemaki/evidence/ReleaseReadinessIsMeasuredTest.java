@@ -692,16 +692,23 @@ class ReleaseReadinessIsMeasuredTest {
                         + "still here. One of the two is wrong — decide, do not keep both");
 
         // AND the residual says so, in the canon.
-        String canon = read(CANON);
-        // THE ROW, anchored to a line start: 「| R212 |」 anywhere matched prose quoting a row
-        // fragment, and a fake fragment placed earlier would be read instead of the real row
-        // (batch-33 review, Codex P2-2 — latent today, the file has exactly one).
+        // THE ROW, anchored to a line start, read from the PROSE: 「| R212 |」 anywhere matched a
+        // quoted row fragment (batch-33 review, Codex P2-2), and the raw text counts a row written
+        // inside a fenced block or an HTML comment — this document talks ABOUT its own table
+        // (batch-34 review, Codex P2-2). asProse is in this class for that.
+        String canon = asProse(read(CANON));
         Matcher r212 = Pattern.compile("(?m)^\\| R212 \\|.*$").matcher(canon);
         assertTrue(r212.find(), "R212 is not a row in the canon, so the withdrawal has no residual "
                 + "behind it");
         String text = r212.group();
-        assertFalse(r212.find(), "the canon has two R212 rows, so this lock cannot tell which one "
-                + "records the withdrawal");
+        if (r212.find()) {
+            // NOT an assertion: 「there are two and I cannot tell which」 is this reader losing its
+            // subject, and the runner scores an AssertionError as 「the protection fired」. The
+            // document recorded this as HarnessBroken for a batch while the code asserted
+            // (batch-34 review: Codex P1, subagent P2-3).
+            throw new HarnessBroken("the canon has two R212 rows, so this lock cannot tell which "
+                    + "one records the withdrawal");
+        }
         // THE COMPLETED POSITIVE FORM. 「the word 取り下げ appears」 was satisfied by a row saying
         // 取り下げていない, 錠を戻した, 取り下げなかった, 取り下げを撤回した, … — 10 of 13 negations
         // measured green, and widening the forbidden list chases an infinite set (batch-31 review
@@ -716,16 +723,41 @@ class ReleaseReadinessIsMeasuredTest {
         // KNOWN LIMITS, both directions:
         //   - a row that says the same thing another way (「取り下げ済み」) is REFUSED — the
         //     over-refusal direction, which is the safe one: a refusal is read by a person.
-        //   - a row that quotes the positive form and then negates it in words neither list knows
-        //     (「「取り下げた」という記録は誤りで…」) is GREEN. Natural-language negation is an
-        //     infinite set; what a word check can do is make the common rewrites loud.
+        //   - a row whose STATEMENT cell quotes a forbidden word in order to deny it
+        //     (「「錠を戻した」という記録は誤り」) is REFUSED — over-refusal again, and this arm
+        //     cannot tell a quotation from an assertion. A correct row should not need to quote
+        //     them; if one does, move the quotation to the plan column.
+        //   - a row that negates the positive form in words the list does not know
+        //     (「「取り下げた」という記録は誤りで、いまは在る」) is GREEN. Natural-language negation is
+        //     an infinite set; what a word check can do is make the common rewrites loud. The
+        //     earlier version of this sentence said 「words NEITHER list knows」, which was wrong:
+        //     取り下げていない was in the batch-32 list and had been dropped (subagent P2-1).
         assertTrue(text.contains("取り下げた"),
                 "the R212 row does not say, in that form, that the lock WAS withdrawn. If it was "
                         + "reinstated, delete the withdrawal note and this method; if the row just "
                         + "says it differently, this arm demands 「取り下げた」: " + text);
-        for (String back : new String[] { "錠を戻した", "錠を復活", "取り下げを撤回", "取り下げを取り消" }) {
-            assertFalse(text.contains(back), "the R212 row says 「" + back + "」 while this lock "
-                    + "asserts the withdrawal stands. One of the two is wrong — decide: " + text);
+        // THE DESCRIPTION CELL, and the OLD list plus the new words. Two things were wrong at once
+        // (batch-34 review: subagent P2-1 and P3-2, Codex P2):
+        //   - 「both halves」 was not true: two of the three words the batch-32 arm forbade
+        //     (取り下げていない, 取り下げない) had been dropped, and the require side does not cover
+        //     them — they sit happily next to 「取り下げた」. Measured: two rows fired under the old
+        //     arm and were green under the new one.
+        //   - reading the WHOLE row over-refused: the 「開けるときは」 column is where a plan to
+        //     reinstate belongs, so 「取り下げを撤回する予定は無い」 made a correct row red.
+        // Scoping to the cell that states what HAPPENED fixes both: the plan column may say
+        // anything, and the statement column may not say the lock came back.
+        String[] cells = text.split("\\|");
+        if (cells.length < 4) {
+            throw new HarnessBroken("the R212 row does not have the table's columns, so this reader "
+                    + "cannot tell its statement from its plan: " + text);
+        }
+        String stated = cells[2];
+        for (String back : new String[] { "取り下げていない", "取り下げない", "錠を戻した", "錠を復活",
+                "取り下げを撤回", "取り下げを取り消" }) {
+            assertFalse(stated.contains(back), "the R212 row's statement says 「" + back + "」 while "
+                    + "this lock asserts the withdrawal stands. One of the two is wrong — decide "
+                    + "(a PLAN to reinstate belongs in the 「開けるときは」 column, which this arm does "
+                    + "not read): " + stated);
         }
     }
 
