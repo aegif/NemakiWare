@@ -115,7 +115,7 @@ public class TokenServiceImpl implements TokenService{
 				}
 				// Constant-time comparison to avoid leaking a prefix match of the
 				// session token via timing (consistent with the token check in
-				// AuthenticationServiceImpl.authenticateUserByToken). The full scan
+				// AuthenticationServiceImpl.tokenMatches). The full scan
 				// is retained so expired entries are still swept every call.
 				if (token != null) {
 					String stored = token.getToken();

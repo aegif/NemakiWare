@@ -1062,14 +1062,13 @@ public class AuthTokenResource extends ResourceBase{
 	 * listed」 as 「an administrator allowed SSO」, and {@code cloud} is written by these very routes and by the
 	 * cloud directory sync, which also writes it onto accounts that already exist (R168).
 	 *
-	 * <p>What the read-back proves, exactly: the account the store handed back after the write CARRIES the
-	 * binding. That read goes through the user cache, whose entry the write has just replaced with the
-	 * instance the store's own conversion produced — so a conversion that drops the field is caught, and a
-	 * writer that returns without applying it is caught. It is NOT a re-read from CouchDB, so it does not
-	 * prove durability; and it does not undo residual R196, because a refusal that THROWS does not reach
-	 * here at all (the login then fails on that exception, which is fail-closed, and R170's eviction clears
-	 * the poisoned entry). Recorded as a residual rather than claimed as durability (batch-22 review,
-	 * Codex P1-2).
+	 * <p>What the read-back proves: the binding is IN THE STORE. It reads
+	 * {@code getUserItemByIdFromStore}, which goes past the user cache — the write replaces that cache
+	 * entry with the instance it produced, so a cached read would compare the written value with itself
+	 * (R207 was exactly that, and this javadoc still said so after the read was changed: batch-22..24
+	 * review, subagent P2-1). What it still does not undo is residual R196: a refusal that THROWS does
+	 * not reach here at all — the login then fails on that exception, which is fail-closed, and R170's
+	 * eviction clears the poisoned cache entry.
 	 */
 	private UserItem accountForSsoLogin(String repositoryId, String userName, String route, String binding,
 			org.json.simple.JSONArray errMsg) {

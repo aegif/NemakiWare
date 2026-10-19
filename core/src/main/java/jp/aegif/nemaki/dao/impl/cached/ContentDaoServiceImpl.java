@@ -835,8 +835,22 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	@Override
 	public UserItem getUserItemByIdFromStore(String repositoryId, String userId) {
 		// PAST the cache, deliberately: the caller is asking whether a write landed, and the cache
-		// holds the instance that write produced (R207).
-		return nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+		// holds the instance that write produced (R207). Shaped like its sibling
+		// getGroupItemByIdFresh — the wiring is checked, and a read that could not be made THROWS
+		// rather than answering null, because every caller reads null as 「not stored」 and refuses
+		// (batch-22..24 review, subagent P3-3: the two readers of the same shape were not diffed).
+		if (nonCachedContentDaoService == null) {
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getUserItemByIdFromStore cannot answer");
+		}
+		try {
+			return nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+		} catch (Exception e) {
+			log.error("Error in getUserItemByIdFromStore", e);
+			throw new IllegalStateException("user '" + userId
+					+ "' could not be read from the store; this is NOT a finding that it does not"
+					+ " exist", e);
+		}
 	}
 
 	@Override

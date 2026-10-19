@@ -473,6 +473,20 @@ public class AuthResource {
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
                 user = getOrCreateUser(repositoryId, username, binding);
+                // The created account has to CARRY the binding, read FROM THE STORE — the same check
+                // the REST twin makes. Without it, a conversion that drops the subject leaves an
+                // account with 「cloud」 and the 「oidc」 mark and no binding, which this very rule then
+                // reads as adoptable: the next token the IdP lets choose that name takes it
+                // (batch-22..24 review: both reviewers, P1).
+                if (user != null && binding != null && !binding.isBlank()
+                        && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(
+                                contentService.getUserItemByIdFromStore(repositoryId, username),
+                                jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
+                    logger.warning("API v1: OIDC login refused — the account created for " + username
+                            + " does not carry the binding");
+                    throw ApiException.permissionDenied(
+                            "The account's link to this identity could not be stored");
+                }
             } else {
                 String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);
                 if (refused != null) {
@@ -639,7 +653,7 @@ public class AuthResource {
     }
 
 
-    /** As {@link #getOrCreateUser(String, String)}; a user it creates is linked to the OIDC subject given, if any. */
+    /** A user this creates is linked to the OIDC subject given, if any, and records the route that made it. */
     private UserItem getOrCreateUser(String repositoryId, String userName, String oidcSubject) {
         try {
             UserItem userItem = contentService.getUserItemById(repositoryId, userName);

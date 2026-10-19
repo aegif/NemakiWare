@@ -1619,7 +1619,11 @@ public class SearchEngineResource {
                     break;
                 case NOT_A_DOCUMENT:
                     response.setSuccess(false);
-                    response.setMessage("Not a document, so there is nothing to index");
+                    // Both cases: the object is a folder or another type, OR there is no object with
+                    // that id. This answer does not distinguish them (batch-22..24 review, subagent
+                    // P3-6) — neither is worth retrying, and nothing acts on the difference.
+                    response.setMessage("No document to index with that object id (it is a folder or"
+                            + " another type, or there is no such object)");
                     break;
                 case NOT_INDEXABLE:
                     response.setSuccess(false);

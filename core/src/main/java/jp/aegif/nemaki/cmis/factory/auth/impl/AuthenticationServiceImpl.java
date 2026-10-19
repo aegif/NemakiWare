@@ -195,6 +195,10 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		// which is what R170 is about — was the one whose binding got checked, while the one the caller
 		// PRESENTED had already passed the comparison (R194, batch-19's confirmation round: Codex).
 		Token issued = tokenService.getToken(app, callContext.getRepositoryId(), userName);
+		if (issued == null) {
+			log.warn("[TOKEN VALIDATION] No token found for user: " + userName + ", repository: "
+					+ callContext.getRepositoryId() + ", app: " + app);
+		}
 		if (tokenMatches(issued, token)) {
 			// The account the token was issued FOR must still be there, not disabled, and still the
 			// same account document at the same generation (3.4.1, zero-trust P0 and R170). The
@@ -472,7 +476,9 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	private boolean tokenMatches(Token registeredToken, String token) {
 		String userName = registeredToken == null ? null : registeredToken.getUserName();
 		if (registeredToken == null) {
-			log.warn("[TOKEN VALIDATION] No token found for this user, repository and app");
+			// The caller knows which user, repository and app it asked about; this method is given
+			// the answer only, and the call site logs those (batch-22..24 review, subagent P3-7).
+			log.warn("[TOKEN VALIDATION] No token is registered for the user this request names");
 			return false;
 		} else {
 			long expiration = registeredToken.getExpiration();

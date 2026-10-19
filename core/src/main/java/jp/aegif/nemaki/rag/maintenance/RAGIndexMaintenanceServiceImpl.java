@@ -273,10 +273,7 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
             return DocumentReindex.INDEXED;
         } catch (RAGIndexingException refused) {
             log.warn("RAG reindex of " + objectId + " did not index it: " + refused.getMessage());
-            // The product's own classification, carried instead of collapsed: retryable means the
-            // attempt may succeed later, and that is not the same answer as 「this version has no
-            // indexable text」.
-            return refused.isRetryable() ? DocumentReindex.FAILED : DocumentReindex.NOT_INDEXABLE;
+            return answerFor(refused);
         } catch (Exception e) {
             log.error("Failed to RAG reindex document: " + objectId, e);
             return DocumentReindex.FAILED;
@@ -361,6 +358,37 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
     }
 
     // Private helper methods
+
+    /**
+     * Which answer a refusal from the indexing is, read from its TYPE and not from its retryable flag.
+     *
+     * <p>{@code isRetryable()} is not a classification: the one- and two-argument constructors of
+     * {@link RAGIndexingException} set {@code UNKNOWN} with {@code retryable = false}, and those are
+     * what the purge paths throw — 「the RAG block could not be purged and no reconciliation queue is
+     * wired」, 「… the durable RAG_PURGE task could not be recorded」, 「Failed to verify RAG block
+     * absence」, the last of which says in its own comment 「Unknown is not absent: the caller must
+     * retry, not complete」. Mapping those to 「this version has no indexable text。Retrying will not
+     * change that」 is this batch's own harm statement, word for word: the operator clearing a
+     * redacted version's blocks stops, and the pre-redaction text stays in the index with no
+     * obligation recorded (batch-22..24 review: both reviewers, P1).
+     *
+     * <p>So the answer 「not indexable」 is an ALLOW-LIST — the three types that are a statement about
+     * this version's text — and everything else is a failure that may succeed later.
+     */
+    private DocumentReindex answerFor(RAGIndexingException refused) {
+        switch (refused.getErrorType()) {
+            case UNSUPPORTED_MIME_TYPE:
+            case NO_CONTENT:
+            // The extractor HAD the bytes and could not get text out of them: deterministic for
+            // these bytes, so retrying changes nothing.
+            case TEXT_EXTRACTION_FAILED:
+                return DocumentReindex.NOT_INDEXABLE;
+            case SERVICE_DISABLED:
+                return DocumentReindex.DISABLED;
+            default:
+                return DocumentReindex.FAILED;
+        }
+    }
 
     /**
      * The final status of a walk, which is not "completed" when the walk dropped folders.
