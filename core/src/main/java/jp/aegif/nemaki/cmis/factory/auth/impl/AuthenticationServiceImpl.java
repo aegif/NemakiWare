@@ -410,7 +410,16 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 	 * same key one method up. It is no way to reset someone else's lockout — the key carries the name
 	 * whose password is being guessed. A password this account may not use (its
 	 * {@code nemaki:allowedAuthMethods} excludes {@code password}) is a failure here exactly as it is
-	 * there; one key with two rules for counting is the shape this door is being fixed out of.
+	 * there: the same key answering to two rules is the shape this door is being fixed out of.
+	 *
+	 * <p>Where that is still true, named rather than implied: the API v1 login keys on this same
+	 * key and deliberately does NOT count a failure for a name that has no account, so a probe for
+	 * which accounts exist cannot lock out a name that does not exist yet. This door and
+	 * {@link #loginWithBasicAuth} do count it — {@code getAuthenticatedUserItem} answers {@code
+	 * null} without saying which of its reasons applied. It is not a new capability (the same
+	 * attempt locks the same key at {@code /rest/repo/{super-users}/...}, which has counted since
+	 * S5), and it is recorded as a residual rather than closed here (batch-20 review, subagent
+	 * P3-4).
 	 */
 	@Override
 	public boolean loginForNemakiConfDb(CallContext callContext){
