@@ -2558,14 +2558,27 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchUserItem stored;
 		try {
 			stored = connectorPool.getClient(repositoryId).get(CouchUserItem.class, userItem.getId());
-		} catch (Exception notThere) {
-			// A document this read cannot find is a create in progress or a deleted one; there is no
-			// earlier generation to go below.
-			log.debug("No stored user document to compare the credential generation with: "
-					+ userItem.getId());
-			return;
+		} catch (Exception couldNotRead) {
+			// NOT "a create in progress or a deleted one" — that was this guard's own fail-open
+			// (R195, batch-19's confirmation round: both reviewers). A read that throws says nothing
+			// about what is stored, and letting the save through on it is how a generation goes
+			// backwards during an outage.
+			throw new IllegalStateException("Refusing to save user " + userItem.getId()
+					+ ": the stored document could not be read, so this save cannot be compared with"
+					+ " the credential generation it would replace", couldNotRead);
 		}
 		if (stored == null) {
+			// get(Class, String) answers null for a document it COULD NOT READ as well as for one
+			// that is not there — its own javadoc says so: "during a CouchDB outage every object
+			// looks absent". So the absence has to be confirmed by the strict ask, which answers
+			// false only for a genuine 404 and throws for anything else.
+			if (connectorPool.getClient(repositoryId).existsStrict(userItem.getId())) {
+				throw new IllegalStateException("Refusing to save user " + userItem.getId()
+						+ ": the stored document is there and could not be read, so this save cannot"
+						+ " be compared with the credential generation it would replace");
+			}
+			log.debug("No stored user document to compare the credential generation with: "
+					+ userItem.getId());
 			return;
 		}
 		jp.aegif.nemaki.util.AuthenticationUtil.GenerationSave verdict =

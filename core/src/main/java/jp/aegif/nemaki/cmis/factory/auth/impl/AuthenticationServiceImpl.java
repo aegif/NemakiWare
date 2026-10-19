@@ -190,14 +190,18 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 			}
 		}
 
-		if (authenticateUserByToken(app, callContext.getRepositoryId(), userName, token)) {
+		// ONE read of the registered token, used by BOTH the comparison and the binding check. Reading
+		// it twice meant that a token registered in between — the same user id deleted and recreated,
+		// which is what R170 is about — was the one whose binding got checked, while the one the caller
+		// PRESENTED had already passed the comparison (R194, batch-19's confirmation round: Codex).
+		Token issued = tokenService.getToken(app, callContext.getRepositoryId(), userName);
+		if (tokenMatches(issued, token)) {
 			// The account the token was issued FOR must still be there, not disabled, and still the
 			// same account document at the same generation (3.4.1, zero-trust P0 and R170). The
 			// token itself is read here because validateToken answers with a name only, and a name
 			// is what R170 is about: it can resolve to a different document than the one the token
 			// was issued for.
 			UserItem account = contentService.getUserItemById(callContext.getRepositoryId(), userName);
-			Token issued = tokenService.getToken(app, callContext.getRepositoryId(), userName);
 			AuthenticationUtil.CredentialBinding binding = AuthenticationUtil.credentialBinding(
 					issued == null ? null : issued.getAccountId(),
 					issued == null ? null : issued.getCredentialGeneration(),
@@ -458,10 +462,17 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		((CallContextImpl) callContext).put(CallContextKey.IS_ADMIN, isAdmin);
 	}
 
-	private boolean authenticateUserByToken(String app, String repositoryId, String userName, String token) {
-		Token registeredToken = tokenService.getToken(app, repositoryId, userName);
+	/**
+	 * Whether {@code token} is the registered token in {@code registeredToken}, and still valid.
+	 *
+	 * <p>Takes the token it compares rather than reading it (R194): the caller reads it once and asks
+	 * the binding question about that same instance, so a token registered between the two reads
+	 * cannot be the one whose binding is checked.
+	 */
+	private boolean tokenMatches(Token registeredToken, String token) {
+		String userName = registeredToken == null ? null : registeredToken.getUserName();
 		if (registeredToken == null) {
-			log.warn("[TOKEN VALIDATION] No token found for user: " + userName + ", repository: " + repositoryId + ", app: " + app);
+			log.warn("[TOKEN VALIDATION] No token found for this user, repository and app");
 			return false;
 		} else {
 			long expiration = registeredToken.getExpiration();
@@ -469,8 +480,8 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 			// Keep token-validation logs minimal and never output token material.
 			if (log.isDebugEnabled()) {
-				log.debug("Token validation for user=" + userName + ", repository=" + repositoryId
-						+ ", app=" + app + ", expiresInSec=" + ((expiration - currentTime) / 1000));
+				log.debug("Token validation for user=" + userName + ", expiresInSec="
+						+ ((expiration - currentTime) / 1000));
 			}
 
 			if (currentTime > expiration) {
@@ -484,8 +495,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 								_registeredToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
 								token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 				if (log.isDebugEnabled()) {
-					log.debug("Token validation result for user=" + userName
-							+ " in repository=" + repositoryId + ": " + isValid);
+					log.debug("Token validation result for user=" + userName + ": " + isValid);
 				}
 				return isValid;
 			}
