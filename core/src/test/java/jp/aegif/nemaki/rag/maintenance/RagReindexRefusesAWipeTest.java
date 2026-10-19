@@ -156,11 +156,29 @@ class RagReindexRefusesAWipeTest {
         // outage stops — and the text the redaction was meant to remove stays searchable.
         String impl = JavaSource.withoutLiteralText(JavaSource.read(SOURCE));
         String outcome = JavaSource.methodBody(impl, "public DocumentReindex reindexDocumentOutcome");
-        assertTrue(outcome.contains("isRetryable()"),
-                "the single-document reindex throws the product's own classification away, so a "
-                        + "retryable failure and an unindexable version are one answer: " + outcome);
-        assertTrue(outcome.contains("DocumentReindex.FAILED") && outcome.contains("DocumentReindex.NOT_INDEXABLE"),
-                "the two answers are not both reachable from this method: " + outcome);
+        assertTrue(outcome.contains("DocumentReindex.FAILED") && outcome.contains("answerFor("),
+                "the single-document reindex does not classify the refusal it caught: " + outcome);
+
+        // BY TYPE, as an allow-list. isRetryable() is not a classification: the one- and two-argument
+        // constructors of RAGIndexingException are UNKNOWN with retryable=false, and the purge paths
+        // throw exactly those — so 「could not purge the old block」 came out as 「this version has no
+        // indexable text。Retrying will not change that」, which is this batch's own harm statement
+        // (batch-22..24 review: both reviewers, P1).
+        String answer = JavaSource.methodBody(impl, "private DocumentReindex answerFor");
+        for (String indexableText : new String[] { "UNSUPPORTED_MIME_TYPE", "NO_CONTENT", "TEXT_EXTRACTION_FAILED" }) {
+            assertTrue(answer.contains(indexableText), "the allow-list for 「not indexable」 no longer "
+                    + "names " + indexableText + ", so this lock is not reading the mapping: " + answer);
+        }
+        assertFalse(answer.contains("UNKNOWN"), "the mapping names UNKNOWN, which is what the purge "
+                + "failures carry — they belong to the default (a failure that may succeed later), not "
+                + "to an allow-list: " + answer);
+        int notIndexable = answer.indexOf("return DocumentReindex.NOT_INDEXABLE");
+        int fallback = answer.indexOf("default:");
+        assertTrue(notIndexable > 0 && fallback > notIndexable,
+                "the mapping no longer ends in a default, so a type nobody listed answers 「not "
+                        + "indexable」 by accident: " + answer);
+        assertTrue(answer.substring(fallback).contains("DocumentReindex.FAILED"),
+                "the default answer is not 「a failure that may succeed later」: " + answer);
         int read = outcome.indexOf("getContent(");
         int notADocument = outcome.indexOf("NOT_A_DOCUMENT");
         assertTrue(read > 0 && notADocument > read,

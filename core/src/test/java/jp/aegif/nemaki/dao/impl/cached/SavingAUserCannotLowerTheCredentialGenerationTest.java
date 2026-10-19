@@ -144,13 +144,29 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
         assertTrue(caught > 0, "the guard no longer catches the read's failure, so this lock is not "
                 + "reading the arm it is about");
         String afterCatch = guardBody.substring(caught);
-        assertTrue(afterCatch.contains("throw ") && afterCatch.indexOf("throw ") < afterCatch.indexOf("return"),
+        int throws_ = afterCatch.indexOf("throw ");
+        int returns = afterCatch.indexOf("return");
+        assertTrue(throws_ >= 0, "the guard no longer throws anywhere after catching the read's "
+                + "failure, so it lets the save through: " + guardBody);
+        assertTrue(returns < 0 || throws_ < returns,
                 "the guard lets the save through when the stored document could not be READ, which is"
                         + " how a generation goes backwards during an outage: " + guardBody);
-        assertTrue(guardBody.contains("existsStrict("),
-                "the guard treats a null answer as «not there» without the strict ask. get(Class,"
-                        + " String) answers null for a document it could not read as well as for one"
-                        + " that is absent, so a save is authorised by an outage: " + guardBody);
+
+        // THE STRICT ASK, AND ITS ANSWER USED TO REFUSE. 「existsStrict( appears」 was not enough:
+        // reading the value into a variable and ignoring it left this green (batch-22..24 review,
+        // Codex P2). The null answer needs it because get(Class, String) returns null for a 404, a
+        // tombstone and the provisioning window — and only the strict ask separates 「the document is
+        // there」 from those.
+        int strict = guardBody.indexOf("existsStrict(");
+        assertTrue(strict > 0, "the guard treats a null answer as «not there» without the strict ask: "
+                + guardBody);
+        String fromStrict = guardBody.substring(strict);
+        assertTrue(fromStrict.indexOf("throw ") >= 0
+                        && (fromStrict.indexOf("return") < 0 || fromStrict.indexOf("throw ") < fromStrict.indexOf("return")),
+                "the guard asks whether the document is there and does not refuse the save when it is"
+                        + " (the answer is read and dropped): " + guardBody);
+        assertTrue(guardBody.substring(0, strict).contains("if (") || fromStrict.startsWith("existsStrict"),
+                "the strict ask is not in a condition, so nothing branches on it: " + guardBody);
     }
 
     @Test

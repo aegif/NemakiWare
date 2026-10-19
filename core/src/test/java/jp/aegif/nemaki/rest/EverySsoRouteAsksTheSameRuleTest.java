@@ -123,8 +123,13 @@ public class EverySsoRouteAsksTheSameRuleTest {
     }
 
     @Test
-    @DisplayName("a login carrying NO subject does not pass as «not linked» on a linked account")
+    @DisplayName("on a LINKED account, a login carrying no subject does not pass as «not linked»")
     public void aLoginWithNoSubjectIsRefusedNotTreatedAsUnlinked() {
+        // ON A LINKED ACCOUNT. An UNLINKED account that lists cloud is still adopted by a login that
+        // carries no subject (a SAML response with no NameID, a Microsoft token with no oid): nothing
+        // is written and the name alone stays the credential. That is residual R208 — the owner's
+        // constraint (d) is about the stored value being empty, and widening it would refuse those
+        // deployments outright (batch-22..24 review, subagent P3-5).
         UserItem linked = account("nemaki:allowedAuthMethods", "cloud",
                 SsoLogin.subjectKey(SsoLogin.SAML), "https://idp.example alice-nameid");
 
@@ -310,17 +315,28 @@ public class EverySsoRouteAsksTheSameRuleTest {
                             + "produced — the comparison is then the written value against itself");
         }
 
-        // THE CREATE PATH as well: an account created without the binding this login gave it is
-        // adoptable by the next token of the same name, and the span above only reads the update
-        // (batch-22 review, Codex P1-2; measured — control MB5 did not fire until this assertion).
-        String helper = JavaSource.methodBody(
-                JavaSource.withoutLiteralText(JavaSource.read(REST)), "private UserItem accountForSsoLogin");
-        int created = helper.indexOf("getOrCreateUser(");
-        int returned = helper.indexOf("return created;");
-        assertTrue(created > 0 && returned > created, "accountForSsoLogin no longer creates an account "
-                + "and returns it, so this lock is not reading the create path");
-        assertTrue(helper.substring(created, returned).contains("boundSubject"),
-                "the account just created is returned without checking that it carries the binding this "
-                        + "login gave it");
+        // THE CREATE PATH as well, IN BOTH ENTRY POINTS: an account created without the binding this
+        // login gave it is adoptable by the next token of the same name, and the span above only reads
+        // the update (batch-22 review, Codex P1-2). The api/v1 twin had no check at all until the
+        // batch-22..24 review found it — 「both entry points」 was the claim, REST was the code (both
+        // reviewers, P1).
+        for (String[] where : new String[][] {
+                { REST, "private UserItem accountForSsoLogin", "getOrCreateUser(", "return created;" },
+                { API_V1, "public Response oidcAuth", "getOrCreateUser(", "} else {" } }) {
+            String body = JavaSource.methodBody(
+                    JavaSource.withoutLiteralText(JavaSource.read(where[0])), where[1]);
+            int created = body.indexOf(where[2]);
+            int until = body.indexOf(where[3], created);
+            assertTrue(created > 0 && until > created, where[0] + "'s " + where[1] + " no longer creates "
+                    + "an account in the span this lock reads: created=" + created + " until=" + until);
+            String createPath = body.substring(created, until);
+            assertTrue(createPath.contains("boundSubject"), where[0] + " returns the account it just "
+                    + "created without checking that it carries the binding this login gave it");
+            // FROM THE STORE here too: comparing the created instance with itself proves nothing, and
+            // the span that demands the store read above starts after the UPDATE write (batch-22..24
+            // review, subagent P2-4(b)).
+            assertTrue(createPath.contains("getUserItemByIdFromStore("), where[0] + " checks the created "
+                    + "account against the instance the creator handed back, not against the store");
+        }
     }
 }
