@@ -390,6 +390,28 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 		return true;
 	}
 
+	/**
+	 * The door for requests addressed to {@code nemaki_conf}, which the REST authentication filter routes
+	 * here because {@code nemaki_conf} is not a CMIS repository and {@link #loginWithBasicAuth} would
+	 * refuse it on {@code repositoryInfoMap.contains}. The password is read from the SUPER-USERS
+	 * repository ({@code super.users} in {@code repositories-default.yml} — {@code bedroom} as shipped).
+	 *
+	 * <p>It counts the guesses on the key {@link #loginWithBasicAuth} uses for that same read (R186,
+	 * 3.4.1). Through 3.4.0 it counted nothing at all: every other door stops at 15 failures, and here
+	 * {@code curl -u admin:guess http://host/core/rest/repo/nemaki_conf/user/list} could be repeated
+	 * without limit with the 401 as the oracle. The key is the super-users repository's and NOT
+	 * {@code nemaki_conf}'s, because the same credential is also checkable at
+	 * {@code /rest/repo/{super-users}/...} — counting under a second name would hand the guesser a
+	 * second budget of 15 for the one secret, which is what {@link #throttleKey}'s one-construction
+	 * rule exists to prevent.
+	 *
+	 * <p>A correct password clears the counter even for an account this door then refuses for not being
+	 * an admin: the refusal is authorization, not a failed password, and the same credential clears the
+	 * same key one method up. It is no way to reset someone else's lockout — the key carries the name
+	 * whose password is being guessed. A password this account may not use (its
+	 * {@code nemaki:allowedAuthMethods} excludes {@code password}) is a failure here exactly as it is
+	 * there; one key with two rules for counting is the shape this door is being fixed out of.
+	 */
 	@Override
 	public boolean loginForNemakiConfDb(CallContext callContext){
 		final String suId = repositoryInfoMap.getSuperUsers().getId();
@@ -397,9 +419,24 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
 		// check system config db
 		if(ObjectUtils.equals(repositoryId, SystemConst.NEMAKI_CONF_DB)){
-			UserItem user = getAuthenticatedUserItem(suId, callContext.getUsername(), callContext.getPassword());
-			if (user == null)
+			final String username = callContext.getUsername();
+			final String throttleKey = throttleKey(suId, username, resolveClientIpForThrottle(callContext));
+			if (loginThrottle.isBlocked(throttleKey)) {
+				log.warn("Login temporarily locked (too many failed attempts) for user '" + username
+						+ "' in repository '" + suId + "'");
 				return false;
+			}
+
+			UserItem user = getAuthenticatedUserItem(suId, username, callContext.getPassword());
+			if (user == null) {
+				// Count only genuine password attempts (non-blank id + password), as loginWithBasicAuth
+				// does, so ambient/empty probes don't accumulate against a name.
+				if (StringUtils.isNotBlank(username) && StringUtils.isNotBlank(callContext.getPassword())) {
+					loginThrottle.recordFailure(throttleKey);
+				}
+				return false;
+			}
+			loginThrottle.recordSuccess(throttleKey);
 
 			boolean isAdmin = Boolean.TRUE.equals(user.isAdmin());
 			return isAdmin;

@@ -49,15 +49,6 @@ public class AuthenticationUtil {
 	}
 
 	/**
-	 * The account's credential generation, or {@code null} when the stored value cannot be read.
-	 *
-	 * <p>Absent means {@code 0}: an account that existed before 3.4.1 has no such property, and
-	 * refusing those would lock every user out the moment this version starts (the credentials
-	 * themselves are refused for having no {@code accountId} — that is a different axis).
-	 * A value that is PRESENT but not a non-negative integer returns {@code null}: unknown is not
-	 * zero, and comparing against a guess would silently un-invalidate credentials.
-	 */
-	/**
 	 * What a save would do to an account's credential generation (R170, 3.4.1).
 	 */
 	public enum GenerationSave {
@@ -94,6 +85,15 @@ public class AuthenticationUtil {
 		return after < before ? GenerationSave.WOULD_LOWER : GenerationSave.OK;
 	}
 
+	/**
+	 * The account's credential generation, or {@code null} when the stored value cannot be read.
+	 *
+	 * <p>Absent means {@code 0}: an account that existed before 3.4.1 has no such property, and
+	 * refusing those would lock every user out the moment this version starts (the credentials
+	 * themselves are refused for having no {@code accountId} — that is a different axis).
+	 * A value that is PRESENT but not a non-negative integer returns {@code null}: unknown is not
+	 * zero, and comparing against a guess would silently un-invalidate credentials.
+	 */
 	public static Long accountGeneration(UserItem account) {
 		if (account == null) {
 			return null;

@@ -210,13 +210,6 @@ public class RssTokenService {
     }
     
     /**
-     * Get all tokens for a user.
-     * 
-     * @param repositoryId The repository ID
-     * @param userId The user ID
-     * @return List of tokens for the user
-     */
-    /**
      * Revokes every feed token of a user and answers how many (R170, batch 19).
      *
      * <p>Housekeeping, not the boundary: what stops the token of a deleted account is the
@@ -240,6 +233,13 @@ public class RssTokenService {
         return revoked;
     }
 
+    /**
+     * Get all tokens for a user.
+     * 
+     * @param repositoryId The repository ID
+     * @param userId The user ID
+     * @return List of tokens for the user
+     */
     public List<RssToken> getTokensForUser(String repositoryId, String userId) {
         if (rssTokenDaoService == null) {
             // The administrator revokes from this list; a memory-only subset of it is a

@@ -208,9 +208,6 @@ public class RssToken {
         return events.contains(eventType);
     }
     
-    /**
-     * Builder class for RssToken.
-     */
     public String getAccountId() {
         return accountId;
     }
@@ -227,6 +224,9 @@ public class RssToken {
         this.credentialGeneration = credentialGeneration;
     }
 
+    /**
+     * Builder class for RssToken.
+     */
     public static class Builder {
         private final RssToken token;
         
