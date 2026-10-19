@@ -142,6 +142,43 @@ API v1 の認証の資源（`/api/v1/cmis/auth/...`）は、**要求が名乗っ
   有効にしている場合は別のファイル）の `POST /core/api/v1/cmis/auth/repositories/*/token/refresh` と
   突き合わせてください。
 
+## SAML・Google・Microsoft・汎用 OIDC のログインは、既存のアカウントに「名前が同じだから」入れなくなりました（セキュリティ・挙動の変更）
+
+**IdP が名乗る利用者名だけで既存のアカウントに入れました。** SAML・Google・Microsoft のログインは、
+その名前の利用者が在ればそのまま使い、唯一の扉が「`nemaki:allowedAuthMethods` に `cloud` が許されているか」
+でした。**この欄が未設定のアカウントは「どの方式も許す」と読まれる**ため、**組み込みの `admin`・サービス
+アカウント・パスワードで作った利用者に、その名前を名乗れる人が入れました**。
+
+いまは 4 つの経路すべてが同じ規則を通ります。
+
+- **すでにその IdP の identity に結ばれている**アカウントは、その identity だけが入れます
+  （`nemaki:oidcSubject` ほか、経路ごとの欄）。
+- **方式に `cloud` が明示されている**アカウントは入れます（管理者が許した、という意味です）。
+- **未設定のアカウントには入れません。**
+- **ほかの経路が作ったアカウントには入れません** — SSO の各経路とクラウドディレクトリ同期は、
+  自分が作った（または方式を `cloud` に書き換えた）アカウントに印（`nemaki:authRoute`）を付けます。
+  印が別の経路のものなら、そのアカウントに入るには管理者が許す必要があります。
+- 結びを書いたら**読み直して確かめます**。保存されていなければログインを拒否します。
+
+**【上げるときに確認してください】印の無い `cloud` のアカウント**は、3.4.1 より前に作られたものなので、
+「管理者が許した」のか「古い版の SSO やディレクトリ同期が書いた」のかを製品側で区別できません。
+**最初にその名前を名乗った IdP に結ばれます。** 次の CouchDB のクエリで棚卸しできます。
+
+```bash
+curl -s -u admin:password -X POST http://localhost:5984/bedroom/_find \
+  -H 'Content-Type: application/json' \
+  -d '{"selector":{"type":"userItem"},"fields":["userId","subTypeProperties"],"limit":1000}' \
+  | python3 -c 'import sys,json
+for d in json.load(sys.stdin)["docs"]:
+    props = {p["key"]: p["value"] for p in (d.get("subTypeProperties") or [])}
+    methods = props.get("nemaki:allowedAuthMethods") or ""
+    if "cloud" in methods and "nemaki:authRoute" not in props:
+        print(d["userId"], methods)'
+```
+
+出てきた利用者のうち、**SSO で入れてよいものだけ**を残してください（残すなら何もしなくてよく、
+止めるなら `nemaki:allowedAuthMethods` から `cloud` を外します）。
+
 ## 【重要・上げると止まるもの】3.4.1 より前に発行した API キー・パスキー・RSS のフィードのトークンは、すべて使えなくなります
 
 **資格情報を利用者の「名前」ではなくアカウントの文書に結び直したため**（下の節）、**結びを持たない古い資格情報は
