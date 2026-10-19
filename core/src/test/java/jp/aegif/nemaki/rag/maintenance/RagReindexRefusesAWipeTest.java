@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -165,20 +166,30 @@ class RagReindexRefusesAWipeTest {
         // indexable text。Retrying will not change that」, which is this batch's own harm statement
         // (batch-22..24 review: both reviewers, P1).
         String answer = JavaSource.methodBody(impl, "private DocumentReindex answerFor");
-        for (String indexableText : new String[] { "UNSUPPORTED_MIME_TYPE", "NO_CONTENT", "TEXT_EXTRACTION_FAILED" }) {
-            assertTrue(answer.contains(indexableText), "the allow-list for 「not indexable」 no longer "
-                    + "names " + indexableText + ", so this lock is not reading the mapping: " + answer);
+        // THE WHOLE MAPPING, not three names: 「the list still names X」 is satisfied by ADDING a
+        // sibling type to it, which is this batch's own harm in one line (batch-22..24 review: both
+        // reviewers, P2 — Codex named ACL_ERROR / EMBEDDING_FAILED / SOLR_ERROR / CONTENT_UNREADABLE,
+        // the subagent measured that `case CONTENT_UNREADABLE:` left all five assertions green).
+        java.util.Map<String, String> mapping = answerForMapping(answer);
+        java.util.Set<String> notIndexable = new java.util.TreeSet<>();
+        for (java.util.Map.Entry<String, String> arm : mapping.entrySet()) {
+            if ("NOT_INDEXABLE".equals(arm.getValue())) {
+                notIndexable.add(arm.getKey());
+            }
         }
-        assertFalse(answer.contains("UNKNOWN"), "the mapping names UNKNOWN, which is what the purge "
-                + "failures carry — they belong to the default (a failure that may succeed later), not "
-                + "to an allow-list: " + answer);
-        int notIndexable = answer.indexOf("return DocumentReindex.NOT_INDEXABLE");
-        int fallback = answer.indexOf("default:");
-        assertTrue(notIndexable > 0 && fallback > notIndexable,
-                "the mapping no longer ends in a default, so a type nobody listed answers 「not "
-                        + "indexable」 by accident: " + answer);
-        assertTrue(answer.substring(fallback).contains("DocumentReindex.FAILED"),
-                "the default answer is not 「a failure that may succeed later」: " + answer);
+        assertEquals(new java.util.TreeSet<>(java.util.Arrays.asList("NO_CONTENT", "UNSUPPORTED_MIME_TYPE")),
+                notIndexable,
+                "the types that answer 「this version has no indexable text。Retrying will not change "
+                        + "that」 are not the two that SAY something about the text. Every other type is "
+                        + "a read or a write that failed — CONTENT_UNREADABLE is 「the bytes could not "
+                        + "be obtained」, and UNKNOWN is what the purge paths throw — and answering "
+                        + "「not indexable」 for one of those tells the operator clearing a redacted "
+                        + "version's blocks to stop: " + mapping);
+        assertEquals("FAILED", mapping.get("default"),
+                "the mapping does not end in a default that is 「a failure that may succeed later」, so "
+                        + "a type nobody listed answers by accident: " + mapping);
+        assertEquals("DISABLED", mapping.get("SERVICE_DISABLED"),
+                "a refusal because RAG is off is not 「this version has no indexable text」: " + mapping);
         int read = outcome.indexOf("getContent(");
         int notADocument = outcome.indexOf("NOT_A_DOCUMENT");
         assertTrue(read > 0 && notADocument > read,
@@ -201,6 +212,110 @@ class RagReindexRefusesAWipeTest {
                         "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java"))
                         .contains("may be a folder or unsupported type"),
                 "the door still answers 「may be a folder or unsupported type」 for every failure");
+    }
+
+    @Test
+    @DisplayName("the api/v1 door answers 503 for an attempt that may succeed later, and says so in its contract (R206)")
+    void theDoorAnswers503ForAnAttemptThatMaySucceedLater() throws Exception {
+        // RELEASE_NOTES 3.4.1 tells automated callers to treat 503 on this endpoint as 「retry」. No
+        // lock read the mapping that produces it: putting 「setSuccess(false)」 and a 200 back for
+        // every failure would leave every unit green and the published contract false (batch-22..24
+        // review, subagent P2-6).
+        String door = JavaSource.read(
+                "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java");
+        java.util.Map<String, String> arms = armsOf(JavaSource.methodBody(
+                JavaSource.withoutLiteralText(door), "public Response reindexDocumentRAG"));
+
+        for (String retryable : new String[] { "DISABLED", "default" }) {
+            String arm = arms.get(retryable);
+            assertNotNull(arm, "the door no longer has an arm for " + retryable + ", so the answer "
+                    + "an automated caller retries is not being read here: " + arms.keySet());
+            assertTrue(arm.contains("serviceUnavailable("), "the door answers " + retryable + " with "
+                    + "something other than 503, so the attempt that MAY succeed later is reported as "
+                    + "a settled one and nothing retries it: " + arm);
+        }
+        for (String settled : new String[] { "NOT_A_DOCUMENT", "NOT_INDEXABLE" }) {
+            String arm = arms.get(settled);
+            assertNotNull(arm, "the door no longer has an arm for " + settled + ": " + arms.keySet());
+            assertTrue(arm.contains("setSuccess(false)"), "the door does not report " + settled
+                    + " as an answered 200: " + arm);
+            assertFalse(arm.contains("serviceUnavailable("), "the door answers " + settled + " with "
+                    + "503, so a caller retries forever something that will never change: " + arm);
+        }
+        assertTrue(arms.getOrDefault("INDEXED", "").contains("setSuccess(true)"),
+                "the door does not report a document it indexed as a success: " + arms);
+
+        // AND THE MACHINE-READABLE CONTRACT. Literals kept: the response code is one.
+        int method = door.indexOf("public Response reindexDocumentRAG");
+        int declaration = door.lastIndexOf("@ApiResponses", method);
+        assertTrue(declaration > 0, "the endpoint declares no responses at all");
+        String declared = door.substring(declaration, method);
+        assertTrue(declared.contains("\"503\""), "the endpoint's declared responses do not include "
+                + "503, so the generated client knows only about the 200 — the answer and the "
+                + "contract disagree: " + declared);
+    }
+
+    /**
+     * Label → the code of that arm, for a switch written one statement per line.
+     *
+     * <p>Shared by the two locks above because 「the mapping names X」 is satisfied by ADDING a label,
+     * which is what let a sibling error type into the 「not indexable」 allow-list. Reading the arms
+     * lets a lock state the WHOLE mapping, so a label that moves between arms fails it.
+     *
+     * <p>Consecutive labels with no code between them share one arm, which is how
+     * {@code case A: case B: return X;} is written. Everything before the first label is dropped.
+     */
+    private static java.util.Map<String, String> armsOf(String body) {
+        java.util.Map<String, String> arms = new java.util.LinkedHashMap<>();
+        java.util.List<String> pending = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String line : body.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("case ") || trimmed.startsWith("default:")) {
+                if (current.length() > 0) {
+                    for (String label : pending) {
+                        arms.put(label, current.toString());
+                    }
+                    pending.clear();
+                    current.setLength(0);
+                }
+                pending.add(trimmed.startsWith("default:") ? "default"
+                        : trimmed.substring("case ".length()).replace(":", "").trim());
+                continue;
+            }
+            current.append(trimmed).append('\n');
+        }
+        for (String label : pending) {
+            arms.put(label, current.toString());
+        }
+        return arms;
+    }
+
+    /** Which {@code DocumentReindex} each arm of {@code answerFor} answers with. */
+    private static java.util.Map<String, String> answerForMapping(String answerForBody) {
+        java.util.Map<String, String> mapping = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<String, String> arm : armsOf(answerForBody).entrySet()) {
+            int at = arm.getValue().indexOf("DocumentReindex.");
+            if (at < 0) {
+                throw new jp.aegif.nemaki.util.test.HarnessBroken("the arm for " + arm.getKey()
+                        + " answers with no DocumentReindex value, so this lock read nothing: "
+                        + arm.getValue());
+            }
+            String tail = arm.getValue().substring(at + "DocumentReindex.".length());
+            int end = 0;
+            while (end < tail.length()
+                    && (Character.isLetterOrDigit(tail.charAt(end)) || tail.charAt(end) == '_')) {
+                end++;
+            }
+            mapping.put(arm.getKey(), tail.substring(0, end));
+        }
+        if (!mapping.containsKey("default")) {
+            // Not an assertion: 「answerFor is not a switch any more」 means this lock measured
+            // nothing, and the runner reads an AssertionError as 「the lock fired」.
+            throw new jp.aegif.nemaki.util.test.HarnessBroken("answerFor is no longer a switch with "
+                    + "a default, so nothing was measured: " + answerForBody);
+        }
+        return mapping;
     }
 
     @Test

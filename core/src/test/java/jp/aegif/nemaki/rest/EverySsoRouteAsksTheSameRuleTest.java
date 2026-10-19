@@ -330,13 +330,60 @@ public class EverySsoRouteAsksTheSameRuleTest {
             assertTrue(created > 0 && until > created, where[0] + "'s " + where[1] + " no longer creates "
                     + "an account in the span this lock reads: created=" + created + " until=" + until);
             String createPath = body.substring(created, until);
-            assertTrue(createPath.contains("boundSubject"), where[0] + " returns the account it just "
-                    + "created without checking that it carries the binding this login gave it");
-            // FROM THE STORE here too: comparing the created instance with itself proves nothing, and
-            // the span that demands the store read above starts after the UPDATE write (batch-22..24
-            // review, subagent P2-4(b)).
+            // FROM THE STORE: comparing the created instance with itself proves nothing, and the span
+            // that demands the store read above starts after the UPDATE write (batch-22..24 review,
+            // subagent P2-4(b)).
             assertTrue(createPath.contains("getUserItemByIdFromStore("), where[0] + " checks the created "
                     + "account against the instance the creator handed back, not against the store");
+
+            // THE SAME RULE, asked of what the store has. getOrCreateUser answers with an account it
+            // FOUND when one appeared between the caller's read and its own, and that is an EXISTING
+            // account — entering it with no rule applied left 「unset ⇒ allowed」 deciding alone
+            // (batch-25, subagent P3-3). The rule refuses a null account, so this covers 「the
+            // creation is not in the store」 as well.
+            Matcher asksTheRule = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*refusal\\(")
+                    .matcher(createPath);
+            assertTrue(asksTheRule.find(), where[0] + "'s create path does not ask the rule every other "
+                    + "route asks, so an account it did not create is entered on the strength of its "
+                    + "own allowedAuthMethods: " + createPath);
+            String answer = asksTheRule.group(1);
+            int asked = createPath.indexOf(answer + " != null");
+            assertTrue(asked > 0, where[0] + " asks the rule and does not look at the answer (" + answer
+                    + " is assigned and never compared), so every refusal it names is ignored: "
+                    + createPath);
+            assertTrue(refuses(createPath, asked), where[0] + " looks at the rule's answer and lets the "
+                    + "login proceed anyway: " + createPath);
+
+            // AND the binding, with the comparison and the refusal UNDER THE SAME CONDITION. 「the
+            // names appear」 was not enough: reading the stored value and not comparing it, or
+            // comparing it and not refusing, both left this green (batch-22..24 review, Codex P2-2 —
+            // the same weakness the update path above had been taught a round earlier).
+            int compare = createPath.indexOf("boundSubject");
+            assertTrue(compare > 0, where[0] + " returns the account it just created without checking "
+                    + "that it carries the binding this login gave it");
+            int condition = createPath.lastIndexOf("if (", compare);
+            assertTrue(condition >= 0 && createPath.substring(condition, compare).contains("!binding.equals("),
+                    where[0] + " reads the stored binding and does not compare it with the one this "
+                            + "login carries: " + createPath);
+            assertTrue(refuses(createPath, compare), where[0] + " compares the stored binding and does "
+                    + "not refuse the login when it differs: " + createPath);
         }
+    }
+
+    /**
+     * Does the block of the {@code if} whose condition contains {@code inCondition} refuse the login?
+     *
+     * <p>Reading the enclosing BLOCK, not 「a refusal appears later in the method」: a refusal that
+     * belongs to the next check satisfies the loose form, which is how 「compares and refuses」 was
+     * green for a span that only compared.
+     */
+    private static boolean refuses(String code, int inCondition) {
+        int closes = code.indexOf(") {", inCondition);
+        if (closes < 0) {
+            throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                    "no condition closes after offset " + inCondition + ", so nothing was read: " + code);
+        }
+        String block = code.substring(closes, JavaSource.matchingClose(code, closes));
+        return block.contains("return null") || block.contains("throw ");
     }
 }

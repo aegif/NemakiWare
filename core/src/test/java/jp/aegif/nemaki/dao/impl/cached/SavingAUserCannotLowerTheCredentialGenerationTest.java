@@ -17,6 +17,7 @@
 package jp.aegif.nemaki.dao.impl.cached;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -137,9 +138,12 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
                         + " 'unreadable' can drift from it");
 
         // AND «could not read» is not «there is nothing stored» (R195 — both reviewers, batch-19's
-        // confirmation round). Two shapes, because get(Class, String) reports a read it could not
-        // make BOTH ways: by throwing, and by answering null — its own javadoc says "during a
-        // CouchDB outage every object looks absent".
+        // confirmation round). Two shapes, because a read it could not make arrives BOTH ways:
+        // get(Class, String) throws, and the get(String) it delegates to returns null for ANY
+        // failure while isStartupPhase() holds (provisioning runs against a database that may not
+        // exist yet) — as well as for a _deleted tombstone. The first version of this comment said
+        // get() was fail-open for every outage, copying a javadoc that was already stale
+        // (batch-22..24 review, subagent P2-3 / Codex P3).
         int caught = guardBody.indexOf("catch (");
         assertTrue(caught > 0, "the guard no longer catches the read's failure, so this lock is not "
                 + "reading the arm it is about");
@@ -152,21 +156,32 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
                 "the guard lets the save through when the stored document could not be READ, which is"
                         + " how a generation goes backwards during an outage: " + guardBody);
 
-        // THE STRICT ASK, AND ITS ANSWER USED TO REFUSE. 「existsStrict( appears」 was not enough:
-        // reading the value into a variable and ignoring it left this green (batch-22..24 review,
-        // Codex P2). The null answer needs it because get(Class, String) returns null for a 404, a
-        // tombstone and the provisioning window — and only the strict ask separates 「the document is
-        // there」 from those.
+        // THE STRICT ASK, AND ITS ANSWER GOVERNING THE REFUSAL. The null answer needs it because
+        // get(Class, String) returns null for a 404, a tombstone AND the startup window — only the
+        // strict ask separates 「the document is there」 from those. Three earlier forms of this
+        // check were satisfiable without the product doing any of it (batch-22..24 review, Codex
+        // P2-3 and subagent P2-5): 「existsStrict( appears」 passed a span that read the value into a
+        // variable and dropped it; 「a throw before a return」 passed because the VERDICT's own throw
+        // is one; and 「an if( appears before it」 was a tautology — the substring starts at the call,
+        // so its own 「|| startsWith("existsStrict")」 was always true.
         int strict = guardBody.indexOf("existsStrict(");
         assertTrue(strict > 0, "the guard treats a null answer as «not there» without the strict ask: "
                 + guardBody);
-        String fromStrict = guardBody.substring(strict);
-        assertTrue(fromStrict.indexOf("throw ") >= 0
-                        && (fromStrict.indexOf("return") < 0 || fromStrict.indexOf("throw ") < fromStrict.indexOf("return")),
-                "the guard asks whether the document is there and does not refuse the save when it is"
-                        + " (the answer is read and dropped): " + guardBody);
-        assertTrue(guardBody.substring(0, strict).contains("if (") || fromStrict.startsWith("existsStrict"),
-                "the strict ask is not in a condition, so nothing branches on it: " + guardBody);
+        int closes = guardBody.indexOf(") {", strict);
+        int statement = guardBody.indexOf(";", strict);
+        assertTrue(closes > 0 && closes < statement,
+                "the strict ask is not the condition of an if — its answer is read into a statement and"
+                        + " nothing branches on it: " + guardBody);
+        int condition = guardBody.lastIndexOf("if (", strict);
+        assertTrue(condition >= 0, "the strict ask is not inside an if at all: " + guardBody);
+        String test = guardBody.substring(condition, closes);
+        assertFalse(test.contains("!") || test.contains("false"),
+                "the strict ask is NEGATED, so the save is refused when the document is NOT there and"
+                        + " let through when it IS — the fail-open this closes, inverted: " + test);
+        String refusal = guardBody.substring(closes, JavaSource.matchingClose(guardBody, closes));
+        assertTrue(refusal.contains("throw "),
+                "the guard asks whether the document is there and does not refuse the save when it is —"
+                        + " the refusal is outside the block that answer governs: " + guardBody);
     }
 
     @Test
@@ -202,5 +217,36 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
         verify(contentCache).remove("alice-doc");
         verify(objectDataCache).remove("alice-doc");
         verify(userCache, org.mockito.Mockito.never()).put(anyString(), any(UserItem.class));
+    }
+
+    @Test
+    @DisplayName("the store read asks the delegate's OWN store read — not its cached-equivalent sibling (R207)")
+    void theCachedStoreReadGoesToTheDelegatesStoreRead() {
+        // The SSO doors read the binding back with getUserItemByIdFromStore because the cache holds
+        // the instance the write produced. That claim ends at this layer: if it delegates to
+        // getUserItemById, the two are synonyms in the couch layer TODAY and nothing shows — and the
+        // day the store read stops being the plain read, this door silently does not get it
+        // (batch-22..24 review, subagent P3-5). It also must not touch the user cache at all.
+        ContentDaoService nonCached = mock(ContentDaoService.class);
+        NemakiCachePool pool = mock(NemakiCachePool.class);
+        @SuppressWarnings("unchecked")
+        NemakiCache<UserItem> userCache = mock(NemakiCache.class);
+        jp.aegif.nemaki.util.cache.CacheService caches =
+                mock(jp.aegif.nemaki.util.cache.CacheService.class);
+        when(pool.get(REPO)).thenReturn(caches);
+        when(caches.getUserItemCache()).thenReturn(userCache);
+
+        ContentDaoServiceImpl cached = new ContentDaoServiceImpl();
+        cached.setNonCachedContentDaoService(nonCached);
+        cached.setNemakiCachePool(pool);
+
+        UserItem fromStore = user(2);
+        when(nonCached.getUserItemByIdFromStore(REPO, "alice")).thenReturn(fromStore);
+
+        assertEquals(fromStore, cached.getUserItemByIdFromStore(REPO, "alice"),
+                "the store read did not answer with what the delegate's store read holds");
+        verify(nonCached).getUserItemByIdFromStore(REPO, "alice");
+        verify(nonCached, org.mockito.Mockito.never()).getUserItemById(anyString(), anyString());
+        verify(userCache, org.mockito.Mockito.never()).get(anyString());
     }
 }
