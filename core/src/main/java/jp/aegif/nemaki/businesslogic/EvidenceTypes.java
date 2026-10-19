@@ -45,7 +45,9 @@ import java.util.Set;
  * <h2>What this does NOT establish</h2>
  *
  * <p>Not immutability. Anything with direct CouchDB access is unaffected. Nor does deleting the
- * object destroy the evidence — {@code archive.create.enabled} is true in the SHIPPED properties files and the archive
+ * object destroy the evidence — {@code archive.create.enabled} is true in the SHIPPED properties files — a
+ * deployment that drops the key gets the code default, which is {@code false}, and then a
+ * delete IS destruction — and the archive
  * copy preserves {@code aspects} and {@code secondaryIds} verbatim, restorable; the lineage
  * events live in a separate database that delete does not touch at all.
  */
