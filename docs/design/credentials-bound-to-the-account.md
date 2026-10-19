@@ -143,7 +143,9 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
     通してしまうのと同じ重さの欠陥。したがって cached の `update` は**例外のときに `userItemCache` と
     `contentCache` からその利用者を捨てて再 throw する**。409 の再試行の読み直しも**キャッシュを通さない**
     こと（通すと失われた更新になる）。**ここは「fresh を足す必要は無い」の例外**（確認 11 巡目の
-    subagent P2 — 同じ節が矛盾していた）: キャッシュを通さない UserItem の読みは**今どこにも無い**
+    subagent P2 — 同じ節が矛盾していた）: キャッシュを通さない UserItem の読みは**当時どこにも無かった**
+    （**2026-10-19 に `getUserItemByIdFromStore` として足した** — R207。兄弟の `getGroupItemByIdFresh` と
+    同じ fail-closed の形（配線を確かめ、読めなければ null ではなく throw）に揃えてある）
     （`ContentService` は `getGroupItemByIdFresh` だけ、`ContentDaoService` は content / document /
     folder / relationship / policy / item / groupItem の fresh だけで、**利用者版が無い**）。
     下げない側の守りは couch の DAO の中で読み直すので要らないが、**`changePassword` の 409 の再試行には
