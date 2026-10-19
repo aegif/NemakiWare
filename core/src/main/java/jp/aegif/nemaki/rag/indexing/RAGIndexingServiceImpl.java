@@ -146,7 +146,15 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             throw RAGIndexingException.serviceDisabled("RAG indexing is disabled");
         }
 
-        String mimeType = getMimeType(repositoryId, document);
+        MimeTypeRead typeRead = readMimeType(repositoryId, document);
+        if (typeRead.outcome() == MimeTypeOutcome.UNREADABLE) {
+            // "Could not read" is not "not indexable". Nothing is known about this version's type,
+            // so the block stays as it is (it may still be accurate) and the caller is told the
+            // attempt is RETRYABLE — which is what keeps a reindex over a store outage from
+            // reporting completion over an index it has already cleared (R185).
+            throw RAGIndexingException.contentUnreadable(document.getId(), typeRead.failure());
+        }
+        String mimeType = typeRead.mimeType();
         if (!isMimeTypeSupported(mimeType)) {
             // The CURRENT version cannot be indexed, so whatever an EARLIER version left in the
             // index is now wrong. Before 3.4.1 nothing removed it: replacing a document with a
@@ -154,11 +162,14 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // through RAG and MCP for everyone the ACL filter admits — the redaction had no
             // effect where it matters most (external review C4).
             //
-            // Only when the type is KNOWN. getMimeType returns null for three different things —
-            // the document has no attachment, the store threw, the store handed back nothing —
-            // and a store outage must not be read as "this version is not indexable" (the same
-            // collapse ContentOutcome exists to undo). A document that genuinely lost its content
-            // stream is purged by deleteContentStream, which calls triggerRAGDeletion directly.
+            // Only when the type is KNOWN. The unreadable case has already thrown above, so what
+            // reaches here is either a type we do not extract (purge: the old block is wrong) or
+            // an attachment that records no type / no attachment at all (mimeType == null). The
+            // second is left alone deliberately, as it was before R185: nothing about it has been
+            // measured, and R185 is about ending the collapse of «could not read» into «not
+            // indexable», not about widening what authorises a delete. A document that genuinely
+            // lost its content stream is purged by deleteContentStream, which calls
+            // triggerRAGDeletion directly.
             if (mimeType != null) {
                 purgeTheBlockOfAVersionThatIsGone(repositoryId, document.getId(),
                         "the current version's MIME type (" + mimeType + ") is not indexable");
@@ -902,20 +913,62 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
                 jp.aegif.nemaki.reconcile.SearchIndexAclReindexTask.Reason.STALE_CONTENT_PURGE_FAILURE);
     }
 
-    private String getMimeType(String repositoryId, Document document) {
-        String attachmentId = document.getAttachmentNodeId();
-        if (attachmentId == null) {
-            return null;
+    /**
+     * What is known about a document's MIME type: the type, that there is no attachment to have
+     * one, or that it could not be read (R185, 3.4.1).
+     *
+     * <p>The same three answers {@link ExtractedText} gives, and for the same reason. The method
+     * this replaces returned {@code null} for all three, and the caller turned every {@code null}
+     * into {@link RAGIndexingException#unsupportedMimeType} — not retryable, and the RAG reindex
+     * classifies that by message as SKIPPED. A full reindex CLEARS THE INDEX FIRST, so a CouchDB
+     * outage during one made every document "skipped" and the run reported {@code completed} over
+     * an empty index, with no durable retry anywhere.
+     *
+     * <p>Decided the same way as {@code extractText}, input for input: no attachment id is a
+     * statement about the version, a throw is unreadable, and an attachment the store does not
+     * hand back is a broken reference and NOT "this version has no type". The one input that
+     * reader does not have is an attachment that exists and records no type at all — that is
+     * {@code ABSENT}: re-reading cannot change it.
+     */
+    private enum MimeTypeOutcome { KNOWN, ABSENT, UNREADABLE }
+
+    /** The outcome above, with the type when there is one and the failure when there was one. */
+    private record MimeTypeRead(MimeTypeOutcome outcome, String mimeType, Throwable failure) {
+        static MimeTypeRead known(String mimeType) {
+            return new MimeTypeRead(MimeTypeOutcome.KNOWN, mimeType, null);
         }
 
+        static MimeTypeRead absent() {
+            return new MimeTypeRead(MimeTypeOutcome.ABSENT, null, null);
+        }
+
+        static MimeTypeRead unreadable(Throwable failure) {
+            return new MimeTypeRead(MimeTypeOutcome.UNREADABLE, null, failure);
+        }
+    }
+
+    private MimeTypeRead readMimeType(String repositoryId, Document document) {
+        String attachmentId = document.getAttachmentNodeId();
+        if (attachmentId == null) {
+            return MimeTypeRead.absent();
+        }
+
+        AttachmentNode attachment;
         try {
             // Ref, not the node: this runs once per indexed document, and getAttachment opens
             // the body to answer a question about its mime type.
-            AttachmentNode attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
-            return attachment != null ? attachment.getMimeType() : null;
+            attachment = contentService.getAttachmentRef(repositoryId, attachmentId);
         } catch (Exception e) {
-            return null;
+            log.warn("RAG: the MIME type of " + document.getId() + " could not be read", e);
+            return MimeTypeRead.unreadable(e);
         }
+        if (attachment == null) {
+            log.warn("RAG: the attachment {} of {} was not returned by the store, so its MIME type"
+                    + " is unknown", attachmentId, document.getId());
+            return MimeTypeRead.unreadable(null);
+        }
+        String mimeType = attachment.getMimeType();
+        return mimeType == null ? MimeTypeRead.absent() : MimeTypeRead.known(mimeType);
     }
 
     private float[] generateDocumentEmbedding(Document document, List<TextChunk> chunks, List<float[]> chunkEmbeddings) {
