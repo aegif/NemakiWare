@@ -416,6 +416,107 @@ public class OidcLoginEntryPointsTest {
     }
 
     @Test
+    @DisplayName("a CREATED account whose binding never reached the store refuses the login — the store is what is read (R207)")
+    void aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin() throws Exception {
+        // The create path's read-back has to ask THE STORE. A read through the user cache is handed
+        // the instance the creation produced, so it compares the written value with itself and proves
+        // nothing (R207). Driven, because a source lock can see that the store reader is NAMED in the
+        // span and not that its answer is what the comparison receives — and hoisting the read into
+        // its own statement made that difference invisible (batch-25 review, subagent P2-3).
+        //
+        // The fixture: no account, so the create path runs; the creator's answer CARRIES the binding
+        // (which is what a cached read would hand back); the STORE says the subject never landed.
+        // THIS login's own binding, so the RULE allows it and the only thing that can refuse is the
+        // comparison against the store. A first cut gave the created account a DIFFERENT subject,
+        // which the rule refused on its own — the sabotage that reads the cache stayed green
+        // (measured: it did not fire).
+        UserItem createdWithBinding = account("heidi", "cloud", issuer + " sub-heidi",
+                jp.aegif.nemaki.rest.SsoLogin.OIDC);
+        UserItem storeHasNoBinding = account("heidi", "cloud", null,
+                jp.aegif.nemaki.rest.SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "heidi")).thenReturn(null, createdWithBinding);
+        when(contentService.getUserItemByIdFromStore("bedroom", "heidi")).thenReturn(storeHasNoBinding);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("heidi", "sub-heidi") + "\"}");
+
+        assertEquals("failure", rest.get("status"), "the create path compared the binding with the "
+                + "instance the creation handed back, not with what the store holds — so a login "
+                + "proceeded as an account whose link was never stored: " + rest.toJSONString());
+        verify(tokenService, never()).setToken(any(), any(), any());
+
+        // BOTH ENTRY POINTS, each with its own name (the stubbing above is consumed by the REST call).
+        UserItem ivanCreated = account("ivan", "cloud", issuer + " sub-ivan",
+                jp.aegif.nemaki.rest.SsoLogin.OIDC);
+        UserItem ivanStore = account("ivan", "cloud", null, jp.aegif.nemaki.rest.SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "ivan")).thenReturn(null, ivanCreated);
+        when(contentService.getUserItemByIdFromStore("bedroom", "ivan")).thenReturn(ivanStore);
+
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("ivan", "sub-ivan")));
+
+        assertTrue(apiV1.startsWith("refused: "), "api/v1's create path read the binding back through "
+                + "the cache: " + apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("an account that appeared between the two reads is an EXISTING account — the rule decides (R209)")
+    void anAccountThatAppearedDuringTheCreateIsJudgedByTheRule() throws Exception {
+        // THE RACE, driven. accountForSsoLogin reads 「no such account」 and calls getOrCreateUser,
+        // which reads again — and when another request created the name in between, it answers with
+        // the account it FOUND. That is an existing account, and it used to be entered with no rule
+        // applied at all: isAuthMethodAllowed's 「unset ⇒ allowed」 decided alone (R209).
+        //
+        // Driven rather than read: every source form of this check was satisfiable while the login
+        // still proceeded — 「refusal( appears」, 「its answer is compared」, even 「the block of that
+        // comparison contains a refusal」 (a contradictory condition inside it: batch-25 review,
+        // Codex P2-2). A run cannot be fooled by any of those.
+        //
+        // THE FIXTURE DISCRIMINATES, which took two tries to get right. The account that appeared is
+        // linked to a SAML identity and lists 「cloud」: the rule refuses it (「linked to a SAML
+        // identity — an administrator unlinks it」) while every OTHER gate lets it through —
+        // isAuthMethodAllowed sees 「cloud」, and the store's copy carries this login's own binding so
+        // the read-back passes. Measured here: 「no methods listed」 was refused by the BINDING check
+        // on its own, and 「disabled」 by the method gate after it, so both of those would have been
+        // green with no rule asked at all.
+        String carried = issuer + " sub-frank";
+        UserItem appearedMeanwhile = linkedElsewhere(account("frank", "cloud", null, SsoLogin.SAML));
+        UserItem storeCarriesTheBinding = account("frank", "cloud", carried, SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "frank")).thenReturn(null, appearedMeanwhile);
+        when(contentService.getUserItemByIdFromStore("bedroom", "frank"))
+                .thenReturn(storeCarriesTheBinding);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("frank", "sub-frank") + "\"}");
+
+        assertEquals("failure", rest.get("status"), "an account this login did not create — one linked "
+                + "to a SAML identity — was entered because the create path asked no rule: "
+                + rest.toJSONString());
+        verify(tokenService, never()).setToken(any(), any(), any());
+
+        // BOTH ENTRY POINTS: api/v1 has its own copy of the procedure. Its own name, because the
+        // stubbing above is consumed by the REST call.
+        UserItem graceAppeared = linkedElsewhere(account("grace", "cloud", null, SsoLogin.SAML));
+        UserItem graceStore = account("grace", "cloud", issuer + " sub-grace", SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "grace")).thenReturn(null, graceAppeared);
+        when(contentService.getUserItemByIdFromStore("bedroom", "grace")).thenReturn(graceStore);
+
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("grace", "sub-grace")));
+
+        assertTrue(apiV1.startsWith("refused: "), "api/v1 entered an account linked to a SAML identity "
+                + "with no rule applied: " + apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+    }
+
+    /** The same account, carrying a SAML binding — what 「another route owns this」 looks like. */
+    private static UserItem linkedElsewhere(UserItem account) {
+        java.util.List<jp.aegif.nemaki.model.Property> properties =
+                new java.util.ArrayList<>(account.getSubTypeProperties());
+        properties.add(new jp.aegif.nemaki.model.Property(
+                SsoLogin.subjectKey(SsoLogin.SAML), "https://saml.example!someone-else"));
+        account.setSubTypeProperties(properties);
+        return account;
+    }
+
+    @Test
     @DisplayName("REST: the first login links an account SSO is allowed for to the token's subject, and the link is kept (batch 16 review round 1)")
     void theFirstLoginLinksTheAccount() throws Exception {
         assertEquals("success", rest("{\"id_token\":\"" + idToken(CLIENT) + "\"}").get("status"));

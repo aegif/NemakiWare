@@ -16,6 +16,7 @@
  */
 package jp.aegif.nemaki.dao.impl.cached;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,6 +39,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.dao.ContentDaoService;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
+import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
+import jp.aegif.nemaki.model.couch.CouchUserItem;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
@@ -137,51 +141,15 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
                 "the guard does not use the one rule, so a second reading of 'absent' or"
                         + " 'unreadable' can drift from it");
 
-        // AND «could not read» is not «there is nothing stored» (R195 — both reviewers, batch-19's
-        // confirmation round). Two shapes, because a read it could not make arrives BOTH ways:
-        // get(Class, String) throws, and the get(String) it delegates to returns null for ANY
-        // failure while isStartupPhase() holds (provisioning runs against a database that may not
-        // exist yet) — as well as for a _deleted tombstone. The first version of this comment said
-        // get() was fail-open for every outage, copying a javadoc that was already stale
-        // (batch-22..24 review, subagent P2-3 / Codex P3).
-        int caught = guardBody.indexOf("catch (");
-        assertTrue(caught > 0, "the guard no longer catches the read's failure, so this lock is not "
-                + "reading the arm it is about");
-        String afterCatch = guardBody.substring(caught);
-        int throws_ = afterCatch.indexOf("throw ");
-        int returns = afterCatch.indexOf("return");
-        assertTrue(throws_ >= 0, "the guard no longer throws anywhere after catching the read's "
-                + "failure, so it lets the save through: " + guardBody);
-        assertTrue(returns < 0 || throws_ < returns,
-                "the guard lets the save through when the stored document could not be READ, which is"
-                        + " how a generation goes backwards during an outage: " + guardBody);
-
-        // THE STRICT ASK, AND ITS ANSWER GOVERNING THE REFUSAL. The null answer needs it because
-        // get(Class, String) returns null for a 404, a tombstone AND the startup window — only the
-        // strict ask separates 「the document is there」 from those. Three earlier forms of this
-        // check were satisfiable without the product doing any of it (batch-22..24 review, Codex
-        // P2-3 and subagent P2-5): 「existsStrict( appears」 passed a span that read the value into a
-        // variable and dropped it; 「a throw before a return」 passed because the VERDICT's own throw
-        // is one; and 「an if( appears before it」 was a tautology — the substring starts at the call,
-        // so its own 「|| startsWith("existsStrict")」 was always true.
-        int strict = guardBody.indexOf("existsStrict(");
-        assertTrue(strict > 0, "the guard treats a null answer as «not there» without the strict ask: "
-                + guardBody);
-        int closes = guardBody.indexOf(") {", strict);
-        int statement = guardBody.indexOf(";", strict);
-        assertTrue(closes > 0 && closes < statement,
-                "the strict ask is not the condition of an if — its answer is read into a statement and"
-                        + " nothing branches on it: " + guardBody);
-        int condition = guardBody.lastIndexOf("if (", strict);
-        assertTrue(condition >= 0, "the strict ask is not inside an if at all: " + guardBody);
-        String test = guardBody.substring(condition, closes);
-        assertFalse(test.contains("!") || test.contains("false"),
-                "the strict ask is NEGATED, so the save is refused when the document is NOT there and"
-                        + " let through when it IS — the fail-open this closes, inverted: " + test);
-        String refusal = guardBody.substring(closes, JavaSource.matchingClose(guardBody, closes));
-        assertTrue(refusal.contains("throw "),
-                "the guard asks whether the document is there and does not refuse the save when it is —"
-                        + " the refusal is outside the block that answer governs: " + guardBody);
+        // WHAT THE GUARD DOES with a read it could not make is measured by RUNNING it — the three
+        // tests below drive the couch DAO with a client that answers null-and-present, absent, and
+        // throwing. Four source-level forms of that check were written and all four were satisfiable
+        // while the fail-open stayed open: 「existsStrict( appears」 (the answer read into a variable
+        // and dropped), 「a throw before a return」 (the VERDICT's own throw is one), 「an if( appears
+        // before it」 (a tautology — the substring starts at the call), and 「the throw is in the block
+        // of its own un-negated condition」 (a contradictory condition inside that block, and a
+        // reordering that returns before ever asking). Two reviewers found two more bypasses each
+        // round; the run has none (batch-25 review: Codex P2-3, subagent P2-5 and P3-1).
     }
 
     @Test
@@ -247,6 +215,81 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
                 "the store read did not answer with what the delegate's store read holds");
         verify(nonCached).getUserItemByIdFromStore(REPO, "alice");
         verify(nonCached, org.mockito.Mockito.never()).getUserItemById(anyString(), anyString());
-        verify(userCache, org.mockito.Mockito.never()).get(anyString());
+        // No 「the user cache was not read」 here: this method does not touch the cache pool at all,
+        // so that verify is satisfied by every implementation including a wrong one (batch-25
+        // review, subagent P3-3). The two verifies above are what discriminate.
+    }
+
+    @Test
+    @DisplayName("the stored document could not be READ — the save is refused, driven through the DAO (R195)")
+    void aReadThatCouldNotBeMadeRefusesTheSave() {
+        // DRIVEN, not read. Every source form of this check was satisfiable while the fail-open
+        // stayed open: 「existsStrict( appears」, 「a throw follows it」, 「the throw is in the block of
+        // its own un-negated condition」 — the last is satisfied by a contradictory condition inside
+        // that block (batch-25 review, Codex P2-3), and none of them says the strict ask is on the
+        // path OUT of the null arm (the same review, subagent P3-1: moving the early return in front
+        // of it left all three green).
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.get(eq(CouchUserItem.class), anyString())).thenReturn(null);
+        // THERE, and unreadable: get() answers null for a 404, a _deleted tombstone AND any failure
+        // during the provisioning window (get(String)'s isStartupPhase arm). The strict ask is what
+        // separates them, and here it says the document is there.
+        when(client.existsStrict(anyString())).thenReturn(true);
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> couchDaoWhoseClientIs(client).update(REPO, savable()),
+                "the stored document is there and could not be read, and the save went through — a"
+                        + " document-replacing PUT then drops the credential generation and every"
+                        + " credential the password change ended starts working again");
+        assertTrue(refused.getMessage().contains("could not be read"), refused.getMessage());
+        verify(client, org.mockito.Mockito.never()).update(any(CouchUserItem.class));
+    }
+
+    @Test
+    @DisplayName("the stored document is genuinely absent — the save proceeds (the over-refusal side)")
+    void aGenuineAbsenceDoesNotRefuseTheSave() {
+        // The other half, because over-refusal weighs the same in this tree: the first save of an
+        // account the store does not hold yet must not be refused by a guard that asks about the
+        // document it would replace.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.get(eq(CouchUserItem.class), anyString())).thenReturn(null);
+        when(client.existsStrict(anyString())).thenReturn(false);
+
+        assertDoesNotThrow(() -> couchDaoWhoseClientIs(client).update(REPO, savable()),
+                "a genuine absence was read as 「could not be read」, so saving an account the store"
+                        + " does not hold yet is refused");
+        verify(client).update(any(CouchUserItem.class));
+    }
+
+    @Test
+    @DisplayName("the read itself THREW — the save is refused (the other shape of the same failure)")
+    void aReadThatThrewRefusesTheSave() {
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.get(eq(CouchUserItem.class), anyString()))
+                .thenThrow(new RuntimeException("the database did not answer"));
+
+        assertThrows(IllegalStateException.class,
+                () -> couchDaoWhoseClientIs(client).update(REPO, savable()),
+                "a read that threw let the save through, so an outage authorises lowering the"
+                        + " credential generation");
+        verify(client, org.mockito.Mockito.never()).update(any(CouchUserItem.class));
+    }
+
+    /** The couch DAO — where the guard lives — with its connector pool answering with this client. */
+    private static jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl couchDaoWhoseClientIs(
+            CloudantClientWrapper client) {
+        CloudantClientPool pool = mock(CloudantClientPool.class);
+        when(pool.getClient(anyString())).thenReturn(client);
+        jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl dao =
+                new jp.aegif.nemaki.dao.impl.couch.ContentDaoServiceImpl();
+        dao.setConnectorPool(pool);
+        return dao;
+    }
+
+    /** A user the DAO will accept for an update: it needs a revision of its own. */
+    private UserItem savable() {
+        UserItem saving = user(1);
+        saving.setRevision("1-abc");
+        return saving;
     }
 }
