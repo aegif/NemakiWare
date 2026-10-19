@@ -481,7 +481,8 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /** What a plan document says about the newest run it records. */
-    private record GateReading(List<String> sections, String figure, int claimed, int read) { }
+    private record GateReading(List<String> sections, List<String> bodies, String figure,
+            int claimed, int read) { }
 
     /**
      * The newest round the plan records a unit run for, and how many gate paragraphs claim one.
@@ -518,6 +519,7 @@ class ReleaseReadinessIsMeasuredTest {
         int read = 0;
         int largest = -1;
         List<String> newestSections = new ArrayList<>();
+        List<String> newestBodies = new ArrayList<>();
         String newestFigure = null;
         Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
         while (rounds.find()) {
@@ -574,14 +576,57 @@ class ReleaseReadinessIsMeasuredTest {
                     largest = figure;
                     newestFigure = figures.get(0);
                     newestSections = new ArrayList<>(List.of(heading));
+                    newestBodies = new ArrayList<>(List.of(section));
                 } else if (figure == largest) {
                     // Several rounds can record the SAME run (確認 9・10・11 all state 8,182 —
                     // no lock was added), so the readiness document may name any of them.
                     newestSections.add(heading);
+                    newestBodies.add(section);
                 }
             }
         }
-        return new GateReading(List.copyOf(newestSections), newestFigure, claimed, read);
+        return new GateReading(List.copyOf(newestSections), List.copyOf(newestBodies),
+                newestFigure, claimed, read);
+    }
+
+    @Test
+    @DisplayName("the newest batch section's own control total is the runner's")
+    void theNewestBatchSectionsControlCountIsTheRunners() throws IOException {
+        // The canon's and the readiness document's copies of this figure are locked; the PLAN's
+        // per-batch copies were not, and this method's sibling says so in its own javadoc. Older
+        // sections state the count AS IT WAS — that is what 「この節の数はこのバッチ時点の記録」
+        // means — so only the NEWEST section, the one the gate figure identifies, can be compared
+        // (batch-27 review, Codex P3-2).
+        GateReading newest = readNewestGate(read(BATCH_PLAN));
+        if (newest.bodies().isEmpty()) {
+            throw new HarnessBroken("the batch plan records no section with a gate figure, so this "
+                    + "reader cannot tell which section states today's control count");
+        }
+        Pattern declares = Pattern.compile("control は \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*");
+        List<String> stated = new ArrayList<>();
+        for (String body : newest.bodies()) {
+            Matcher m = declares.matcher(body);
+            while (m.find()) {
+                stated.add(m.group(1));
+            }
+        }
+        if (stated.size() != 1) {
+            throw new HarnessBroken("the newest section(s) " + newest.sections() + " state "
+                    + stated.size() + " control totals " + stated + ", so this reader cannot tell "
+                    + "which one is today's. Say it once, in the section the gate figure names");
+        }
+        // THE SAME READER the sibling lock uses — both quote styles, because the runner is written
+        // with each and a single-quote grep has twice miscounted this very figure.
+        SortedSet<String> inTheRunner = new TreeSet<>();
+        Matcher ids = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(read(RUNNER));
+        while (ids.find()) {
+            inTheRunner.add(ids.group(1));
+        }
+        assertEquals(inTheRunner.size(),
+                Integer.parseInt(stated.get(0).replace(",", "")),
+                "the batch plan's newest section (" + newest.sections() + ") states "
+                        + stated.get(0) + " controls and the runner declares a different number. A "
+                        + "figure in a batch record that nobody checks is how 2,310 reads as 2,311");
     }
 
     /**

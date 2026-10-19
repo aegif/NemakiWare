@@ -473,8 +473,10 @@ public class OidcLoginEntryPointsTest {
         //
         // THE FIXTURE IS THE HARM. The STORE says this account is disabled; the instance the
         // creation answered with does not. That is the pair an authorisation decision must not get
-        // wrong, and it is reachable two ways: the disable lands between the two reads, or (in a
-        // multi-replica deployment) this JVM's cache was filled before it. The rule is asked of the
+        // wrong. It is reachable ONE way: the disable lands after the second read. 「this JVM's
+        // cache was filled before it」 stood here for a round and cannot happen — getUserItemById
+        // keeps no negative entry, so a filled cache would be hit by the FIRST read and the create
+        // path never runs (batch-27 review, subagent P3-4). The rule is asked of the
         // store's copy, so it refuses; asked of the other copy it allows, and the read-back below
         // compares only the binding — which both copies carry (batch-26 review: Codex P1,
         // subagent P2-4. One version of this code did exactly that for a batch).

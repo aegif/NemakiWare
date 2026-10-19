@@ -344,6 +344,14 @@ public class EverySsoRouteAsksTheSameRuleTest {
                     + "the store, so every check it makes is about an instance held in memory: "
                     + createPath);
             String fromStore = readsTheStore.group(1);
+            // ASSIGNED ONCE. 「the store read went into X」 says nothing if X is written again:
+            // adding the single line 「stored = created;」 left every assertion below green, in both
+            // doors (batch-27 review, subagent P3-3, measured by simulation).
+            assertEquals(1, Pattern.compile("(?<![\\w.])" + fromStore + "\\s*=(?!=)")
+                            .matcher(createPath).results().count(),
+                    where[0] + " assigns " + fromStore + " more than once in the create path, so what "
+                            + "the checks below read is not necessarily what the store answered: "
+                            + createPath);
             Matcher asksTheRule = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*refusal\\((\\w+)")
                     .matcher(createPath);
             assertTrue(asksTheRule.find(), where[0] + "'s create path does not ask the rule every other "
@@ -370,8 +378,10 @@ public class EverySsoRouteAsksTheSameRuleTest {
             int compare = createPath.indexOf("boundSubject");
             assertTrue(compare > 0, where[0] + " returns the account it just created without checking "
                     + "that it carries the binding this login gave it");
-            assertTrue(createPath.substring(compare).startsWith("boundSubject(" + fromStore)
-                            || createPath.substring(compare).contains(fromStore),
+            // The FIRST ARGUMENT, not 「the name appears somewhere after it」: the second alternative
+            // this line used to carry added nothing (the first holds in both files today) and was
+            // satisfiable by any unrelated mention of the variable (batch-27 review, subagent P3-3).
+            assertTrue(createPath.substring(compare).startsWith("boundSubject(" + fromStore),
                     where[0] + " compares the binding against something other than the store's copy "
                             + fromStore + ": " + createPath);
             int condition = createPath.lastIndexOf("if (", compare);
