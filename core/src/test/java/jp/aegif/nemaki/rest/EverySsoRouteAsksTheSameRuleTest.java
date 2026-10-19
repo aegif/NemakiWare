@@ -347,6 +347,14 @@ public class EverySsoRouteAsksTheSameRuleTest {
             // ASSIGNED ONCE. 「the store read went into X」 says nothing if X is written again:
             // adding the single line 「stored = created;」 left every assertion below green, in both
             // doors (batch-27 review, subagent P3-3, measured by simulation).
+            //
+            // TWO FORMS GET PAST THIS, both measured (batch-28 review, subagent P3-2): a unicode
+            // escape in the identifier (javac resolves 「st\u006fred」 to the same variable and this
+            // pattern does not match it), and mutating the object instead of the reference
+            // (「stored.setSubTypeProperties(created.getSubTypeProperties())」). Neither is an open
+            // hole: the DRIVEN lock — OidcLoginEntryPointsTest#anAccountThatAppearedDuringTheCreate
+            // IsJudgedByTheRule — fails on both, which is why they are recorded here rather than
+            // chased with more arms.
             assertEquals(1, Pattern.compile("(?<![\\w.])" + fromStore + "\\s*=(?!=)")
                             .matcher(createPath).results().count(),
                     where[0] + " assigns " + fromStore + " more than once in the create path, so what "

@@ -590,31 +590,75 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     @Test
-    @DisplayName("the newest batch section's own control total is the runner's")
-    void theNewestBatchSectionsControlCountIsTheRunners() throws IOException {
+    @DisplayName("the batch section the readiness document names states the runner's control total")
+    void theNamedBatchSectionsControlCountIsTheRunners() throws IOException {
         // The canon's and the readiness document's copies of this figure are locked; the PLAN's
-        // per-batch copies were not, and this method's sibling says so in its own javadoc. Older
-        // sections state the count AS IT WAS — that is what 「この節の数はこのバッチ時点の記録」
-        // means — so only the NEWEST section, the one the gate figure identifies, can be compared
-        // (batch-27 review, Codex P3-2).
-        GateReading newest = readNewestGate(read(BATCH_PLAN));
-        if (newest.bodies().isEmpty()) {
-            throw new HarnessBroken("the batch plan records no section with a gate figure, so this "
-                    + "reader cannot tell which section states today's control count");
+        // per-batch copies were not, and the sibling lock above says so in its own javadoc. Older
+        // sections state the count AS IT WAS — 「この節の数はこのバッチ時点の記録」 — so only one
+        // section can be compared (batch-27 review, Codex P3-2).
+        //
+        // THE SECTION THE READINESS DOCUMENT NAMES, not 「every section with the largest gate
+        // figure」. The first version of this lock took the latter and refused any document where
+        // two of them stated a total — and 20 of this plan's 47 sections share a gate figure with
+        // another, because a batch that adds no lock records the same unit total, and each states
+        // its own control count. A batch like that would have turned the WHOLE gate red on a
+        // correct document (batch-28 review, subagent P2-3, measured). The provenance label is
+        // unambiguous and theReadinessUnitTotalIsAtLeastTheSources already pins it to the newest
+        // gate figure.
+        String readiness = read(READINESS);
+        Matcher names = Pattern.compile(
+                "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
+                        + "[^（]*?\\*\\*([^*（）]+)\\*\\*").matcher(readiness);
+        if (!names.find()) {
+            throw new HarnessBroken("the readiness document's latest-measurement line no longer "
+                    + "names a section, so this reader cannot tell which batch record to compare");
         }
-        Pattern declares = Pattern.compile("control は \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*");
-        List<String> stated = new ArrayList<>();
-        for (String body : newest.bodies()) {
-            Matcher m = declares.matcher(body);
-            while (m.find()) {
-                stated.add(m.group(1));
+        String named = names.group(2);
+
+        String plan = asProse(read(BATCH_PLAN));
+        Matcher sections = Pattern.compile("(?ms)^### (.+?)$(.*?)(?=^#{1,3} |\\z)").matcher(plan);
+        String body = null;
+        while (sections.find()) {
+            if (labelOf(sections.group(1).trim()).equals(named)) {
+                if (body != null) {
+                    throw new HarnessBroken("the batch plan has two sections labelled 「" + named
+                            + "」, so this reader cannot tell which one records that batch");
+                }
+                body = sections.group(2);
             }
         }
-        if (stated.size() != 1) {
-            throw new HarnessBroken("the newest section(s) " + newest.sections() + " state "
-                    + stated.size() + " control totals " + stated + ", so this reader cannot tell "
-                    + "which one is today's. Say it once, in the section the gate figure names");
+        if (body == null) {
+            throw new HarnessBroken("the readiness document names 「" + named + "」 and the batch "
+                    + "plan has no section with that label");
         }
+
+        String gate = null;
+        for (String paragraph : body.split("\n[ \t]*\n")) {
+            if (paragraph.contains("**ゲートと実測**:")) {
+                gate = paragraph;
+            }
+        }
+        if (gate == null) {
+            throw new HarnessBroken("the section 「" + named + "」 records no 「ゲートと実測」 "
+                    + "paragraph, so there is no figure of its own to compare");
+        }
+
+        // LINE-START. 「掃き取り自身を名指す control は **37 本**」 is a DIFFERENT quantity in the
+        // same paragraph of nine sections, and a pattern that matched anywhere read it as a second
+        // total (batch-28 review, subagent P2-3).
+        Matcher stated = Pattern.compile("(?m)^control は \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*")
+                .matcher(gate);
+        if (!stated.find()) {
+            throw new HarnessBroken("the section 「" + named + "」 states no control total in its "
+                    + "gate paragraph. Every batch section has stated one; a batch that stops is "
+                    + "a deliberate change to what this records, not a silent one");
+        }
+        String total = stated.group(1);
+        if (stated.find()) {
+            throw new HarnessBroken("the section 「" + named + "」 states two control totals at the "
+                    + "start of a line, so this reader cannot tell which is today's");
+        }
+
         // THE SAME READER the sibling lock uses — both quote styles, because the runner is written
         // with each and a single-quote grep has twice miscounted this very figure.
         SortedSet<String> inTheRunner = new TreeSet<>();
@@ -622,11 +666,41 @@ class ReleaseReadinessIsMeasuredTest {
         while (ids.find()) {
             inTheRunner.add(ids.group(1));
         }
-        assertEquals(inTheRunner.size(),
-                Integer.parseInt(stated.get(0).replace(",", "")),
-                "the batch plan's newest section (" + newest.sections() + ") states "
-                        + stated.get(0) + " controls and the runner declares a different number. A "
-                        + "figure in a batch record that nobody checks is how 2,310 reads as 2,311");
+        assertEquals(inTheRunner.size(), Integer.parseInt(total.replace(",", "")),
+                "the batch plan's 「" + named + "」 section states " + total + " controls and the "
+                        + "runner declares a different number. A figure in a batch record that "
+                        + "nobody checks is how 2,310 reads as 2,311");
+
+        // AND the figure the next full sweep is scoped from, in the same paragraph. What this lock
+        // still does NOT read: 「欠番 N」 and 「open P1 N」 in that paragraph — the first needs the
+        // gap reader the canon's lock owns, and duplicating it is how two readers drift (recorded,
+        // R204's family; batch-28 review, Codex P3-3).
+        Matcher since = Pattern.compile("9 回目以後 \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*")
+                .matcher(gate);
+        if (since.find()) {
+            // The swept figure comes from the CANON, read the way the sibling lock reads it — a
+            // constant here would be a second source of truth for the same number.
+            int latestRound = 0;
+            int sweptThen = 0;
+            Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
+                    .matcher(read(CANON));
+            while (sweeps.find()) {
+                int round = Integer.parseInt(sweeps.group(1));
+                if (round >= latestRound) {
+                    latestRound = round;
+                    sweptThen = Integer.parseInt(sweeps.group(2));
+                }
+            }
+            if (latestRound == 0) {
+                throw new HarnessBroken("the canon records no completed sweep, so 「9 回目以後」 "
+                        + "cannot be derived");
+            }
+            assertEquals(inTheRunner.size() - sweptThen,
+                    Integer.parseInt(since.group(1).replace(",", "")),
+                    "the section 「" + named + "」 says " + since.group(1) + " controls were added "
+                            + "since the sweep, and the runner declares " + inTheRunner.size()
+                            + " of which " + sweptThen + " were swept");
+        }
     }
 
     /**
