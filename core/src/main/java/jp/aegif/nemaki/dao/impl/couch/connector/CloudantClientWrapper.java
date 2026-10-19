@@ -1273,10 +1273,18 @@ public class CloudantClientWrapper {
 	/**
 	 * Does this document exist? <b>Throws rather than guessing.</b>
 	 *
-	 * <p>{@link #exists(String)} and {@link #get(Class, String)} both answer "no" for a document
-	 * that could not be read — they catch everything and return false/null. That is fine for
-	 * callers who only want a best effort, and wrong for anyone about to DELETE something on the
-	 * strength of the answer: during a CouchDB outage every object looks absent.
+	 * <p>{@link #exists(String)} answers "no" for a document that could not be read — it catches
+	 * everything and returns false. That is fine for callers who only want a best effort, and wrong
+	 * for anyone about to DELETE something on the strength of the answer: during a CouchDB outage
+	 * every object looks absent.
+	 *
+	 * <p>{@link #get(Class, String)} used to do the same and no longer does — it throws for a read
+	 * it could not make. One window remains: {@link #get(String)}, which it delegates to, returns
+	 * {@code null} for ANY failure while {@code isStartupPhase()} holds, because provisioning runs
+	 * against a database that may not exist yet. So a {@code null} from {@code get} is "not there,
+	 * or the startup window", and a caller who must not guess asks here as well (this javadoc said
+	 * {@code get} was fail-open after it had been fixed, and three places copied the claim:
+	 * batch-22..24 review, subagent P2-3).
 	 *
 	 * <p>Only a genuine 404 means absent here. Anything else propagates, so the caller can refuse
 	 * to act rather than act on a guess.

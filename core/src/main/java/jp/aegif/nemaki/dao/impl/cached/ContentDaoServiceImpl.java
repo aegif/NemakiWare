@@ -844,7 +844,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					"nonCachedContentDaoService is not wired; getUserItemByIdFromStore cannot answer");
 		}
 		try {
-			return nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+			// The SAME method on the non-cached layer, like the sibling's own 「call Fresh, not the
+			// regular method」 — the two are synonyms down there today, and calling getUserItemById
+			// here means the day the store read stops being the plain read, this door silently does
+			// not get it (batch-22..24 review, subagent P3-5).
+			return nonCachedContentDaoService.getUserItemByIdFromStore(repositoryId, userId);
 		} catch (Exception e) {
 			log.error("Error in getUserItemByIdFromStore", e);
 			throw new IllegalStateException("user '" + userId

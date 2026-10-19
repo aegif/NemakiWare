@@ -1086,14 +1086,31 @@ public class AuthTokenResource extends ResourceBase{
 				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return null;
 			}
+			// THE SAME RULE, asked of the account as the STORE has it. Two things arrive here that
+			// are not 「the account we just made」: getOrCreateUser answers with an account it FOUND
+			// when one appeared between this method's read and its own (another request, or a cache
+			// that filled), and the store may not carry the creation at all. Without this ask, an
+			// account someone else made was entered with no rule applied and 「unset ⇒ allowed」
+			// decided alone (batch-25, subagent P3-3). Refusing a null account is the fail-closed
+			// direction: the rule reads a missing account as 「not linked, and does not allow SSO」.
+			UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);
+			String refusedNew = SsoLogin.refusal(stored, route, binding);
+			if (refusedNew != null) {
+				logger.info("{} login refused for the account the creation answered with: {}",
+						SsoLogin.label(route), refusedNew);
+				addErrMsg(errMsg, route, refusedNew);
+				return null;
+			}
 			// The created account has to CARRY the binding this login gave it. The creator's answer
 			// comes back through the store's own conversion, so a conversion that drops the field is
-			// caught here — and an account created without its binding is adoptable by the next
-			// token of the same name, which is the hole this batch closes (batch-22 review, Codex
-			// P1-2: the first version checked only the update path).
+			// caught here (batch-22 review, Codex P1-2: the first version checked only the update
+			// path). What this does NOT do is remove the account: it stays, unbound, and a later
+			// login of THIS route may adopt it. That is the mark's own meaning — the cloud directory
+			// sync creates exactly that shape on purpose — and an adopting login has to store a
+			// binding and read it back before it proceeds, which is the same protection as creating
+			// the account fresh. A login carrying no subject at all is residual R208.
 			if (binding != null && !binding.isBlank()
-					&& !binding.equals(SsoLogin.boundSubject(
-							contentService.getUserItemByIdFromStore(repositoryId, userName), route))) {
+					&& !binding.equals(SsoLogin.boundSubject(stored, route))) {
 				logger.warn("{} login refused: the account created for {} does not carry the binding",
 						SsoLogin.label(route), userName);
 				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");

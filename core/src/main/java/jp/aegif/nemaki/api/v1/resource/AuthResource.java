@@ -473,19 +473,35 @@ public class AuthResource {
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
                 user = getOrCreateUser(repositoryId, username, binding);
-                // The created account has to CARRY the binding, read FROM THE STORE — the same check
-                // the REST twin makes. Without it, a conversion that drops the subject leaves an
-                // account with 「cloud」 and the 「oidc」 mark and no binding, which this very rule then
-                // reads as adoptable: the next token the IdP lets choose that name takes it
-                // (batch-22..24 review: both reviewers, P1).
-                if (user != null && binding != null && !binding.isBlank()
-                        && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(
-                                contentService.getUserItemByIdFromStore(repositoryId, username),
-                                jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
-                    logger.warning("API v1: OIDC login refused — the account created for " + username
-                            + " does not carry the binding");
-                    throw ApiException.permissionDenied(
-                            "The account's link to this identity could not be stored");
+                // THE SAME RULE, asked of the account as the STORE has it — the same shape the REST
+                // twin uses. getOrCreateUser answers with an account it FOUND when one appeared
+                // between this method's read and its own, and the store may not carry the creation at
+                // all; without this ask such an account was entered with no rule applied and
+                // 「unset ⇒ allowed」 decided alone (batch-25, subagent P3-3). A null account is
+                // refused by the rule itself, which is the fail-closed direction.
+                if (user != null) {
+                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
+                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(stored,
+                            jp.aegif.nemaki.rest.SsoLogin.OIDC, binding);
+                    if (refusedNew != null) {
+                        logger.info("API v1: OIDC login refused for the account the creation answered"
+                                + " with: " + refusedNew);
+                        throw ApiException.permissionDenied(refusedNew);
+                    }
+                    // And it has to CARRY the binding, read FROM THE STORE — the same check the REST
+                    // twin makes. Without it, a conversion that drops the subject leaves an account
+                    // with 「cloud」 and the 「oidc」 mark and no binding (batch-22..24 review: both
+                    // reviewers, P1). The account that is left behind stays adoptable by a later OIDC
+                    // login, which is the mark's own meaning, and that login must store a binding and
+                    // read it back before it proceeds.
+                    if (binding != null && !binding.isBlank()
+                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
+                                    jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
+                        logger.warning("API v1: OIDC login refused — the account created for "
+                                + username + " does not carry the binding");
+                        throw ApiException.permissionDenied(
+                                "The account's link to this identity could not be stored");
+                    }
                 }
             } else {
                 String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);

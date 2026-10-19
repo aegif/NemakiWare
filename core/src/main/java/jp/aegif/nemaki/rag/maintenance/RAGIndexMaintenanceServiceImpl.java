@@ -372,16 +372,22 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
      * redacted version's blocks stops, and the pre-redaction text stays in the index with no
      * obligation recorded (batch-22..24 review: both reviewers, P1).
      *
-     * <p>So the answer 「not indexable」 is an ALLOW-LIST — the three types that are a statement about
-     * this version's text — and everything else is a failure that may succeed later.
+     * <p>So the answer 「not indexable」 is an ALLOW-LIST — the types that are a statement about this
+     * version's text — and everything else is a failure that may succeed later.
+     *
+     * <p>The list is the types the product ACTUALLY throws. {@code TEXT_EXTRACTION_FAILED} was on it
+     * for one round, with the reasoning that the extractor had the bytes and could not get text out
+     * of them; nothing in the product throws it (the factory {@code textExtractionFailed} is called
+     * from its own unit test and nowhere else — measured, {@code core/src/main}), and a real
+     * extraction failure goes through {@code notIndexable} to {@code NO_CONTENT}, which is on the
+     * list and carries that meaning already. Pre-authorising a classification for an input nobody
+     * produces decides, with no design round, what happens the day someone does throw it
+     * (batch-22..24 review: subagent P2-2).
      */
     private DocumentReindex answerFor(RAGIndexingException refused) {
         switch (refused.getErrorType()) {
             case UNSUPPORTED_MIME_TYPE:
             case NO_CONTENT:
-            // The extractor HAD the bytes and could not get text out of them: deterministic for
-            // these bytes, so retrying changes nothing.
-            case TEXT_EXTRACTION_FAILED:
                 return DocumentReindex.NOT_INDEXABLE;
             case SERVICE_DISABLED:
                 return DocumentReindex.DISABLED;

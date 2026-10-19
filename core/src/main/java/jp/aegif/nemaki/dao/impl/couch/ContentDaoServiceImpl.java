@@ -2574,10 +2574,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 					+ " the credential generation it would replace", couldNotRead);
 		}
 		if (stored == null) {
-			// get(Class, String) answers null for a document it COULD NOT READ as well as for one
-			// that is not there — its own javadoc says so: "during a CouchDB outage every object
-			// looks absent". So the absence has to be confirmed by the strict ask, which answers
-			// false only for a genuine 404 and throws for anything else.
+			// Null is NOT only "there is nothing stored". get(Class, String) throws for a read it
+			// could not make — but it delegates to get(String), which returns null for ANY failure
+			// while isStartupPhase() holds (provisioning runs against a database that may not exist
+			// yet), and also for a _deleted tombstone. So the absence is confirmed by the strict
+			// ask, which answers false only for a genuine 404 and throws for anything else.
+			// (The first version of this comment said get() was fail-open for every outage, copying
+			// a javadoc that was already stale: batch-22..24 review, subagent P2-3.)
 			if (connectorPool.getClient(repositoryId).existsStrict(userItem.getId())) {
 				throw new IllegalStateException("Refusing to save user " + userItem.getId()
 						+ ": the stored document is there and could not be read, so this save cannot"

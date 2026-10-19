@@ -1583,7 +1583,17 @@ public class SearchEngineResource {
     @ApiResponses(value = {
             @ApiResponse(
                     responseCode = "200",
-                    description = "Document RAG reindexed successfully"
+                    description = "The document was indexed, or it is not something this index holds"
+                            + " (no document with that object id, or no indexable text in this"
+                            + " version). `success` says which, and neither is worth retrying"
+            ),
+            @ApiResponse(
+                    responseCode = "503",
+                    description = "The attempt may succeed later: RAG is disabled, or the content or"
+                            + " its metadata could not be read. Automated callers retry this"
+                            + " (RELEASE_NOTES 3.4.1) — the machine-readable contract declared only"
+                            + " 200 for a round after the answer did: batch-22..24 review,"
+                            + " subagent P2-6"
             )
     })
     public Response reindexDocumentRAG(
