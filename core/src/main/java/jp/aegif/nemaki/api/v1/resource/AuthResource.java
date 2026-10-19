@@ -505,7 +505,9 @@ public class AuthResource {
                     // 3.4.1, with cloud and no mark, adoptable from all four routes (batch-25 review,
                     // subagent P2-4). What bounds the damage is the rule asked of the STORE'S copy
                     // above, not the shape. It is NOT 「an adopting login must store a binding and read
-                    // it back」: this path does not WRITE one either, so R210 applies to BOTH doors,
+                    // it back」: this path does not write one onto an account it only FOUND
+                    // either — when the creation HAPPENED the creator writes it — so R210 applies
+                    // to BOTH doors,
                     // and that sentence was stronger than the code. It had been withdrawn in the REST
                     // twin only (batch-27 review, subagent P2-3). A login carrying NO subject is
                     // residual R208.

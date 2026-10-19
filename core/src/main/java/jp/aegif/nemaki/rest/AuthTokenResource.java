@@ -1128,8 +1128,11 @@ public class AuthTokenResource extends ResourceBase{
 			// what a deployment has: the inventory query in RELEASE_NOTES 3.4.1 for cloud accounts
 			// with no nemaki:authRoute. What bounds the damage is not the shape but the rule asked
 			// of the STORE'S copy above. It is NOT 「an adopting login carrying a subject must store
-			// a binding and read it back」 — this path does not WRITE one; only the existing-account
-			// arm below does. So a race that finds an unbound 「cloud」 account refuses a login the
+			// a binding and read it back」 — this path does not write one onto an account it only
+			// FOUND; only the existing-account arm below does. The qualifier matters: when the
+			// creation actually HAPPENED the creator writes the binding, and a version of this
+			// sentence without 「it only found」 was false the other way (batch-28 review, subagent
+			// P2-1). So a race that finds an unbound 「cloud」 account refuses a login the
 			// rule allows (residual R210), and that sentence, which stood here for a round, was
 			// stronger than the code (batch-27 review: both reviewers). A login carrying NO subject
 			// is residual R208.
