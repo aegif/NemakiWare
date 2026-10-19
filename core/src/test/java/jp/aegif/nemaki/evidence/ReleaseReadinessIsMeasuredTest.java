@@ -601,7 +601,9 @@ class ReleaseReadinessIsMeasuredTest {
     //   3. 「the line-start phrasing」 — measured at ed56b8484: of the 31 sections with a gate
     //      paragraph, 19 write the total at the start of a line, 10 write it mid-line (batch 24 and
     //      batch 27 among them) and 2 split it across lines. So the form the lock required covered
-    //      19 of 31, and the 12 it refused include the batch written immediately before it.
+    //      19 of 31, and the 12 it refused include batch 27. (NOT 「the batch immediately
+    //      before」 — that was one batch off: the line-start requirement arrived in batch 29,
+    //      and batch 28 is line-start. Batch-31 review, subagent P3-1.)
     //      (This line first said 「17 … and 2 state no total at all」. That was the 5f42623bd
     //      distribution with the denominator updated to 31 and the difference parked in a category
     //      that does not exist: NO gate paragraph lacks a total, in any revision. My own reader had
@@ -643,8 +645,11 @@ class ReleaseReadinessIsMeasuredTest {
         // literal, so a file-wide contains() was satisfied by the check itself and the control
         // measured nothing (NH5, DID NOT FIRE — the second self-reference in this method).
         String note = slice(own, marker, "\n\n    @Test", "the withdrawal note");
+        // The DATED MEASUREMENTS too: putting them there was this batch's declared purpose, and
+        // nothing held them (batch-31 review, subagent P3-2 — the note reduced to a stub that kept
+        // only the three names and R212 stayed green).
         for (String trap : new String[] { "largest gate figure", "the readiness document names",
-                "line-start phrasing" }) {
+                "line-start phrasing", "ed56b8484", "19 write the total", "22 of this" }) {
             assertTrue(note.contains(trap), "the withdrawal note no longer names the trap 「" + trap
                     + "」, so the next version of this lock will rediscover it with the whole gate "
                     + "behind it: " + note);
@@ -657,9 +662,22 @@ class ReleaseReadinessIsMeasuredTest {
         // method resurrected after the note, at the end of the class, or above it all passed
         // (batch-30 review: Codex P2-1, subagent P2-1). The literals are SPLIT so this check is not
         // satisfied by itself, which is the other half of the same trap.
-        String forbidden = "void the" + "NamedBatchSectionsControlCountIsTheRunners";
-        String forbiddenToo = "void the" + "NewestBatchSectionsControlCountIsTheRunners";
-        assertFalse(own.contains(forbidden) || own.contains(forbiddenToo),
+        // A DECLARATION, read the way the runner's own reader reads one: 「void」 then whitespace
+        // then the name. An exact-string match let a line-broken signature past and tripped on a
+        // bare comment mention (batch-31 review: Codex P2, subagent P3-3 — the two readers of 「is
+        // this method declared」 disagreed). Comments out, so prose about the method is not a
+        // declaration.
+        //
+        // KNOWN LIMIT, measured and not closed: this forbids the two names the lock had, not every
+        // possible one. Resurrecting it as a THIRD name is green (batch-31 review, subagent P2-3 —
+        // the record said that escape was handled and it was not). An unbounded name cannot be
+        // forbidden by enumeration; what the require half still catches is the note being changed
+        // to say the lock is back.
+        String code = jp.aegif.nemaki.util.test.JavaSource.withoutComments(own);
+        String name = "the" + "NamedBatchSectionsControlCountIsTheRunners";
+        String nameToo = "the" + "NewestBatchSectionsControlCountIsTheRunners";
+        assertFalse(Pattern.compile("void\\s+(?:" + name + "|" + nameToo + ")\\s*\\(")
+                        .matcher(code).find(),
                 "a lock over the batch plan's control total is back while the withdrawal note is "
                         + "still here. One of the two is wrong — decide, do not keep both");
 
@@ -669,6 +687,13 @@ class ReleaseReadinessIsMeasuredTest {
         assertTrue(row > 0, "R212 is not in the canon, so the withdrawal has no residual behind it");
         String text = canon.substring(row, canon.indexOf("\n", row));
         assertTrue(text.contains("取り下げ"), "the R212 row does not say the lock was withdrawn: " + text);
+        // AND NOT THE OPPOSITE. 「the word appears」 was satisfied by a row saying 「取り下げていない」
+        // and by a row saying 「錠を戻した」 (batch-31 review, subagent P2-1, measured four ways).
+        for (String negation : new String[] { "取り下げていない", "錠を戻した", "取り下げない" }) {
+            assertFalse(text.contains(negation), "the R212 row says 「" + negation + "」 while this "
+                    + "lock asserts the withdrawal stands. The canon is the record — if the lock is "
+                    + "back, delete the withdrawal note and this method: " + text);
+        }
     }
 
     /**
