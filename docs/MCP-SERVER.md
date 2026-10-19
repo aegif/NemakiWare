@@ -28,6 +28,12 @@ curl -X POST http://localhost:8080/core/mcp/message \
 3. API Key 認証: `nemakiware_apikey_login` ツール
 4. Cloud (OIDC) 認証: `nemakiware_cloud_login` ツール
 
+> **3.4.1 に上げるとき**: **3.4.1 より前に発行した API キーは使えなくなります**（401）。
+> 資格情報をアカウントの文書に結び直したため、結びを持たない古いキーは拒否されます。
+> **上げる前に、このツールを使っている自動処理を棚卸し**し、上げた後に画面から再発行して
+> 差し替えてください。セッショントークン（`nemakiware_login`）は作り直す必要はありません。
+> 詳細は [`RELEASE_NOTES.md`](../RELEASE_NOTES.md) の「【重要・上げると止まるもの】」。
+
 ## 利用可能なツール
 
 ### 認証系（認証不要）
