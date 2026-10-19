@@ -148,6 +148,44 @@ class RagReindexRefusesAWipeTest {
     }
 
     @Test
+    @DisplayName("a single-document reindex keeps WHY it did not index, and both doors report it (R206)")
+    void aSingleDocumentReindexKeepsWhy() throws Exception {
+        // 「could not read」 must not be reported with the same value as 「this version has no
+        // indexable text」. The published way to clear a redacted version's RAG blocks is this
+        // endpoint, so an operator who reads 「may be a folder or unsupported type」 for a CouchDB
+        // outage stops — and the text the redaction was meant to remove stays searchable.
+        String impl = JavaSource.withoutLiteralText(JavaSource.read(SOURCE));
+        String outcome = JavaSource.methodBody(impl, "public DocumentReindex reindexDocumentOutcome");
+        assertTrue(outcome.contains("isRetryable()"),
+                "the single-document reindex throws the product's own classification away, so a "
+                        + "retryable failure and an unindexable version are one answer: " + outcome);
+        assertTrue(outcome.contains("DocumentReindex.FAILED") && outcome.contains("DocumentReindex.NOT_INDEXABLE"),
+                "the two answers are not both reachable from this method: " + outcome);
+        int read = outcome.indexOf("getContent(");
+        int notADocument = outcome.indexOf("NOT_A_DOCUMENT");
+        assertTrue(read > 0 && notADocument > read,
+                "the object is called 「not a document」 before it has been read, so a read that "
+                        + "could not be made is reported as a folder: " + outcome);
+
+        // BOTH DOORS read the outcome, not the boolean: the collapse was in the service, and the
+        // message that misled the operator was in the resources.
+        for (String door : new String[] {
+                "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java",
+                "src/main/java/jp/aegif/nemaki/rest/SolrResource.java" }) {
+            String body = JavaSource.withoutLiteralText(JavaSource.read(door));
+            assertTrue(body.contains("reindexDocumentOutcome("), door + " still asks the boolean, so "
+                    + "whatever the service distinguishes is thrown away at the door");
+        }
+        // And the sentence that told the operator to stop is gone from the api/v1 ANSWER. Comments
+        // out, literals KEPT: the message is a string literal, and this file's own note about the
+        // history mentions the sentence (measured — it failed on that comment first).
+        assertFalse(JavaSource.withoutComments(JavaSource.read(
+                        "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java"))
+                        .contains("may be a folder or unsupported type"),
+                "the door still answers 「may be a folder or unsupported type」 for every failure");
+    }
+
+    @Test
     @DisplayName("the status object really carries the count the checks read — the control")
     void theStatusCarriesTheCount() {
         // Without this, the assertions above could pin a field that does not exist or is never

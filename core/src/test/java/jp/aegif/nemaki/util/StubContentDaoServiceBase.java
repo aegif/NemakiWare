@@ -70,6 +70,7 @@ public class StubContentDaoServiceBase implements ContentDaoService {
     @Override public Item getItem(String r, String id) { return null; }
     @Override public UserItem getUserItem(String r, String userId) { return null; }
     @Override public UserItem getUserItemById(String r, String id) { return null; }
+    @Override public UserItem getUserItemByIdFromStore(String r, String id) { return getUserItemById(r, id); }
     @Override public List<UserItem> getUserItems(String r) { return Collections.emptyList(); }
     @Override public List<UserItem> getUserItems(String r, int skip, int limit) { return Collections.emptyList(); }
     @Override public int getUserItemCount(String r) { return 0; }

@@ -111,6 +111,9 @@ public class OidcLoginEntryPointsTest {
         // alice: an account SSO is allowed for (as SSO creates them), not linked to an OIDC subject yet.
         alice = account("alice", "cloud", null);
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(alice);
+        // The read-back reads the STORE, not the cache (R207), so the fixture has to say what the
+        // store holds: the same instance the write produced, for a write that landed.
+        when(contentService.getUserItemByIdFromStore("bedroom", "alice")).thenReturn(alice);
         tokenService = mock(TokenService.class);
         when(tokenService.setToken(anyString(), eq("bedroom"), anyString()))
                 .thenAnswer(set -> new Token(set.getArgument(2), "t-" + set.getArgument(2), System.currentTimeMillis() + 60_000));
@@ -348,6 +351,7 @@ public class OidcLoginEntryPointsTest {
     void anAccountLinkedToAnotherSubjectIsNotLoggedInto() throws Exception {
         UserItem bob = account("bob", "cloud", issuer + " sub-bob");
         when(contentService.getUserItemById("bedroom", "bob")).thenReturn(bob);
+        when(contentService.getUserItemByIdFromStore("bedroom", "bob")).thenReturn(bob);
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("bob", "sub-mallory") + "\"}");
         String apiV1 = apiV1(Map.of("id_token", idTokenFor("bob", "sub-mallory")));
         assertEquals("failure", rest.get("status"), rest.toJSONString());
@@ -387,7 +391,10 @@ public class OidcLoginEntryPointsTest {
         // link was never stored.
         UserItem carol = account("carol", "cloud", null);
         UserItem stillUnlinked = account("carol", "cloud", null);
-        when(contentService.getUserItemById("bedroom", "carol")).thenReturn(carol, stillUnlinked);
+        when(contentService.getUserItemById("bedroom", "carol")).thenReturn(carol);
+        // THE STORE still has it unlinked: the write returned and did not land. Since R207 the
+        // read-back asks the store, so this is the fixture that says so.
+        when(contentService.getUserItemByIdFromStore("bedroom", "carol")).thenReturn(stillUnlinked);
 
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("carol", "sub-carol") + "\"}");
 
@@ -399,7 +406,8 @@ public class OidcLoginEntryPointsTest {
         // subagent P3-11). Its own account, because the stubbing above is consumed by the REST call.
         UserItem erin = account("erin", "cloud", null);
         UserItem erinStillUnlinked = account("erin", "cloud", null);
-        when(contentService.getUserItemById("bedroom", "erin")).thenReturn(erin, erinStillUnlinked);
+        when(contentService.getUserItemById("bedroom", "erin")).thenReturn(erin);
+        when(contentService.getUserItemByIdFromStore("bedroom", "erin")).thenReturn(erinStillUnlinked);
 
         String apiV1 = apiV1(Map.of("id_token", idTokenFor("erin", "sub-erin")));
 
@@ -425,6 +433,7 @@ public class OidcLoginEntryPointsTest {
         UserItem dave = account("dave", "disabled", issuer + " sub-dave");
         when(contentService.getUserItemById("bedroom", "carol")).thenReturn(carol);
         when(contentService.getUserItemById("bedroom", "dave")).thenReturn(dave);
+        when(contentService.getUserItemByIdFromStore("bedroom", "dave")).thenReturn(dave);
         assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("carol", "sub-carol") + "\"}").get("status"));
         assertEquals("failure", rest("{\"id_token\":\"" + idTokenFor("dave", "sub-dave") + "\"}").get("status"));
         assertTrue(apiV1(Map.of("id_token", idTokenFor("carol", "sub-carol"))).startsWith("refused: "));

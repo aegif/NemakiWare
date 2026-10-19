@@ -303,6 +303,11 @@ public class EverySsoRouteAsksTheSameRuleTest {
                             + "login carries");
             assertTrue(afterRead.contains("return null") || afterRead.contains("throw "),
                     source + " compares the stored binding and does not refuse the login when it differs");
+            // FROM THE STORE: a read through the user cache is handed the instance the write just
+            // produced, so it compares that instance with itself and proves nothing (R207).
+            assertTrue(after.contains("getUserItemByIdFromStore("),
+                    source + " reads the binding back through the cache, which holds what the write "
+                            + "produced — the comparison is then the written value against itself");
         }
 
         // THE CREATE PATH as well: an account created without the binding this login gave it is
