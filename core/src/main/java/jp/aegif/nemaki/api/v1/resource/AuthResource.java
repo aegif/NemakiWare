@@ -478,10 +478,13 @@ public class AuthResource {
                 // and that is an EXISTING account — without this ask it was entered with no rule
                 // applied and 「unset ⇒ allowed」 decided alone (R209).
                 //
-                // The STORE'S copy, not the instance the creation handed back: that instance always
-                // carries 「cloud」 and the 「oidc」 mark, so the rule is vacuous for it, and an
-                // authorisation decision read from a copy that is not the store's lets in an account
-                // the store has disabled. It was asked of `user` for one batch (batch-26 review:
+                // The STORE'S copy, not the instance the creation handed back: an authorisation
+                // decision read from a copy that is not the store's lets in an account the store has
+                // disabled. NOT because the rule would be vacuous for that instance — the first
+                // version of this comment said it always carries 「cloud」 and the 「oidc」 mark, which
+                // holds only when the creation actually happened; in the race getOrCreateUser returns
+                // what it FOUND, unmodified (batch-27 review: both reviewers). It was asked of
+                // `user` for one batch (batch-26 review:
                 // Codex P1, subagent P2-4). Refusing a null answer is fail-closed, and it is the only
                 // check that covers a login carrying no subject — the read-back is guarded on the
                 // binding being present. The provisioning window is residual R211 and is not caused
@@ -500,9 +503,12 @@ public class AuthResource {
                     // and no binding (batch-22..24 review: both reviewers, P1). The leftover is NOT
                     // always this route's own shape: in the race it can be an account made before
                     // 3.4.1, with cloud and no mark, adoptable from all four routes (batch-25 review,
-                    // subagent P2-4). What bounds the damage is the rule, not the shape — an adopting
-                    // login carrying a subject must store a binding and read it back. A login carrying
-                    // NO subject is residual R208.
+                    // subagent P2-4). What bounds the damage is the rule asked of the STORE'S copy
+                    // above, not the shape. It is NOT 「an adopting login must store a binding and read
+                    // it back」: this path does not WRITE one either, so R210 applies to BOTH doors,
+                    // and that sentence was stronger than the code. It had been withdrawn in the REST
+                    // twin only (batch-27 review, subagent P2-3). A login carrying NO subject is
+                    // residual R208.
                     if (binding != null && !binding.isBlank()
                             && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
                                     jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
