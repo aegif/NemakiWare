@@ -212,7 +212,16 @@ class RagReindexRefusesAWipeTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(RAGIndexingException.ErrorType.class)
     @DisplayName("every error type gets its own answer — RUN, not read (R206)")
-    void everyErrorTypeGetsItsOwnAnswer(RAGIndexingException.ErrorType refused) throws Exception {
+    void everyErrorTypeGetsItsOwnAnswer(RAGIndexingException.ErrorType type) throws Exception {
+        // THROUGH THE PRODUCT'S OWN FACTORY, so the (type, retryable) pair is one production can
+        // produce. The first version built `new RAGIndexingException(msg, type, type != UNKNOWN)`,
+        // which is the OPPOSITE of the factory for five of the nine types — and under that fixture
+        // 「case SERVICE_DISABLED: return refused.isRetryable() ? DISABLED : NOT_INDEXABLE;」 passed
+        // every parameter while production answered 「this version has no indexable text」 for a
+        // repository with RAG switched off (batch-26 review, subagent P2-2, measured).
+        RAGIndexingException refused = asProductionThrowsIt(type);
+        assertEquals(type, refused.getErrorType(),
+                "the factory for " + type + " does not carry that type, so this case measures another");
         // RUN the classification. Every source-level form of this check was bypassable, and the two
         // reviewers found a different bypass each: a branch BEFORE the switch, and one arm with TWO
         // answers — 「default: return refused.isRetryable() ? FAILED : NOT_INDEXABLE;」 — which
@@ -225,8 +234,7 @@ class RagReindexRefusesAWipeTest {
         when(config.isEnabled()).thenReturn(true);
         when(indexing.isEnabled()).thenReturn(true);
         when(contentService.getContent("bedroom", "doc-1")).thenReturn(new Document());
-        doThrow(new RAGIndexingException("refused", refused, refused != ErrorType.UNKNOWN))
-                .when(indexing).indexDocument(eq("bedroom"), any(Document.class));
+        doThrow(refused).when(indexing).indexDocument(eq("bedroom"), any(Document.class));
 
         RAGIndexMaintenanceServiceImpl service = new RAGIndexMaintenanceServiceImpl(
                 contentService, indexing, config, mock(RepositoryInfoMap.class),
@@ -240,7 +248,7 @@ class RagReindexRefusesAWipeTest {
         // either tells the operator clearing a redacted version's blocks to stop, and the
         // pre-redaction text stays searchable with no obligation recorded.
         DocumentReindex expected;
-        switch (refused) {
+        switch (type) {
             case UNSUPPORTED_MIME_TYPE:
             case NO_CONTENT:
                 expected = DocumentReindex.NOT_INDEXABLE;
@@ -252,8 +260,80 @@ class RagReindexRefusesAWipeTest {
                 expected = DocumentReindex.FAILED;
                 break;
         }
-        assertEquals(expected, answer, "a refusal carrying " + refused + " is answered with "
+        assertEquals(expected, answer, "a refusal carrying " + type + " is answered with "
                 + answer + ", not " + expected);
+    }
+
+    /**
+     * The exception production throws for this type, built by the product's own factory.
+     *
+     * <p>{@code UNKNOWN} has no factory: it is what the one- and two-argument constructors set, and
+     * the purge paths use those. Every other type is reached through the factory so its
+     * {@code retryable} flag is the product's, not the test's.
+     */
+    private static RAGIndexingException asProductionThrowsIt(RAGIndexingException.ErrorType type) {
+        Throwable cause = new java.io.IOException("the store did not answer");
+        switch (type) {
+            case SERVICE_DISABLED:
+                return RAGIndexingException.serviceDisabled("RAG is off for this repository");
+            case UNSUPPORTED_MIME_TYPE:
+                return RAGIndexingException.unsupportedMimeType("application/octet-stream");
+            case TEXT_EXTRACTION_FAILED:
+                return RAGIndexingException.textExtractionFailed("doc-1", cause);
+            case NO_CONTENT:
+                return RAGIndexingException.noContent("no text could be extracted");
+            case CONTENT_UNREADABLE:
+                return RAGIndexingException.contentUnreadable("doc-1", cause);
+            case EMBEDDING_FAILED:
+                return RAGIndexingException.embeddingFailed("doc-1", cause);
+            case SOLR_ERROR:
+                return RAGIndexingException.solrError("doc-1", cause);
+            case ACL_ERROR:
+                return RAGIndexingException.aclError("doc-1", cause);
+            case UNKNOWN:
+                return new RAGIndexingException("the RAG block could not be purged");
+            default:
+                // Not an assertion: a type with no case here means this sweep is not measuring it.
+                throw new jp.aegif.nemaki.util.test.HarnessBroken("no production shape for " + type
+                        + ", so the sweep over ErrorType is not covering every value");
+        }
+    }
+
+    @Test
+    @DisplayName("a read that could not be made is FAILED, not 「not indexable」 — the other two producers (R206)")
+    void theOtherProducersOfFailedAreAlsoDriven() throws Exception {
+        // reindexDocumentOutcome answers FAILED in three places: the getContent catch, answerFor, and
+        // the generic catch around indexDocument. The sweep above drives only answerFor, so changing
+        // EITHER catch to NOT_INDEXABLE left all nine parameters green — and the operator clearing a
+        // redacted version's blocks is told 「retrying will not change that」 when CouchDB is simply
+        // unreachable (batch-26 review, subagent P2-3, measured).
+        ContentService couldNotRead = mock(ContentService.class);
+        when(couldNotRead.getContent("bedroom", "doc-1"))
+                .thenThrow(new IllegalStateException("CouchDB did not answer"));
+        assertEquals(DocumentReindex.FAILED, enabledServiceWith(couldNotRead, mock(RAGIndexingService.class))
+                        .reindexDocumentOutcome("bedroom", "doc-1"),
+                "the object could not be READ and the answer says something about its content");
+
+        ContentService readable = mock(ContentService.class);
+        when(readable.getContent("bedroom", "doc-1")).thenReturn(new Document());
+        RAGIndexingService threwSomethingElse = mock(RAGIndexingService.class);
+        when(threwSomethingElse.isEnabled()).thenReturn(true);
+        doThrow(new RuntimeException("the embedding service closed the connection"))
+                .when(threwSomethingElse).indexDocument(eq("bedroom"), any(Document.class));
+        assertEquals(DocumentReindex.FAILED, enabledServiceWith(readable, threwSomethingElse)
+                        .reindexDocumentOutcome("bedroom", "doc-1"),
+                "an exception that is not a RAGIndexingException is answered as a statement about "
+                        + "this version's text");
+    }
+
+    /** The maintenance service with RAG switched on and these two collaborators. */
+    private static RAGIndexMaintenanceServiceImpl enabledServiceWith(
+            ContentService contentService, RAGIndexingService indexing) {
+        RAGConfig config = mock(RAGConfig.class);
+        when(config.isEnabled()).thenReturn(true);
+        when(indexing.isEnabled()).thenReturn(true);
+        return new RAGIndexMaintenanceServiceImpl(contentService, indexing, config,
+                mock(RepositoryInfoMap.class), mock(jp.aegif.nemaki.rag.config.SolrClientProvider.class));
     }
 
     @org.junit.jupiter.params.ParameterizedTest

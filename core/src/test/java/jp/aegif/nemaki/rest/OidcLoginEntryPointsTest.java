@@ -471,49 +471,44 @@ public class OidcLoginEntryPointsTest {
         // comparison contains a refusal」 (a contradictory condition inside it: batch-25 review,
         // Codex P2-2). A run cannot be fooled by any of those.
         //
-        // THE FIXTURE DISCRIMINATES, which took two tries to get right. The account that appeared is
-        // linked to a SAML identity and lists 「cloud」: the rule refuses it (「linked to a SAML
-        // identity — an administrator unlinks it」) while every OTHER gate lets it through —
-        // isAuthMethodAllowed sees 「cloud」, and the store's copy carries this login's own binding so
-        // the read-back passes. Measured here: 「no methods listed」 was refused by the BINDING check
-        // on its own, and 「disabled」 by the method gate after it, so both of those would have been
-        // green with no rule asked at all.
+        // THE FIXTURE IS THE HARM. The STORE says this account is disabled; the instance the
+        // creation answered with does not. That is the pair an authorisation decision must not get
+        // wrong, and it is reachable two ways: the disable lands between the two reads, or (in a
+        // multi-replica deployment) this JVM's cache was filled before it. The rule is asked of the
+        // store's copy, so it refuses; asked of the other copy it allows, and the read-back below
+        // compares only the binding — which both copies carry (batch-26 review: Codex P1,
+        // subagent P2-4. One version of this code did exactly that for a batch).
+        //
+        // It took three tries to make this discriminate. 「No methods listed」 is refused by the
+        // BINDING check on its own; 「disabled」 in the copy the door returns is refused by the method
+        // gate after it; a DIFFERENT subject in the found copy is refused by the rule's first arm
+        // whichever copy it reads. Only 「the store disabled it, the returned copy is clean, and both
+        // carry this login's binding」 isolates the ask.
         String carried = issuer + " sub-frank";
-        UserItem appearedMeanwhile = linkedElsewhere(account("frank", "cloud", null, SsoLogin.SAML));
-        UserItem storeCarriesTheBinding = account("frank", "cloud", carried, SsoLogin.OIDC);
-        when(contentService.getUserItemById("bedroom", "frank")).thenReturn(null, appearedMeanwhile);
-        when(contentService.getUserItemByIdFromStore("bedroom", "frank"))
-                .thenReturn(storeCarriesTheBinding);
+        UserItem returnedCopyIsClean = account("frank", "cloud", carried, SsoLogin.OIDC);
+        UserItem storeSaysDisabled = account("frank", "cloud,disabled", carried, SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "frank")).thenReturn(null, returnedCopyIsClean);
+        when(contentService.getUserItemByIdFromStore("bedroom", "frank")).thenReturn(storeSaysDisabled);
 
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("frank", "sub-frank") + "\"}");
 
-        assertEquals("failure", rest.get("status"), "an account this login did not create — one linked "
-                + "to a SAML identity — was entered because the create path asked no rule: "
-                + rest.toJSONString());
+        assertEquals("failure", rest.get("status"), "the create path asked the rule about a copy that "
+                + "is not the store's, so an account the store has DISABLED was entered and a token "
+                + "was issued for it: " + rest.toJSONString());
         verify(tokenService, never()).setToken(any(), any(), any());
 
         // BOTH ENTRY POINTS: api/v1 has its own copy of the procedure. Its own name, because the
         // stubbing above is consumed by the REST call.
-        UserItem graceAppeared = linkedElsewhere(account("grace", "cloud", null, SsoLogin.SAML));
-        UserItem graceStore = account("grace", "cloud", issuer + " sub-grace", SsoLogin.OIDC);
-        when(contentService.getUserItemById("bedroom", "grace")).thenReturn(null, graceAppeared);
+        UserItem graceReturned = account("grace", "cloud", issuer + " sub-grace", SsoLogin.OIDC);
+        UserItem graceStore = account("grace", "cloud,disabled", issuer + " sub-grace", SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "grace")).thenReturn(null, graceReturned);
         when(contentService.getUserItemByIdFromStore("bedroom", "grace")).thenReturn(graceStore);
 
         String apiV1 = apiV1(Map.of("id_token", idTokenFor("grace", "sub-grace")));
 
-        assertTrue(apiV1.startsWith("refused: "), "api/v1 entered an account linked to a SAML identity "
-                + "with no rule applied: " + apiV1);
+        assertTrue(apiV1.startsWith("refused: "), "api/v1 asked the rule about a copy that is not the "
+                + "store's, so an account the store has disabled was entered: " + apiV1);
         verify(tokenService, never()).setToken(any(), any(), any());
-    }
-
-    /** The same account, carrying a SAML binding — what 「another route owns this」 looks like. */
-    private static UserItem linkedElsewhere(UserItem account) {
-        java.util.List<jp.aegif.nemaki.model.Property> properties =
-                new java.util.ArrayList<>(account.getSubTypeProperties());
-        properties.add(new jp.aegif.nemaki.model.Property(
-                SsoLogin.subjectKey(SsoLogin.SAML), "https://saml.example!someone-else"));
-        account.setSubTypeProperties(properties);
-        return account;
     }
 
     @Test

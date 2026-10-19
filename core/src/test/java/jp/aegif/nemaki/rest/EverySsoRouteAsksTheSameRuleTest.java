@@ -321,9 +321,8 @@ public class EverySsoRouteAsksTheSameRuleTest {
         // batch-22..24 review found it — 「both entry points」 was the claim, REST was the code (both
         // reviewers, P1).
         for (String[] where : new String[][] {
-                { REST, "private UserItem accountForSsoLogin", "getOrCreateUser(", "return created;",
-                        "created" },
-                { API_V1, "public Response oidcAuth", "getOrCreateUser(", "} else {", "user" } }) {
+                { REST, "private UserItem accountForSsoLogin", "getOrCreateUser(", "return created;" },
+                { API_V1, "public Response oidcAuth", "getOrCreateUser(", "} else {" } }) {
             String body = JavaSource.methodBody(
                     JavaSource.withoutLiteralText(JavaSource.read(where[0])), where[1]);
             int created = body.indexOf(where[2]);
@@ -332,21 +331,29 @@ public class EverySsoRouteAsksTheSameRuleTest {
                     + "an account in the span this lock reads: created=" + created + " until=" + until);
             String createPath = body.substring(created, until);
 
-            // THE SAME RULE, asked of THE ACCOUNT THE CREATION ANSWERED WITH. getOrCreateUser answers
-            // with an account it FOUND when one appeared between the caller's read and its own, and
-            // that is an EXISTING account — entering it with no rule applied left 「unset ⇒ allowed」
-            // deciding alone (R209). The ARGUMENT is read, not just the call: asking the rule about
-            // something else is the same defect wearing the right name (batch-25 review, subagent
-            // P2-3, which measured that refusal(created, …) left the first form of this lock green).
+            // THE SAME RULE, asked of THE STORE'S COPY. getOrCreateUser answers with an account it
+            // FOUND when one appeared between the caller's read and its own, and that is an EXISTING
+            // account — entering it with no rule applied left 「unset ⇒ allowed」 deciding alone
+            // (R209). The ARGUMENT is read, not just the call, and the expected argument is DERIVED
+            // from the store read rather than named: the name is what changed when one batch asked
+            // the rule about the instance the creation handed back, and the property that matters is
+            // 「the copy the store has」 (batch-26 review: Codex P1, subagent P2-4).
+            Matcher readsTheStore = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*getUserItemByIdFromStore\\(")
+                    .matcher(createPath);
+            assertTrue(readsTheStore.find(), where[0] + "'s create path never reads the account from "
+                    + "the store, so every check it makes is about an instance held in memory: "
+                    + createPath);
+            String fromStore = readsTheStore.group(1);
             Matcher asksTheRule = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*refusal\\((\\w+)")
                     .matcher(createPath);
             assertTrue(asksTheRule.find(), where[0] + "'s create path does not ask the rule every other "
                     + "route asks, so an account it did not create is entered on the strength of its "
                     + "own allowedAuthMethods: " + createPath);
             String answer = asksTheRule.group(1);
-            assertEquals(where[4], asksTheRule.group(2), where[0] + " asks the rule about "
-                    + asksTheRule.group(2) + ", not about " + where[4] + " — the account this login "
-                    + "will act as: " + createPath);
+            assertEquals(fromStore, asksTheRule.group(2), where[0] + " asks the rule about "
+                    + asksTheRule.group(2) + ", not about " + fromStore + " — the copy the STORE has. "
+                    + "An authorisation decision read from an instance in memory lets in an account "
+                    + "the store has disabled: " + createPath);
             int asked = createPath.indexOf(answer + " != null");
             assertTrue(asked > 0, where[0] + " asks the rule and does not look at the answer (" + answer
                     + " is assigned and never compared), so every refusal it names is ignored: "
@@ -358,14 +365,15 @@ public class EverySsoRouteAsksTheSameRuleTest {
             // names appear」 was not enough: reading the stored value and not comparing it, or
             // comparing it and not refusing, both left this green (batch-22..24 review, Codex P2-2).
             //
-            // WHICH account the comparison reads is measured by running it, in
-            // OidcLoginEntryPointsTest#aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin: a
-            // source lock can see that the store reader is named in the span and not that its answer
-            // is what the check receives, and hoisting the read into its own statement made exactly
-            // that difference invisible here (batch-25 review, subagent P2-3).
+            // The comparison reads THE SAME store copy, and what it receives is measured by running
+            // it, in OidcLoginEntryPointsTest#aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin.
             int compare = createPath.indexOf("boundSubject");
             assertTrue(compare > 0, where[0] + " returns the account it just created without checking "
                     + "that it carries the binding this login gave it");
+            assertTrue(createPath.substring(compare).startsWith("boundSubject(" + fromStore)
+                            || createPath.substring(compare).contains(fromStore),
+                    where[0] + " compares the binding against something other than the store's copy "
+                            + fromStore + ": " + createPath);
             int condition = createPath.lastIndexOf("if (", compare);
             assertTrue(condition >= 0 && createPath.substring(condition, compare).contains("!binding.equals("),
                     where[0] + " reads the stored binding and does not compare it with the one this "
