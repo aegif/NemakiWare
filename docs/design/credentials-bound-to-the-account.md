@@ -144,14 +144,15 @@ Codex P1 — 設計レビュー）: `issuedAt < credentialsNotBefore` は JVM �
     `contentCache` からその利用者を捨てて再 throw する**。409 の再試行の読み直しも**キャッシュを通さない**
     こと（通すと失われた更新になる）。**ここは「fresh を足す必要は無い」の例外**（確認 11 巡目の
     subagent P2 — 同じ節が矛盾していた）: キャッシュを通さない UserItem の読みは**当時どこにも無かった**
-    （**2026-10-19 に `getUserItemByIdFromStore` として足した** — R207。兄弟の `getGroupItemByIdFresh` と
-    同じ fail-closed の形（配線を確かめ、読めなければ null ではなく throw）に揃えてある）
-    （`ContentService` は `getGroupItemByIdFresh` だけ、`ContentDaoService` は content / document /
-    folder / relationship / policy / item / groupItem の fresh だけで、**利用者版が無い**）。
-    下げない側の守りは couch の DAO の中で読み直すので要らないが、**`changePassword` の 409 の再試行には
-    要る** — `getUserItemByIdFresh` を足すか、その再試行だけ couch の DAO を直に読む。どちらにするかは
-    実装時に決めて設計に書く。足す場合は兄弟の `getGroupItemByIdFresh`（cached 実装）と同じ fail-closed
-    の形（読めなければ null ではなく throw）に揃える。
+    （**2026-10-19 に `getUserItemByIdFromStore` として足した** — R207。`ContentService` と
+    `ContentDaoService` の両方に在り、兄弟の `getGroupItemByIdFresh` と同じ fail-closed の形
+    （配線を確かめ、読めなければ null ではなく throw）に揃えてあり、cached 実装は delegate の
+    **同名**メソッドを呼ぶ）。
+    下げない側の守りは couch の DAO の中で読み直すので要らない。**`changePassword` の 409 の再試行の
+    層はそもそも入れていない**（下の §3 の訂正。保存の失敗はそのまま変更の失敗になる = fail-closed）
+    ので、この読みを要求する呼び出し側はまだ無い — 入れる日には `getUserItemByIdFromStore` を使う。
+    足した当時この段落は「利用者版が無い」と書いたままで、**メソッドが在るのに無いと言う 2 文が
+    同じ段落に並んでいた**（バッチ 25、subagent P3-1）。
   - **外れるのは setup の 2 経路**（`SetupAdminResource:108`・`SetupApplyResource:484` — 利用者文書に
     BCrypt のハッシュを直接書く raw な PUT）。ここは **Setup Mode 限定**（`SetupModeGuardFilter` が
     Normal Mode では 403）。確認 9 巡目の subagent が読んで確かめたところ、`SetupAdminResource` は
