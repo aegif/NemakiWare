@@ -833,6 +833,13 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public UserItem getUserItemByIdFromStore(String repositoryId, String userId) {
+		// PAST the cache, deliberately: the caller is asking whether a write landed, and the cache
+		// holds the instance that write produced (R207).
+		return nonCachedContentDaoService.getUserItemById(repositoryId, userId);
+	}
+
+	@Override
 	public UserItem getUserItemById(String repositoryId, String userId) {
 		NemakiCache<UserItem> userItemCache = nemakiCachePool.get(repositoryId).getUserItemCache();
 		UserItem v = userItemCache.get(userId);

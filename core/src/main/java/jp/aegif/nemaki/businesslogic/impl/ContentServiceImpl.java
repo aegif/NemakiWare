@@ -1194,6 +1194,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public UserItem getUserItemByIdFromStore(String repositoryId, String userId) {
+		return contentDaoService.getUserItemByIdFromStore(repositoryId, userId);
+	}
+
+	@Override
 	public UserItem getUserItemById(String repositoryId, String userId) {
 		return userGroupDelegate.getUserItemById(repositoryId, userId);
 	}

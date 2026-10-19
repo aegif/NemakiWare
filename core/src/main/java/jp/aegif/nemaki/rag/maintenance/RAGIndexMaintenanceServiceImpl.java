@@ -238,21 +238,48 @@ public class RAGIndexMaintenanceServiceImpl implements RAGIndexMaintenanceServic
 
     @Override
     public boolean reindexDocument(String repositoryId, String objectId) {
+        return reindexDocumentOutcome(repositoryId, objectId) == DocumentReindex.INDEXED;
+    }
+
+    /**
+     * The single-document reindex, keeping WHY (R206).
+     *
+     * <p>The boolean above threw every reason away, and the doors reported the loss as 「may be a
+     * folder or unsupported type」. A retryable failure — the shape R185 made the indexing report
+     * honestly — came out as 「not indexable」, and the published way to clear a redacted version's
+     * blocks is this endpoint: the operator stops, and the redacted text stays searchable.
+     */
+    @Override
+    public DocumentReindex reindexDocumentOutcome(String repositoryId, String objectId) {
         if (!isRAGEnabled()) {
-            return false;
+            return DocumentReindex.DISABLED;
+        }
+
+        Content content;
+        try {
+            content = contentService.getContent(repositoryId, objectId);
+        } catch (Exception couldNotRead) {
+            // Not 「not a document」: nothing is known about this object yet.
+            log.error("Failed to read " + objectId + " for a RAG reindex", couldNotRead);
+            return DocumentReindex.FAILED;
+        }
+        if (!(content instanceof Document)) {
+            return DocumentReindex.NOT_A_DOCUMENT;
         }
 
         try {
-            Content content = contentService.getContent(repositoryId, objectId);
-            if (content instanceof Document) {
-                ragIndexingService.indexDocument(repositoryId, (Document) content);
-                log.info("RAG reindexed document: " + objectId);
-                return true;
-            }
-            return false;
+            ragIndexingService.indexDocument(repositoryId, (Document) content);
+            log.info("RAG reindexed document: " + objectId);
+            return DocumentReindex.INDEXED;
+        } catch (RAGIndexingException refused) {
+            log.warn("RAG reindex of " + objectId + " did not index it: " + refused.getMessage());
+            // The product's own classification, carried instead of collapsed: retryable means the
+            // attempt may succeed later, and that is not the same answer as 「this version has no
+            // indexable text」.
+            return refused.isRetryable() ? DocumentReindex.FAILED : DocumentReindex.NOT_INDEXABLE;
         } catch (Exception e) {
             log.error("Failed to RAG reindex document: " + objectId, e);
-            return false;
+            return DocumentReindex.FAILED;
         }
     }
 

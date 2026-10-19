@@ -171,6 +171,34 @@ public interface RAGIndexMaintenanceService {
     boolean reindexDocument(String repositoryId, String objectId);
 
     /**
+     * What a single-document RAG reindex did, for the doors that report it (R206, 3.4.1).
+     *
+     * <p>{@link #reindexDocument} answers a boolean, and the one implementation collapsed every
+     * failure into {@code false} — so a door reported 「may be a folder or unsupported type」 for a
+     * CouchDB outage. That matters because the published way to clear a redacted version's RAG
+     * blocks is this endpoint: an operator who reads 「not indexable」 stops, and the text the
+     * redaction was meant to remove stays searchable.
+     */
+    enum DocumentReindex {
+        /** Indexed. */
+        INDEXED,
+        /** The object is not a document (a folder, a relationship): nothing to index, ever. */
+        NOT_A_DOCUMENT,
+        /** The version cannot be indexed — an unsupported type, or no text. Not worth retrying. */
+        NOT_INDEXABLE,
+        /** The attempt failed and MAY succeed later: a read that could not be made, or an unknown error. */
+        FAILED,
+        /** RAG is not enabled for this repository. */
+        DISABLED
+    }
+
+    /**
+     * As {@link #reindexDocument}, keeping WHY it did not index: 「could not read」 must not be
+     * reported with the same value as 「read, and this version has no indexable text」.
+     */
+    DocumentReindex reindexDocumentOutcome(String repositoryId, String objectId);
+
+    /**
      * Delete a document from the RAG index.
      *
      * @param repositoryId the repository ID

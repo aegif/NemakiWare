@@ -487,7 +487,8 @@ public class AuthResource {
                     // binding would leave this login acting as an account it only believes it linked. What
                     // this does NOT undo is residual R196 — a refusal that THROWS does not reach here, and
                     // the cached instance keeps the binding until it is evicted.
-                    UserItem stored = contentService.getUserItemById(repositoryId, username);
+                    // FROM THE STORE, not through the cache (R207).
+                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
                     String storedBinding = stored == null ? null
                             : jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
                                     jp.aegif.nemaki.rest.SsoLogin.OIDC);

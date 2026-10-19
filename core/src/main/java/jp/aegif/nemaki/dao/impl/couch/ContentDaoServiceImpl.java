@@ -1886,6 +1886,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public UserItem getUserItemByIdFromStore(String repositoryId, String userId) {
+		// Nothing caches below this layer, so the store read IS the read.
+		return getUserItemById(repositoryId, userId);
+	}
+
+	@Override
 	public UserItem getUserItemById(String repositoryId, String userId) {
 		return userGroupDao.getUserItemById(repositoryId, userId);
 	}

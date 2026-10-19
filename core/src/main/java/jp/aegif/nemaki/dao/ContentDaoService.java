@@ -479,6 +479,16 @@ public interface ContentDaoService {
 
 	UserItem getUserItem(String repositoryId, String objectId);
 	UserItem getUserItemById(String repositoryId, String userId);
+
+	/**
+	 * The user item as the STORE has it, not as the cache holds it (R207, 3.4.1).
+	 *
+	 * <p>For a caller that has just written something and needs to know whether it is there: a write
+	 * replaces the cache entry with the instance it produced, so reading it back through the cache
+	 * compares that instance with itself. The SSO logins read a binding back this way and reported
+	 * 「stored」 on the strength of it.
+	 */
+	UserItem getUserItemByIdFromStore(String repositoryId, String userId);
 	List<UserItem> getUserItems(String repositoryId);
 	List<UserItem> getUserItems(String repositoryId, int skip, int limit);
 	int getUserItemCount(String repositoryId);

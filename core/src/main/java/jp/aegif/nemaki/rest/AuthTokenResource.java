@@ -1093,7 +1093,8 @@ public class AuthTokenResource extends ResourceBase{
 			// token of the same name, which is the hole this batch closes (batch-22 review, Codex
 			// P1-2: the first version checked only the update path).
 			if (binding != null && !binding.isBlank()
-					&& !binding.equals(SsoLogin.boundSubject(created, route))) {
+					&& !binding.equals(SsoLogin.boundSubject(
+							contentService.getUserItemByIdFromStore(repositoryId, userName), route))) {
 				logger.warn("{} login refused: the account created for {} does not carry the binding",
 						SsoLogin.label(route), userName);
 				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
@@ -1112,7 +1113,10 @@ public class AuthTokenResource extends ResourceBase{
 		if (binding != null && !binding.isBlank() && SsoLogin.unlinked(account, route)) {
 			account.setSubTypeProperties(SsoLogin.with(account, SsoLogin.subjectKey(route), binding));
 			contentService.applyUserUpdate(repositoryId, account, userName);
-			UserItem stored = contentService.getUserItemById(repositoryId, userName);
+			// FROM THE STORE, not through the cache: the write has just replaced the cache entry
+			// with the instance it produced, so a cached read compares that instance with itself
+			// (R207, batch-22 review Codex P1-2).
+			UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);
 			String storedBinding = stored == null ? null : SsoLogin.boundSubject(stored, route);
 			if (!binding.equals(storedBinding)) {
 				logger.warn("{} login refused: the binding of {} was not stored (read back: {})",

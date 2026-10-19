@@ -1107,9 +1107,16 @@ public class SolrResource extends ResourceBase {
 			return makeResult(false, result, errMsg).toString();
 		}
 
-		boolean success = service.reindexDocument(repositoryId, objectId);
-		if (!success) {
-			errMsg.add("Failed to reindex document in RAG: " + objectId);
+		// WHY it did not index (R206): a retryable failure is not 「this version has no indexable
+		// text」, and the operator clearing a redacted version's blocks reads this answer.
+		jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.DocumentReindex outcome =
+				service.reindexDocumentOutcome(repositoryId, objectId);
+		if (outcome != jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.DocumentReindex.INDEXED) {
+			errMsg.add("Did not reindex " + objectId + " in RAG: " + outcome
+					+ (outcome == jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService
+							.DocumentReindex.FAILED
+							? " — the attempt may succeed later; see the server log for the reason"
+							: ""));
 			return makeResult(false, result, errMsg).toString();
 		}
 

@@ -1601,18 +1601,37 @@ public class SearchEngineResource {
                 throw ApiException.serviceUnavailable("RAG is not enabled or available");
             }
 
-            boolean reindexed = ragIndexMaintenanceService.reindexDocument(repositoryId, objectId);
+            jp.aegif.nemaki.businesslogic.RAGIndexMaintenanceService.DocumentReindex outcome =
+                    ragIndexMaintenanceService.reindexDocumentOutcome(repositoryId, objectId);
 
             OperationResponse response = new OperationResponse();
             response.setRepositoryId(repositoryId);
             response.setObjectId(objectId);
 
-            if (reindexed) {
-                response.setSuccess(true);
-                response.setMessage("Document RAG reindexed successfully");
-            } else {
-                response.setSuccess(false);
-                response.setMessage("Failed to RAG reindex document (may be a folder or unsupported type)");
+            // WHY it did not index, not one answer for every reason (R206). A failure that may
+            // succeed later is a 503, because the published way to clear a redacted version's RAG
+            // blocks is this endpoint: 「may be a folder or unsupported type」 told the operator to
+            // stop, and the redacted text stayed searchable.
+            switch (outcome) {
+                case INDEXED:
+                    response.setSuccess(true);
+                    response.setMessage("Document RAG reindexed successfully");
+                    break;
+                case NOT_A_DOCUMENT:
+                    response.setSuccess(false);
+                    response.setMessage("Not a document, so there is nothing to index");
+                    break;
+                case NOT_INDEXABLE:
+                    response.setSuccess(false);
+                    response.setMessage("This version has no indexable text (an unsupported type, or no"
+                            + " text could be extracted). Retrying will not change that");
+                    break;
+                case DISABLED:
+                    throw ApiException.serviceUnavailable("RAG is not enabled or available");
+                default:
+                    throw ApiException.serviceUnavailable("The document could not be reindexed and the"
+                            + " attempt may succeed later (the content or its metadata could not be"
+                            + " read). See the server log for the reason, and try again");
             }
 
             Map<String, LinkInfo> links = new HashMap<>();
