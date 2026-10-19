@@ -668,12 +668,22 @@ class ReleaseReadinessIsMeasuredTest {
         // this method declared」 disagreed). Comments out, so prose about the method is not a
         // declaration.
         //
-        // KNOWN LIMIT, measured and not closed: this forbids the two names the lock had, not every
-        // possible one. Resurrecting it as a THIRD name is green (batch-31 review, subagent P2-3 —
-        // the record said that escape was handled and it was not). An unbounded name cannot be
-        // forbidden by enumeration; what the require half still catches is the note being changed
-        // to say the lock is back.
-        String code = jp.aegif.nemaki.util.test.JavaSource.withoutComments(own);
+        // KNOWN LIMITS, measured and not closed. This arm forbids the two names the lock had, by
+        // their declaration, in THIS file, returning void:
+        //   - a THIRD name is green (batch-31 review, subagent P2-3 — the record said that escape
+        //     was handled and it was not). An unbounded name cannot be forbidden by enumeration.
+        //   - a unicode escape inside the name (「the\u004eamed…」) compiles to the forbidden name
+        //     and does not match the pattern (batch-32 review, subagent P3-1). A regex cannot decode
+        //     what javac decodes before lexing.
+        //   - the same method declared in ANOTHER test class is green: this reads one file.
+        // What the require half still catches is the note, or the canon, being changed to say the
+        // lock is back.
+        // LITERAL TEXT OUT TOO, not only comments: withoutComments keeps the contents of strings
+        // (its own javadoc says so, because an assertion about a query string needs them), so a
+        // QUOTED mention of the declaration — in an assertion message, a fixture, a text block —
+        // refused a file with no such method. HarnessBreakageIsNotAFiringTest records the same
+        // reason for the same choice (batch-32 review: both reviewers, each measured it).
+        String code = jp.aegif.nemaki.util.test.JavaSource.withoutLiteralText(own);
         String name = "the" + "NamedBatchSectionsControlCountIsTheRunners";
         String nameToo = "the" + "NewestBatchSectionsControlCountIsTheRunners";
         assertFalse(Pattern.compile("void\\s+(?:" + name + "|" + nameToo + ")\\s*\\(")
@@ -686,14 +696,19 @@ class ReleaseReadinessIsMeasuredTest {
         int row = canon.indexOf("| R212 |");
         assertTrue(row > 0, "R212 is not in the canon, so the withdrawal has no residual behind it");
         String text = canon.substring(row, canon.indexOf("\n", row));
-        assertTrue(text.contains("取り下げ"), "the R212 row does not say the lock was withdrawn: " + text);
-        // AND NOT THE OPPOSITE. 「the word appears」 was satisfied by a row saying 「取り下げていない」
-        // and by a row saying 「錠を戻した」 (batch-31 review, subagent P2-1, measured four ways).
-        for (String negation : new String[] { "取り下げていない", "錠を戻した", "取り下げない" }) {
-            assertFalse(text.contains(negation), "the R212 row says 「" + negation + "」 while this "
-                    + "lock asserts the withdrawal stands. The canon is the record — if the lock is "
-                    + "back, delete the withdrawal note and this method: " + text);
-        }
+        // THE COMPLETED POSITIVE FORM. 「the word 取り下げ appears」 was satisfied by a row saying
+        // 取り下げていない, 錠を戻した, 取り下げなかった, 取り下げを撤回した, … — 10 of 13 negations
+        // measured green, and widening the forbidden list chases an infinite set (batch-31 review
+        // subagent P2-1; batch-32 review: both reviewers again). Requiring 「取り下げた」 discriminated
+        // all 14 rows the reviewer measured, because every negation of it reads differently.
+        //
+        // KNOWN LIMIT: this demands that one wording. A row that says the same thing another way
+        // (「取り下げ済み」) is refused — the over-refusal direction, which is the safe one here:
+        // a refusal is read by a person, and a false green is not.
+        assertTrue(text.contains("取り下げた"),
+                "the R212 row does not say, in that form, that the lock WAS withdrawn. If it was "
+                        + "reinstated, delete the withdrawal note and this method; if the row just "
+                        + "says it differently, this arm demands 「取り下げた」: " + text);
     }
 
     /**
