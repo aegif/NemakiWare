@@ -165,17 +165,43 @@ public class AMimeTypeThatCouldNotBeReadIsRetryableTest {
     }
 
     @Test
-    @DisplayName("an attachment the store does not hand back is RETRYABLE, not «no type»")
-    public void anAttachmentTheStoreDoesNotHandBackIsRetryable() {
+    @DisplayName("an attachment the store ANSWERS is not there is skipped, not retried for ever")
+    public void anAttachmentTheStoreSaysIsNotThereIsSkipped() {
+        // The DAO returns null only for not-found and throws for anything else, and the read has
+        // already retried twice for async visibility — so this is a PERMANENT state, and calling
+        // it retryable would leave every full reindex of this repository in
+        // completed_with_errors with no way to accept it (batch-21 review, subagent P3-3). The
+        // first version of this lock asserted the opposite.
         when(contentService.getAttachmentRef(REPO, ATTACHMENT_ID)).thenReturn(null);
 
         RAGIndexingException refused = assertThrows(RAGIndexingException.class,
                 () -> service.indexDocument(REPO, document(ATTACHMENT_ID)));
 
-        assertEquals(RAGIndexingException.ErrorType.CONTENT_UNREADABLE, refused.getErrorType(),
-                "the document names an attachment the store did not return — a broken reference, "
-                        + "which is not a statement about this version's type");
-        assertTrue(refused.isRetryable(), "the broken reference is reported as permanent");
+        assertEquals(RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE, refused.getErrorType(),
+                "an attachment row the store says is not there is reported as a failure to read, "
+                        + "so the reindex can never finish cleanly");
+        assertFalse(refused.isRetryable(), "a missing attachment row is reported as transient");
+    }
+
+    @Test
+    @DisplayName("a BLANK attachment id is «no attachment», not a failed read")
+    public void aBlankAttachmentIdIsNoAttachment() {
+        // getAttachmentRef answers null for a blank id WITHOUT asking the store, so reading its
+        // answer as 「the store handed back nothing」 reports 「not asked」 as 「could not read」
+        // (batch-21 review, Codex P2).
+        RAGIndexingException refused = assertThrows(RAGIndexingException.class,
+                () -> service.indexDocument(REPO, document("   ")));
+
+        assertEquals(RAGIndexingException.ErrorType.UNSUPPORTED_MIME_TYPE, refused.getErrorType(),
+                "a blank attachment id became a retryable read failure, so such a document is a "
+                        + "permanent error in every reindex");
+        assertFalse(refused.isRetryable(), "there is nothing to read, so there is nothing to retry");
+        // THE STORE IS NOT ASKED. Without this the lock protects nothing: the store's own guard
+        // answers null for a blank id, and this reader now treats a null answer as ABSENT too, so
+        // dropping the guard gives the same outcome by a different route (measured — control LM5
+        // DID NOT FIRE until this line). «Not asked» and «asked, and there is nothing» are
+        // different states, and this is where the difference is visible.
+        verify(contentService, never()).getAttachmentRef(anyString(), anyString());
     }
 
     /**
@@ -270,6 +296,15 @@ public class AMimeTypeThatCouldNotBeReadIsRetryableTest {
             Object[] arguments = new Object[factory.getParameterCount()];
             for (int i = 0; i < arguments.length; i++) {
                 arguments[i] = factory.getParameterTypes()[i] == String.class ? DOC_ID : null;
+            }
+            if (!java.lang.reflect.Modifier.isPublic(factory.getModifiers())) {
+                // Not swept, and said so: invoking it would fail with IllegalAccessException —
+                // an exception, not this lock's own assertion, which the control runner reads as
+                // 「the harness broke」 (batch-21 review, subagent P3-5).
+                throw new jp.aegif.nemaki.util.test.HarnessBroken(
+                        "RAGIndexingException." + factory.getName() + " is a non-public factory, "
+                                + "so this lock cannot build it and cannot say whether its message "
+                                + "is one the reindex reads as «skipped»");
             }
             RAGIndexingException made = (RAGIndexingException) factory.invoke(null, arguments);
             if (!made.isRetryable()) {
