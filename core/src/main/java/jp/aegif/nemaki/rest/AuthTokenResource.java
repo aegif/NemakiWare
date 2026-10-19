@@ -519,9 +519,13 @@ public class AuthTokenResource extends ResourceBase{
 
 			logger.debug("SAML authentication successful for user: {}", userName);
 
-			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			// WHICH assertion this is, from the SIGNED subtree only — the same subtree the name comes from,
+			// for the same reason (an unsigned sibling assertion must not be able to name a subject).
+			String samlBinding = SsoLogin.binding(
+					extractFromSAMLElement(verifyResult.getSignedElement(), "Issuer"),
+					extractFromSAMLElement(verifyResult.getSignedElement(), "NameID"));
+			UserItem userItem = accountForSsoLogin(repositoryId, userName, SsoLogin.SAML, samlBinding, errMsg);
 			if (userItem == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -643,31 +647,12 @@ public class AuthTokenResource extends ResourceBase{
 
 			// The account the token may act as: created for it, linked to its subject, or one an administrator allowed SSO
 			// for — linked now (batch 16 review round 1). The name alone was enough, the built-in admin included.
-			ContentService contentService = getContentService();
-			if (contentService == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
-				return makeResult(false, result, errMsg).toString();
-			}
-			UserItem userItem = contentService.getUserItemById(repositoryId, userName);
+			// The same create / adopt / link / read-back as the other three routes (R175 + R168): this arm had
+			// the rule since batch 16 and the others had none, so the rule moved into SsoLogin and the write of
+			// the binding gained a read-back here too.
+			UserItem userItem = accountForSsoLogin(repositoryId, userName, SsoLogin.OIDC,
+					OidcLogin.binding(outcome), errMsg);
 			if (userItem == null) {
-				userItem = getOrCreateUser(repositoryId, userName, OidcLogin.binding(outcome));
-			} else {
-				String refused = OidcLogin.refusal(userItem, outcome);
-				if (refused != null) {
-					logger.info("OIDC login refused for an existing account: {}", refused);
-					addErrMsg(errMsg, "oidc", refused);
-					return makeResult(false, result, errMsg).toString();
-				}
-				if (OidcLogin.unlinked(userItem)) {
-					java.util.List<jp.aegif.nemaki.model.Property> properties = new java.util.ArrayList<>(
-							userItem.getSubTypeProperties() == null ? java.util.List.of() : userItem.getSubTypeProperties());
-					properties.add(new jp.aegif.nemaki.model.Property(OidcLogin.SUBJECT_KEY, OidcLogin.binding(outcome)));
-					userItem.setSubTypeProperties(properties);
-					contentService.applyUserUpdate(repositoryId, userItem, userName);
-				}
-			}
-			if (userItem == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -774,9 +759,9 @@ public class AuthTokenResource extends ResourceBase{
 
 			logger.debug("Google authentication successful for user: {}", userName);
 
-			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			UserItem userItem = accountForSsoLogin(repositoryId, userName, SsoLogin.GOOGLE,
+					SsoLogin.binding(payload.getIssuer(), payload.getSubject()), errMsg);
 			if (userItem == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -923,9 +908,11 @@ public class AuthTokenResource extends ResourceBase{
 
 			logger.debug("Microsoft authentication successful for user: {}", userName);
 
-			UserItem userItem = getOrCreateUser(repositoryId, userName);
+			// oid, not sub: the object id is the account's own identifier in the tenant, stable across the
+			// applications a user signs into, while sub is per-application.
+			UserItem userItem = accountForSsoLogin(repositoryId, userName, SsoLogin.MICROSOFT,
+					SsoLogin.binding(claims.getIssuer(), oid), errMsg);
 			if (userItem == null) {
-				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
 				return makeResult(false, result, errMsg).toString();
 			}
 
@@ -988,6 +975,28 @@ public class AuthTokenResource extends ResourceBase{
 	 * @param attributeMapping optional custom attribute name for username extraction
 	 * @return extracted username, or null if not found
 	 */
+	/**
+	 * The text of the first {@code localName} element in the SIGNED subtree, or null.
+	 *
+	 * <p>For {@code Issuer} and {@code NameID}: together they are which identity provider said this and whom it
+	 * named, which is the binding an account is linked to (R175). Read from the signed subtree only, for the
+	 * same reason the user name is — an unsigned sibling assertion must not be able to name a subject.
+	 */
+	private String extractFromSAMLElement(Element signedElement, String localName) {
+		try {
+			NodeList nodes = signedElement.getElementsByTagNameNS(
+					"urn:oasis:names:tc:SAML:2.0:assertion", localName);
+			if (nodes.getLength() == 0) {
+				return null;
+			}
+			String text = nodes.item(0).getTextContent();
+			return text == null || text.isBlank() ? null : text.trim();
+		} catch (Exception e) {
+			logger.error("Failed to read " + localName + " from the signed SAML element", e);
+			return null;
+		}
+	}
+
 	private String extractUserNameFromSAMLElement(Element signedElement, String attributeMapping) {
 		try {
 			// 1. If custom attribute mapping is specified, try it first
@@ -1042,6 +1051,63 @@ public class AuthTokenResource extends ResourceBase{
 	}
 
 	/**
+	 * The account an SSO login may act as — created, adopted or refused — or null with the reason already in
+	 * {@code errMsg} (R175 + R168, 3.4.1).
+	 *
+	 * <p>Before this, three of the four routes (SAML, Google, Microsoft) took the account
+	 * {@code getOrCreateUser} handed back and asked one question: {@code isAuthMethodAllowed(account, "cloud")},
+	 * which answers TRUE for an account that lists no method at all. So the built-in {@code admin}, the service
+	 * accounts and every account made with a password were enterable by anyone the IdP let choose that name
+	 * (R175). The generic OIDC route asked {@link SsoLogin#refusal} — but that rule read 「{@code cloud} is
+	 * listed」 as 「an administrator allowed SSO」, and {@code cloud} is written by these very routes and by the
+	 * cloud directory sync, which also writes it onto accounts that already exist (R168).
+	 *
+	 * <p>What the read-back does and does not prove: it catches a save that returns WITHOUT storing the binding.
+	 * It does not undo the cache poisoning of residual R196 — if {@code applyUserUpdate} refuses by throwing,
+	 * this method does not return at all and the login fails on that exception (fail-closed), while the cached
+	 * instance keeps the binding until it is evicted.
+	 */
+	private UserItem accountForSsoLogin(String repositoryId, String userName, String route, String binding,
+			org.json.simple.JSONArray errMsg) {
+		ContentService contentService = getContentService();
+		if (contentService == null) {
+			logger.error("ContentService not available");
+			addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+			return null;
+		}
+
+		UserItem account = contentService.getUserItemById(repositoryId, userName);
+		if (account == null) {
+			UserItem created = getOrCreateUser(repositoryId, userName, route, binding);
+			if (created == null) {
+				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+			}
+			return created;
+		}
+
+		String refused = SsoLogin.refusal(account, route, binding);
+		if (refused != null) {
+			logger.info("{} login refused for an existing account: {}", SsoLogin.label(route), refused);
+			addErrMsg(errMsg, route, refused);
+			return null;
+		}
+
+		if (binding != null && !binding.isBlank() && SsoLogin.unlinked(account, route)) {
+			account.setSubTypeProperties(SsoLogin.with(account, SsoLogin.subjectKey(route), binding));
+			contentService.applyUserUpdate(repositoryId, account, userName);
+			UserItem stored = contentService.getUserItemById(repositoryId, userName);
+			String storedBinding = stored == null ? null : SsoLogin.boundSubject(stored, route);
+			if (!binding.equals(storedBinding)) {
+				logger.warn("{} login refused: the binding of {} was not stored (read back: {})",
+						SsoLogin.label(route), userName, storedBinding);
+				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
+				return null;
+			}
+		}
+		return account;
+	}
+
+	/**
 	 * Get an existing user or create a new one for SSO authentication.
 	 *
 	 * SSO AUTO-PROVISIONING (2026-01-08):
@@ -1057,13 +1123,15 @@ public class AuthTokenResource extends ResourceBase{
 	 * @param repositoryId Repository ID
 	 * @param userName User name extracted from SSO token
 	 * @return UserItem object (existing or newly created), or null if creation failed
+	 *
+	 * <p>A user this creates is linked to the subject given, if any.
+	 *
+	 * <p>A user this creates records WHICH ROUTE made it ({@code nemaki:authRoute}), because {@code cloud} in
+	 * {@code nemaki:allowedAuthMethods} does not mean 「an administrator allowed SSO」 — these creators write it
+	 * themselves, and the generic-OIDC login used to read it as permission to adopt the account (R168). The mark is
+	 * what lets {@link SsoLogin#refusal} tell 「a person set this」 from 「a login path set this」.
 	 */
-	private UserItem getOrCreateUser(String repositoryId, String userName) {
-		return getOrCreateUser(repositoryId, userName, null);
-	}
-
-	/** As {@link #getOrCreateUser(String, String)}; a user it creates is linked to the OIDC subject given, if any. */
-	private UserItem getOrCreateUser(String repositoryId, String userName, String oidcSubject) {
+	private UserItem getOrCreateUser(String repositoryId, String userName, String route, String subject) {
 		try {
 			ContentService contentService = getContentService();
 			if (contentService == null) {
@@ -1112,8 +1180,12 @@ public class AuthTokenResource extends ResourceBase{
 			// Set allowedAuthMethods to "cloud" for SSO-provisioned users
 			java.util.List<jp.aegif.nemaki.model.Property> subTypeProperties = new java.util.ArrayList<>();
 			subTypeProperties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud"));
-			if (oidcSubject != null) {
-				subTypeProperties.add(new jp.aegif.nemaki.model.Property(OidcLogin.SUBJECT_KEY, oidcSubject));
+			if (route != null) {
+				subTypeProperties.add(new jp.aegif.nemaki.model.Property(SsoLogin.ROUTE_KEY, route));
+			}
+			if (subject != null) {
+				subTypeProperties.add(new jp.aegif.nemaki.model.Property(
+						SsoLogin.subjectKey(route == null ? SsoLogin.OIDC : route), subject));
 			}
 			newUser.setSubTypeProperties(subTypeProperties);
 

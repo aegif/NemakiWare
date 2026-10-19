@@ -234,34 +234,17 @@ public class OidcLogin {
 	 * reviewers — the name was trusted, and the built-in admin was anyone's whom the IdP let choose it).
 	 */
 	public static String refusal(jp.aegif.nemaki.model.UserItem account, Outcome outcome) {
-		// A disabled account is not eligible, whatever else the list says, and whether or not it is already
-		// linked (3.4.1, batch 18 review rounds 1 and 2). "cloud,disabled" used to be read as eligible, and the
-		// caller writes the nemaki:oidcSubject binding BEFORE the authentication-method gate refuses the login —
-		// so a disabled account was bound permanently to whoever presented a token for its name, and re-enabling
-		// it let them in. This is asked FIRST: behind the linked branch it answered "no reason to refuse" for a
-		// linked account that is disabled, which contradicts this method's own contract (only the caller's later
-		// gate refused it). Round 2 moved it ahead of that branch.
-		String methods = property(account, "nemaki:allowedAuthMethods");
-		if (jp.aegif.nemaki.util.AuthenticationUtil.isDisabledValue(methods)) {
-			return "the account is disabled";
-		}
-		String linked = property(account, SUBJECT_KEY);
-		if (linked != null) {
-			return linked.equals(binding(outcome)) ? null : "the account is linked to another OIDC subject";
-		}
-		if (methods != null) {
-			for (String method : methods.split(",")) {
-				if ("cloud".equalsIgnoreCase(method.trim())) {
-					return null;
-				}
-			}
-		}
-		return "the account is not linked to this OIDC subject and does not allow SSO (cloud) — an administrator allows it";
+		// One rule for every route that logs in with an identity provider's word (R175 + R168). The body
+		// that used to be here is SsoLogin.refusal with route = "oidc": the three other routes asked
+		// `isAuthMethodAllowed(account, "cloud")` alone, which is true for an account that lists no
+		// method, and this rule read 「cloud is listed」 as 「an administrator allowed SSO」 when the other
+		// routes write it themselves. The OIDC wording is unchanged — locks read it.
+		return SsoLogin.refusal(account, SsoLogin.OIDC, binding(outcome));
 	}
 
 	/** Whether the account is linked to no OIDC subject yet. */
 	public static boolean unlinked(jp.aegif.nemaki.model.UserItem account) {
-		return property(account, SUBJECT_KEY) == null;
+		return SsoLogin.unlinked(account, SsoLogin.OIDC);
 	}
 
 	private static String property(jp.aegif.nemaki.model.UserItem account, String key) {

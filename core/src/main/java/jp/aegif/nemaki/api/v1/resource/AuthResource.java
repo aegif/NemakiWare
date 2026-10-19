@@ -469,22 +469,34 @@ public class AuthResource {
 
             // The account the token may act as: created for it, linked to its subject, or one an administrator allowed SSO
             // for — linked now (batch 16 review round 1). The name alone was enough, the built-in admin included.
+            String binding = jp.aegif.nemaki.rest.OidcLogin.binding(outcome);
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
-                user = getOrCreateUser(repositoryId, username, jp.aegif.nemaki.rest.OidcLogin.binding(outcome));
+                user = getOrCreateUser(repositoryId, username, binding);
             } else {
                 String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);
                 if (refused != null) {
                     logger.info("API v1: OIDC login refused for an existing account: " + refused);
                     throw ApiException.permissionDenied(refused);
                 }
-                if (jp.aegif.nemaki.rest.OidcLogin.unlinked(user)) {
-                    List<jp.aegif.nemaki.model.Property> properties = new java.util.ArrayList<>(
-                            user.getSubTypeProperties() == null ? List.of() : user.getSubTypeProperties());
-                    properties.add(new jp.aegif.nemaki.model.Property(jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY,
-                            jp.aegif.nemaki.rest.OidcLogin.binding(outcome)));
-                    user.setSubTypeProperties(properties);
+                if (jp.aegif.nemaki.rest.SsoLogin.unlinked(user, jp.aegif.nemaki.rest.SsoLogin.OIDC)) {
+                    user.setSubTypeProperties(jp.aegif.nemaki.rest.SsoLogin.with(user,
+                            jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY, binding));
                     contentService.applyUserUpdate(repositoryId, user, username);
+                    // READ IT BACK (R175 + R168, constraint (d)): a save that returns without storing the
+                    // binding would leave this login acting as an account it only believes it linked. What
+                    // this does NOT undo is residual R196 — a refusal that THROWS does not reach here, and
+                    // the cached instance keeps the binding until it is evicted.
+                    UserItem stored = contentService.getUserItemById(repositoryId, username);
+                    String storedBinding = stored == null ? null
+                            : jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
+                                    jp.aegif.nemaki.rest.SsoLogin.OIDC);
+                    if (binding == null || !binding.equals(storedBinding)) {
+                        logger.warning("API v1: OIDC login refused — the binding of " + username
+                                + " was not stored");
+                        throw ApiException.permissionDenied(
+                                "The account's link to this identity could not be stored");
+                    }
                 }
             }
             if (user == null) {
@@ -658,9 +670,13 @@ public class AuthResource {
             newUser.setCreated(new java.util.GregorianCalendar());
             newUser.setModified(new java.util.GregorianCalendar());
 
-            // Set allowedAuthMethods to "cloud" for SSO-provisioned users
+            // Set allowedAuthMethods to "cloud" for SSO-provisioned users, and record WHICH ROUTE made the
+            // account (R168): «cloud is listed» is not «an administrator allowed SSO» when the login paths
+            // write it themselves, and the mark is what tells the two apart.
             List<jp.aegif.nemaki.model.Property> subTypeProperties = new java.util.ArrayList<>();
             subTypeProperties.add(new jp.aegif.nemaki.model.Property("nemaki:allowedAuthMethods", "cloud"));
+            subTypeProperties.add(new jp.aegif.nemaki.model.Property(
+                    jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY, jp.aegif.nemaki.rest.SsoLogin.OIDC));
             if (oidcSubject != null) {
                 subTypeProperties.add(new jp.aegif.nemaki.model.Property(jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY, oidcSubject));
             }

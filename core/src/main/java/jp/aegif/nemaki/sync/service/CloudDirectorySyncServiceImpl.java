@@ -1151,6 +1151,14 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				updated |= updateSubTypeProperty(subTypeProperties, "nemaki:email", email);
 				if (allowedAuthMethods != null) {
 					updated |= updateSubTypeProperty(subTypeProperties, "nemaki:allowedAuthMethods", allowedAuthMethods);
+					// THIS SYNC wrote the method, so the account carries its mark (R168). Without it, an
+					// account made with a password that this sync turns into "cloud" reads to the generic
+					// OIDC login as 「an administrator allowed SSO」 and the first token naming it adopts it.
+					// The mark is written on the UPDATE path as well as on creation, because that is where
+					// the sync changes what an existing account allows.
+					updated |= updateSubTypeProperty(subTypeProperties,
+							jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY,
+							jp.aegif.nemaki.rest.SsoLogin.DIRECTORY_SYNC);
 				}
 				if (name != null && !name.equals(existing.getName())) {
 					existing.setName(name);
@@ -1176,6 +1184,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			if (lastName != null) subTypeProperties.add(new Property("nemaki:lastName", lastName));
 			if (email != null) subTypeProperties.add(new Property("nemaki:email", email));
 			if (allowedAuthMethods != null) subTypeProperties.add(new Property("nemaki:allowedAuthMethods", allowedAuthMethods));
+			subTypeProperties.add(new Property(jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY,
+					jp.aegif.nemaki.rest.SsoLogin.DIRECTORY_SYNC));
 			userItem.setSubTypeProperties(subTypeProperties);
 			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, userItem);
 		} catch (Exception e) {
