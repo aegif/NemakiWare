@@ -51,9 +51,18 @@ public final class SsoLogin {
 	public static final String SAML = "saml";
 	public static final String GOOGLE = "google";
 	public static final String MICROSOFT = "microsoft";
-	public static final String DIRECTORY_SYNC = "directory-sync";
 
-	/** The routes that LOG IN. The sync writes a mark and never logs in, so it is not among them. */
+	/**
+	 * The routes a login can arrive by, which is also every value a mark may take.
+	 *
+	 * <p>A mark naming anything else refuses the account at EVERY route, and there is no
+	 * administrator operation that clears one: the first version of this wrote
+	 * {@code "directory-sync"} on every account the cloud directory sync touched — including, on its
+	 * update path, accounts that already existed — so the nightly sync would have locked every SSO
+	 * user out by morning, permanently (batch-22 review: both reviewers, P1). The sync knows which
+	 * provider it is reading, so it writes THAT provider's route: the matching login enters and
+	 * binds, and a generic-OIDC token still cannot adopt the account, which is what the mark is for.
+	 */
 	private static final List<String> LOGIN_ROUTES = List.of(OIDC, SAML, GOOGLE, MICROSOFT);
 
 	/**

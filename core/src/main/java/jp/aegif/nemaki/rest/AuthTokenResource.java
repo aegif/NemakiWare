@@ -1062,10 +1062,14 @@ public class AuthTokenResource extends ResourceBase{
 	 * listed」 as 「an administrator allowed SSO」, and {@code cloud} is written by these very routes and by the
 	 * cloud directory sync, which also writes it onto accounts that already exist (R168).
 	 *
-	 * <p>What the read-back does and does not prove: it catches a save that returns WITHOUT storing the binding.
-	 * It does not undo the cache poisoning of residual R196 — if {@code applyUserUpdate} refuses by throwing,
-	 * this method does not return at all and the login fails on that exception (fail-closed), while the cached
-	 * instance keeps the binding until it is evicted.
+	 * <p>What the read-back proves, exactly: the account the store handed back after the write CARRIES the
+	 * binding. That read goes through the user cache, whose entry the write has just replaced with the
+	 * instance the store's own conversion produced — so a conversion that drops the field is caught, and a
+	 * writer that returns without applying it is caught. It is NOT a re-read from CouchDB, so it does not
+	 * prove durability; and it does not undo residual R196, because a refusal that THROWS does not reach
+	 * here at all (the login then fails on that exception, which is fail-closed, and R170's eviction clears
+	 * the poisoned entry). Recorded as a residual rather than claimed as durability (batch-22 review,
+	 * Codex P1-2).
 	 */
 	private UserItem accountForSsoLogin(String repositoryId, String userName, String route, String binding,
 			org.json.simple.JSONArray errMsg) {
@@ -1081,6 +1085,19 @@ public class AuthTokenResource extends ResourceBase{
 			UserItem created = getOrCreateUser(repositoryId, userName, route, binding);
 			if (created == null) {
 				addErrMsg(errMsg, "user", "couldNotCreateOrFind");
+				return null;
+			}
+			// The created account has to CARRY the binding this login gave it. The creator's answer
+			// comes back through the store's own conversion, so a conversion that drops the field is
+			// caught here — and an account created without its binding is adoptable by the next
+			// token of the same name, which is the hole this batch closes (batch-22 review, Codex
+			// P1-2: the first version checked only the update path).
+			if (binding != null && !binding.isBlank()
+					&& !binding.equals(SsoLogin.boundSubject(created, route))) {
+				logger.warn("{} login refused: the account created for {} does not carry the binding",
+						SsoLogin.label(route), userName);
+				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
+				return null;
 			}
 			return created;
 		}

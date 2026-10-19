@@ -396,7 +396,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				}
 
 				ensureUserItem(repositoryId, userId, fullName, firstName, lastName,
-						email, existingItem.getPassowrd(), allowedAuthMethods);
+						email, existingItem.getPassowrd(), allowedAuthMethods,
+						jp.aegif.nemaki.rest.SsoLogin.GOOGLE);
 				if (changed) {
 					result.incrementUsersUpdated();
 				} else {
@@ -415,7 +416,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				principalService.createUser(repositoryId, newUser);
 				ensureUserItem(repositoryId, userId,
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
-						email, newUser.getPasswordHash(), allowedAuthMethods);
+						email, newUser.getPasswordHash(), allowedAuthMethods,
+						jp.aegif.nemaki.rest.SsoLogin.GOOGLE);
 				result.incrementUsersCreated();
 			}
 		} catch (Exception e) {
@@ -710,7 +712,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 						displayName != null ? displayName : existingItem.getName(),
 						givenName != null ? givenName : "",
 						surname != null ? surname : "",
-						effectiveEmail, existingItem.getPassowrd(), allowedAuthMethods);
+						effectiveEmail, existingItem.getPassowrd(), allowedAuthMethods,
+						jp.aegif.nemaki.rest.SsoLogin.MICROSOFT);
 				if (changed) {
 					result.incrementUsersUpdated();
 				} else {
@@ -728,7 +731,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 				principalService.createUser(repositoryId, newUser);
 				ensureUserItem(repositoryId, userId,
 						newUser.getName(), newUser.getFirstName(), newUser.getLastName(),
-						newUser.getEmail(), newUser.getPasswordHash(), allowedAuthMethods);
+						newUser.getEmail(), newUser.getPasswordHash(), allowedAuthMethods,
+						jp.aegif.nemaki.rest.SsoLogin.MICROSOFT);
 				result.incrementUsersCreated();
 			}
 		} catch (Exception e) {
@@ -1133,7 +1137,8 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 	 * @param allowedAuthMethods The allowed authentication methods (null = all allowed, "disabled" = account disabled, "cloud" = cloud only)
 	 */
 	private void ensureUserItem(String repositoryId, String userId, String name,
-			String firstName, String lastName, String email, String passwordHash, String allowedAuthMethods) {
+			String firstName, String lastName, String email, String passwordHash, String allowedAuthMethods,
+			String route) {
 		if (contentService == null) {
 			return;
 		}
@@ -1157,8 +1162,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 					// The mark is written on the UPDATE path as well as on creation, because that is where
 					// the sync changes what an existing account allows.
 					updated |= updateSubTypeProperty(subTypeProperties,
-							jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY,
-							jp.aegif.nemaki.rest.SsoLogin.DIRECTORY_SYNC);
+							jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY, route);
 				}
 				if (name != null && !name.equals(existing.getName())) {
 					existing.setName(name);
@@ -1184,8 +1188,7 @@ public class CloudDirectorySyncServiceImpl implements CloudDirectorySyncService 
 			if (lastName != null) subTypeProperties.add(new Property("nemaki:lastName", lastName));
 			if (email != null) subTypeProperties.add(new Property("nemaki:email", email));
 			if (allowedAuthMethods != null) subTypeProperties.add(new Property("nemaki:allowedAuthMethods", allowedAuthMethods));
-			subTypeProperties.add(new Property(jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY,
-					jp.aegif.nemaki.rest.SsoLogin.DIRECTORY_SYNC));
+			subTypeProperties.add(new Property(jp.aegif.nemaki.rest.SsoLogin.ROUTE_KEY, route));
 			userItem.setSubTypeProperties(subTypeProperties);
 			contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, userItem);
 		} catch (Exception e) {

@@ -491,7 +491,10 @@ public class AuthResource {
                     String storedBinding = stored == null ? null
                             : jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
                                     jp.aegif.nemaki.rest.SsoLogin.OIDC);
-                    if (binding == null || !binding.equals(storedBinding)) {
+                    // Not 「binding == null」: OidcLogin.binding concatenates the issuer and a
+                    // subject the claims verifier requires, so it cannot be null here (batch-22
+                    // review, subagent P3-3). The comparison is the whole check.
+                    if (!binding.equals(storedBinding)) {
                         logger.warning("API v1: OIDC login refused — the binding of " + username
                                 + " was not stored");
                         throw ApiException.permissionDenied(
@@ -634,9 +637,6 @@ public class AuthResource {
         return null;
     }
 
-    private UserItem getOrCreateUser(String repositoryId, String userName) {
-        return getOrCreateUser(repositoryId, userName, null);
-    }
 
     /** As {@link #getOrCreateUser(String, String)}; a user it creates is linked to the OIDC subject given, if any. */
     private UserItem getOrCreateUser(String repositoryId, String userName, String oidcSubject) {
