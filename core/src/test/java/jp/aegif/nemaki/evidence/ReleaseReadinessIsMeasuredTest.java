@@ -481,8 +481,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /** What a plan document says about the newest run it records. */
-    private record GateReading(List<String> sections, List<String> bodies, String figure,
-            int claimed, int read) { }
+    private record GateReading(List<String> sections, String figure, int claimed, int read) { }
 
     /**
      * The newest round the plan records a unit run for, and how many gate paragraphs claim one.
@@ -519,7 +518,6 @@ class ReleaseReadinessIsMeasuredTest {
         int read = 0;
         int largest = -1;
         List<String> newestSections = new ArrayList<>();
-        List<String> newestBodies = new ArrayList<>();
         String newestFigure = null;
         Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
         while (rounds.find()) {
@@ -576,131 +574,87 @@ class ReleaseReadinessIsMeasuredTest {
                     largest = figure;
                     newestFigure = figures.get(0);
                     newestSections = new ArrayList<>(List.of(heading));
-                    newestBodies = new ArrayList<>(List.of(section));
                 } else if (figure == largest) {
                     // Several rounds can record the SAME run (確認 9・10・11 all state 8,182 —
                     // no lock was added), so the readiness document may name any of them.
                     newestSections.add(heading);
-                    newestBodies.add(section);
                 }
             }
         }
-        return new GateReading(List.copyOf(newestSections), List.copyOf(newestBodies),
-                newestFigure, claimed, read);
+        return new GateReading(List.copyOf(newestSections), newestFigure, claimed, read);
     }
 
+    // WITHDRAWN (batch-30, 2026-10-20): a lock that compared the batch plan's newest control total
+    // with the runner. Codex asked for it (batch-27 review, P3-2) because no lock reads the PLAN's
+    // copies of that figure. Three rounds produced three ways for it to refuse a CORRECT document,
+    // each measured by a reviewer:
+    //
+    //   1. 「every section with the largest gate figure」 — 22 of this plan's 48 sections share a
+    //      figure with another, because a batch that adds no lock records the same unit total, and
+    //      each states its own control count. Two totals read → HarnessBroken → the whole gate red.
+    //   2. 「the section the readiness document names」 — the provenance is NOT unambiguous under a
+    //      tie: with batch 28 and 29 both at 8,299 and both at 2,312, pointing the readiness line at
+    //      either one left every lock green (measured).
+    //   3. 「the line-start phrasing」 — only 17 of the 31 sections with a gate paragraph write it at
+    //      the start of a line; 10 write it mid-line (batch 24 and batch 27 among them), 2 split it
+    //      across lines, and 2 state no total at all. The refusal message even claimed 「every batch
+    //      section has stated one」.
+    //
+    // Reading this document's numbers needs a model of markdown conventions that vary across 48
+    // sections written over three weeks, and every version of that model has been a trap with the
+    // whole gate behind it. The figure IS locked where it is load-bearing — the canon's copy
+    // (theSweepsOwnControlCountIsTheRunners) and the readiness document's
+    // (theReadinessControlCountIsTheRunners). The plan's per-batch copies are a record of what was
+    // true at that batch; the gap is residual R212, not a lock.
+
     @Test
-    @DisplayName("the batch section the readiness document names states the runner's control total")
-    void theNamedBatchSectionsControlCountIsTheRunners() throws IOException {
-        // The canon's and the readiness document's copies of this figure are locked; the PLAN's
-        // per-batch copies were not, and the sibling lock above says so in its own javadoc. Older
-        // sections state the count AS IT WAS — 「この節の数はこのバッチ時点の記録」 — so only one
-        // section can be compared (batch-27 review, Codex P3-2).
+    @DisplayName("the withdrawn plan-figure lock stays withdrawn, with its three measured traps on the record")
+    void thePlanFigureLockStaysWithdrawn() throws IOException {
+        // THE WITHDRAWN CLAIM, not the fixed one. Three rounds produced three ways for a lock over
+        // the batch plan's numbers to refuse a CORRECT document, each measured by a reviewer, and
+        // each version looked right until someone counted this document's shapes. What stops the
+        // fourth version is a lock on the WITHDRAWAL: the note has to be here, it has to name the
+        // residual, and the method must not come back without someone deleting this first.
         //
-        // THE SECTION THE READINESS DOCUMENT NAMES, not 「every section with the largest gate
-        // figure」. The first version of this lock took the latter and refused any document where
-        // two of them stated a total — and 20 of this plan's 47 sections share a gate figure with
-        // another, because a batch that adds no lock records the same unit total, and each states
-        // its own control count. A batch like that would have turned the WHOLE gate red on a
-        // correct document (batch-28 review, subagent P2-3, measured). The provenance label is
-        // unambiguous and theReadinessUnitTotalIsAtLeastTheSources already pins it to the newest
-        // gate figure.
-        String readiness = read(READINESS);
-        Matcher names = Pattern.compile(
-                "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
-                        + "[^（]*?\\*\\*([^*（）]+)\\*\\*").matcher(readiness);
-        if (!names.find()) {
-            throw new HarnessBroken("the readiness document's latest-measurement line no longer "
-                    + "names a section, so this reader cannot tell which batch record to compare");
+        // It also keeps the unit total monotone. 「Newest is the largest figure」 — the inference
+        // readNewestGate makes — breaks for a batch that REMOVES a test, which is recorded as R204
+        // and which withdrawing a lock would have triggered.
+        String own = read(Path.of(
+                "src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java"));
+        assertTrue(own.contains("WITHDRAWN (batch-30"),
+                "the withdrawal note is gone. If the plan-figure lock is being reinstated, read the "
+                        + "three traps it names first and say in the note which one the new form "
+                        + "answers — the gate is behind this reader");
+        // SCOPED TO THE NOTE, not to the file: the trap names appear in THIS method's own array
+        // literal, so a file-wide contains() was satisfied by the check itself and the control
+        // measured nothing (NH5, DID NOT FIRE — the second self-reference in this method).
+        String note = slice(own, "WITHDRAWN (batch-30", "\n\n    @Test",
+                "the withdrawal note");
+        for (String trap : new String[] { "largest gate figure", "the readiness document names",
+                "line-start phrasing" }) {
+            assertTrue(note.contains(trap), "the withdrawal note no longer names the trap 「" + trap
+                    + "」, so the next version of this lock will rediscover it with the whole gate "
+                    + "behind it: " + note);
         }
-        String named = names.group(2);
+        assertTrue(note.contains("R212"),
+                "the withdrawal note no longer names the residual that records the gap, so the gap "
+                        + "reads as 「nobody thought of it」 rather than 「measured three times」");
+        // The DECLARATION form, not a mention: the withdrawal note above names the method once in
+        // prose, and a check for the bare name would be satisfied by its own record.
+        // SPLIT, so this check's own literal does not satisfy it. Measured: written whole, the
+        // assertion failed on the line that contains it.
+        String forbidden = "void the" + "NamedBatchSectionsControlCountIsTheRunners";
+        String forbiddenToo = "void the" + "NewestBatchSectionsControlCountIsTheRunners";
+        assertFalse(note.contains(forbidden) || note.contains(forbiddenToo),
+                "a lock over the batch plan's control total is back while the withdrawal note is "
+                        + "still here. One of the two is wrong — decide, do not keep both");
 
-        String plan = asProse(read(BATCH_PLAN));
-        Matcher sections = Pattern.compile("(?ms)^### (.+?)$(.*?)(?=^#{1,3} |\\z)").matcher(plan);
-        String body = null;
-        while (sections.find()) {
-            if (labelOf(sections.group(1).trim()).equals(named)) {
-                if (body != null) {
-                    throw new HarnessBroken("the batch plan has two sections labelled 「" + named
-                            + "」, so this reader cannot tell which one records that batch");
-                }
-                body = sections.group(2);
-            }
-        }
-        if (body == null) {
-            throw new HarnessBroken("the readiness document names 「" + named + "」 and the batch "
-                    + "plan has no section with that label");
-        }
-
-        String gate = null;
-        for (String paragraph : body.split("\n[ \t]*\n")) {
-            if (paragraph.contains("**ゲートと実測**:")) {
-                gate = paragraph;
-            }
-        }
-        if (gate == null) {
-            throw new HarnessBroken("the section 「" + named + "」 records no 「ゲートと実測」 "
-                    + "paragraph, so there is no figure of its own to compare");
-        }
-
-        // LINE-START. 「掃き取り自身を名指す control は **37 本**」 is a DIFFERENT quantity in the
-        // same paragraph of nine sections, and a pattern that matched anywhere read it as a second
-        // total (batch-28 review, subagent P2-3).
-        Matcher stated = Pattern.compile("(?m)^control は \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*")
-                .matcher(gate);
-        if (!stated.find()) {
-            throw new HarnessBroken("the section 「" + named + "」 states no control total in its "
-                    + "gate paragraph. Every batch section has stated one; a batch that stops is "
-                    + "a deliberate change to what this records, not a silent one");
-        }
-        String total = stated.group(1);
-        if (stated.find()) {
-            throw new HarnessBroken("the section 「" + named + "」 states two control totals at the "
-                    + "start of a line, so this reader cannot tell which is today's");
-        }
-
-        // THE SAME READER the sibling lock uses — both quote styles, because the runner is written
-        // with each and a single-quote grep has twice miscounted this very figure.
-        SortedSet<String> inTheRunner = new TreeSet<>();
-        Matcher ids = Pattern.compile("(?m)^\\s+id=[\"']([A-Z0-9]+)[\"'],").matcher(read(RUNNER));
-        while (ids.find()) {
-            inTheRunner.add(ids.group(1));
-        }
-        assertEquals(inTheRunner.size(), Integer.parseInt(total.replace(",", "")),
-                "the batch plan's 「" + named + "」 section states " + total + " controls and the "
-                        + "runner declares a different number. A figure in a batch record that "
-                        + "nobody checks is how 2,310 reads as 2,311");
-
-        // AND the figure the next full sweep is scoped from, in the same paragraph. What this lock
-        // still does NOT read: 「欠番 N」 and 「open P1 N」 in that paragraph — the first needs the
-        // gap reader the canon's lock owns, and duplicating it is how two readers drift (recorded,
-        // R204's family; batch-28 review, Codex P3-3).
-        Matcher since = Pattern.compile("9 回目以後 \\*\\*([0-9]{1,3}(?:,[0-9]{3})*) 本\\*\\*")
-                .matcher(gate);
-        if (since.find()) {
-            // The swept figure comes from the CANON, read the way the sibling lock reads it — a
-            // constant here would be a second source of truth for the same number.
-            int latestRound = 0;
-            int sweptThen = 0;
-            Matcher sweeps = Pattern.compile("(\\d+) 回目 20\\d\\d-\\d\\d-\\d\\d[^（]*（(\\d+) 本")
-                    .matcher(read(CANON));
-            while (sweeps.find()) {
-                int round = Integer.parseInt(sweeps.group(1));
-                if (round >= latestRound) {
-                    latestRound = round;
-                    sweptThen = Integer.parseInt(sweeps.group(2));
-                }
-            }
-            if (latestRound == 0) {
-                throw new HarnessBroken("the canon records no completed sweep, so 「9 回目以後」 "
-                        + "cannot be derived");
-            }
-            assertEquals(inTheRunner.size() - sweptThen,
-                    Integer.parseInt(since.group(1).replace(",", "")),
-                    "the section 「" + named + "」 says " + since.group(1) + " controls were added "
-                            + "since the sweep, and the runner declares " + inTheRunner.size()
-                            + " of which " + sweptThen + " were swept");
-        }
+        // AND the residual says so, in the canon.
+        String canon = read(CANON);
+        int row = canon.indexOf("| R212 |");
+        assertTrue(row > 0, "R212 is not in the canon, so the withdrawal has no residual behind it");
+        String text = canon.substring(row, canon.indexOf("\n", row));
+        assertTrue(text.contains("取り下げ"), "the R212 row does not say the lock was withdrawn: " + text);
     }
 
     /**
