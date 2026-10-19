@@ -307,6 +307,22 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                         + " throttleKey(repositoryId, username, address) — Basic auth, the three"
                         + " methods the API v1 login calls, and the nemaki_conf door");
 
+        // The ARGUMENTS too, for the four doors that key on the repository in the URL. Counting
+        // calls alone was a loosening: the earlier census asked for the literal
+        // 「throttleKey(repositoryId, username,」 and this replaced it with a count, so
+        // throttleKey(repositoryId, "", …) at an API v1 arm kept the count at 5 and left every
+        // name on one key — the S5 defect, in the three doors this class cannot drive (the API v1
+        // lock mocks the service away). Batch-20 review, subagent P3-3, measured.
+        Matcher byUrlRepository = Pattern.compile("throttleKey\\(repositoryId, username,").matcher(auth);
+        int byUrl = 0;
+        while (byUrlRepository.find()) {
+            byUrl++;
+        }
+        assertEquals(4, byUrl,
+                "the doors that key on the repository in the URL changed in number, or one of them"
+                        + " stopped passing the caller's own name and address: Basic auth and the"
+                        + " three methods the API v1 login calls");
+
         // And that door's key is the repository it reads the password FROM. Keying it on nemaki_conf
         // would stop its own 16th guess and still leave a fresh budget of 15 for the one secret at
         // /rest/repo/{super-users}/, in both directions

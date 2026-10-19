@@ -366,7 +366,7 @@ class ReleaseReadinessIsMeasuredTest {
         GateReading hidden = readNewestGate("### 確認 9 巡目\n"
                 + "**ゲートと実測**: 全ユニット **1,000 本**\n\nprose <!--\n"
                 + "### 確認 99 巡目\n**ゲートと実測**: 全ユニット **9,999 本**\n-->\n");
-        assertEquals("確認 9 巡目", hidden.section(),
+        assertEquals(List.of("確認 9 巡目"), hidden.sections(),
                 "a section hidden inside a mid-line HTML comment is read as a real one, so a "
                         + "figure nobody recorded becomes «the newest run»");
         assertEquals("1,000", hidden.figure(), "the figure comes from the commented-out section");
@@ -418,7 +418,7 @@ class ReleaseReadinessIsMeasuredTest {
         GateReading batchSection = readNewestGate("### 確認 9 巡目\n"
                 + "**ゲートと実測**: 全ユニット **1,000 本**\n\n### R170 — バッチ 19 を入れた\n"
                 + "**ゲートと実測**: 全ユニット **1,049 本**\n");
-        assertEquals("R170 — バッチ 19 を入れた", batchSection.section(),
+        assertEquals(List.of("R170 — バッチ 19 を入れた"), batchSection.sections(),
                 "a gate line recorded under a heading that is not a 確認 round is not read, so the "
                         + "newest run in the plan is invisible to this lock");
         assertEquals("1,049", batchSection.figure(),
@@ -435,7 +435,7 @@ class ReleaseReadinessIsMeasuredTest {
                         + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
                         + "a round without a run");
 
-        String newestSection = real.section();
+        List<String> newestSections = real.sections();
         String newestFigure = real.figure();
         if (newestFigure == null) {
             throw new HarnessBroken("the batch plan records no section with a gate line stating "
@@ -446,6 +446,11 @@ class ReleaseReadinessIsMeasuredTest {
         // NAME the plan's newest gate record — 「確認 35 巡目」 while that was the newest, 「バッチ
         // 20」 now. Asking for 「確認 N 巡目」 by shape was how a batch section slipped past: the
         // regex simply stopped matching the kind of record the plan had started writing.
+        //
+        // Compared with the heading's LABEL, equal — not contained in the heading. 「バッチ 2」 and
+        // 「R186」 are both substrings of 「バッチ 20 — R186: …」, so a containment test passed for a
+        // provenance that names a different record, or no record at all (batch-20 review, subagent
+        // P3-2, measured).
         Matcher names = Pattern.compile(
                 "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
                         + "[^（]*?\\*\\*([^*（）]+)\\*\\*").matcher(read(READINESS));
@@ -455,13 +460,15 @@ class ReleaseReadinessIsMeasuredTest {
         assertEquals(newestFigure, names.group(1),
                 "the readiness document calls " + names.group(1) + " tests its latest measurement "
                         + "while the batch plan's newest recorded run is " + newestFigure + " "
-                        + "(「" + newestSection + "」). The two are the same tree or one of them is "
+                        + "(「" + newestSections + "」). The two are the same tree or one of them is "
                         + "wrong about which one it measured");
-        assertTrue(newestSection.contains(names.group(2)),
+        List<String> labels = newestSections.stream().map(ReleaseReadinessIsMeasuredTest::labelOf)
+                .toList();
+        assertTrue(labels.contains(names.group(2)),
                 "the readiness document says its latest measurement is 「" + names.group(2)
-                        + "」, and the plan's newest gate record is under 「" + newestSection
-                        + "」 — so the figure above matches a run the two documents name "
-                        + "differently, which is how a stale line stays green");
+                        + "」, and the plan records that run under " + labels + " — so the figure "
+                        + "above matches a run the two documents name differently, which is how a "
+                        + "stale line stays green");
 
         int recorded = Integer.parseInt(totals.get(0).replace(",", ""));
         int floor = declared - possiblyExcluded;
@@ -474,7 +481,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /** What a plan document says about the newest run it records. */
-    private record GateReading(String section, String figure, int claimed, int read) { }
+    private record GateReading(List<String> sections, String figure, int claimed, int read) { }
 
     /**
      * The newest round the plan records a unit run for, and how many gate paragraphs claim one.
@@ -574,7 +581,26 @@ class ReleaseReadinessIsMeasuredTest {
                 }
             }
         }
-        return new GateReading(String.join("」「", newestSections), newestFigure, claimed, read);
+        return new GateReading(List.copyOf(newestSections), newestFigure, claimed, read);
+    }
+
+    /**
+     * A section heading's label: what it is called, without the dated parenthesis or the summary
+     * after the dash. 「バッチ 20 — R186: …（2026-10-19…）」 is 「バッチ 20」, 「確認 35 巡目（…」 is
+     * 「確認 35 巡目」. This is what the readiness document names, and it is compared EQUAL: both
+     * 「バッチ 2」 and 「R186」 are substrings of that first heading.
+     */
+    private static String labelOf(String heading) {
+        int dash = heading.indexOf(" — ");
+        int paren = heading.indexOf('（');
+        int end = heading.length();
+        if (dash >= 0) {
+            end = Math.min(end, dash);
+        }
+        if (paren >= 0) {
+            end = Math.min(end, paren);
+        }
+        return heading.substring(0, end).trim();
     }
 
     /**

@@ -107,14 +107,26 @@ class NoJavadocIsOrphanedTest {
             //
             // The whole of src/main/java/jp/aegif/nemaki was tried first and reports 28 orphan
             // sites, not the "roughly sixteen" this file estimated: cmis/aspect/query/solr (6),
-            // cmis/service(+impl) (4), rest (5), model (5 — four of them a GPL header's closing
-            // line, which this reader cannot tell from a block), epoch (2), plus
-            // cmis/servlet, cmis/aspect/type/impl, init, reconcile, config and acl. They predate
-            // this branch and nobody has agreed to re-attach them, so the scope stays short of
-            // the whole tree — but the number is now measured instead of guessed, and it is the
-            // size of the work that widening would open.
+            // rest (5), cmis/service(+impl) (4), model (4), epoch (2), plus cmis/servlet,
+            // cmis/aspect/type/impl, cmis/factory/auth, init, reconcile, config and acl. FOUR of
+            // them are a duplicated licence header's closing line, which this reader cannot tell
+            // from a block — model/Aspect, model/AttachmentNode, model/Content and
+            // cmis/factory/auth/AuthenticationService, each carrying an older 2013 header with
+            // its own contributor attribution above the current one. (The breakdown first written
+            // here said model 5 and left cmis/factory/auth out altogether — batch-20 review,
+            // subagent P3-1, measured by re-implementing the detector.) They predate this branch
+            // and nobody has agreed to re-attach them, so the scope stays short of the whole tree
+            // — but the number is measured instead of guessed, and it is the size of the work
+            // that widening would open.
             "src/main/java/jp/aegif/nemaki/util",
             "src/main/java/jp/aegif/nemaki/rss",
+            // The package this batch's product change is IN. The roots were widened to where the
+            // orphans were (util, rss) and not to the whole of what the diff touched, which is
+            // the seventh form of the same mistake (batch-20 review, Codex P3-4). The parent
+            // cmis/factory/auth is not taken with it: AuthenticationService.java carries the
+            // duplicated 2013 header above, and moving or deleting a contributor attribution to
+            // satisfy this lock is not a trade this test gets to make.
+            "src/main/java/jp/aegif/nemaki/cmis/factory/auth/impl",
             // FIFTH widening — and, said plainly, made from the MISS again, not from the
             // diff. A review found two branch-created orphans in rest/importexport and this
             // root was added for them. The claim that it came from
@@ -356,7 +368,7 @@ class NoJavadocIsOrphanedTest {
         // sixth miss would leave 575 and stay green. The first version of this note said "the
         // two verifier roots are 32", which is neither pair (subagent, eighteenth review, P3).
         // A missing DIRECTORY is caught by the fail() below; a missing ENTRY is caught here.
-        assertEquals(18, ROOTS.size(),
+        assertEquals(19, ROOTS.size(),
                 "the list of source roots changed. Widen it deliberately and update this "
                         + "number; a root that quietly disappears takes its files with it: "
                         + ROOTS);

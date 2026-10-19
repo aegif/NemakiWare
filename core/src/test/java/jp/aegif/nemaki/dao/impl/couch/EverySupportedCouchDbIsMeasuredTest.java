@@ -347,8 +347,12 @@ class EverySupportedCouchDbIsMeasuredTest {
         // was satisfied whenever they were and hid whether they were there at all (subagent
         // review, eighth round — KS4 fired through the total with the per-document floors gone).
         assertTrue(sweptSeen > 0, "no sweep figure is stated in the form in any document");
-        assertTrue(unsweptSeen >= 4, "the three documents used to state the added-since-sweep "
-                + "count at least four times between them and now state it " + unsweptSeen
+        // FIVE since batch 20: the canon stated the count a second time as 「9 回目以後に足した
+        // 522 本（QK4〜…」 — the same claim with 「control は」 left out, which this form could not
+        // read, and it sat at 522 while the rest said 532 (batch-20 review, Codex P2-1). Rewritten
+        // into the one form rather than teaching the reader a second one.
+        assertTrue(unsweptSeen >= 5, "the three documents used to state the added-since-sweep "
+                + "count at least five times between them and now state it " + unsweptSeen
                 + " time(s), so a statement has drifted out of reach");
 
         // The enumeration is required only while something is unswept. With the set empty a

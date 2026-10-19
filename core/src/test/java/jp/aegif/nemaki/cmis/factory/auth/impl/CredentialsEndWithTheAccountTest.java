@@ -63,7 +63,11 @@ class CredentialsEndWithTheAccountTest {
         service.setPropertyManager(properties);
         RepositoryInfoMap repositories = mock(RepositoryInfoMap.class);
         jp.aegif.nemaki.cmis.factory.info.RepositoryInfo superUsers = mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfo.class);
-        when(superUsers.getId()).thenReturn("nemaki_conf");
+        // The super-users repository is a REPOSITORY — 「super.users: bedroom」 in
+        // repositories-default.yml — and this fixture used to name it "nemaki_conf", which is
+        // the system database the conf door is addressed BY (batch-20 review, subagent P3-6).
+        // Inert for these locks (it only feeds the IS_SU flag), and wrong where a reader looks.
+        when(superUsers.getId()).thenReturn("bedroom");
         when(repositories.getSuperUsers()).thenReturn(superUsers);
         when(repositories.contains("bedroom")).thenReturn(true);
         service.setRepositoryInfoMap(repositories);
