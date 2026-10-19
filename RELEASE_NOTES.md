@@ -165,19 +165,43 @@ API v1 の認証の資源（`/api/v1/cmis/auth/...`）は、**要求が名乗っ
 **最初にその名前を名乗った IdP に結ばれます。** 次の CouchDB のクエリで棚卸しできます。
 
 ```bash
-curl -s -u admin:password -X POST http://localhost:5984/bedroom/_find \
-  -H 'Content-Type: application/json' \
-  -d '{"selector":{"type":"userItem"},"fields":["userId","subTypeProperties"],"limit":1000}' \
-  | python3 -c 'import sys,json
-for d in json.load(sys.stdin)["docs"]:
-    props = {p["key"]: p["value"] for p in (d.get("subTypeProperties") or [])}
-    methods = props.get("nemaki:allowedAuthMethods") or ""
-    if "cloud" in methods and "nemaki:authRoute" not in props:
-        print(d["userId"], methods)'
+python3 - <<'EOF'
+import json, subprocess
+bookmark, found = None, 0
+while True:
+    body = {"selector": {"type": "userItem"},
+            "fields": ["userId", "subTypeProperties"], "limit": 500}
+    if bookmark:
+        body["bookmark"] = bookmark
+    out = subprocess.run(["curl", "-s", "-u", "admin:password", "-X", "POST",
+                          "http://localhost:5984/bedroom/_find",
+                          "-H", "Content-Type: application/json", "-d", json.dumps(body)],
+                         capture_output=True, text=True).stdout
+    page = json.loads(out)
+    docs = page.get("docs", [])
+    for d in docs:
+        props = {p["key"]: p["value"] for p in (d.get("subTypeProperties") or [])}
+        methods = props.get("nemaki:allowedAuthMethods") or ""
+        # 製品と同じ判定: カンマで切り、前後の空白を落とし、大小文字を無視した完全一致
+        allows_cloud = any(m.strip().lower() == "cloud" for m in methods.split(","))
+        if allows_cloud and not (props.get("nemaki:authRoute") or "").strip():
+            found += 1
+            print(d["userId"], methods)
+    bookmark = page.get("bookmark")
+    if not docs or len(docs) < 500 or not bookmark:
+        break
+print("---", found, "件")
+EOF
 ```
+
+**リポジトリごとに `bedroom` を読み替えてください**（`canopy` など）。1 ページ 500 件で `bookmark` を
+たどるので、利用者が何人いても最後まで見ます。`cloud` の判定は**製品と同じ**（カンマで切って完全一致）
+なので、`cloud-backup` のような値を誤って拾いません。
 
 出てきた利用者のうち、**SSO で入れてよいものだけ**を残してください（残すなら何もしなくてよく、
 止めるなら `nemaki:allowedAuthMethods` から `cloud` を外します）。
+**組み込みの `admin` とサービスアカウント（Solr・MCP）が出てきたら、まず外してください** —
+この版が直した問題で、名前を名乗られる側として最初に挙がるのがこの 2 つです。
 
 ## 【重要・上げると止まるもの】3.4.1 より前に発行した API キー・パスキー・RSS のフィードのトークンは、すべて使えなくなります
 
