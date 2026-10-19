@@ -589,16 +589,24 @@ class ReleaseReadinessIsMeasuredTest {
     // copies of that figure. Three rounds produced three ways for it to refuse a CORRECT document,
     // each measured by a reviewer:
     //
-    //   1. 「every section with the largest gate figure」 — 22 of this plan's 48 sections share a
-    //      figure with another, because a batch that adds no lock records the same unit total, and
-    //      each states its own control count. Two totals read → HarnessBroken → the whole gate red.
+    //   1. 「every section with the largest gate figure」 — measured at ed56b8484: 22 of this
+    //      plan's 48 sections shared a figure with another, because a batch that adds no lock
+    //      records the same unit total, and each states its own control count. Two totals read →
+    //      HarnessBroken → the whole gate red. (DATED, because the figure moves with every batch
+    //      and a 「current」 one went stale in the commit that wrote it: batch-30 review, subagent
+    //      P3-1.)
     //   2. 「the section the readiness document names」 — the provenance is NOT unambiguous under a
     //      tie: with batch 28 and 29 both at 8,299 and both at 2,312, pointing the readiness line at
     //      either one left every lock green (measured).
-    //   3. 「the line-start phrasing」 — only 17 of the 31 sections with a gate paragraph write it at
-    //      the start of a line; 10 write it mid-line (batch 24 and batch 27 among them), 2 split it
-    //      across lines, and 2 state no total at all. The refusal message even claimed 「every batch
-    //      section has stated one」.
+    //   3. 「the line-start phrasing」 — measured at ed56b8484: of the 31 sections with a gate
+    //      paragraph, 19 write the total at the start of a line, 10 write it mid-line (batch 24 and
+    //      batch 27 among them) and 2 split it across lines. So the form the lock required covered
+    //      19 of 31, and the 12 it refused include the batch written immediately before it.
+    //      (This line first said 「17 … and 2 state no total at all」. That was the 5f42623bd
+    //      distribution with the denominator updated to 31 and the difference parked in a category
+    //      that does not exist: NO gate paragraph lacks a total, in any revision. My own reader had
+    //      taken a TABLE paragraph as the gate paragraph for 確認 31・32 巡目 — batch-30 review,
+    //      subagent P2-2, and I reproduced both numbers.)
     //
     // Reading this document's numbers needs a model of markdown conventions that vary across 48
     // sections written over three weeks, and every version of that model has been a trap with the
@@ -621,15 +629,20 @@ class ReleaseReadinessIsMeasuredTest {
         // and which withdrawing a lock would have triggered.
         String own = read(Path.of(
                 "src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java"));
-        assertTrue(own.contains("WITHDRAWN (batch-30"),
+        // SPLIT, so this file contains the marker ONLY in the note. Written whole it appeared three
+        // times — the note and this method's own two literals — and deleting the note left the lock
+        // green while the slice below swallowed 41 KB of this method, whose own array literal then
+        // satisfied every assertion (batch-30 review, subagent P1-1, measured: the THIRD
+        // self-reference in this one method).
+        String marker = "WITHDRAWN (batch-" + "30";
+        assertTrue(own.contains(marker),
                 "the withdrawal note is gone. If the plan-figure lock is being reinstated, read the "
                         + "three traps it names first and say in the note which one the new form "
                         + "answers — the gate is behind this reader");
         // SCOPED TO THE NOTE, not to the file: the trap names appear in THIS method's own array
         // literal, so a file-wide contains() was satisfied by the check itself and the control
         // measured nothing (NH5, DID NOT FIRE — the second self-reference in this method).
-        String note = slice(own, "WITHDRAWN (batch-30", "\n\n    @Test",
-                "the withdrawal note");
+        String note = slice(own, marker, "\n\n    @Test", "the withdrawal note");
         for (String trap : new String[] { "largest gate figure", "the readiness document names",
                 "line-start phrasing" }) {
             assertTrue(note.contains(trap), "the withdrawal note no longer names the trap 「" + trap
@@ -639,13 +652,14 @@ class ReleaseReadinessIsMeasuredTest {
         assertTrue(note.contains("R212"),
                 "the withdrawal note no longer names the residual that records the gap, so the gap "
                         + "reads as 「nobody thought of it」 rather than 「measured three times」");
-        // The DECLARATION form, not a mention: the withdrawal note above names the method once in
-        // prose, and a check for the bare name would be satisfied by its own record.
-        // SPLIT, so this check's own literal does not satisfy it. Measured: written whole, the
-        // assertion failed on the line that contains it.
+        // THE WHOLE FILE for the forbid half, the NOTE for the require half. A declaration cannot
+        // appear inside a comment, so reading the note made this arm unfirable — measured: the
+        // method resurrected after the note, at the end of the class, or above it all passed
+        // (batch-30 review: Codex P2-1, subagent P2-1). The literals are SPLIT so this check is not
+        // satisfied by itself, which is the other half of the same trap.
         String forbidden = "void the" + "NamedBatchSectionsControlCountIsTheRunners";
         String forbiddenToo = "void the" + "NewestBatchSectionsControlCountIsTheRunners";
-        assertFalse(note.contains(forbidden) || note.contains(forbiddenToo),
+        assertFalse(own.contains(forbidden) || own.contains(forbiddenToo),
                 "a lock over the batch plan's control total is back while the withdrawal note is "
                         + "still here. One of the two is wrong — decide, do not keep both");
 
