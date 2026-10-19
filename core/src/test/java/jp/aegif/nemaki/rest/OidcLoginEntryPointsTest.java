@@ -361,8 +361,11 @@ public class OidcLoginEntryPointsTest {
     void anAccountAnotherRouteMadeIsNotAdopted() throws Exception {
         // cloud is listed — by the cloud directory sync itself, which writes it both on the accounts it
         // creates and onto accounts that already exist. Reading that as 「an administrator allowed SSO」 is
-        // what let the first generic-OIDC token naming such an account adopt it.
-        UserItem synced = account("dave", "cloud", null, SsoLogin.DIRECTORY_SYNC);
+        // what let the first generic-OIDC token naming such an account adopt it. The mark is the
+        // PROVIDER's route (google here): that provider's own login still enters the account, and only
+        // a generic-OIDC token is refused — marking it 「directory-sync」 refused all four and locked
+        // every synced user out (batch-22 review: both reviewers, P1).
+        UserItem synced = account("dave", "cloud", null, SsoLogin.GOOGLE);
         when(contentService.getUserItemById("bedroom", "dave")).thenReturn(synced);
 
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("dave", "sub-dave") + "\"}");
@@ -389,6 +392,18 @@ public class OidcLoginEntryPointsTest {
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("carol", "sub-carol") + "\"}");
 
         assertEquals("failure", rest.get("status"), rest.toJSONString());
+        verify(tokenService, never()).setToken(any(), any(), any());
+
+        // BOTH ENTRY POINTS: the api/v1 login has its own copy of the adopt-and-link procedure, and
+        // the claim 「both entry points」 was carried by a source-level lock alone (batch-22 review,
+        // subagent P3-11). Its own account, because the stubbing above is consumed by the REST call.
+        UserItem erin = account("erin", "cloud", null);
+        UserItem erinStillUnlinked = account("erin", "cloud", null);
+        when(contentService.getUserItemById("bedroom", "erin")).thenReturn(erin, erinStillUnlinked);
+
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("erin", "sub-erin")));
+
+        assertTrue(apiV1.startsWith("refused: "), apiV1);
         verify(tokenService, never()).setToken(any(), any(), any());
     }
 

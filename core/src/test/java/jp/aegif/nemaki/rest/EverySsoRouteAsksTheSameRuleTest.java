@@ -90,18 +90,22 @@ public class EverySsoRouteAsksTheSameRuleTest {
     public void anAccountAnotherRouteMadeIsNotAdopted() {
         // cloud is listed — by the sync itself. Reading that as 「an administrator allowed SSO」 is what
         // let a generic-OIDC token adopt an account the sync had made, or had turned into a cloud account.
-        UserItem madeBySync = account("nemaki:allowedAuthMethods", "cloud",
-                SsoLogin.ROUTE_KEY, SsoLogin.DIRECTORY_SYNC);
+        UserItem syncedFromGoogle = account("nemaki:allowedAuthMethods", "cloud",
+                SsoLogin.ROUTE_KEY, SsoLogin.GOOGLE);
 
-        String refused = SsoLogin.refusal(madeBySync, SsoLogin.OIDC, "https://idp.example iss-subject");
-        assertNotNull(refused, "a generic OIDC token adopted an account the directory sync made");
-        assertTrue(refused.contains(SsoLogin.DIRECTORY_SYNC), "the refusal does not name the route that "
+        String refused = SsoLogin.refusal(syncedFromGoogle, SsoLogin.OIDC, "https://idp.example iss-subject");
+        assertNotNull(refused, "a generic OIDC token adopted an account the Google directory sync made");
+        assertTrue(refused.contains(SsoLogin.GOOGLE), "the refusal does not name the route that "
                 + "made the account: " + refused);
 
-        // And the route that made it still logs in.
-        assertNull(SsoLogin.refusal(madeBySync, SsoLogin.DIRECTORY_SYNC, null),
-                "the account the sync made is refused to the sync's own mark, so a synced user cannot "
-                        + "log in at all");
+        // AND THE PROVIDER'S OWN LOGIN STILL WORKS. The first version of this assertion passed
+        // 「directory-sync」 as the route — a value no login can arrive by — and read green while
+        // every one of the four routes refused such an account. The nightly sync marks every user
+        // it touches, so that was an SSO lockout by morning with no way to clear the mark
+        // (batch-22 review: both reviewers, P1). [[unreachable-arm-is-a-false-claim]]
+        assertNull(SsoLogin.refusal(syncedFromGoogle, SsoLogin.GOOGLE, "https://accounts.google.com 123"),
+                "an account the Google sync provisioned cannot log in with Google — and a synced "
+                        + "account has a random password, so it has no other door");
     }
 
     @Test
@@ -158,31 +162,41 @@ public class EverySsoRouteAsksTheSameRuleTest {
     @DisplayName("a disabled account is refused by every route, linked or not")
     public void aDisabledAccountIsRefusedByEveryRoute() {
         for (String methods : List.of("disabled", "cloud,disabled")) {
-            UserItem disabled = account("nemaki:allowedAuthMethods", methods,
-                    SsoLogin.subjectKey(SsoLogin.SAML), "https://idp.example alice-nameid");
-            assertEquals("the account is disabled",
-                    SsoLogin.refusal(disabled, SsoLogin.SAML, "https://idp.example alice-nameid"),
-                    "a disabled account was logged into because it was already linked");
+            for (String route : List.of(SsoLogin.OIDC, SsoLogin.SAML, SsoLogin.GOOGLE, SsoLogin.MICROSOFT)) {
+                // EVERY route, as the name says: the first version looped over the two method
+                // spellings with the route fixed to SAML (batch-22 review, subagent P3-7).
+                UserItem disabled = account("nemaki:allowedAuthMethods", methods,
+                        SsoLogin.subjectKey(route), "https://idp.example alice-nameid");
+                assertEquals("the account is disabled",
+                        SsoLogin.refusal(disabled, route, "https://idp.example alice-nameid"),
+                        "a disabled account was logged into by " + route + " because it was already linked");
+            }
         }
     }
 
     @Test
     @DisplayName("every SSO arm asks the rule with its OWN route, and none takes an account without asking")
     public void everyArmAsksTheRuleWithItsOwnRoute() throws Exception {
-        String rest = JavaSource.withoutComments(JavaSource.read(REST));
+        // Literal text out, not comments: these assertions are about what the code CALLS, and a
+        // string in an error message would otherwise answer for a call (batch-22 review, subagent
+        // P3-4). [[test-helpers-already-exist-in-util-test]]
+        String rest = JavaSource.withoutLiteralText(JavaSource.read(REST));
 
-        // One call per route, each naming its own constant. A copied line would key two routes the same
-        // way and an account bound for one would answer for the other.
-        for (String route : List.of("SsoLogin.OIDC", "SsoLogin.SAML", "SsoLogin.GOOGLE", "SsoLogin.MICROSOFT")) {
-            Matcher asks = Pattern.compile("accountForSsoLogin\\([^;]*?" + Pattern.quote(route))
-                    .matcher(rest);
-            int found = 0;
-            while (asks.find()) {
-                found++;
-            }
-            assertEquals(1, found, "the SSO conversions ask the shared rule for " + route + " " + found
-                    + " time(s). Each of the four has to ask it, with its own route: a route that does "
-                    + "not is back to taking whatever account carries the name the IdP gave (R175)");
+        // IN ITS OWN METHOD, not once each in the file: counting occurrences let the SAML and Google
+        // constants be SWAPPED and stay green, which binds an account for one route and answers for
+        // the other (batch-22 review, Codex P2-1).
+        for (String[] arm : new String[][] {
+                { "public String convertSAMLToken", "SsoLogin.SAML" },
+                { "public String convertOIDCToken", "SsoLogin.OIDC" },
+                { "public String convertGoogleToken", "SsoLogin.GOOGLE" },
+                { "public String convertMicrosoftToken", "SsoLogin.MICROSOFT" } }) {
+            String body = JavaSource.methodBody(rest, arm[0]);
+            Matcher asks = Pattern.compile("accountForSsoLogin\\([^;]*?" + Pattern.quote(arm[1]))
+                    .matcher(body);
+            assertTrue(asks.find(), arm[0] + " does not ask the shared rule with " + arm[1]
+                    + ". Each of the four has to ask it, with ITS OWN route: an arm that does not is "
+                    + "back to taking whatever account carries the name the IdP gave (R175), and an "
+                    + "arm that names another route compares against the wrong binding");
         }
 
         // And NOTHING in the conversions takes an account by name without asking. getOrCreateUser is
@@ -202,26 +216,68 @@ public class EverySsoRouteAsksTheSameRuleTest {
     public void everyProvisionerRecordsItsRoute() throws Exception {
         // The mark is what tells 「an administrator listed cloud」 from 「a login path wrote it」. A
         // provisioner that does not write it hands its accounts to whichever IdP names them first.
-        for (String source : List.of(REST, API_V1, SYNC)) {
-            String body = JavaSource.withoutComments(JavaSource.read(source));
-            assertTrue(body.contains("SsoLogin.ROUTE_KEY"), source + " writes accounts with "
+        //
+        // EACH WRITE SITE, not once per file: 「the file mentions ROUTE_KEY somewhere」 stayed green
+        // when the mark was taken off the sync's create path, because its update path still had one
+        // (batch-22 review, Codex P2-1). Each span below is the method that builds the properties.
+        for (String[] site : new String[][] {
+                { REST, "private UserItem getOrCreateUser" },
+                { API_V1, "private UserItem getOrCreateUser" },
+                { SYNC, "private void ensureUserItem" } }) {
+            String body = JavaSource.methodBody(
+                    JavaSource.withoutLiteralText(JavaSource.read(site[0])), site[1]);
+            assertTrue(body.contains("ROUTE_KEY"), site[0] + "'s " + site[1] + " writes accounts with "
                     + "nemaki:allowedAuthMethods and does not record which route made them, so the rule "
                     + "cannot tell an administrator's decision from its own writing (R168)");
         }
 
-        // The sync's UPDATE path too, not only its create: that is where an account made with a password
-        // becomes a cloud account (measured: the same method writes allowedAuthMethods on an existing
-        // item, which is how an adoptable account appears without anyone deciding anything).
-        String sync = JavaSource.withoutComments(JavaSource.read(SYNC));
-        String ensure = JavaSource.methodBody(sync, "private void ensureUserItem");
+        // The sync's UPDATE path as well as its create: that is where an account made with a password
+        // becomes a cloud account (the same method writes allowedAuthMethods on an existing item, which
+        // is how an adoptable account appears without anyone deciding anything).
+        String ensure = JavaSource.methodBody(
+                JavaSource.withoutLiteralText(JavaSource.read(SYNC)), "private void ensureUserItem");
         int update = ensure.indexOf("if (existing != null)");
-        assertTrue(update > 0, "ensureUserItem no longer has an update path, so this lock is not reading "
-                + "the place where an existing account's methods are rewritten");
-        String updatePath = ensure.substring(update, ensure.indexOf("Folder usersFolder", update));
-        assertTrue(updatePath.contains("SsoLogin.ROUTE_KEY"),
+        int create = ensure.indexOf("Folder usersFolder");
+        assertTrue(update > 0 && create > update, "ensureUserItem no longer has an update path followed "
+                + "by a create path, so this lock is not reading the two places it is about: update="
+                + update + " create=" + create);
+        assertTrue(ensure.substring(update, create).contains("ROUTE_KEY"),
                 "the sync writes allowedAuthMethods onto an account that already exists without recording "
                         + "that IT did: such an account then reads as 「an administrator allowed SSO」 and the "
                         + "first token naming it adopts it (R168)");
+        assertTrue(ensure.substring(create).contains("ROUTE_KEY"),
+                "the sync creates accounts without recording that it did");
+
+        // AND THE VALUE has to be a route a login can arrive by. 「it writes the key」 was not enough:
+        // writing 「directory-sync」 refuses the account at all four routes, and the nightly sync marks
+        // every user it touches — an SSO lockout by morning with no way to clear it (batch-22 review:
+        // both reviewers, P1; measured — control MA5 did not fire until this assertion).
+        String syncBody = JavaSource.withoutLiteralText(JavaSource.read(SYNC));
+        for (String[] provider : new String[][] {
+                { "private void syncGoogleUser(", "SsoLogin.GOOGLE" },
+                { "private void syncMicrosoftUser(", "SsoLogin.MICROSOFT" } }) {
+            String body = JavaSource.methodBody(syncBody, provider[0]);
+            // EVERY call, not at least one: each provider's sync calls ensureUserItem twice (the
+            // account exists, or it does not), and a sabotage of one of them left 「at least one」
+            // green (measured — control MA5).
+            Matcher ensures = Pattern.compile("ensureUserItem\\([^;]*?" + Pattern.quote(provider[1]))
+                    .matcher(body);
+            int withTheRoute = 0;
+            while (ensures.find()) {
+                withTheRoute++;
+            }
+            Matcher all = Pattern.compile("ensureUserItem\\(").matcher(body);
+            int calls = 0;
+            while (all.find()) {
+                calls++;
+            }
+            assertTrue(calls > 0, provider[0] + " no longer calls ensureUserItem, so this lock is not "
+                    + "reading the place where the mark is written");
+            assertEquals(calls, withTheRoute, provider[0] + " calls ensureUserItem " + calls + " time(s) "
+                    + "and passes " + provider[1] + " in " + withTheRoute + " of them. A mark no login "
+                    + "can arrive by refuses the account at every route, and a synced account has a "
+                    + "random password — it has no other door");
+        }
     }
 
     @Test
@@ -231,13 +287,35 @@ public class EverySsoRouteAsksTheSameRuleTest {
         // this request mutated — so 「we wrote it」 is not 「it is stored」. What the read-back does NOT
         // undo is residual R196 (a refusal that throws never reaches it).
         for (String source : List.of(REST, API_V1)) {
-            String body = JavaSource.withoutComments(JavaSource.read(source));
+            String body = JavaSource.withoutLiteralText(JavaSource.read(source));
             int write = body.indexOf("applyUserUpdate");
             assertTrue(write > 0, source + " no longer writes the binding through applyUserUpdate, so "
                     + "this lock is not reading the write it is about");
             String after = body.substring(write);
+            // The NAME was not enough: reading the stored value and then not comparing it, or
+            // comparing it and not refusing, both left this green (batch-22 review, Codex P2-1).
             assertTrue(after.contains("boundSubject"), source + " writes the binding and does not read it "
                     + "back, so a login proceeds as an account whose link was never stored");
+            int read = after.indexOf("boundSubject");
+            String afterRead = after.substring(read);
+            assertTrue(afterRead.contains("binding.equals(") || afterRead.contains(".equals(storedBinding)"),
+                    source + " reads the stored binding back and does not compare it with the one this "
+                            + "login carries");
+            assertTrue(afterRead.contains("return null") || afterRead.contains("throw "),
+                    source + " compares the stored binding and does not refuse the login when it differs");
         }
+
+        // THE CREATE PATH as well: an account created without the binding this login gave it is
+        // adoptable by the next token of the same name, and the span above only reads the update
+        // (batch-22 review, Codex P1-2; measured — control MB5 did not fire until this assertion).
+        String helper = JavaSource.methodBody(
+                JavaSource.withoutLiteralText(JavaSource.read(REST)), "private UserItem accountForSsoLogin");
+        int created = helper.indexOf("getOrCreateUser(");
+        int returned = helper.indexOf("return created;");
+        assertTrue(created > 0 && returned > created, "accountForSsoLogin no longer creates an account "
+                + "and returns it, so this lock is not reading the create path");
+        assertTrue(helper.substring(created, returned).contains("boundSubject"),
+                "the account just created is returned without checking that it carries the binding this "
+                        + "login gave it");
     }
 }
