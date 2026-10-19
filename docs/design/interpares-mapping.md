@@ -121,9 +121,9 @@ CMIS 経路に対して読み取り専用で、適用値の hash が outbox と 
 | **責務** | **C** 保護要件を定める / **N** 永続化・削除アーカイブ・復旧手順 / **O** バックアップ運用と**復旧演習** |
 | **条件** | 無条件 |
 | **現状** | CouchDB 永続化、削除アーカイブ (`/core/rest/repo/{repositoryId}/archive`)、バックアップ**作成**手順の文書 |
-| **主張** | **`archive.create.enabled=true` の構成では**、削除は物理消去ではなくアーカイブに移り、復元できる。既定は true だが**設定で切れる** |
+| **主張** | **`archive.create.enabled=true` の構成では**、削除は物理消去ではなくアーカイブに移り、復元できる。**出荷の設定ファイル**では true だが、**キーを落とした設定では作られない**（コード側の既定は `false`） |
 | **主張しないこと** | 「バックアップと復旧の手順が文書化されている」とは言わない。**文書にあるのはバックアップの作成 (EBS snapshot / CouchDB replication) までで、復元して整合性を確かめる手順は無い。** これはギャップである |
-| **検証手順** | ① `archive.create.enabled` の値を確認する (既定 `true`)。② 対象オブジェクトの content を取得して SHA-256 を控える。③ 削除する。④ `GET /core/rest/repo/{repositoryId}/archive/index` に現れることを見る。⑤ `PUT /core/rest/repo/{repositoryId}/archive/restore/{id}` で復元する — **`{id}` は元のオブジェクト ID ではなく、④の index が返す `archives[].id`** (**CSRF 必須** — `-H "X-Requested-With: XMLHttpRequest"`)。⑥ 復元後の content の SHA-256 が②と一致することを見る。⑦ 反証: `archive.create.enabled=false` にすると④に現れない — **この設定は真正性に影響する**ので、導入組織は値を固定して監査対象にすること |
+| **検証手順** | ① `archive.create.enabled` の値を確認する（出荷の設定ファイルは `true`。キーが無ければコード側の既定で `false`）。② 対象オブジェクトの content を取得して SHA-256 を控える。③ 削除する。④ `GET /core/rest/repo/{repositoryId}/archive/index` に現れることを見る。⑤ `PUT /core/rest/repo/{repositoryId}/archive/restore/{id}` で復元する — **`{id}` は元のオブジェクト ID ではなく、④の index が返す `archives[].id`** (**CSRF 必須** — `-H "X-Requested-With: XMLHttpRequest"`)。⑥ 復元後の content の SHA-256 が②と一致することを見る。⑦ 反証: `archive.create.enabled=false` にすると④に現れない — **この設定は真正性に影響する**ので、導入組織は値を固定して監査対象にすること |
 | **ギャップ** | (a) **fixity 再検証が無い。** 保存済みバイトが読めるか・変わっていないかを定期的に確かめる機構が存在しない。「壊れていない」と言う根拠が現状は**書いた時点の成功だけ**である。(b) **復元演習の手順が無い** — バックアップから戻して整合を確かめる公開手順を書く必要がある (上記⑤⑥は単票の復元であって、システム全体の復旧演習ではない) |
 | **計画** | **P1-2 (fixity)**。「読めない」と「不一致」を区別すること、初回 baseline、周期、隔離、リストア後の全検証まで設計対象 |
 

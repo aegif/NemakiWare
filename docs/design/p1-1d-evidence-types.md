@@ -205,7 +205,7 @@ READONLY プロパティを黙って無視するのは CMIS の**通常の挙動
 初稿は「逃げ道はオブジェクトごと消すことだけ」と書いた。**削除は証拠を消さない**
 (外部レビュー):
 
-- `archive.create.enabled` は**既定 true**。`deleteInternal` は archive を作ってから本体を消す
+- `archive.create.enabled` は**出荷の設定ファイルで true**（キーが無ければコード側の既定で false）。`deleteInternal` は archive を作ってから本体を消す
 - `ArchiveDaoDelegate.createArchive` は**生の CouchDB 文書を丸ごと**複写する。
   コメントが対象を名指ししている — 「preserve ALL fields (… **secondaryIds, aspects** …)」
 - `restoreContent` の除外リストに `aspects` / `secondaryIds` は**無い**。**restore で証拠ごと戻る**
