@@ -87,11 +87,30 @@ class CredentialsEndWithTheAccountTest {
     }
 
     private static UserItem account(String allowedAuthMethods) {
+        return account(allowedAuthMethods, ACCOUNT_DOCUMENT, null);
+    }
+
+    /**
+     * The account document the login reads for the name the credential names: its id, and its
+     * {@code nemaki:credentialGeneration} as stored (null = the property is absent).
+     *
+     * <p>Build it into a local BEFORE the {@code when(...)} that returns it: stubbing a new mock
+     * inside {@code thenReturn}'s argument is an UnfinishedStubbing, which fails the test with no
+     * assertion of its own (measured here).
+     */
+    private static UserItem account(String allowedAuthMethods, String documentId, String generation) {
         UserItem user = mock(UserItem.class);
         when(user.getUserId()).thenReturn("alice");
-        when(user.getId()).thenReturn(ACCOUNT_DOCUMENT);
-        when(user.getSubTypeProperties()).thenReturn(allowedAuthMethods == null ? List.of()
-                : List.of(new Property("nemaki:allowedAuthMethods", allowedAuthMethods)));
+        when(user.getId()).thenReturn(documentId);
+        List<Property> properties = new java.util.ArrayList<>();
+        if (allowedAuthMethods != null) {
+            properties.add(new Property("nemaki:allowedAuthMethods", allowedAuthMethods));
+        }
+        if (generation != null) {
+            properties.add(new Property(
+                    jp.aegif.nemaki.util.AuthenticationUtil.CREDENTIAL_GENERATION_KEY, generation));
+        }
+        when(user.getSubTypeProperties()).thenReturn(properties);
         return user;
     }
 
@@ -133,6 +152,43 @@ class CredentialsEndWithTheAccountTest {
         UserItem a3 = account("disabled");
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(a3);
         assertFalse(withSession());
+    }
+
+    @Test
+    @DisplayName("a session token of a RECREATED account is refused, through the login itself")
+    void aSessionTokenOfARecreatedAccountIsRefusedThroughTheLogin() {
+        // The name resolves, the token is the registered one, the account is neither deleted nor
+        // disabled — and it is a DIFFERENT document than the one the token was issued for. The
+        // arms above are all satisfied by mayStillAct, so without this one the login's binding
+        // check was measured only where another branch gives the same answer (R170's confirmation
+        // round, Codex P2-3). [[a-sibling-arm-of-the-same-check-satisfies-the-lock]]
+        UserItem recreated = account(null, "alice-doc-recreated", null);
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(recreated);
+        assertFalse(assertDoesNotThrow(this::withSession),
+                "the session token of the DELETED alice logged in as the recreated one");
+    }
+
+    @Test
+    @DisplayName("a session token from before a password change is refused, through the login itself")
+    void aSessionTokenFromBeforeAPasswordChangeIsRefusedThroughTheLogin() {
+        // Same document, same name, able to act: only the generation differs. This is the arm that
+        // stays green when the login stops comparing generations at all (the call passes
+        // generationApplies = true; nothing else here would notice it becoming false).
+        UserItem changed = account(null, ACCOUNT_DOCUMENT, "1");
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(changed);
+        assertFalse(assertDoesNotThrow(this::withSession),
+                "a session opened before the password change still logged in");
+    }
+
+    @Test
+    @DisplayName("a session token is refused when the account's own generation cannot be read")
+    void aSessionTokenIsRefusedWhenTheAccountsGenerationCannotBeRead() {
+        // "Could not read" is not "generation 0": guessing would let a credential the password
+        // change invalidated through.
+        UserItem unreadable = account(null, ACCOUNT_DOCUMENT, "nonsense");
+        when(contentService.getUserItemById("bedroom", "alice")).thenReturn(unreadable);
+        assertFalse(assertDoesNotThrow(this::withSession),
+                "the login read an unreadable generation as 0 and let the session through");
     }
 
     @Test

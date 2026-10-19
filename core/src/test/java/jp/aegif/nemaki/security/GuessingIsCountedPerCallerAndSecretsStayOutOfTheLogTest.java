@@ -293,15 +293,33 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         assertTrue(auth.contains("private String throttleKey(String repositoryId, String username, String address)"),
                 "the single key construction is gone; each door building its own key is how the API v1"
                         + " door ended up not sharing the counter at all");
-        Matcher uses = Pattern.compile("throttleKey\\(repositoryId, username,").matcher(auth);
+        // Every CALL of it, not the calls spelled with one particular first argument: the nemaki_conf
+        // door keys on the super-users repository and not on the repository in the URL, and a census
+        // that read only "throttleKey(repositoryId, username," counted 4 both before and after that
+        // door started counting at all (R186).
+        Matcher uses = Pattern.compile("throttleKey\\((?!String )").matcher(auth);
         int count = 0;
         while (uses.find()) {
             count++;
         }
-        assertEquals(4, count,
+        assertEquals(5, count,
                 "the doors that build a throttle key changed in number; each one must go through"
-                        + " throttleKey(repositoryId, username, address) — Basic auth and the three"
-                        + " methods the API v1 login calls");
+                        + " throttleKey(repositoryId, username, address) — Basic auth, the three"
+                        + " methods the API v1 login calls, and the nemaki_conf door");
+
+        // And that door's key is the repository it reads the password FROM. Keying it on nemaki_conf
+        // would stop its own 16th guess and still leave a fresh budget of 15 for the one secret at
+        // /rest/repo/{super-users}/, in both directions
+        // ([[a-sibling-arm-of-the-same-check-satisfies-the-lock]]). Measured over the two doors in
+        // TheNemakiConfDoorCountsTheGuessTest; this is the reason written down.
+        int confDoor = auth.indexOf("public boolean loginForNemakiConfDb");
+        assertTrue(confDoor > 0,
+                "loginForNemakiConfDb is gone — this lock no longer reads the nemaki_conf door");
+        String confBody = auth.substring(confDoor, auth.indexOf("\n\t}", confDoor));
+        assertTrue(confBody.contains("throttleKey(suId, username,"),
+                "the nemaki_conf door does not key on the super-users repository whose password it"
+                        + " reads, so its failures and that repository's own are two budgets for one"
+                        + " secret: " + confBody);
     }
 
     @Test

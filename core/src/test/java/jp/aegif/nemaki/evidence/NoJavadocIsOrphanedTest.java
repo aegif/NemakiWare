@@ -99,7 +99,22 @@ class NoJavadocIsOrphanedTest {
             // Tree, in a package the roots did not reach. Four times is not an oversight, it is
             // the method being wrong: the roots are chosen from the last miss instead of from
             // the diff. Whoever touches this next should widen from `git diff --name-only`.
-            "src/main/java/jp/aegif/nemaki/util/cache",
+            // SEVENTH miss, and the first one measured rather than estimated: the R170 merge put
+            // three orphans in util/AuthenticationUtil (the accountGeneration javadoc, the core of
+            // that batch's rule), rss/RssToken and rss/RssTokenService — none of them reachable
+            // from util/cache. So util goes in WHOLE, which supersedes util/cache, and rss with
+            // it. Both are clean as of this widening.
+            //
+            // The whole of src/main/java/jp/aegif/nemaki was tried first and reports 28 orphan
+            // sites, not the "roughly sixteen" this file estimated: cmis/aspect/query/solr (6),
+            // cmis/service(+impl) (4), rest (5), model (5 — four of them a GPL header's closing
+            // line, which this reader cannot tell from a block), epoch (2), plus
+            // cmis/servlet, cmis/aspect/type/impl, init, reconcile, config and acl. They predate
+            // this branch and nobody has agreed to re-attach them, so the scope stays short of
+            // the whole tree — but the number is now measured instead of guessed, and it is the
+            // size of the work that widening would open.
+            "src/main/java/jp/aegif/nemaki/util",
+            "src/main/java/jp/aegif/nemaki/rss",
             // FIFTH widening — and, said plainly, made from the MISS again, not from the
             // diff. A review found two branch-created orphans in rest/importexport and this
             // root was added for them. The claim that it came from
@@ -341,7 +356,7 @@ class NoJavadocIsOrphanedTest {
         // sixth miss would leave 575 and stay green. The first version of this note said "the
         // two verifier roots are 32", which is neither pair (subagent, eighteenth review, P3).
         // A missing DIRECTORY is caught by the fail() below; a missing ENTRY is caught here.
-        assertEquals(17, ROOTS.size(),
+        assertEquals(18, ROOTS.size(),
                 "the list of source roots changed. Widen it deliberately and update this "
                         + "number; a root that quietly disappears takes its files with it: "
                         + ROOTS);

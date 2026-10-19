@@ -366,7 +366,7 @@ class ReleaseReadinessIsMeasuredTest {
         GateReading hidden = readNewestGate("### 確認 9 巡目\n"
                 + "**ゲートと実測**: 全ユニット **1,000 本**\n\nprose <!--\n"
                 + "### 確認 99 巡目\n**ゲートと実測**: 全ユニット **9,999 本**\n-->\n");
-        assertEquals(9, hidden.round(),
+        assertEquals("確認 9 巡目", hidden.section(),
                 "a section hidden inside a mid-line HTML comment is read as a real one, so a "
                         + "figure nobody recorded becomes «the newest run»");
         assertEquals("1,000", hidden.figure(), "the figure comes from the commented-out section");
@@ -412,6 +412,19 @@ class ReleaseReadinessIsMeasuredTest {
                         + "**1,000 本**\n").claimed(),
                 "a gate line written as an ordered list item is not counted as a claim");
 
+        // A SECTION THAT IS NOT A 確認 ROUND, and newest by document order. Both arms discriminate:
+        // the round-35 reader returned 確認 9 巡目 / 1,000 for this fixture, which is the shape that
+        // let R170's 8,246 go unread while the readiness document kept naming 8,197.
+        GateReading batchSection = readNewestGate("### 確認 9 巡目\n"
+                + "**ゲートと実測**: 全ユニット **1,000 本**\n\n### R170 — バッチ 19 を入れた\n"
+                + "**ゲートと実測**: 全ユニット **1,049 本**\n");
+        assertEquals("R170 — バッチ 19 を入れた", batchSection.section(),
+                "a gate line recorded under a heading that is not a 確認 round is not read, so the "
+                        + "newest run in the plan is invisible to this lock");
+        assertEquals("1,049", batchSection.figure(),
+                "the figure comes from a section that is not the newest one in the document");
+        assertEquals(2, batchSection.read(), "one of the two gate lines was not read");
+
         // THE REAL DOCUMENT LAST. Reading it first meant a sabotage that makes this reader
         // refuse the real plan never reached the synthetic drives, so the control measuring the
         // fence anchor was scored «the harness broke» instead of «the guard fired» (round 35,
@@ -422,24 +435,33 @@ class ReleaseReadinessIsMeasuredTest {
                         + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
                         + "a round without a run");
 
-        int newestRound = real.round();
+        String newestSection = real.section();
         String newestFigure = real.figure();
         if (newestFigure == null) {
-            throw new HarnessBroken("the batch plan records no round with a gate line stating "
+            throw new HarnessBroken("the batch plan records no section with a gate line stating "
                     + "「全ユニット **N 本」 or 「**全ユニット N 本」, so this reader cannot tell "
                     + "which tree the readiness document should be naming as the latest");
         }
+        // The provenance is whatever the readiness line puts in bold after the date, and it has to
+        // NAME the plan's newest gate record — 「確認 35 巡目」 while that was the newest, 「バッチ
+        // 20」 now. Asking for 「確認 N 巡目」 by shape was how a batch section slipped past: the
+        // regex simply stopped matching the kind of record the plan had started writing.
         Matcher names = Pattern.compile(
                 "全ユニットの最新の実測は \\*\\*([0-9]{1,3}(?:,[0-9]{3})+) 本 green\\*\\*（20[0-9][0-9]"
-                        + "[^（]*?\\*\\*確認 (\\d+) 巡目\\*\\*").matcher(read(READINESS));
+                        + "[^（]*?\\*\\*([^*（）]+)\\*\\*").matcher(read(READINESS));
         assertTrue(names.find(),
-                "the readiness document's latest-measurement line no longer names the round it "
-                        + "measured, so nobody can tell which tree the figure belongs to");
-        assertEquals(newestRound + "/" + newestFigure, names.group(2) + "/" + names.group(1),
-                "the readiness document calls 確認 " + names.group(2) + " 巡目 (" + names.group(1)
-                        + " tests) its latest measurement while the batch plan's newest recorded "
-                        + "run is 確認 " + newestRound + " 巡目 (" + newestFigure + "). The two are "
-                        + "the same tree or one of them is wrong about which one it measured");
+                "the readiness document's latest-measurement line no longer names the tree it "
+                        + "measured in bold, so nobody can tell which one the figure belongs to");
+        assertEquals(newestFigure, names.group(1),
+                "the readiness document calls " + names.group(1) + " tests its latest measurement "
+                        + "while the batch plan's newest recorded run is " + newestFigure + " "
+                        + "(「" + newestSection + "」). The two are the same tree or one of them is "
+                        + "wrong about which one it measured");
+        assertTrue(newestSection.contains(names.group(2)),
+                "the readiness document says its latest measurement is 「" + names.group(2)
+                        + "」, and the plan's newest gate record is under 「" + newestSection
+                        + "」 — so the figure above matches a run the two documents name "
+                        + "differently, which is how a stale line stays green");
 
         int recorded = Integer.parseInt(totals.get(0).replace(",", ""));
         int floor = declared - possiblyExcluded;
@@ -452,7 +474,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /** What a plan document says about the newest run it records. */
-    private record GateReading(int round, String figure, int claimed, int read) { }
+    private record GateReading(String section, String figure, int claimed, int read) { }
 
     /**
      * The newest round the plan records a unit run for, and how many gate paragraphs claim one.
@@ -469,19 +491,38 @@ class ReleaseReadinessIsMeasuredTest {
      */
     private static GateReading readNewestGate(String plan) {
         String prose = asProse(plan);
-        Matcher rounds = Pattern.compile("(?ms)^### 確認 (\\d+) 巡目(.*?)(?=^#{1,3} |\\z)")
+        // EVERY level-3 section, not only the 確認 ones. A batch opened on the owner's instruction
+        // is recorded under its own heading (「### R170 — …」), and a reader that only knew 確認
+        // rounds skipped its gate line: the readiness document then agreed with 確認 35 巡目's
+        // 8,197 while the tree the merge produced measured 8,246, and this lock was green through
+        // it (R170's confirmation round, Codex P3-1 — the fifth time that line went stale).
+        //
+        // «Newest» is the LARGEST figure, not a position and not a round number. Document order
+        // does not say it (this plan writes 確認 17〜24 ascending, then a batch section, then 35
+        // down to 25 — measured: the first version of this reader took 確認 25 巡目 / 8,196 as the
+        // newest) and a batch heading has no round number to compare. The unit total only grows
+        // while a release is being built — every batch adds locks and retires none — so the
+        // largest recorded run is the newest one. If a batch ever legitimately REMOVES tests this
+        // lock fires and the ordering has to be made explicit in the document instead of inferred
+        // here; that is the known limit of reading it this way.
+        Matcher rounds = Pattern.compile("(?ms)^### (.+?)$(.*?)(?=^#{1,3} |\\z)")
                 .matcher(prose);
-        int newestRound = 0;
         int claimed = 0;
         int read = 0;
+        int largest = -1;
+        List<String> newestSections = new ArrayList<>();
         String newestFigure = null;
         Set<Integer> roundsSeen = new java.util.LinkedHashSet<>();
         while (rounds.find()) {
-            int round = Integer.parseInt(rounds.group(1));
-            if (!roundsSeen.add(round)) {
-                throw new HarnessBroken("the batch plan has more than one 確認 " + round
-                        + " 巡目 section, so this reader cannot tell which one records that "
-                        + "round's run");
+            String heading = rounds.group(1).trim();
+            Matcher asARound = Pattern.compile("^確認 (\\d+) 巡目").matcher(heading);
+            if (asARound.find()) {
+                int round = Integer.parseInt(asARound.group(1));
+                if (!roundsSeen.add(round)) {
+                    throw new HarnessBroken("the batch plan has more than one 確認 " + round
+                            + " 巡目 section, so this reader cannot tell which one records that "
+                            + "round's run");
+                }
             }
             String section = rounds.group(2);
             // A PARAGRAPH, not a line: the figure may wrap onto the next one.
@@ -515,19 +556,25 @@ class ReleaseReadinessIsMeasuredTest {
                 figures.add(gate.group(1));
             }
             if (figures.size() > 1) {
-                throw new HarnessBroken("確認 " + round + " 巡目 states " + figures.size()
+                throw new HarnessBroken(heading + " states " + figures.size()
                         + " gate figures " + figures + ", so this reader cannot tell which run the "
                         + "readiness document should be naming");
             }
             if (figures.size() == 1) {
                 read++;
-                if (round > newestRound) {
-                    newestRound = round;
+                int figure = Integer.parseInt(figures.get(0).replace(",", ""));
+                if (figure > largest) {
+                    largest = figure;
                     newestFigure = figures.get(0);
+                    newestSections = new ArrayList<>(List.of(heading));
+                } else if (figure == largest) {
+                    // Several rounds can record the SAME run (確認 9・10・11 all state 8,182 —
+                    // no lock was added), so the readiness document may name any of them.
+                    newestSections.add(heading);
                 }
             }
         }
-        return new GateReading(newestRound, newestFigure, claimed, read);
+        return new GateReading(String.join("」「", newestSections), newestFigure, claimed, read);
     }
 
     /**
