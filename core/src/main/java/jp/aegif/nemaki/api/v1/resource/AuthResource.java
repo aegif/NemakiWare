@@ -473,29 +473,31 @@ public class AuthResource {
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
                 user = getOrCreateUser(repositoryId, username, binding);
-                // THE SAME RULE, asked of the account as the STORE has it — the same shape the REST
-                // twin uses. getOrCreateUser answers with an account it FOUND when one appeared
-                // between this method's read and its own, and the store may not carry the creation at
-                // all; without this ask such an account was entered with no rule applied and
-                // 「unset ⇒ allowed」 decided alone (batch-25, subagent P3-3). A null account is
-                // refused by the rule itself, which is the fail-closed direction.
+                // THE SAME RULE, asked of the account this login will ACT AS — the one getOrCreateUser
+                // answered with, which is the account it FOUND when one appeared between this method's
+                // read and its own. That is an EXISTING account, and without this ask it was entered
+                // with no rule applied and 「unset ⇒ allowed」 decided alone (R209). The ACCOUNT, not a
+                // second store read: a store read here refuses a legitimate first login during
+                // provisioning, because StartupPhase is process-wide (batch-25 review, Codex P2-4).
                 if (user != null) {
-                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
-                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(stored,
+                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(user,
                             jp.aegif.nemaki.rest.SsoLogin.OIDC, binding);
                     if (refusedNew != null) {
                         logger.info("API v1: OIDC login refused for the account the creation answered"
                                 + " with: " + refusedNew);
                         throw ApiException.permissionDenied(refusedNew);
                     }
-                    // And it has to CARRY the binding, read FROM THE STORE — the same check the REST
-                    // twin makes. Without it, a conversion that drops the subject leaves an account
-                    // with 「cloud」 and the 「oidc」 mark and no binding (batch-22..24 review: both
-                    // reviewers, P1). The account that is left behind stays adoptable by a later OIDC
-                    // login, which is the mark's own meaning, and that login must store a binding and
-                    // read it back before it proceeds.
+                    // And the binding has to be IN THE STORE — the same check the REST twin makes.
+                    // Without it, a conversion that drops the subject leaves an account with 「cloud」
+                    // and no binding (batch-22..24 review: both reviewers, P1). The leftover is NOT
+                    // always this route's own shape: in the race it can be an account made before
+                    // 3.4.1, with cloud and no mark, adoptable from all four routes (batch-25 review,
+                    // subagent P2-4). What bounds the damage is the rule, not the shape — an adopting
+                    // login carrying a subject must store a binding and read it back. A login carrying
+                    // NO subject is residual R208.
                     if (binding != null && !binding.isBlank()
-                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
+                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(
+                                    contentService.getUserItemByIdFromStore(repositoryId, username),
                                     jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
                         logger.warning("API v1: OIDC login refused — the account created for "
                                 + username + " does not carry the binding");
