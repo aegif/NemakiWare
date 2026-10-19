@@ -168,8 +168,17 @@ public class OidcLoginEntryPointsTest {
         }
     }
 
-    /** An account as the store holds it: the authentication methods it allows, and the OIDC subject it is linked to. */
+    /** As {@link #account(String, String, String, String)} with no route mark. */
     private static UserItem account(String userId, String allowedAuthMethods, String linkedTo) {
+        return account(userId, allowedAuthMethods, linkedTo, null);
+    }
+
+    /**
+     * An account as the store holds it: the authentication methods it allows, the OIDC subject it is linked to,
+     * and WHICH ROUTE made it (R168 — {@code cloud} is written by the other SSO routes and by the cloud
+     * directory sync, so it is not an administrator's decision on its own).
+     */
+    private static UserItem account(String userId, String allowedAuthMethods, String linkedTo, String route) {
         UserItem user = new UserItem("doc-" + userId, "nemaki:user", userId, userId, "$2a$10$x", false, "users");
         java.util.List<jp.aegif.nemaki.model.Property> properties = new java.util.ArrayList<>();
         if (allowedAuthMethods != null) {
@@ -177,6 +186,9 @@ public class OidcLoginEntryPointsTest {
         }
         if (linkedTo != null) {
             properties.add(new jp.aegif.nemaki.model.Property("nemaki:oidcSubject", linkedTo));
+        }
+        if (route != null) {
+            properties.add(new jp.aegif.nemaki.model.Property(SsoLogin.ROUTE_KEY, route));
         }
         user.setSubTypeProperties(properties);
         return user;
@@ -342,6 +354,42 @@ public class OidcLoginEntryPointsTest {
         assertTrue(apiV1.startsWith("refused: "), apiV1);
         verify(tokenService, never()).setToken(any(), any(), any());
         assertEquals("success", rest("{\"id_token\":\"" + idTokenFor("bob", "sub-bob") + "\"}").get("status"));
+    }
+
+    @Test
+    @DisplayName("REST and API v1: an account ANOTHER ROUTE made is not adopted, though it lists cloud (R168)")
+    void anAccountAnotherRouteMadeIsNotAdopted() throws Exception {
+        // cloud is listed — by the cloud directory sync itself, which writes it both on the accounts it
+        // creates and onto accounts that already exist. Reading that as 「an administrator allowed SSO」 is
+        // what let the first generic-OIDC token naming such an account adopt it.
+        UserItem synced = account("dave", "cloud", null, SsoLogin.DIRECTORY_SYNC);
+        when(contentService.getUserItemById("bedroom", "dave")).thenReturn(synced);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("dave", "sub-dave") + "\"}");
+        String apiV1 = apiV1(Map.of("id_token", idTokenFor("dave", "sub-dave")));
+
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        assertTrue(apiV1.startsWith("refused: "), apiV1);
+        verify(tokenService, never()).setToken(any(), any(), any());
+        verify(contentService, never()).applyUserUpdate(any(), any(), any());
+        assertTrue(synced.getSubTypeProperties().stream().noneMatch(pr -> "nemaki:oidcSubject".equals(pr.getKey())),
+                "an account the directory sync made was bound to the token's subject");
+    }
+
+    @Test
+    @DisplayName("REST: a binding the store does not keep refuses the login — «we wrote it» is not «it is stored»")
+    void aBindingThatIsNotStoredRefusesTheLogin() throws Exception {
+        // The save can return without storing (and a refusal that THROWS leaves the cached instance
+        // carrying the binding — residual R196). Either way the login must not proceed as an account whose
+        // link was never stored.
+        UserItem carol = account("carol", "cloud", null);
+        UserItem stillUnlinked = account("carol", "cloud", null);
+        when(contentService.getUserItemById("bedroom", "carol")).thenReturn(carol, stillUnlinked);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("carol", "sub-carol") + "\"}");
+
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        verify(tokenService, never()).setToken(any(), any(), any());
     }
 
     @Test
