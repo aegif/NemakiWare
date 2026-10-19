@@ -165,9 +165,11 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             // Only when the type is KNOWN. The unreadable case has already thrown above, so what
             // reaches here is either a type we do not extract (purge: the old block is wrong) or
             // an attachment that records no type / no attachment at all (mimeType == null). The
-            // second is left alone deliberately, as it was before R185: nothing about it has been
-            // measured, and R185 is about ending the collapse of «could not read» into «not
-            // indexable», not about widening what authorises a delete. A document that genuinely
+            // second is left alone deliberately, as it was before R185 — not because nothing is
+            // known about it (that was the wrong reason, written here and contradicted by this
+            // file's own javadoc two methods down: batch-21 review, subagent P3-2) but because
+            // R185 is about ending the collapse of «could not read» into «not indexable», and
+            // widening what authorises a delete is a different question. A document that genuinely
             // lost its content stream is purged by deleteContentStream, which calls
             // triggerRAGDeletion directly.
             if (mimeType != null) {
@@ -790,7 +792,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
         String attachmentId = document.getAttachmentNodeId();
         if (attachmentId == null) {
             // A statement about this version: it has no content stream at all. NOT REACHED from
-            // indexDocument today — getMimeType returns null for the same condition and the MIME
+            // indexDocument today — readMimeType answers ABSENT for the same condition and the MIME
             // gate throws first (round-6 review, P3). Kept because it is the correct answer for
             // this input and the gate's order is not this method's contract; the purge of a
             // document that lost its content stream is done by deleteContentStream, which calls
@@ -924,11 +926,32 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
      * outage during one made every document "skipped" and the run reported {@code completed} over
      * an empty index, with no durable retry anywhere.
      *
-     * <p>Decided the same way as {@code extractText}, input for input: no attachment id is a
-     * statement about the version, a throw is unreadable, and an attachment the store does not
-     * hand back is a broken reference and NOT "this version has no type". The one input that
-     * reader does not have is an attachment that exists and records no type at all — that is
-     * {@code ABSENT}: re-reading cannot change it.
+     * <p>Decided against {@code extractText} input for input, and it differs on one of them —
+     * deliberately, because the two answers do different work:
+     *
+     * <ul>
+     * <li><b>No attachment id</b> (null or blank): {@code ABSENT}. Blank as well as null, because
+     *     {@code getAttachmentRef} answers {@code null} for a blank id WITHOUT asking the store
+     *     (its own guard), so treating blank as a store answer would report 「not asked」 as
+     *     「could not read」 (batch-21 review: Codex P2, subagent P3-4).</li>
+     * <li><b>The store throws</b>: {@code UNREADABLE}. This is the defect R185 is about — a
+     *     CouchDB outage during a full reindex used to read as 「not indexable」.</li>
+     * <li><b>The store answers and hands back nothing</b>: {@code ABSENT}, where
+     *     {@code extractText} says unreadable. The DAO's contract is that {@code get} returns
+     *     null ONLY for not-found and throws otherwise, and {@code getAttachmentRef} already
+     *     retried twice for the async-visibility case — so after it, null is a PERMANENT state:
+     *     the attachment row is gone. Calling that retryable would make every full reindex of a
+     *     repository holding one such document end in {@code completed_with_errors} for ever,
+     *     with no way to tell it from a real outage and no way to accept it (batch-21 review,
+     *     subagent P3-3 — the shape the health check was taken off {@code /status} for).
+     *     {@code extractText} answers unreadable there because in ITS path the alternative
+     *     ({@code NOT_INDEXABLE}) would authorise a purge; here {@code ABSENT} already withholds
+     *     it, because the purge is taken only for a type that is KNOWN.</li>
+     * <li><b>The attachment exists and records no type</b>: {@code ABSENT}. The input that reader
+     *     does not have. Both readers reach the stored row through the same
+     *     {@code convertRef}/{@code getActualMimeType}, so this is a property of the row and not
+     *     a cheap reader missing something — re-reading cannot change it.</li>
+     * </ul>
      */
     private enum MimeTypeOutcome { KNOWN, ABSENT, UNREADABLE }
 
@@ -949,7 +972,7 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
 
     private MimeTypeRead readMimeType(String repositoryId, Document document) {
         String attachmentId = document.getAttachmentNodeId();
-        if (attachmentId == null) {
+        if (attachmentId == null || attachmentId.isBlank()) {
             return MimeTypeRead.absent();
         }
 
@@ -963,9 +986,12 @@ public class RAGIndexingServiceImpl implements RAGIndexingService {
             return MimeTypeRead.unreadable(e);
         }
         if (attachment == null) {
-            log.warn("RAG: the attachment {} of {} was not returned by the store, so its MIME type"
-                    + " is unknown", attachmentId, document.getId());
-            return MimeTypeRead.unreadable(null);
+            // The store ANSWERED: there is no such attachment row (the DAO throws for anything
+            // else, and this read already retried). A permanent state, so not retryable — see
+            // the javadoc above for why this differs from extractText on the same input.
+            log.warn("RAG: the attachment {} of {} is not in the store, so this version has no"
+                    + " indexable type", attachmentId, document.getId());
+            return MimeTypeRead.absent();
         }
         String mimeType = attachment.getMimeType();
         return mimeType == null ? MimeTypeRead.absent() : MimeTypeRead.known(mimeType);
