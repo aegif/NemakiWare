@@ -897,15 +897,30 @@ class ReleaseReadinessIsMeasuredTest {
     private static Declared declarationsIn(String text) {
         long says = 0;
         long takesBack = 0;
-        // EVERY LINE ENDING THE JDK KNOWS, which is \R: CRLF, CR, LF, and also U+000B, U+000C,
-        // U+0085, U+2028 and U+2029. Splitting on \n alone read a document whose lines end in a
-        // lone CR as ONE line, so its statement counted as absent — 「I could not read this」
-        // reported with the value of 「it is not there」 (batch-41 review: Codex P2, subagent
-        // P2-3). Splitting on only CR and LF then left the OTHER line separators inside a line,
-        // where an ends-trim can never reach them, so a retraction written after one on the same
-        // physical line was not read at all (batch-46 review, Codex P2). \R is the JDK's own
-        // definition, so this is not another hand-written set.
-        for (String line : text.split("\\R", -1)) {
+        // EVERY LINE ENDING COMMONMARK HAS, AND ONLY THOSE: LF, CR, CRLF (CommonMark §2.1).
+        // Splitting on \n alone read a document whose lines end in a lone CR as ONE line, so its
+        // statement counted as absent — 「I could not read this」 reported with the value of
+        // 「it is not there」 (batch-41 review: Codex P2, subagent P2-3).
+        //
+        // NOT \R, which batch 47 used for one batch. \R also breaks at U+000B, U+000C, U+0085,
+        // U+2028 and U+2029, and A READER NEVER SEES A BREAK AT THOSE. Measured in a browser, in
+        // a paragraph with white-space:normal and again with pre-wrap: all five render as ONE
+        // line — the same height as a control with no such character — while a <br> renders as
+        // two. So \R was wrong in both directions at once (batch-47 review, Codex P2): a line
+        // reading 「prefix + U+000C + the retraction」 became a retraction line and turned a
+        // CORRECT canon red (over-refusal, which this tree weighs the same as fail-open), and
+        // 「prefix + U+000C + the statement」 satisfied 「exactly one line says it」 when no line
+        // said it (fail-open, on the strict arm).
+        //
+        // What batch 46's Codex P2 asked for is still answered. A retraction behind one of those
+        // five IS read when it stands at the start of its own line, because all five are in
+        // isPadding's class (Cc, Zl, Zp) and the retraction's ends are trimmed — the five
+        // fixtures below. Put one in the MIDDLE of a line and the line it corrupts decides: if it
+        // is the declaration's line, that line stops equalling WITHDRAWN_LINE and the strict arm
+        // goes red; any other line is the non-padding-prefix limit, which isPadding and the
+        // canon's §5 both list. There is no third answer, because 「what a reader sees」 is a
+        // break at LF, CR and CRLF, and nowhere else.
+        for (String line : text.split("\r\n|\n|\r", -1)) {
             // NORMALISED, so a decomposed 「げ」 is the same character it renders as. A canon saved
             // in NFD counted zero statements and the refusal named causes none of which applied
             // (batch-41 review, subagent P3-5).
@@ -950,8 +965,11 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>So there is no hand-written set. {@code Cf} is not taken off AT ALL, which is the one
      * boundary Java can state without deciding what renders: the format category contains both
      * the marks that render and the ones that do not, and nothing in the JDK tells them apart.
-     * {@link #thePaddingClassIsTheCategoriesItNames} compares this method with that rule over
-     * every code point, so neither side can drift.
+     * {@link #thePaddingClassIsTheCategoriesItNames} counts what this method takes off, per
+     * category, over every code point. It does NOT re-express the rule: a second copy of the
+     * expression measures that the two agree, and batch 46's did exactly that — adding one term
+     * to both copies passed every test (batch-46 review, subagent P2-1, measured). 「so neither
+     * side can drift」 stood here for a batch and was true only of one-sided drift.
      *
      * <p>KNOWN LIMITS, both directions, and the canon's §5 carries them:
      *   <ul>
@@ -1066,6 +1084,24 @@ class ReleaseReadinessIsMeasuredTest {
                             + "statement, which is compared raw and whole");
         }
 
+        // AND THE SEPARATORS THAT ARE NOT LINE ENDINGS, which is the third side of the pair in
+        // theWithdrawalIsTakenBackOnlyByItsOwnLine. Batch 47 split on \R, so a line reading
+        // 「prefix + U+2028 + the statement」 counted as the statement while NO line was the
+        // statement — fail-open on the strict arm (batch-47 review, Codex P2). CommonMark breaks
+        // at LF, CR and CRLF only and a reader sees no break at these five (measured in a
+        // browser), so each is simply a different line: inside a retraction's line the shape is
+        // a recorded limit, inside the statement's line the statement is gone and this refuses.
+        for (String separator : new String[] { "\u2028", "\u2029", "\u0085", "\u000b", "\u000c" }) {
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith("前置き" + separator + WITHDRAWN_LINE)),
+                    "a line reading 「prefix + U+"
+                            + Integer.toHexString(separator.charAt(0)).toUpperCase()
+                            + " + the statement」 was taken for the statement. It is one line to "
+                            + "CommonMark and one line to a reader, so the statement is not on a "
+                            + "line of its own and this canon must refuse");
+        }
+
         // A SECOND COPY ANYWHERE, including in a fenced example, is the price of having no context
         // rules — and the canon's §5 says so instead of promising an exclusion this reader cannot
         // make safely. Each of these shapes satisfied or refused the lock wrongly under some
@@ -1126,11 +1162,27 @@ class ReleaseReadinessIsMeasuredTest {
      * excluded from both moves it, and a category that is not one of the four fails the first arm
      * outright.
      *
-     * <p>THE COUNTS ARE A MEASUREMENT OF THE JDK'S UNICODE VERSION, not of this tree. {@code Cc}
-     * is 65 by Unicode's stability policy and will not move; {@code Zs} can gain a character in a
-     * future version, and then this lock is the thing that says so. Measured by running this rule
-     * over every code point on three JDKs — 17, 21 and the 27 this tree builds with — and all
-     * three agree: Zs 17, Zl 1, Zp 1, Cc 65 — 84 code points, none of them outside the BMP.
+     * <p>AND EACH COUNT IS THE WHOLE OF ITS CATEGORY, counted from the JDK and not written here.
+     * That equality is what makes the extension unique: the class is inside the four categories
+     * (first arm) and contains all of each one (second arm), so it is their union and nothing
+     * else. Hand-written numbers were nearly as tight and had one hole — a future Unicode version
+     * that adds a space separator could be 「fixed」 by excluding one character by hand, which puts
+     * the count back to 17 and leaves every lock green while the class quietly stops trimming a
+     * space (batch-47 review, subagent P3-4). Comparing with the category's own total also means a
+     * JDK upgrade does not redden a gate whose class is right.
+     *
+     * <p>What those totals were when this was written, measured by running this rule over every
+     * code point on three JDKs — 17, 21 and the 27 this tree builds with, all three agreeing: Zs
+     * 17, Zl 1, Zp 1, Cc 65 — 84 code points, none outside the BMP. {@code Cc} is 65 by Unicode's
+     * stability policy, which is the SPECIFICATION's promise and not something this tree measures
+     * (the same qualification the thirteen prepended concatenation marks carry below).
+     *
+     * <p>THE THIRD ARM CANNOT BE MADE TO FIRE BY CHANGING THIS TREE, and no control measures it.
+     * Given the first two arms the class is exactly those four categories, and none of their
+     * members is outside the BMP, so 「none outside the BMP」 follows rather than being checked
+     * (batch-47 review, subagent P3-1, who derived it). It is a tripwire on the JDK: if a future
+     * version puts a member of one of these categories outside the BMP, this arm is what says that
+     * {@code withoutPadding}'s code-point scan has stopped being inert.
      */
     @Test
     @DisplayName("the padding class is the four categories it names, counted")
@@ -1141,7 +1193,20 @@ class ReleaseReadinessIsMeasuredTest {
         int zp = 0;
         int cc = 0;
         int outsideTheBmp = 0;
+        int zsAll = 0;
+        int zlAll = 0;
+        int zpAll = 0;
+        int ccAll = 0;
         for (int codePoint = 0; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+            // Every member of the four categories, asked of the JDK and not of isPadding: the
+            // second arm compares the two, so 「the whole category」 is what is being asserted.
+            switch (Character.getType(codePoint)) {
+                case Character.SPACE_SEPARATOR -> zsAll++;
+                case Character.LINE_SEPARATOR -> zlAll++;
+                case Character.PARAGRAPH_SEPARATOR -> zpAll++;
+                case Character.CONTROL -> ccAll++;
+                default -> { }
+            }
             if (!isPadding(codePoint)) {
                 continue;
             }
@@ -1160,6 +1225,7 @@ class ReleaseReadinessIsMeasuredTest {
                 outsideTheBmp++;
             }
         }
+        List<Integer> totals = List.of(zsAll, zlAll, zpAll, ccAll);
         assertEquals(new TreeSet<>(List.of((int) Character.SPACE_SEPARATOR,
                         (int) Character.LINE_SEPARATOR, (int) Character.PARAGRAPH_SEPARATOR,
                         (int) Character.CONTROL)),
@@ -1169,18 +1235,19 @@ class ReleaseReadinessIsMeasuredTest {
                         + "formatting character brings the prepended concatenation marks with it "
                         + "and refuses a correct canon, and anything else is a rule nobody wrote "
                         + "down. Categories seen: " + categoriesSeen);
-        assertEquals(List.of(17, 1, 1, 65), List.of(zs, zl, zp, cc),
-                "the padding class is a different size than the categories it names: Zs/Zl/Zp/Cc "
-                        + "came out " + List.of(zs, zl, zp, cc) + " and this JDK's Unicode version "
-                        + "had 17/1/1/65 when this was written. Cc is fixed by Unicode's stability "
-                        + "policy, so a change there is this tree's; Zs can gain a character in a "
-                        + "new Unicode version, and then re-measure and say which version. A term "
-                        + "added to the class moves these numbers even if the same term is added "
-                        + "to a second copy of the rule, which is why they are counted here");
+        assertEquals(totals, List.of(zs, zl, zp, cc),
+                "the padding class is not the WHOLE of each category it names: Zs/Zl/Zp/Cc came "
+                        + "out " + List.of(zs, zl, zp, cc) + " where this JDK has " + totals
+                        + " altogether. A character excluded by hand lands here even when the "
+                        + "same exclusion is written into a second copy of the rule, and it lands "
+                        + "here in a new Unicode version too, where a literal 17 would be put "
+                        + "back by excluding the character that version added. When this was "
+                        + "written all three JDKs measured 17/1/1/65");
         assertEquals(0, outsideTheBmp,
                 "the padding class now takes off a character outside the BMP, so withoutPadding's "
-                        + "code-point scan stops being inert and its control becomes measurable "
-                        + "again — say so where that scan is explained");
+                        + "code-point scan has stopped being inert — say so where that scan is "
+                        + "explained. This arm cannot be reached by changing this tree: it is a "
+                        + "tripwire on the JDK's Unicode version, and no control measures it");
     }
 
     /**
@@ -1248,16 +1315,36 @@ class ReleaseReadinessIsMeasuredTest {
                         canonWith(WITHDRAWN_LINE, "前置き\r" + REINSTATED_LINE)),
                 "a retraction on a lone-CR line slipped past");
 
-        // THE OTHER LINE SEPARATORS. These are in the padding class, but a character INSIDE a line
-        // can never be reached by a trim of its ends — so splitting on CR and LF alone left a
-        // retraction written after one of them on the same physical line unread (batch-46 review,
-        // Codex P2). \R splits on all of them.
+        // THE OTHER LINE SEPARATORS, AS A PAIR — and the pair is what makes the splitter's
+        // definition measurable from both sides. All five are in the padding class, and none of
+        // them is a line ending: CommonMark breaks at LF, CR and CRLF only, and a browser renders
+        // all five as ONE line (measured in a paragraph with white-space:normal and again with
+        // pre-wrap, against a <br> that renders as two).
+        //
+        // So INSIDE a line is the limit and must stay green. Batch 47 split on \R for one batch,
+        // which turned a line a reader sees as one line into a retraction and refused a CORRECT
+        // canon — an over-refusal, which this tree weighs the same as fail-open (batch-47 review,
+        // Codex P2). This arm is what catches that: restore \R and it goes red.
+        //
+        // And AT THE START of its own line must stay red, because the ends of a line ARE trimmed
+        // and all five are padding. That is batch 46's Codex P2, answered where it can be
+        // answered. The lone-CR fixture just above is the third side: CR IS a line ending, so a
+        // retraction after one stands on its own line and is read.
         for (String separator : new String[] { "\u2028", "\u2029", "\u0085", "\u000b", "\u000c" }) {
-            assertThrows(AssertionError.class,
+            String name = "U+" + Integer.toHexString(separator.charAt(0)).toUpperCase();
+            assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
                             canonWith(WITHDRAWN_LINE, "前置き" + separator + REINSTATED_LINE)),
-                    "a retraction after U+" + Integer.toHexString(separator.charAt(0)).toUpperCase()
-                            + " on the same physical line slipped past");
+                    "a retraction a reader sees INSIDE a line, after " + name + ", is now read as "
+                            + "a retraction line. CommonMark breaks at LF, CR and CRLF only, and "
+                            + "all five of these render as one line, so this refuses a correct "
+                            + "canon — the over-refusal \\R brought for a batch");
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, separator + REINSTATED_LINE)),
+                    "a retraction behind " + name + " at the START of its own line slipped past: "
+                            + "the ends of a line are trimmed and all five of these are in the "
+                            + "padding class, so this one is read, not a limit");
         }
         // NFD ON THE RETRACTION ONLY. Normalising the WHOLE document made this fixture green
         // under the sabotage that removes normalisation — the statement arm threw first and
