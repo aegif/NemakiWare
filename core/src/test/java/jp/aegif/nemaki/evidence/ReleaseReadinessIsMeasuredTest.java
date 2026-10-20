@@ -912,19 +912,18 @@ class ReleaseReadinessIsMeasuredTest {
         // 「prefix + U+000C + the statement」 satisfied 「exactly one line says it」 when no line
         // said it (fail-open, on the strict arm).
         //
-        // What batch 46's Codex P2 asked for is still answered. A retraction behind one of those
-        // five IS read when it stands at the start of its own line, because all five are in
-        // isPadding's class (Cc, Zl, Zp) and the retraction's ends are trimmed — the five
-        // fixtures below. Put one in the MIDDLE of a line and the line it corrupts decides: if it
-        // is the declaration's line, that line stops equalling WITHDRAWN_LINE and the strict arm
-        // goes red; any other line is the non-padding-prefix limit, which isPadding and the
-        // canon's §5 both list. There is no third answer, because 「what a reader sees」 is a
-        // break at LF, CR and CRLF, and nowhere else.
+        // What batch 46's Codex P2 asked for is answered where the five characters are REMOVED,
+        // not where the line is split: see NOT_A_LINE_ENDING_HERE. 「There is no third answer」
+        // stood here for a batch and was wrong — both reviewers found the third one, and it is
+        // better in both directions (batch-49 review, Codex P2, subagent P3-3 and P3-4). A
+        // retraction behind one of the five is read wherever it sits in its own line; a line with
+        // a PREFIX in front of the retraction is still the recorded limit, because removing the
+        // five does not remove the prefix.
         for (String line : text.split("\r\n|\n|\r", -1)) {
             // NORMALISED, so a decomposed 「げ」 is the same character it renders as. A canon saved
             // in NFD counted zero statements and the refusal named causes none of which applied
             // (batch-41 review, subagent P3-5).
-            String rendered = Normalizer.normalize(line, Normalizer.Form.NFC);
+            String rendered = asSeen(Normalizer.normalize(line, Normalizer.Form.NFC));
             if (WITHDRAWN_LINE.equals(rendered)) {
                 says++;
             }
@@ -987,6 +986,52 @@ class ReleaseReadinessIsMeasuredTest {
      *   blank braille pattern, a variation selector — is not taken off either.
      *   </ul>
      */
+    /**
+     * The characters the JDK calls a line break and CommonMark does not — derived, not listed.
+     *
+     * <p>WHY A LINE IS COMPARED WITHOUT THEM. They are invisible and they do not break a line: a
+     * browser renders all five inline, measured with {@code white-space:normal} and again with
+     * {@code pre-wrap} against a {@code <br>} that does break (batch-48). So a line carrying one
+     * is, to a reader, the line without it — and comparing the line raw answered two ways that
+     * were both wrong (batch-49 review, Codex P2 and subagent P3-3 and P3-4, each measured):
+     * 「the declaration, then one of these plus the declaration again」 counted as ONE statement
+     * while the page showed two, and a single declaration with one of these inside it counted as
+     * NONE, refused with a message naming causes that did not apply.
+     *
+     * <p>NOT A HAND-WRITTEN SET — four of those failed over four batches. This is
+     * {@code \R}'s characters minus CommonMark's line endings, computed over every code point;
+     * {@link #theSeparatorsRemovedAreTheOnesTheJdkBreaksOnAndCommonMarkDoesNot} asserts the
+     * derivation. Spaces are NOT removed: trimming the statement side is batch 40's measured
+     * defect, where {@code strip()} let 「the statement with three spaces after it」 count as the
+     * statement.
+     */
+    private static final java.util.List<Integer> NOT_A_LINE_ENDING_HERE = separatorsTheJdkBreaksOn();
+
+    private static java.util.List<Integer> separatorsTheJdkBreaksOn() {
+        java.util.List<Integer> derived = new java.util.ArrayList<>();
+        java.util.regex.Pattern anyBreak = java.util.regex.Pattern.compile("\\R");
+        for (int codePoint = 0; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+            if (codePoint == '\n' || codePoint == '\r') {
+                continue;
+            }
+            if (anyBreak.matcher(new String(Character.toChars(codePoint))).matches()) {
+                derived.add(codePoint);
+            }
+        }
+        return java.util.List.copyOf(derived);
+    }
+
+    /**
+     * A line as a reader sees it: without the separators that are not line endings here.
+     */
+    private static String asSeen(String line) {
+        String seen = line;
+        for (int codePoint : NOT_A_LINE_ENDING_HERE) {
+            seen = seen.replace(new String(Character.toChars(codePoint)), "");
+        }
+        return seen;
+    }
+
     private static boolean isPadding(int codePoint) {
         return Character.isSpaceChar(codePoint)
                 || Character.getType(codePoint) == Character.CONTROL;
@@ -1127,24 +1172,35 @@ class ReleaseReadinessIsMeasuredTest {
                             + "this reader counts");
         }
 
-        // AND THE LIMIT ON THE OTHER SIDE OF THAT STRICTNESS, said as a test and not only in
-        // §5: a SECOND copy written behind one of the five separators is NOT a second copy.
-        // The statement side is compared raw, and those characters are not line endings, so
-        // the line is simply a different line — while a reader sees two lines that look
-        // alike. The retraction side carries the mirror image of this limit (a retraction
-        // behind one is read when it is at the line start, not read when it is inside the
-        // line), and §5 said only the retraction half for a batch (batch-48 review, subagent
-        // P3-6, measured). Trimming the statement side instead is the batch-40 defect: it
-        // made 「the statement with three spaces after it」 count as the statement.
+        // A SECOND COPY BEHIND ONE OF THE FIVE SEPARATORS IS A SECOND COPY, and a declaration
+        // with one INSIDE it is still the declaration. Both because the five are removed before
+        // the comparison (NOT_A_LINE_ENDING_HERE): a reader cannot see them and they do not break
+        // a line, so the line is, to a reader, the line without them.
+        //
+        // THIS FIXTURE ASSERTED THE OPPOSITE FOR A BATCH — assertDoesNotThrow, with a message
+        // calling the acceptance a 「recorded limit」. It recorded a fail-open AND fixed it as the
+        // behaviour to keep: a canon reading 「W, then U+2028 + W」 shows the declaration twice on
+        // the page and answered 「exactly one」 (batch-49 review, Codex P2). The same batch's
+        // over-refusal was its twin: a canon whose ONLY declaration line carried one of the five
+        // inside it answered NONE, and the refusal named causes none of which applied (subagent
+        // P3-3). Removing the five fixes both, and does NOT bring back batch 40 — spaces are not
+        // removed, so 「the statement with three spaces after it」 is still not the statement,
+        // which the loop above asserts (subagent P3-4, who measured all four shapes).
         for (String separator : new String[] { "\u2028", "\u2029", "\u0085", "\u000b", "\u000c" }) {
-            assertDoesNotThrow(
+            String name = "U+" + Integer.toHexString(separator.charAt(0)).toUpperCase();
+            assertThrows(AssertionError.class,
                     () -> theCanonSaysTheWithdrawalStands(
                             canonWith(WITHDRAWN_LINE, separator + WITHDRAWN_LINE)),
-                    "the recorded limit changed: a second copy of the statement behind U+"
-                            + Integer.toHexString(separator.charAt(0)).toUpperCase()
-                            + " is now counted as a second copy. That is a wider claim than "
-                            + "the canon's §5 makes — say it there first. Trimming this side "
-                            + "to get it is the batch-40 defect");
+                    "a second copy of the statement behind " + name + " was not counted as a "
+                            + "second copy. A reader sees the declaration twice and this reader "
+                            + "vouched for the canon — the fail-open this fixture asserted as "
+                            + "acceptable for one batch");
+            assertDoesNotThrow(
+                    () -> theCanonSaysTheWithdrawalStands(canonWith("前置き",
+                            WITHDRAWN_LINE.substring(0, 6) + separator + WITHDRAWN_LINE.substring(6))),
+                    "a declaration carrying " + name + " INSIDE it counted as no declaration at "
+                            + "all, so a canon a reader sees as correct is refused — and the "
+                            + "refusal names causes none of which apply");
         }
 
         // AND AN EXAMPLE THAT IS NOT THE LINE ITSELF is how the format gets documented: a prefix,
@@ -1162,6 +1218,38 @@ class ReleaseReadinessIsMeasuredTest {
         assertThrows(AssertionError.class,
                 () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, WITHDRAWN_LINE)),
                 "two lines stating the withdrawal were accepted as one");
+    }
+
+    /**
+     * The separators removed before a comparison are the JDK's own, minus CommonMark's.
+     *
+     * <p>FIVE HAND-WRITTEN SETS FAILED BEFORE THIS ONE, so this set is derived and this lock
+     * asserts the derivation rather than a list: every code point {@code \R} matches on its own,
+     * except the two CommonMark calls line endings. Measured on JDK 17, 21 and 27 — the same five
+     * on all three: U+000B, U+000C, U+0085, U+2028, U+2029.
+     *
+     * <p>The count is asserted as well as the membership, so a sixth character cannot be slipped
+     * in by hand and a fifth cannot be dropped: if a future JDK changes what {@code \R} matches,
+     * this is the lock that says so, and the browser measurement in {@link #asSeen}'s javadoc has
+     * to be redone for whatever was added.
+     */
+    @Test
+    @DisplayName("the separators removed are the JDK's line breaks that CommonMark does not have")
+    void theSeparatorsRemovedAreTheOnesTheJdkBreaksOnAndCommonMarkDoesNot() {
+        assertEquals(java.util.List.of(0x000B, 0x000C, 0x0085, 0x2028, 0x2029),
+                NOT_A_LINE_ENDING_HERE,
+                "the set of characters removed before a line is compared is no longer the JDK's "
+                        + "line breaks minus CommonMark's line endings. It came out "
+                        + NOT_A_LINE_ENDING_HERE + ", where JDK 17, 21 and 27 all gave "
+                        + "[11, 12, 133, 8232, 8233]. A character added here is removed from "
+                        + "every line before the declaration is counted, so it must be one a "
+                        + "reader cannot see AND one that does not break a line — both measured "
+                        + "in a browser, and the measurement is in asSeen's javadoc");
+        assertEquals(5, NOT_A_LINE_ENDING_HERE.size(),
+                "the derivation returned " + NOT_A_LINE_ENDING_HERE.size() + " separators instead "
+                        + "of five, so what this JDK's \\R matches has changed. Re-measure in a "
+                        + "browser whether the new character breaks a line before letting it be "
+                        + "removed from a comparison");
     }
 
     /**
@@ -1201,11 +1289,15 @@ class ReleaseReadinessIsMeasuredTest {
      * reached by changing this tree」 stood here for a batch and was measured FALSE (batch-48
      * review, subagent P2-1). The derivation holds only while the FIRST arm's expected set is
      * these four categories — and that set is one line away. Widen the class to the formatting
-     * characters and widen the expected set to match, which is the natural edit after reading the
-     * first arm's message, and: the second arm sees nothing, because its branches count the four
+     * characters and widen the expected set to match — which is not what the first arm's message
+     * ASKS for (it says the opposite: the marks come with the category and refuse a correct
+     * canon), but it is what silencing a red assertion by widening its expected value looks like
+     * — and: the second arm sees nothing, because its branches count the four
      * NAMED categories and a fifth moves none of them; the first arm is satisfied; and this arm
-     * fires on the 127 supplementary {@code Cf} code points — with a message that used to send
-     * the reader to the JDK.
+     * fires on the supplementary {@code Cf} code points — with a message that used to send the
+     * reader to the JDK. HOW MANY OF THOSE IS JDK-DEPENDENT: measured 127 on JDK 21 and 27 and
+     * 120 on JDK 17, so the number is not a constant of this tree (batch-49 review, subagent
+     * P3-1, who measured the three JDKs this javadoc names).
      *
      * <p>WHAT DEFENDS THE DECISION IN THAT CASE IS NOT THIS LOCK. It is the fixture loop over the
      * prepended concatenation marks in {@link #theWithdrawalIsTakenBackOnlyByItsOwnLine}, which
@@ -1284,9 +1376,11 @@ class ReleaseReadinessIsMeasuredTest {
                         + "explained. TWO CAUSES, AND THIS ARM CANNOT TELL THEM APART: either the "
                         + "class and the first arm's expected set were widened together — look at "
                         + "isPadding and at the expected set above before looking anywhere else, "
-                        + "because the formatting characters alone bring 127 supplementary code "
-                        + "points — or this JDK's Unicode version moved a member of these four "
-                        + "categories outside the BMP. No control measures this arm");
+                        + "because the formatting characters alone bring over a hundred "
+                        + "supplementary code points (measured 127 on JDK 21 and 27, 120 on JDK "
+                        + "17, so do not read this count as a constant) — or this JDK's Unicode "
+                        + "version moved a member of these four categories outside the BMP. No "
+                        + "control measures this arm");
     }
 
     /**
@@ -1379,11 +1473,14 @@ class ReleaseReadinessIsMeasuredTest {
                             + "all five of these render as one line, so this refuses a correct "
                             + "canon — the over-refusal \\R brought for a batch");
             assertThrows(AssertionError.class,
-                    () -> theCanonSaysTheWithdrawalStands(
-                            canonWith(WITHDRAWN_LINE, separator + REINSTATED_LINE)),
-                    "a retraction behind " + name + " at the START of its own line slipped past: "
-                            + "the ends of a line are trimmed and all five of these are in the "
-                            + "padding class, so this one is read, not a limit");
+                    () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
+                            REINSTATED_LINE.substring(0, 9) + separator
+                                    + REINSTATED_LINE.substring(9))),
+                    "a retraction carrying " + name + " INSIDE its own line slipped past. A "
+                            + "reader sees the retraction — the five are removed before the "
+                            + "comparison, so this is read wherever in the line it sits. Only a "
+                            + "PREFIX in front of the retraction is a recorded limit, and the "
+                            + "arm above asserts that one");
         }
         // NFD ON THE RETRACTION ONLY. Normalising the WHOLE document made this fixture green
         // under the sabotage that removes normalisation — the statement arm threw first and
