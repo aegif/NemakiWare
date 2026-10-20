@@ -75,7 +75,7 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The canon's one line that states the plan-figure lock is withdrawn — a line IS it or is not.
      *
-     * <p>NINE ROUNDS. The escapes came in two families, and conflating them was itself a
+     * <p>TEN ROUNDS. The escapes came in two families, and conflating them was itself a
      * finding (batch-41 review, Codex P3).
      * Reading the statement as prose broke first (batches 33-38: a bare substring, an emphasised
      * token, a cell, a quotation, a strike-through, {@code __…__}, spacing variants, a column the
@@ -85,10 +85,12 @@ class ReleaseReadinessIsMeasuredTest {
      * defeated by one plain-text mention of its own heading (batches 39-40: Codex P2 ×7, subagent
      * P2 ×8, each measured, several of them on the real canon).
      *
-     * <p>SO THERE IS NO CONTEXT LEFT TO GET WRONG. This reader counts lines equal to this string,
-     * raw, with nothing skipped and nothing stripped but a trailing carriage return. There is no
-     * fence rule, no indent rule, no parity, no section: a line is the statement or it is not, and
-     * neither a quotation nor an example nor an emphasis can be it.
+     * <p>NO CONTEXT IS READ. This reader counts lines equal to this string after Unicode
+     * normalisation and nothing else — no fence rule, no indent rule, no parity, no section. A
+     * line is the statement or it is not, and neither a quotation nor an example nor an emphasis
+     * can be it. The sentence here said 「raw, with nothing skipped and nothing stripped but a
+     * trailing carriage return」 for a batch after the normalisation went in and the carriage
+     * return moved into the split (batch-42 review: Codex P2, subagent P2-4).
      *
      * <p>THE PRICE, and it is the canon's to pay: this line may not appear a second time ANYWHERE,
      * not even inside a fenced example. §5 says so. A format can be described without reproducing
@@ -103,12 +105,21 @@ class ReleaseReadinessIsMeasuredTest {
     private static final String WITHDRAWN_LINE = "- 取り下げ: plan-figure-lock（R212）";
 
     /**
-     * The line that would take that statement back, counted the same way, over the whole canon.
+     * The line that would take that statement back, counted over the whole canon — NOT the same
+     * way.
      *
-     * <p>A quotation of it, a copy inside backticks, an emphasised phrase containing it and a copy
-     * in a fenced example are all NOT it — not by a rule, but because none of them is a line equal
-     * to this string. That is why §5 can explain the format by quoting this line inside a
-     * sentence, as it does.
+     * <p>THE TWO ARMS DO NOT SHARE A COMPARISON, and that is this pair's whole point: for the
+     * statement a near miss must not SATISFY the lock, for the retraction a near miss must not
+     * SLIP PAST it. So this one is compared with the line's invisible padding off. The sentence
+     * here said 「counted the same way」 for a batch after that stopped being true (batch-42
+     * review, subagent P2-4).
+     *
+     * <p>A quotation of it inside a sentence, a copy inside backticks and an emphasised phrase
+     * containing it are all NOT it — none is a line equal to this string — which is why §5 can
+     * explain the format by quoting this line. A copy ON A LINE OF ITS OWN **is** read, fenced or
+     * indented or not: this reader has no context rules, so 「it is only an example」 is not
+     * something it can tell. The javadoc here claimed the opposite for a batch (batch-42 review,
+     * subagent P3-5, measured both ways).
      */
     private static final String REINSTATED_LINE = "- 取り下げ撤回: plan-figure-lock（R212）";
 
@@ -181,13 +192,15 @@ class ReleaseReadinessIsMeasuredTest {
         //     readiness alone 70 — because 「no other document」 was never defined (batch-39
         //     review, Codex P2; batch-40 review, subagent P3-3; batch-41 review, subagent P3-2 —
         //     the earlier versions claimed first too little, then too much, then a number).
-        //   - NO CONTROL REACHES THIS METHOD. Counted with ast over the runner's CONTROLS, by
-        //     the file each sabotages: 16 controls are anchored in this class today, and every
-        //     one of them sits below this method, in the readers. What batch 40 changed here is
-        //     the CLASSIFICATION of a failure — assertion or harness breakage — which a sabotage
-        //     of another line cannot move. The figure written here a batch ago said nineteen,
-        //     which was this class's count BEFORE the same commit retired three of them
-        //     (batch-40 review, subagent P3-8; batch-41 review, subagent P2-2).
+        //   - NO CONTROL REACHES THIS METHOD. Every control anchored in this class sabotages a
+        //     line BELOW it, in the readers; what batch 40 changed here is the CLASSIFICATION of a
+        //     failure — assertion or harness breakage — which a sabotage of another line cannot
+        //     move. HOW MANY such controls there are is deliberately NOT written here: the figure
+        //     was nineteen, then sixteen, and both were this class's count BEFORE the same commit
+        //     added or retired controls in it — three generations of one sentence going stale in
+        //     the commit that wrote it (batch-40 review, subagent P3-8; batch-41 review, subagent
+        //     P2-2; batch-42 review: Codex P2, subagent P2-1). Count it when you need it, with ast
+        //     over the runner's CONTROLS grouped by the file each sabotages.
         //   - the locator batch 39 removed also refused two rows claiming one id. This reader
         //     takes the first silently; theReadinessCountsAreTheCanonsRows notices a duplicate id
         //     in the same class, and nothing else does (batch-39 review, subagent P3-5).
@@ -775,7 +788,7 @@ class ReleaseReadinessIsMeasuredTest {
 
         // AND the residual says so, in the canon — on ONE LINE, compared RAW and WHOLE.
         //
-        // SEVEN ROUNDS over this one statement, and what failed every time was reading it as
+        // TEN ROUNDS over this one statement, and what failed every time was reading it as
         // prose. Batch 39 moved it out of the residual table onto a line of its own, which closed
         // eight measured escapes; what batch 39 got wrong is that it compared the line AFTER
         // asProse had taken the inline code out of it, so 「whole line」 was not whole. Measured
@@ -836,25 +849,30 @@ class ReleaseReadinessIsMeasuredTest {
     private static void theCanonSaysTheWithdrawalStands(String canon) {
         Declared found = declarationsIn(canon);
         assertEquals(1, found.says(),
-                "the canon has " + found.says() + " lines equal to 「" + WITHDRAWN_LINE + "」, and "
-                        + "this lock needs exactly one. If the plan-figure lock was reinstated, "
-                        + "delete the withdrawal note and this method. Otherwise: the line is "
-                        + "compared RAW and WHOLE — no leading or trailing space, no emphasis, no "
-                        + "backticks, nothing else on the line — and it may appear only once in "
-                        + "the whole document, an example in a fenced block included. Prose saying "
-                        + "it another way is not read, deliberately: eight rounds of findings came "
-                        + "out of reading this statement any other way");
+                "the canon has " + found.says() + " lines whose text, normalised, equals 「"
+                        + WITHDRAWN_LINE + "」, and this lock needs exactly one. If the plan-figure "
+                        + "lock was reinstated, delete the withdrawal note and this method. "
+                        + "Otherwise the line is compared WHOLE and WITHOUT TRIMMING: no leading "
+                        + "or trailing space — including a NO-BREAK SPACE, a zero-width space or a "
+                        + "BOM, which a paste out of a rendered page brings along invisibly — no "
+                        + "emphasis, no backticks, nothing else on the line. And it may appear only "
+                        + "once in the whole document, an example in a fenced block included. Prose "
+                        + "saying it another way is not read, deliberately: ten rounds of findings "
+                        + "came out of reading this statement any other way");
         assertEquals(0, found.takesBack(),
-                "the canon has " + found.takesBack() + " lines equal to 「" + REINSTATED_LINE
-                        + "」 while this lock asserts the withdrawal stands. One of the two is "
-                        + "wrong — decide, do not keep both. A quotation of that line inside a "
-                        + "sentence is not it, which is how §5 explains the format");
+                "the canon has " + found.takesBack() + " lines which, with their invisible "
+                        + "padding off, equal 「" + REINSTATED_LINE + "」 while this lock asserts the "
+                        + "withdrawal stands. One of the two is wrong — decide, do not keep both. A "
+                        + "quotation of that line inside a sentence is not it, which is how §5 "
+                        + "explains the format; a copy on a line of its own IS it, fenced or not");
     }
 
     /**
-     * The two statements counted in a document's lines, raw.
+     * The two statements counted in a document's lines — the statement strictly, the
+     * retraction with its invisible padding off.
      *
-     * <p>NOTHING IS SKIPPED. Not a fenced block, not an indented one, not a code span, not an
+     * <p>NOTHING IS SKIPPED, AND NOTHING IS STRIPPED ON THE STATEMENT SIDE. Not a fenced
+     * block, not an indented one, not a code span, not an
      * HTML comment, not a section. Every one of those rules was an escape of its own (see the
      * constant's javadoc), and none of them is needed: a quotation, a prefix, an emphasis, a
      * strike-through and a trailing space all make a line that is not equal to the statement.
@@ -891,11 +909,48 @@ class ReleaseReadinessIsMeasuredTest {
             // THE RETRACTION IS ASKED WIDER, on purpose: see the arms' comment. Leading and
             // trailing whitespace is what the rendering drops, and nine such shapes were measured
             // green before this batch.
-            if (REINSTATED_LINE.equals(rendered.strip())) {
+            if (REINSTATED_LINE.equals(withoutPadding(rendered))) {
                 takesBack++;
             }
         }
         return new Declared(says, takesBack);
+    }
+
+    /**
+     * A line with its invisible padding off — what the retraction is compared against.
+     *
+     * <p>WHITESPACE IS NOT THE CLASS. {@code String.strip()} drops what
+     * {@link Character#isWhitespace} knows, and that leaves NBSP, FIGURE SPACE, NARROW NO-BREAK
+     * SPACE, ZERO WIDTH SPACE, a BOM, a left-to-right mark and NEL on the line — every one of
+     * them measured slipping a retraction past this lock, against the real canon (batch-42
+     * review: Codex P2, subagent P2-3). A space pasted out of a rendered page is NBSP more often
+     * than not, which is how that shape arrives.
+     *
+     * <p>So the class is 「characters a reader cannot see」: whitespace, the other space
+     * categories, formatting marks and controls. KNOWN LIMIT, and it is where this stops: a
+     * VISIBLE character in front of the line — a 「* 」 bullet, a quotation mark — is not padding
+     * and is not trimmed. Widening past invisibility means deciding what markdown means, which is
+     * what ten rounds of this lock were about.
+     */
+    private static String withoutPadding(String line) {
+        int from = 0;
+        int to = line.length();
+        while (from < to && isPadding(line.charAt(from))) {
+            from++;
+        }
+        while (to > from && isPadding(line.charAt(to - 1))) {
+            to--;
+        }
+        return line.substring(from, to);
+    }
+
+    /** Whether a character is one a reader of the rendered document cannot see. */
+    private static boolean isPadding(char at) {
+        if (Character.isWhitespace(at) || Character.isSpaceChar(at)) {
+            return true;
+        }
+        int type = Character.getType(at);
+        return type == Character.FORMAT || type == Character.CONTROL;
     }
 
     /** A synthetic canon: the given lines, one per line. */
@@ -904,7 +959,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * A line IS the statement or it is not — driven with every shape eight rounds produced.
+     * A line IS the statement or it is not — driven with every shape ten rounds produced.
      *
      * <p>ATTRIBUTION IS WHAT THE RUNNER DECLARES, and nothing finer. It was written finer than
      * that four rounds running and was wrong every time, including in the version that said it
@@ -1061,18 +1116,48 @@ class ReleaseReadinessIsMeasuredTest {
                 () -> theCanonSaysTheWithdrawalStands(
                         canonWith(WITHDRAWN_LINE, "前置き\r" + REINSTATED_LINE)),
                 "a retraction on a lone-CR line slipped past");
+        // NFD ON THE RETRACTION ONLY. Normalising the WHOLE document made this fixture green
+        // under the sabotage that removes normalisation — the statement arm threw first and
+        // satisfied the assertThrows, so the retraction side measured nothing (batch-42 review,
+        // subagent P3-2: a sibling arm returning the same outcome).
         assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(java.text.Normalizer.normalize(
-                        canonWith(WITHDRAWN_LINE, REINSTATED_LINE), java.text.Normalizer.Form.NFD)),
+                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
+                        java.text.Normalizer.normalize(REINSTATED_LINE,
+                                java.text.Normalizer.Form.NFD))),
                 "a retraction written in NFD slipped past");
+
+        // WHAT A READER CANNOT SEE AT ALL. String.strip() stops at Character.isWhitespace, so a
+        // NO-BREAK SPACE, a FIGURE SPACE, a NARROW NO-BREAK SPACE, a zero-width space, a BOM, a
+        // left-to-right mark and a NEL all left a retraction readable on the page and invisible to
+        // this lock — every one measured against the real canon (batch-42 review: Codex P2,
+        // subagent P2-3). A space pasted out of a rendered page is a NO-BREAK SPACE more often
+        // than not, which is how the shape arrives.
+        for (String invisible : new String[] {
+                "\u00a0", "\u2007", "\u202f", "\u200b", "\ufeff", "\u200e", "\u0085" }) {
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, invisible + REINSTATED_LINE)),
+                    "a retraction behind an invisible character slipped past: U+"
+                            + Integer.toHexString(invisible.charAt(0)).toUpperCase());
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, REINSTATED_LINE + invisible)),
+                    "a retraction followed by an invisible character slipped past: U+"
+                            + Integer.toHexString(invisible.charAt(0)).toUpperCase());
+        }
 
         // AND WHERE THE EQUIVALENCE CLASS STOPS, said as a test rather than only in a comment: a
         // bullet or a quotation mark in front of the retraction is NOT read. Widening past
-        // whitespace means reading markdown again, which is what nine rounds were about.
-        assertDoesNotThrow(
-                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, "* " + REINSTATED_LINE)),
-                "the recorded limit changed: a bulleted retraction is now read, which is a wider "
-                        + "claim than the canon's §5 makes");
+        // whitespace means reading markdown again, which is what ten rounds were about.
+        for (String visible : new String[] { "* ", "+ ", "> ", "「" }) {
+            assertDoesNotThrow(
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, visible + REINSTATED_LINE)),
+                    "the recorded limit changed: a retraction behind the VISIBLE character 「"
+                            + visible.trim() + "」 is now read, which is a wider claim than the "
+                            + "canon's §5 makes. Widening past invisibility means deciding what "
+                            + "markdown means");
+        }
     }
 
     /**
