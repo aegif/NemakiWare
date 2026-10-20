@@ -830,16 +830,15 @@ class ReleaseReadinessIsMeasuredTest {
         //     anywhere still refuses; a single copy that MOVED does not.
         //   - the canon contradicting this line IN PROSE. It may, and this lock stays green.
         //   - a retraction written behind a character this reader does not remove — a 「* 」
-        //     bullet, a quotation mark, a Hangul filler, a VARIATION SELECTOR, a combining
-        //     grapheme joiner — is still not read. The formatting characters WERE in this list
-        //     until batch 51 and are not any more: a zero-width space and a BOM measured 0.00px
-        //     of difference on the page, so the canon was sabotageable with one invisible
-        //     character (batch-50 review, subagent P2-1). What is left in the list includes two
-        //     that also measure 0.00px — U+FE0F and U+034F — and the reason they stay is that the
-        //     JDK cannot say 「invisible」: both are Mn with combining class 0, which has no
-        //     public predicate, and removing Mn as a category refuses an ACCENTED line, which a
-        //     reader CAN see (measured). Six hand-written sets drifted before this rule (batches
-        //     42 to 51, both reviewers).
+        //     bullet, a quotation mark, a Hangul filler, a blank braille pattern, or one of the
+        //     SEVEN that advance 0.00px (U+034F, U+17B4, U+17B5, U+180B to U+180D, U+FFFC) — is
+        //     still not read. The formatting characters were in this list until batch 51 and the
+        //     VARIATION SELECTORS until batch 53, each removed when a measurement showed the
+        //     canon was sabotageable with one invisible character (batch-50 and batch-52 reviews,
+        //     subagent P2-1 both times). The seven stay because no JDK predicate or block gathers
+        //     them, which is a narrower claim than 「the JDK cannot say invisible」 — that one was
+        //     wrong, and the two blocks are how 256 of them were closed. SEVEN hand-written sets
+        //     drifted before this rule (batches 42 to 53, both reviewers).
         // What catches an actual resurrection is the arm above, which reads this file's own code —
         // and that arm carries its own limits, listed with it: a third name is green, a unicode
         // escape inside either name is green, and the same method declared in another test class
@@ -925,11 +924,12 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>NOTHING HERE MODELS WHAT A READER SEES, and three batches tried. 「Invisible」 was the
      * premise each time, and it was measured false from both ends: CSS Text §5.5 makes every BK
      * and NL character a forced line break 「regardless of the white-space value」 and §4 makes a
-     * control character a visible glyph, while in Chromium none of them breaks a line and their
-     * WIDTHS differ by character and by font — U+000C measured 0.00px in five stacks, U+000B,
-     * U+2028 and U+2029 between 4.45 and 16.00px, U+0085 the widest (batch-52 review, subagent
-     * P2-3 and P3-4, who measured five stacks; the numbers were written here as equalities for a
-     * batch and a different font falsifies them). What this reader claims is
+     * control character a visible glyph, while in Chromium NONE of them breaks a line — that part
+     * reproduces against a U+000A control — and their WIDTHS differ by character AND by font:
+     * U+000C 0.00px in five stacks, U+000B 5.33px in five, U+0085 16.00px in five, U+2028 and
+     * U+2029 up to 20.00px in an emoji-first stack. Ranges were written here twice and both
+     * disagreed with the canon's §5; the rule does not depend on any of these numbers (batch-52
+     * review, subagent P2-3; batch-53 review, subagent P3-3). What this reader claims is
      * only that a character is or is not one that carries meaning here: {@link #isPadding}'s
      * class plus the formatting characters.
      */
@@ -1011,9 +1011,9 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * Whether a character is whitespace or a control — half of what carries no meaning here,
-     * the other half being the formatting characters, which {@link
-     * #withoutWhatCarriesNoMeaningHere} adds.
+     * Whether a character is whitespace or a control — part of what carries no meaning here.
+     * {@link #carriesNoMeaningHere} is the whole of it: this, plus the formatting characters,
+     * plus the two variation-selector blocks.
      *
      * <p>SEVEN DESIGNS, AND EVERY HAND-WRITTEN SET FAILED. Four are listed here by batch; the
      * fifth was the five line separators of batch 50, the sixth their removal in batch 51, and
@@ -1050,11 +1050,12 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>KNOWN LIMITS, both directions, and the canon's §5 carries them:
      *   <ul>
-     *   <li>A retraction behind a character OUTSIDE the three classes — a variation selector, a
-     *   combining grapheme joiner, a Hangul filler, a blank braille pattern — is NOT read. Two of
-     *   those measure 0.00px of difference on the page (U+FE0F, U+034F), so this is a fail-open a
-     *   reader cannot see; the formatting characters used to be here too, until batch 51. That is
-     *   the fail-open
+     *   <li>A retraction behind a character this reader does not remove — a combining grapheme
+     *   joiner, a Khmer vowel inherent, a Mongolian free variation selector, an object
+     *   replacement character, a Hangul filler, a blank braille pattern — is NOT read. SEVEN of
+     *   them advance 0.00px in five font stacks, so that part is a fail-open a reader cannot see;
+     *   the formatting characters were here until batch 51 and the variation selectors until
+     *   batch 53. That is the fail-open
      *   side, and it is the price of never refusing a correct canon.
      *   <li>A character that renders is still taken off, and there are TWO: {@code U+1680} OGHAM
      *   SPACE MARK draws a line in an Ogham font (batch-45 review, subagent P3-7), and
@@ -1093,6 +1094,16 @@ class ReleaseReadinessIsMeasuredTest {
      * is what measures it: the FORMAT count would fall from 161 to 41 (batch-51 review, subagent
      * P2-3, who carried out the instruction the paragraph gave itself).
      */
+    private static String withoutWhatCarriesNoMeaningHere(String line) {
+        StringBuilder kept = new StringBuilder(line.length());
+        line.codePoints().forEach(codePoint -> {
+            if (!carriesNoMeaningHere(codePoint)) {
+                kept.appendCodePoint(codePoint);
+            }
+        });
+        return kept.toString();
+    }
+
     /**
      * A line reduced to what carries meaning here: COMPATIBILITY-normalised, with the characters
      * that carry no meaning taken out, and normalised again afterwards.
@@ -1113,16 +1124,6 @@ class ReleaseReadinessIsMeasuredTest {
         return Normalizer.normalize(
                 withoutWhatCarriesNoMeaningHere(Normalizer.normalize(line, Normalizer.Form.NFKC)),
                 Normalizer.Form.NFKC);
-    }
-
-    private static String withoutWhatCarriesNoMeaningHere(String line) {
-        StringBuilder kept = new StringBuilder(line.length());
-        line.codePoints().forEach(codePoint -> {
-            if (!carriesNoMeaningHere(codePoint)) {
-                kept.appendCodePoint(codePoint);
-            }
-        });
-        return kept.toString();
     }
 
     /**
@@ -1342,6 +1343,131 @@ class ReleaseReadinessIsMeasuredTest {
         assertThrows(AssertionError.class,
                 () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, WITHDRAWN_LINE)),
                 "two lines stating the withdrawal were accepted as one");
+    }
+
+    /**
+     * The near-copy is a DELETION of the compatibility-normalised line, and nothing else.
+     *
+     * <p>THIS DRIVES {@link #asNearCopy}, which is the function the reader calls. The arm that
+     * probes one code point at a time guards {@link #withoutWhatCarriesNoMeaningHere}, one level
+     * down, and batch 53 moved the near-copy up into a wrapper no arm touched. Measured on a copy
+     * of this reader: a single line inserted into {@code asNearCopy} —
+     * {@code toUpperCase(Locale.ROOT)}, {@code toLowerCase}, {@code replace("-", "")}, or NFKD in
+     * place of NFKC — left 0 OF 5 LOCKS RED, and each of them refuses a correct canon (batch-53
+     * review: Codex P2-1, subagent P2-1, who measured all four).
+     *
+     * <p>AND A POSITIONAL RULE IS THE OTHER HALF. Capping the removal at the 40th removable code
+     * point passed every arm and every fixture, because the fixtures are short — and 50 zero-width
+     * spaces in front of the retraction then keep ten of them, so the retraction stops being read
+     * (batch-53 review, subagent P2-2, measured). Length and position are in the corpus here for
+     * that reason, and the comparison is per code point, so no neighbour can change the answer.
+     *
+     * <p>WHAT A SWEEP CAN AND CANNOT SHOW: the property is universal, and this shows it on a
+     * corpus. The corpus is every code point of the BMP inserted at the head, the middle and the
+     * tail of both lines, plus the long runs and the repeated prefixes the reviewers' sabotages
+     * keyed on. A rule keyed on a context no corpus line contains is not caught here.
+     */
+    @Test
+    @DisplayName("the near-copy is a deletion of the normalised line, at any position or length")
+    void theNearCopyIsADeletionOfTheNormalisedLine() {
+        List<String> corpus = new java.util.ArrayList<>(List.of(
+                WITHDRAWN_LINE, REINSTATED_LINE, "", "x", "xx",
+                // the repeated prefix Codex's sabotage keyed on, and a long run of removables,
+                // which is what a positional cap hides behind
+                "xx" + REINSTATED_LINE, "xx" + WITHDRAWN_LINE,
+                "\u200b".repeat(60) + REINSTATED_LINE,
+                " ".repeat(60) + WITHDRAWN_LINE,
+                REINSTATED_LINE + "\u200b".repeat(60),
+                WITHDRAWN_LINE + WITHDRAWN_LINE,
+                // a compatibility form whose expansion CONTAINS a removable character: U+00A8
+                // becomes a space plus a combining diaeresis, and U+FDFA becomes a phrase with
+                // spaces in it. These are what the inner normalisation is for, and the only
+                // shapes that tell the two passes apart (batch-53 review, subagent P3-1)
+                "\u00a8" + REINSTATED_LINE, REINSTATED_LINE + "\u00a8",
+                "\ufdfa" + REINSTATED_LINE));
+        for (int codePoint = 0; codePoint <= Character.MAX_VALUE; codePoint++) {
+            if (!Character.isDefined(codePoint) || Character.getType(codePoint) == Character.SURROGATE) {
+                continue;
+            }
+            String one = new String(Character.toChars(codePoint));
+            corpus.add(one + REINSTATED_LINE);
+            corpus.add(REINSTATED_LINE.substring(0, 9) + one + REINSTATED_LINE.substring(9));
+            corpus.add(WITHDRAWN_LINE + one);
+        }
+        int notADeletion = 0;
+        int notThePerCharacterAnswer = 0;
+        String firstThatIsNotADeletion = null;
+        String firstThatDiffers = null;
+        for (String line : corpus) {
+            String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
+            String nearCopy = asNearCopy(line);
+            if (!isADeletionOf(nearCopy, normalised)) {
+                notADeletion++;
+                if (firstThatIsNotADeletion == null) {
+                    firstThatIsNotADeletion = line;
+                }
+            }
+            StringBuilder perCharacter = new StringBuilder();
+            normalised.codePoints().forEach(codePoint -> {
+                if (!withoutWhatCarriesNoMeaningHere(new String(Character.toChars(codePoint)))
+                        .isEmpty()) {
+                    perCharacter.appendCodePoint(codePoint);
+                }
+            });
+            if (!Normalizer.normalize(perCharacter.toString(), Normalizer.Form.NFKC)
+                    .equals(nearCopy)) {
+                notThePerCharacterAnswer++;
+                if (firstThatDiffers == null) {
+                    firstThatDiffers = line;
+                }
+            }
+        }
+        assertEquals(0, notADeletion,
+                "the near-copy is not a DELETION of the normalised line for " + notADeletion
+                        + " of " + corpus.size() + " lines — the first is 「"
+                        + describe(firstThatIsNotADeletion) + "」. Something is transformed or "
+                        + "added rather than removed: an upper-casing, a replacement, or a "
+                        + "different normalisation form. Every one of those makes lines equal "
+                        + "that a reader sees as different, and refuses a correct canon");
+        assertEquals(0, notThePerCharacterAnswer,
+                "the near-copy of a LINE is not the per-character answer applied everywhere, for "
+                        + notThePerCharacterAnswer + " of " + corpus.size() + " lines — the first "
+                        + "is 「" + describe(firstThatDiffers) + "」. A rule that depends on "
+                        + "WHERE a character sits, on HOW MANY there are, or on its neighbours "
+                        + "passes every single-character probe and every short fixture: a cap at "
+                        + "the 40th removable character was measured green while it let fifty "
+                        + "zero-width spaces hide a retraction");
+    }
+
+    /** Whether {@code shorter} is {@code longer} with zero or more code points deleted. */
+    private static boolean isADeletionOf(String shorter, String longer) {
+        int at = 0;
+        for (int i = 0; i < shorter.length(); ) {
+            int codePoint = shorter.codePointAt(i);
+            int found = longer.indexOf(new String(Character.toChars(codePoint)), at);
+            if (found < 0) {
+                return false;
+            }
+            at = found + Character.charCount(codePoint);
+            i += Character.charCount(codePoint);
+        }
+        return true;
+    }
+
+    /** A line with its invisible characters named, for a failure message. */
+    private static String describe(String line) {
+        if (line == null) {
+            return "(none)";
+        }
+        StringBuilder described = new StringBuilder();
+        line.codePoints().forEach(codePoint -> {
+            if (codePoint > 0x20 && !carriesNoMeaningHere(codePoint)) {
+                described.appendCodePoint(codePoint);
+            } else {
+                described.append(String.format("<U+%04X>", codePoint));
+            }
+        });
+        return described.length() > 160 ? described.substring(0, 160) + "…" : described.toString();
     }
 
     /**
@@ -1789,6 +1915,23 @@ class ReleaseReadinessIsMeasuredTest {
                         + "counted. That is what compatibility normalisation buys — and §5 has to "
                         + "stop offering a full-width colon as a way to quote the line");
 
+        // AND THE REST OF THAT COST, because 「one remedy lost」 was too narrow: EVERY
+        // compatibility-equivalent form of the line is a near-copy now. These two are the ones a
+        // reviewer would actually type — half-width parentheses, and the line in full-width
+        // latin — and a canon carrying either beside the real line is refused (batch-53 review,
+        // subagent P3-5, who listed nine such forms).
+        for (String compatibilityForm : new String[] {
+                WITHDRAWN_LINE.replace("（", "(").replace("）", ")"),
+                "- 取り下げ: ｐｌａｎ－ｆｉｇｕｒｅ－ｌｏｃｋ（Ｒ２１２）" }) {
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, compatibilityForm)),
+                    "a second line that is a COMPATIBILITY form of the declaration was not "
+                            + "counted: 「" + compatibilityForm + "」. The near-copy is taken "
+                            + "after NFKC, so every such form counts — which is the price §5 "
+                            + "records, and it is not one remedy but a family");
+        }
+
         // AND THE FAIL-OPEN SUBSTITUTION LEAVES, recorded: replacing the three ASCII hyphens with
         // U+2010 HYPHEN draws the SAME PIXELS in four of five font stacks (629px wide in both),
         // and this reader does not read it as a retraction (batch-52 review, subagent P2-5, who
@@ -1833,14 +1976,14 @@ class ReleaseReadinessIsMeasuredTest {
         }
 
         for (String visible : new String[] { "* ", "+ ", "> ", "「",
-                // NOT characters this reader removes: a Hangul filler (Lo), a blank braille
-                // pattern (So), a variation selector and a combining grapheme joiner (Mn). They
-                // carry meaning here in the only sense this reader has — not whitespace, not a
-                // control, not a formatting character — so a line behind one is a different line.
-                // 「Invisible to a reader」 stood here and was measured FALSE for two of them:
-                // the Hangul filler advances 13.55px and the braille blank 10.94px. The other
-                // two DO measure 0.00px, which is the recorded fail-open above (batch-51 review,
-                // subagent P2-1, who measured all four in five font stacks).
+                // NOT characters this reader removes: a Hangul filler (Lo) and a blank braille
+                // pattern (So). They carry meaning here in the only sense this reader has — not
+                // whitespace, not a control, not a formatting character, not a variation selector
+                // — so a line behind one is a different line. 「Invisible to a reader」 stood here
+                // and was measured FALSE for both: the Hangul filler advances 13.55px and the
+                // braille blank 10.94px (batch-51 review, subagent P2-1, five font stacks). The
+                // variation selectors were in this list until batch 53; the seven that do
+                // advance 0.00px are the recorded fail-open above.
                 "\u3164", "\u2800" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
