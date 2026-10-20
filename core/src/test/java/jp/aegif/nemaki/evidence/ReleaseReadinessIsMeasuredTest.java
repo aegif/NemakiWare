@@ -111,7 +111,8 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>THE TWO ARMS DO NOT SHARE A COMPARISON, and that is this pair's whole point: for the
      * statement a near miss must not SATISFY the lock, for the retraction a near miss must not
-     * SLIP PAST it. So this one is compared with its padding off.
+     * SLIP PAST it. So this one is compared as a NEAR-COPY — with everything that carries no
+     * meaning here taken out, anywhere in the line.
      * The sentence
      * here said 「counted the same way」 for a batch after that stopped being true (batch-42
      * review, subagent P2-4).
@@ -819,20 +820,26 @@ class ReleaseReadinessIsMeasuredTest {
         // NOT slip past it. Shapes whose RENDERING is identical — leading spaces, a trailing space
         // or tab, a NO-BREAK SPACE, a lone CR line ending, a decomposed 「げ」 — were measured
         // green on the retraction side (batch-41 and batch-43 reviews, both reviewers, against the
-        // real canon). So the retraction is compared after taking spaces and controls off its
-        // ends. The statement stays strict.
+        // real canon). So the retraction is compared as a NEAR-COPY: whitespace, controls and
+        // formatting characters taken out, anywhere in the line. The statement stays strict, and
+        // is counted as a near-copy a SECOND time, which only ever refuses.
         //
         // WHAT THIS LOCK NO LONGER CLAIMS, said plainly, because a withdrawal is a claim too:
         //   - WHERE the line sits. A section reader was tried and was defeated by one sentence
         //     mentioning 「## 5. 測定」 elsewhere (batch-40 review, subagent P2-2). A second copy
         //     anywhere still refuses; a single copy that MOVED does not.
         //   - the canon contradicting this line IN PROSE. It may, and this lock stays green.
-        //   - a retraction written behind a character isPadding does not take off — a 「* 」
-        //     bullet, a quotation mark, a FORMATTING character such as a zero-width space or a
-        //     BOM, a Hangul filler, a variation selector — is still not read. Which characters
-        //     those are is isPadding's rule, locked over every code point by
-        //     thePaddingClassIsTheCategoriesItNames; four hand-written sets drifted before it
-        //     (batches 42 to 45, both reviewers).
+        //   - a retraction written behind a character this reader does not remove — a 「* 」
+        //     bullet, a quotation mark, a Hangul filler, a VARIATION SELECTOR, a combining
+        //     grapheme joiner — is still not read. The formatting characters WERE in this list
+        //     until batch 51 and are not any more: a zero-width space and a BOM measured 0.00px
+        //     of difference on the page, so the canon was sabotageable with one invisible
+        //     character (batch-50 review, subagent P2-1). What is left in the list includes two
+        //     that also measure 0.00px — U+FE0F and U+034F — and the reason they stay is that the
+        //     JDK cannot say 「invisible」: both are Mn with combining class 0, which has no
+        //     public predicate, and removing Mn as a category refuses an ACCENTED line, which a
+        //     reader CAN see (measured). Six hand-written sets drifted before this rule (batches
+        //     42 to 51, both reviewers).
         // What catches an actual resurrection is the arm above, which reads this file's own code —
         // and that arm carries its own limits, listed with it: a third name is green, a unicode
         // escape inside either name is green, and the same method declared in another test class
@@ -973,7 +980,13 @@ class ReleaseReadinessIsMeasuredTest {
             // space was measured at 0.00px of difference on the page while the reader answered
             // 「exactly one」 (batch-50 review, subagent P2-1), and a second copy behind one of
             // the JDK's other line separators did the same (batch-49 review, Codex P2).
-            String nearCopy = withoutWhatCarriesNoMeaningHere(rendered);
+            // NORMALISED AGAIN AFTER THE REMOVAL. Composition does not cross a removed
+            // character: 「げ」 written as け + U+200B + the combining dakuten stayed け + mark
+            // through the first pass, so the line was not a near-copy and a second copy of the
+            // declaration went uncounted — and the same shape on the retraction side read as no
+            // retraction (batch-51 review, Codex P2, measured both ways).
+            String nearCopy = Normalizer.normalize(
+                    withoutWhatCarriesNoMeaningHere(rendered), Normalizer.Form.NFC);
             if (declarationItself.equals(nearCopy)) {
                 looksLikeIt++;
             }
@@ -989,8 +1002,9 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * Whether a character is one this reader takes off the ends of a line before comparing a
-     * retraction: a space or a control, and NOT a formatting character.
+     * Whether a character is whitespace or a control — half of what carries no meaning here,
+     * the other half being the formatting characters, which {@link
+     * #withoutWhatCarriesNoMeaningHere} adds.
      *
      * <p>FOUR DESIGNS, AND EVERY HAND-WRITTEN SET FAILED. 「whitespace」 left a NO-BREAK SPACE —
      * what a paste out of a rendered page produces — hiding a retraction (batch-42 review). The
@@ -1009,9 +1023,12 @@ class ReleaseReadinessIsMeasuredTest {
      * there are ZERO where only {@code isWhitespace} is true (and 59 the other way). A control
      * that removed it measured DID NOT FIRE, which is how the redundancy showed up (batch 46).
      *
-     * <p>So there is no hand-written set. {@code Cf} is not taken off AT ALL, which is the one
-     * boundary Java can state without deciding what renders: the format category contains both
-     * the marks that render and the ones that do not, and nothing in the JDK tells them apart.
+     * <p>So there is no hand-written set. {@code Cf} was not taken off AT ALL for five batches —
+     * the format category holds both the marks that render and the ones that do not, and nothing
+     * in the JDK tells them apart — and batch 51 moved that decision: the ones that do not render
+     * measured 0.00px, which left the canon sabotageable with one invisible character, so
+     * {@link #withoutWhatCarriesNoMeaningHere} removes the whole category and the canon's §5
+     * records what that costs.
      * {@link #thePaddingClassIsTheCategoriesItNames} counts what this method takes off, per
      * category, over every code point. It does NOT re-express the rule: a second copy of the
      * expression measures that the two agree, and batch 46's did exactly that — adding one term
@@ -1020,8 +1037,11 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>KNOWN LIMITS, both directions, and the canon's §5 carries them:
      *   <ul>
-     *   <li>A retraction behind a formatting character — a zero-width space, a BOM, a
-     *   left-to-right mark, a soft hyphen, a bidi isolate — is NOT read. That is the fail-open
+     *   <li>A retraction behind a character OUTSIDE the three classes — a variation selector, a
+     *   combining grapheme joiner, a Hangul filler, a blank braille pattern — is NOT read. Two of
+     *   those measure 0.00px of difference on the page (U+FE0F, U+034F), so this is a fail-open a
+     *   reader cannot see; the formatting characters used to be here too, until batch 51. That is
+     *   the fail-open
      *   side, and it is the price of never refusing a correct canon.
      *   <li>A character that renders is still taken off, and there are TWO: {@code U+1680} OGHAM
      *   SPACE MARK draws a line in an Ogham font (batch-45 review, subagent P3-7), and
@@ -1040,7 +1060,8 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * A line with its padding off — what the retraction is compared against.
+     * A line with everything that carries no meaning here taken out, anywhere in it — what
+     * both near-copy counts are taken over.
      *
      * <p>THE STATEMENT IS NOT TRIMMED and this is, because the two arms ask opposite questions: a
      * near miss must not SATISFY 「exactly one says it」, and must not SLIP PAST 「none takes it
@@ -1048,11 +1069,14 @@ class ReleaseReadinessIsMeasuredTest {
      * outside the BMP, because both halves of one are unpaired surrogates (batch-43 review: Codex
      * P2, subagent P2-1).
      *
-     * <p>THAT SCAN IS INERT TODAY and no control measures it: under the two-category rule no
-     * padding character is outside the BMP, so {@code charAt} would answer the same (batch-46
-     * review, subagent P3-2, measured). {@link #thePaddingClassIsTheCategoriesItNames} asserts
-     * that emptiness, so if a category with a supplementary member is ever added, the scan stops
-     * being inert and this paragraph has to go.
+     * <p>THE SCAN IS LOAD-BEARING NOW, and that paragraph said the opposite. It said the scan
+     * was inert and that no control measured it, with the instruction 「if a category with a
+     * supplementary member is ever added, this paragraph has to go」 — and batch 51 added one:
+     * {@code Cf} has 120 to 127 supplementary members depending on the JDK. A {@code charAt} scan
+     * would leave a tag character or a supplementary variation selector in place as two unpaired
+     * surrogates. {@link #whatCarriesNoMeaningHereIsTheFiveCategoriesItNames}'s per-category arm
+     * is what measures it: the FORMAT count would fall from 161 to 41 (batch-51 review, subagent
+     * P2-3, who carried out the instruction the paragraph gave itself).
      */
     private static String withoutWhatCarriesNoMeaningHere(String line) {
         StringBuilder kept = new StringBuilder(line.length());
@@ -1065,6 +1089,29 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /** A synthetic canon: the given lines, one per line. */
+    /**
+     * Every composed character of a line, split by the given string — NFD on each character, with
+     * the separator put between the base and its marks.
+     *
+     * <p>Used to build the shape that showed normalising only ONCE was not enough: composition
+     * does not cross a removed character.
+     */
+    private static String splitEveryComposedCharacterWith(String separator, String line) {
+        StringBuilder split = new StringBuilder();
+        line.codePoints().forEach(codePoint -> {
+            String decomposed = Normalizer.normalize(new String(Character.toChars(codePoint)),
+                    Normalizer.Form.NFD);
+            if (decomposed.codePointCount(0, decomposed.length()) == 2) {
+                int base = decomposed.codePointAt(0);
+                split.appendCodePoint(base).append(separator)
+                        .append(decomposed.substring(Character.charCount(base)));
+            } else {
+                split.appendCodePoint(codePoint);
+            }
+        });
+        return split.toString();
+    }
+
     private static String canonWith(String... lines) {
         return String.join("\n", lines) + "\n";
     }
@@ -1194,6 +1241,17 @@ class ReleaseReadinessIsMeasuredTest {
                             + "listing causes that do not apply");
         }
 
+        // AND COMPOSITION DOES NOT CROSS A REMOVED CHARACTER, so the removal is normalised again
+        // afterwards: 「げ」 written as け + a zero-width space + the combining dakuten stayed
+        // け + mark through one pass, and the second copy went uncounted (batch-51 review, Codex
+        // P2). The shape arrives from an editor that decomposes, or from a paste.
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
+                        splitEveryComposedCharacterWith("\u200b", WITHDRAWN_LINE))),
+                "a second copy whose composed characters were split by a zero-width space was not "
+                        + "counted. Normalisation does not compose across a removed character, so "
+                        + "the removal has to be normalised again afterwards");
+
         // AND AN EXAMPLE THAT IS NOT THE LINE ITSELF is how the format gets documented: a prefix,
         // a sentence around it, or a line with anything else on it.
         assertDoesNotThrow(
@@ -1260,6 +1318,26 @@ class ReleaseReadinessIsMeasuredTest {
                         + "would read as the declaration. The five are the space separators, the "
                         + "controls and the formatting characters. Categories seen: "
                         + categoriesSeen);
+        // AND IT IS CHARACTER-WISE, which one-code-point probes cannot see. A
+        // sequence-sensitive rewrite passes every arm above and every fixture: replacing
+        // codePoints() with codePoints().distinct() compiles, answers identically for every
+        // single character, and turns 「the retraction with a second ）」 into a near-copy —
+        // refusing a correct canon (batch-51 review, Codex P2, measured). So the property is
+        // asserted directly: what the helper does to a string is what it does to its characters,
+        // joined.
+        for (String sample : new String[] { WITHDRAWN_LINE, REINSTATED_LINE, "ああ", "- - ",
+                WITHDRAWN_LINE + WITHDRAWN_LINE, "　  ", "a" + "\u200b" + "a" }) {
+            StringBuilder characterWise = new StringBuilder();
+            sample.codePoints().forEach(codePoint -> characterWise.append(
+                    withoutWhatCarriesNoMeaningHere(new String(Character.toChars(codePoint)))));
+            assertEquals(characterWise.toString(), withoutWhatCarriesNoMeaningHere(sample),
+                    "this reader's removal is no longer character-wise: what it does to 「" + sample
+                            + "」 is not what it does to that line's characters, joined. A rule "
+                            + "that looks at a character's NEIGHBOURS can refuse a correct canon "
+                            + "while every single-character probe and every fixture still passes "
+                            + "— measured with codePoints().distinct(), which makes a repeated "
+                            + "visible character vanish");
+        }
         for (int type : named) {
             assertEquals(allOfThatCategory[type], removed[type],
                     "this reader does not remove the WHOLE of category " + type + ": it removes "
@@ -1316,11 +1394,13 @@ class ReleaseReadinessIsMeasuredTest {
      * 120 on JDK 17, so the number is not a constant of this tree (batch-49 review, subagent
      * P3-1, who measured the three JDKs this javadoc names).
      *
-     * <p>WHAT DEFENDS THE DECISION IN THAT CASE IS NOT THIS LOCK. It is the fixture loop over the
-     * prepended concatenation marks in {@link #theWithdrawalIsTakenBackOnlyByItsOwnLine}, which
-     * refuses a canon this widened class would read as retracted. Measured on that two-line edit:
-     * both locks fail, this one on the supplementary count and that one on {@code U+0600}.
-     * Control NZ5 is the one-line version of the same widening.
+     * <p>AND SINCE BATCH 51, THIS ARM IS THE ONLY THING THAT CATCHES THAT EDIT. The paragraph
+     * here named a second defence — the fixture loop over the prepended concatenation marks in
+     * {@link #theWithdrawalIsTakenBackOnlyByItsOwnLine} — and batch 51 removed those marks from
+     * that loop, because the formatting characters are now REMOVED rather than kept. Widening
+     * {@code isPadding} with {@code FORMAT} therefore changes no reading at all: control NZ5
+     * measured exactly that and its declaration is down to this class's own lock (batch-51
+     * review, subagent P2-4).
      *
      * <p>So the arm is two things at once and its message names both: a tripwire on the JDK (a
      * future version putting a member of these four categories outside the BMP, which is what
@@ -1374,10 +1454,12 @@ class ReleaseReadinessIsMeasuredTest {
                         (int) Character.CONTROL)),
                 categoriesSeen,
                 "the padding class takes off a character from a category it does not name. It is "
-                        + "meant to be the space separators and the controls and nothing else — a "
-                        + "formatting character brings the prepended concatenation marks with it "
-                        + "and refuses a correct canon, and anything else is a rule nobody wrote "
-                        + "down. Categories seen: " + categoriesSeen);
+                        + "meant to be the space separators and the controls and nothing else. "
+                        + "Since batch 51 adding the formatting characters here changes no "
+                        + "reading — withoutWhatCarriesNoMeaningHere removes them anyway — so "
+                        + "what a category added here means is a rule nobody wrote down, and what "
+                        + "a category REMOVED here means is a retraction that stops being read. "
+                        + "Categories seen: " + categoriesSeen);
         assertEquals(totals, List.of(zs, zl, zp, cc),
                 "the padding class is not the WHOLE of each category it names: Zs/Zl/Zp/Cc came "
                         + "out " + List.of(zs, zl, zp, cc) + " where this JDK has " + totals
@@ -1542,12 +1624,47 @@ class ReleaseReadinessIsMeasuredTest {
         // added the space separators, the formatting characters and the controls — and this line
         // kept saying otherwise through two batches that edited it (batch-44 review, subagent
         // P2-3; batch-45 review, subagent P3-6, who measured the batch the class crossed).
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
+                        splitEveryComposedCharacterWith("\u200b", REINSTATED_LINE))),
+                "a retraction whose composed characters were split by a zero-width space was not "
+                        + "read — the same hole as on the declaration side (batch-51 review, "
+                        + "Codex P2)");
+
+        // AND THE FAIL-OPEN THAT IS LEFT, in all three positions, with the measurement that found
+        // it. U+FE0F VARIATION SELECTOR-16 and U+034F COMBINING GRAPHEME JOINER measured 0.00px
+        // of advance width in five font stacks, at the head, the tail and inside the line — a
+        // reader cannot see them — and this reader does NOT remove them, so a retraction behind
+        // one is not read (batch-51 review, subagent P2-1, who measured them).
+        //
+        // WHY THEY ARE NOT REMOVED: the JDK cannot say 「invisible」. Both are Mn with combining
+        // class 0, that class has no public predicate, and removing Mn as a category was measured
+        // to make an ACCENTED line a near-copy — refusing a difference a reader CAN see. The
+        // alternative is a hand-written set, and six of those failed over six batches. So the
+        // class is the three predicates the JDK answers, and this is the price, recorded.
+        for (String invisibleButKept : new String[] { "\ufe0f", "\u034f" }) {
+            String name = "U+" + Integer.toHexString(invisibleButKept.charAt(0)).toUpperCase();
+            for (String shape : new String[] { invisibleButKept + REINSTATED_LINE,
+                    REINSTATED_LINE + invisibleButKept,
+                    REINSTATED_LINE.substring(0, 9) + invisibleButKept
+                            + REINSTATED_LINE.substring(9) }) {
+                assertDoesNotThrow(
+                        () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, shape)),
+                        "the recorded fail-open closed: a retraction behind " + name + " is now "
+                                + "read. That is better than the record says — update §5 and this "
+                                + "comment, and say what predicate made it possible");
+            }
+        }
+
         for (String visible : new String[] { "* ", "+ ", "> ", "「",
-                // Invisible to a reader, but not characters this reader removes: a Hangul
-                // filler (Lo), a blank braille pattern (So), a variation selector and a
-                // combining grapheme joiner (Mn). They carry meaning here in the only
-                // sense this reader has — they are not whitespace, not controls, not
-                // formatting characters — so a line behind one is a different line.
+                // NOT characters this reader removes: a Hangul filler (Lo), a blank braille
+                // pattern (So), a variation selector and a combining grapheme joiner (Mn). They
+                // carry meaning here in the only sense this reader has — not whitespace, not a
+                // control, not a formatting character — so a line behind one is a different line.
+                // 「Invisible to a reader」 stood here and was measured FALSE for two of them:
+                // the Hangul filler advances 13.55px and the braille blank 10.94px. The other
+                // two DO measure 0.00px, which is the recorded fail-open above (batch-51 review,
+                // subagent P2-1, who measured all four in five font stacks).
                 "\u3164", "\u2800", "\ufe0f", "\u034f" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
