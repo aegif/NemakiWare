@@ -1065,8 +1065,11 @@ class ReleaseReadinessIsMeasuredTest {
      *   for a batch; excluding either by hand is the exception-set path four batches measured
      *   wrong, so they are recorded instead.
      *   <li>A character in none of these categories is not taken off: a Hangul filler and a
-     *   blank braille pattern, which MEASURE 13.55px and 10.94px and are not invisible at all,
-     *   and the seven that are (U+034F, U+17B4, U+17B5, U+180B to U+180D, U+FFFC). The variation
+     *   blank braille pattern, which ADVANCE 13.55px and 10.94px at 16px — and leave NO INK, both
+     *   of them, which is why they are not evidence that 「not removed」 means 「visible」
+     *   (batch-54 review, subagent P2-5, who measured the ink; the braille blank draws nothing in
+     *   all five stacks and the Hangul filler in four of five) — and the seven that advance
+     *   0.00px as well (U+034F, U+17B4, U+17B5, U+180B to U+180D, U+FFFC). The variation
      *   selectors used to be in this list and are taken off by block since batch 53.
      *   </ul>
      */
@@ -1132,8 +1135,9 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>THE TWO BLOCKS ARE THE JDK'S OWN NAMES, not a hand-written set — which is why they could
      * be added at all. 「The JDK cannot say invisible」 stood in this class for a batch and was
-     * too strong: a canvas sweep of every assigned code point outside the three classes found 263
-     * that leave NO INK in five font stacks, and 256 of those are exactly
+     * too strong: a sweep of every assigned code point outside the three classes found 263 that
+     * BOTH advance 0.00px AND leave no ink in five font stacks — neither condition alone gives
+     * that number (batch-54 review, subagent P2-3) — and 256 of those are exactly
      * {@code VARIATION_SELECTORS} and {@code VARIATION_SELECTORS_SUPPLEMENT} (batch-52 review,
      * subagent P2-1 and P2-2, measured; the blocks are 16 + 240 = 256 code points on this JDK,
      * all {@code Mn}).
@@ -1346,97 +1350,134 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The near-copy is a DELETION of the compatibility-normalised line, and nothing else.
+     * The near-copy is the per-character answer applied everywhere — and the removal only deletes.
      *
-     * <p>THIS DRIVES {@link #asNearCopy}, which is the function the reader calls. The arm that
-     * probes one code point at a time guards {@link #withoutWhatCarriesNoMeaningHere}, one level
-     * down, and batch 53 moved the near-copy up into a wrapper no arm touched. Measured on a copy
-     * of this reader: a single line inserted into {@code asNearCopy} —
-     * {@code toUpperCase(Locale.ROOT)}, {@code toLowerCase}, {@code replace("-", "")}, or NFKD in
-     * place of NFKC — left 0 OF 5 LOCKS RED, and each of them refuses a correct canon (batch-53
-     * review: Codex P2-1, subagent P2-1, who measured all four).
+     * <p>THIS DRIVES THE FUNCTIONS THE READER CALLS. The arm that probes one code point at a time
+     * guards {@link #carriesNoMeaningHere}; batch 53 moved the near-copy up into {@link
+     * #asNearCopy} and batch 54 found that nothing touched it. Measured on a copy of this reader:
+     * a single line inserted there — {@code toUpperCase(Locale.ROOT)}, {@code toLowerCase},
+     * {@code replace("-", "")}, or NFKD in place of NFKC — left 0 OF 5 LOCKS RED, and each
+     * refuses a correct canon (batch-53 review: Codex P2-1, subagent P2-1).
      *
-     * <p>AND A POSITIONAL RULE IS THE OTHER HALF. Capping the removal at the 40th removable code
-     * point passed every arm and every fixture, because the fixtures are short — and 50 zero-width
-     * spaces in front of the retraction then keep ten of them, so the retraction stops being read
-     * (batch-53 review, subagent P2-2, measured). Length and position are in the corpus here for
-     * that reason, and the comparison is per code point, so no neighbour can change the answer.
+     * <p>TWO ARMS, AND EACH ONE IS TRUE OF A DIFFERENT FUNCTION:
+     *   <ul>
+     *   <li>THE REMOVAL ONLY DELETES. {@link #withoutWhatCarriesNoMeaningHere} returns a
+     *   subsequence of what it is given, always. 「The near-copy is a deletion of the normalised
+     *   line」 was the claim here for a batch and it is FALSE of the pipeline: the outer
+     *   normalisation COMPOSES, so 「け + U+200B + the combining dakuten」 comes back as げ, which
+     *   the normalised line does not contain. The arm was green only because no corpus line had a
+     *   base, a removable character and a combining mark in that order — a shape this class
+     *   already uses as a fixture (batch-54 review, subagent P2-1, who measured it against
+     *   unmodified code). It is in the corpus now, and the arm is one level down where the
+     *   property holds.
+     *   <li>THE LINE'S ANSWER IS THE CHARACTERS' ANSWER. Whatever the removal does to a line, it
+     *   does to that line's code points, one at a time, and then the result is normalised. This
+     *   is the exact contract, so a rule that depends on WHERE a character sits, on HOW MANY
+     *   there are, or on its NEIGHBOURS cannot hide: a cap at the 40th removable character and a
+     *   rule keyed on a two-character prefix were both measured green before this arm, and each
+     *   opens a hole (batch-53 review: subagent P2-2, Codex P2-1).
+     *   </ul>
      *
-     * <p>WHAT A SWEEP CAN AND CANNOT SHOW: the property is universal, and this shows it on a
-     * corpus. The corpus is every code point of the BMP inserted at the head, the middle and the
-     * tail of both lines, plus the long runs and the repeated prefixes the reviewers' sabotages
-     * keyed on. A rule keyed on a context no corpus line contains is not caught here.
+     * <p>THE CORPUS IS EVERY CODE POINT, with no filter: undefined, surrogate and supplementary
+     * included. Two one-line edits were measured to pass every lock in this class while refusing
+     * a correct canon — one keyed on an UNDEFINED code point (U+0378, which an 「assigned only」
+     * sweep never shows) and one stripping the WHOLE supplementary range, which is where the 240
+     * ideographic variation selectors this reader removes live (batch-54 review: Codex P2,
+     * subagent P2-2). It is streamed rather than collected: a list of 1.25M lines is 100MB.
+     *
+     * <p>WHAT A SWEEP STILL CANNOT SHOW: a rule keyed on a context no corpus line contains. The
+     * named lines below are the shapes the reviewers' sabotages used — long runs of removables, a
+     * repeated prefix, the compatibility forms whose expansion contains a removable character,
+     * and the composing shape above.
      */
     @Test
-    @DisplayName("the near-copy is a deletion of the normalised line, at any position or length")
-    void theNearCopyIsADeletionOfTheNormalisedLine() {
-        List<String> corpus = new java.util.ArrayList<>(List.of(
+    @DisplayName("the near-copy is the per-character answer, and the removal only deletes")
+    void theNearCopyIsThePerCharacterAnswerEverywhere() {
+        List<String> named = List.of(
                 WITHDRAWN_LINE, REINSTATED_LINE, "", "x", "xx",
-                // the repeated prefix Codex's sabotage keyed on, and a long run of removables,
-                // which is what a positional cap hides behind
                 "xx" + REINSTATED_LINE, "xx" + WITHDRAWN_LINE,
                 "\u200b".repeat(60) + REINSTATED_LINE,
                 " ".repeat(60) + WITHDRAWN_LINE,
                 REINSTATED_LINE + "\u200b".repeat(60),
                 WITHDRAWN_LINE + WITHDRAWN_LINE,
-                // a compatibility form whose expansion CONTAINS a removable character: U+00A8
-                // becomes a space plus a combining diaeresis, and U+FDFA becomes a phrase with
-                // spaces in it. These are what the inner normalisation is for, and the only
-                // shapes that tell the two passes apart (batch-53 review, subagent P3-1)
                 "\u00a8" + REINSTATED_LINE, REINSTATED_LINE + "\u00a8",
-                "\ufdfa" + REINSTATED_LINE));
-        for (int codePoint = 0; codePoint <= Character.MAX_VALUE; codePoint++) {
-            if (!Character.isDefined(codePoint) || Character.getType(codePoint) == Character.SURROGATE) {
-                continue;
-            }
-            String one = new String(Character.toChars(codePoint));
-            corpus.add(one + REINSTATED_LINE);
-            corpus.add(REINSTATED_LINE.substring(0, 9) + one + REINSTATED_LINE.substring(9));
-            corpus.add(WITHDRAWN_LINE + one);
-        }
-        int notADeletion = 0;
-        int notThePerCharacterAnswer = 0;
+                "\ufdfa" + REINSTATED_LINE,
+                // THE COMPOSING SHAPE, which is what made the old arm ① false: a base, a
+                // removable character, and a combining mark that the outer pass joins to the base
+                splitEveryComposedCharacterWith("\u200b", REINSTATED_LINE),
+                splitEveryComposedCharacterWith("\u200b", WITHDRAWN_LINE),
+                splitEveryComposedCharacterWith(" ", REINSTATED_LINE),
+                "け\u200b\u3099", "\u200b\u3099",
+                // and an astral character, which the old corpus never carried
+                "\ud840\udc0b" + REINSTATED_LINE, REINSTATED_LINE + "\ud840\udc0b",
+                "\u0378" + REINSTATED_LINE);
+        long notADeletion = 0;
+        long notThePerCharacterAnswer = 0;
+        long lines = 0;
         String firstThatIsNotADeletion = null;
         String firstThatDiffers = null;
-        for (String line : corpus) {
-            String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
-            String nearCopy = asNearCopy(line);
-            if (!isADeletionOf(nearCopy, normalised)) {
-                notADeletion++;
-                if (firstThatIsNotADeletion == null) {
-                    firstThatIsNotADeletion = line;
+        for (int codePoint = -1; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+            for (String line : linesFor(codePoint, named)) {
+                lines++;
+                String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
+                String removed = withoutWhatCarriesNoMeaningHere(normalised);
+                if (!isADeletionOf(removed, normalised)) {
+                    notADeletion++;
+                    if (firstThatIsNotADeletion == null) {
+                        firstThatIsNotADeletion = line;
+                    }
                 }
-            }
-            StringBuilder perCharacter = new StringBuilder();
-            normalised.codePoints().forEach(codePoint -> {
-                if (!withoutWhatCarriesNoMeaningHere(new String(Character.toChars(codePoint)))
-                        .isEmpty()) {
-                    perCharacter.appendCodePoint(codePoint);
-                }
-            });
-            if (!Normalizer.normalize(perCharacter.toString(), Normalizer.Form.NFKC)
-                    .equals(nearCopy)) {
-                notThePerCharacterAnswer++;
-                if (firstThatDiffers == null) {
-                    firstThatDiffers = line;
+                StringBuilder perCharacter = new StringBuilder();
+                normalised.codePoints().forEach(each -> {
+                    if (!withoutWhatCarriesNoMeaningHere(new String(Character.toChars(each)))
+                            .isEmpty()) {
+                        perCharacter.appendCodePoint(each);
+                    }
+                });
+                if (!Normalizer.normalize(perCharacter.toString(), Normalizer.Form.NFKC)
+                        .equals(asNearCopy(line))) {
+                    notThePerCharacterAnswer++;
+                    if (firstThatDiffers == null) {
+                        firstThatDiffers = line;
+                    }
                 }
             }
         }
         assertEquals(0, notADeletion,
-                "the near-copy is not a DELETION of the normalised line for " + notADeletion
-                        + " of " + corpus.size() + " lines — the first is 「"
-                        + describe(firstThatIsNotADeletion) + "」. Something is transformed or "
-                        + "added rather than removed: an upper-casing, a replacement, or a "
-                        + "different normalisation form. Every one of those makes lines equal "
-                        + "that a reader sees as different, and refuses a correct canon");
+                "the REMOVAL does not only delete, for " + notADeletion + " of " + lines
+                        + " lines — the first is 「" + describe(firstThatIsNotADeletion) + "」. It "
+                        + "is meant to return a subsequence of what it is given: an upper-casing, "
+                        + "a replacement or a normalisation inside it makes lines equal that a "
+                        + "reader sees as different. (The PIPELINE is not a deletion and must not "
+                        + "be asserted to be one — the outer normalisation composes.)");
         assertEquals(0, notThePerCharacterAnswer,
                 "the near-copy of a LINE is not the per-character answer applied everywhere, for "
-                        + notThePerCharacterAnswer + " of " + corpus.size() + " lines — the first "
-                        + "is 「" + describe(firstThatDiffers) + "」. A rule that depends on "
-                        + "WHERE a character sits, on HOW MANY there are, or on its neighbours "
-                        + "passes every single-character probe and every short fixture: a cap at "
-                        + "the 40th removable character was measured green while it let fifty "
-                        + "zero-width spaces hide a retraction");
+                        + notThePerCharacterAnswer + " of " + lines + " lines — the first is 「"
+                        + describe(firstThatDiffers) + "」. Something in asNearCopy or in the "
+                        + "removal depends on WHERE a character sits, on HOW MANY there are, or "
+                        + "on its neighbours, or transforms the line instead of deleting from it. "
+                        + "Measured shapes that passed everything before this arm: a cap at the "
+                        + "40th removable character, a rule keyed on a two-character prefix, an "
+                        + "upper-casing, and stripping the whole supplementary range");
+    }
+
+    /**
+     * The corpus lines for one code point, or the named lines when given -1.
+     *
+     * <p>ONE LINE, THREE POSITIONS: the code point at the head, inside, and at the tail of the
+     * same line. Three separate lines cost three times as much and show the same thing — a rule
+     * keyed on any of those positions, on a length, or on a neighbour makes the line's answer
+     * differ from its characters'. The sweep is over every code point, so it runs 1.1M times per
+     * class run: at three lines each it took 10 seconds, which is five and a half hours across a
+     * full sweep of the controls.
+     */
+    private static List<String> linesFor(int codePoint, List<String> named) {
+        if (codePoint < 0) {
+            return named;
+        }
+        String one = new String(Character.toChars(codePoint));
+        return List.of(one + REINSTATED_LINE.substring(0, 9) + one
+                + REINSTATED_LINE.substring(9) + one);
     }
 
     /** Whether {@code shorter} is {@code longer} with zero or more code points deleted. */
@@ -1805,8 +1846,10 @@ class ReleaseReadinessIsMeasuredTest {
         // three different places (split on them, call them a limit, remove them), each time with
         // a claim about what a reader sees; the specs and the widths contradicted each of those
         // claims (batch-50 review, both reviewers). A character that carries no meaning here is
-        // whitespace, a control, or a formatting character, and a line that differs from the
-        // retraction only by those IS read — wherever in the line it sits.
+        // whitespace, a control, a formatting character, or a VARIATION SELECTOR — the two blocks
+        // batch 53 added, which this comment kept out for a batch (batch-54 review, Codex P3) —
+        // and a line that differs from the retraction only by those IS read, wherever in the line
+        // it sits.
         //
         // WHAT IS STILL NOT READ is a line carrying something this reader does not remove —
         // a visible character, one of the seven invisible ones no JDK predicate gathers, or a
@@ -1945,9 +1988,12 @@ class ReleaseReadinessIsMeasuredTest {
                         + "of the ASCII hyphen is now read. That is better than the record says "
                         + "— update §5 and this comment, and say what made it possible");
 
-        // AND THE FAIL-OPEN THAT IS LEFT: SEVEN CHARACTERS, in all three positions. A canvas
-        // sweep of every assigned code point outside this reader's classes found 263 that leave
-        // NO INK in five font stacks — not two, which is what this comment said for a batch — and
+        // AND THE FAIL-OPEN THAT IS LEFT: SEVEN CHARACTERS, in all three positions. A sweep of
+        // every assigned code point outside this reader's classes found 263 that BOTH advance
+        // 0.00px AND leave no ink in five font stacks — neither condition alone gives 263: ink
+        // alone admits U+2800 (68.36px at 100px) and U+FFA0 (50.00px), and advance alone admits
+        // 662, including the inked combining marks this reader must NOT remove (batch-54 review,
+        // subagent P2-3 and P2-4, who measured both) — and
         // 256 of those are the two variation-selector blocks, which batch 53 now removes. These
         // seven are the rest: U+034F COMBINING GRAPHEME JOINER, U+17B4 and U+17B5 KHMER VOWEL
         // INHERENT, U+180B to U+180D MONGOLIAN FREE VARIATION SELECTOR, and U+FFFC OBJECT
