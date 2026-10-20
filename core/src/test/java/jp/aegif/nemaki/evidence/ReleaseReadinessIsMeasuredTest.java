@@ -897,11 +897,15 @@ class ReleaseReadinessIsMeasuredTest {
     private static Declared declarationsIn(String text) {
         long says = 0;
         long takesBack = 0;
-        // EVERY LINE ENDING COMMONMARK KNOWS. Splitting on \n alone read a document whose lines
-        // end in a lone CR as ONE line, so its statement counted as absent — 「I could not read
-        // this」 reported with the value of 「it is not there」, which is the one thing this tree's
-        // rule forbids, and an over-refusal besides (batch-41 review: Codex P2, subagent P2-3).
-        for (String line : text.split("\r\n|\n|\r", -1)) {
+        // EVERY LINE ENDING THE JDK KNOWS, which is \R: CRLF, CR, LF, and also U+000B, U+000C,
+        // U+0085, U+2028 and U+2029. Splitting on \n alone read a document whose lines end in a
+        // lone CR as ONE line, so its statement counted as absent — 「I could not read this」
+        // reported with the value of 「it is not there」 (batch-41 review: Codex P2, subagent
+        // P2-3). Splitting on only CR and LF then left the OTHER line separators inside a line,
+        // where an ends-trim can never reach them, so a retraction written after one on the same
+        // physical line was not read at all (batch-46 review, Codex P2). \R is the JDK's own
+        // definition, so this is not another hand-written set.
+        for (String line : text.split("\\R", -1)) {
             // NORMALISED, so a decomposed 「げ」 is the same character it renders as. A canon saved
             // in NFD counted zero statements and the refusal named causes none of which applied
             // (batch-41 review, subagent P3-5).
@@ -909,8 +913,8 @@ class ReleaseReadinessIsMeasuredTest {
             if (WITHDRAWN_LINE.equals(rendered)) {
                 says++;
             }
-            // THE RETRACTION IS ASKED WIDER, on purpose: see the arms' comment. Leading and
-            // isPadding is what the rendering drops, and such shapes were measured green
+            // THE RETRACTION IS ASKED WIDER, on purpose: see the arms' comment. isPadding is
+            // what the rendering drops, and such shapes were measured green
             // before the batch that added it. The authority is isPadding's rule, locked over
             // every code point; the loops here are fixtures over it. An earlier version of
             // this sentence pointed at 「the arrays below」, which are the fixtures and not the
@@ -954,9 +958,13 @@ class ReleaseReadinessIsMeasuredTest {
      *   <li>A retraction behind a formatting character — a zero-width space, a BOM, a
      *   left-to-right mark, a soft hyphen, a bidi isolate — is NOT read. That is the fail-open
      *   side, and it is the price of never refusing a correct canon.
-     *   <li>A SPACE that renders is still taken off: {@code U+1680} OGHAM SPACE MARK draws a line
-     *   in an Ogham font (batch-45 review, subagent P3-7). That is the over-refusal side, and it
-     *   is one character.
+     *   <li>A character that renders is still taken off, and there are TWO: {@code U+1680} OGHAM
+     *   SPACE MARK draws a line in an Ogham font (batch-45 review, subagent P3-7), and
+     *   {@code U+0000} becomes a visible {@code U+FFFD} in CommonMark's input processing
+     *   (batch-46 review, Codex P2). Both are over-refusal — a canon carrying one in front of a
+     *   line that is not the retraction has that line read as one. 「one character」 stood here
+     *   for a batch; excluding either by hand is the exception-set path four batches measured
+     *   wrong, so they are recorded instead.
      *   <li>A character that is invisible but in none of these categories — a Hangul filler, a
      *   blank braille pattern, a variation selector — is not taken off either.
      *   </ul>
@@ -974,6 +982,12 @@ class ReleaseReadinessIsMeasuredTest {
      * back」. BY CODE POINT, not by {@code char}: a {@code char} scan cannot see a character
      * outside the BMP, because both halves of one are unpaired surrogates (batch-43 review: Codex
      * P2, subagent P2-1).
+     *
+     * <p>THAT SCAN IS INERT TODAY and no control measures it: under the two-category rule no
+     * padding character is outside the BMP, so {@code charAt} would answer the same (batch-46
+     * review, subagent P3-2, measured). {@link #thePaddingClassIsTheCategoriesItNames} asserts
+     * that emptiness, so if a category with a supplementary member is ever added, the scan stops
+     * being inert and this paragraph has to go.
      */
     private static String withoutPadding(String line) {
         int from = 0;
@@ -1095,44 +1109,78 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * The padding class is exactly the categories it names, over every code point.
+     * The padding class is exactly the categories it names — counted, not re-expressed.
      *
-     * <p>NO SAMPLE AND NO LIST. Three batches of hand-written sets each drifted from what they
-     * claimed, and the lock over the last one measured only that its two copies agreed — adding
-     * the same character to both passed every test while reopening a hole (batch-45 review,
-     * subagent P2-4, measured). This compares the method with its rule for all 1,114,112 code
-     * points instead, so an exception set cannot be reintroduced quietly and a category cannot be
-     * dropped quietly.
+     * <p>NOT A SECOND COPY OF THE IMPLEMENTATION. The first version of this lock computed the same
+     * boolean expression, character for character, and compared it with {@link #isPadding}. That
+     * is a tautology: editing BOTH copies the same way passes. Measured — adding
+     * {@code || codePoint == 0x1F600} to the method AND to the lock left every lock in this class
+     * green, and so did excluding a NO-BREAK SPACE from both (batch-46 review, subagent P2-1, who
+     * also supplied the form below). The sentence 「so neither side can drift」 was true only of
+     * one-sided drift, and 「there is no hand-written set」 was true of the class and not of the
+     * fixtures.
      *
-     * <p>What it does NOT settle is whether that rule is the right one; the limits are listed
-     * with {@link #isPadding} and in the canon's §5, in words, because 「renders」 is not a
-     * property the JDK exposes.
+     * <p>SO THE RULE IS SAID A DIFFERENT WAY: every code point this class takes off belongs to one
+     * of four Unicode categories, and each category contributes a COUNT. A count cannot be
+     * satisfied by editing an expression twice — a term added to both copies moves it, a character
+     * excluded from both moves it, and a category that is not one of the four fails the first arm
+     * outright.
+     *
+     * <p>THE COUNTS ARE A MEASUREMENT OF THE JDK'S UNICODE VERSION, not of this tree. {@code Cc}
+     * is 65 by Unicode's stability policy and will not move; {@code Zs} can gain a character in a
+     * future version, and then this lock is the thing that says so. Measured by running this rule
+     * over every code point on three JDKs — 17, 21 and the 27 this tree builds with — and all
+     * three agree: Zs 17, Zl 1, Zp 1, Cc 65 — 84 code points, none of them outside the BMP.
      */
     @Test
-    @DisplayName("the padding class is the categories it names, over every code point")
+    @DisplayName("the padding class is the four categories it names, counted")
     void thePaddingClassIsTheCategoriesItNames() {
-        int disagreements = 0;
-        int firstDisagreement = -1;
+        SortedSet<Integer> categoriesSeen = new TreeSet<>();
+        int zs = 0;
+        int zl = 0;
+        int zp = 0;
+        int cc = 0;
+        int outsideTheBmp = 0;
         for (int codePoint = 0; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
-            boolean declared = Character.isSpaceChar(codePoint)
-                    || Character.getType(codePoint) == Character.CONTROL;
-            if (declared != isPadding(codePoint)) {
-                disagreements++;
-                if (firstDisagreement < 0) {
-                    firstDisagreement = codePoint;
-                }
+            if (!isPadding(codePoint)) {
+                continue;
+            }
+            int type = Character.getType(codePoint);
+            categoriesSeen.add(type);
+            if (type == Character.SPACE_SEPARATOR) {
+                zs++;
+            } else if (type == Character.LINE_SEPARATOR) {
+                zl++;
+            } else if (type == Character.PARAGRAPH_SEPARATOR) {
+                zp++;
+            } else if (type == Character.CONTROL) {
+                cc++;
+            }
+            if (codePoint > Character.MAX_VALUE) {
+                outsideTheBmp++;
             }
         }
-        assertEquals(0, disagreements,
-                "isPadding takes off a different set of characters than the rule it declares — a "
-                        + "space separator or a control, and NOT a formatting character. "
-                        + (firstDisagreement < 0 ? "" : "The first one is U+"
-                                + String.format("%04X", firstDisagreement) + " (category "
-                                + Character.getType(firstDisagreement) + "). ")
-                        + "If a formatting character is being taken off again, the prepended "
-                        + "concatenation marks go with it and a correct canon is refused; if a "
-                        + "category is being dropped, a retraction hides behind it. Both were "
-                        + "measured, which is why this compares the whole space rather than a list");
+        assertEquals(new TreeSet<>(List.of((int) Character.SPACE_SEPARATOR,
+                        (int) Character.LINE_SEPARATOR, (int) Character.PARAGRAPH_SEPARATOR,
+                        (int) Character.CONTROL)),
+                categoriesSeen,
+                "the padding class takes off a character from a category it does not name. It is "
+                        + "meant to be the space separators and the controls and nothing else — a "
+                        + "formatting character brings the prepended concatenation marks with it "
+                        + "and refuses a correct canon, and anything else is a rule nobody wrote "
+                        + "down. Categories seen: " + categoriesSeen);
+        assertEquals(List.of(17, 1, 1, 65), List.of(zs, zl, zp, cc),
+                "the padding class is a different size than the categories it names: Zs/Zl/Zp/Cc "
+                        + "came out " + List.of(zs, zl, zp, cc) + " and this JDK's Unicode version "
+                        + "had 17/1/1/65 when this was written. Cc is fixed by Unicode's stability "
+                        + "policy, so a change there is this tree's; Zs can gain a character in a "
+                        + "new Unicode version, and then re-measure and say which version. A term "
+                        + "added to the class moves these numbers even if the same term is added "
+                        + "to a second copy of the rule, which is why they are counted here");
+        assertEquals(0, outsideTheBmp,
+                "the padding class now takes off a character outside the BMP, so withoutPadding's "
+                        + "code-point scan stops being inert and its control becomes measurable "
+                        + "again — say so where that scan is explained");
     }
 
     /**
@@ -1199,6 +1247,18 @@ class ReleaseReadinessIsMeasuredTest {
                 () -> theCanonSaysTheWithdrawalStands(
                         canonWith(WITHDRAWN_LINE, "前置き\r" + REINSTATED_LINE)),
                 "a retraction on a lone-CR line slipped past");
+
+        // THE OTHER LINE SEPARATORS. These are in the padding class, but a character INSIDE a line
+        // can never be reached by a trim of its ends — so splitting on CR and LF alone left a
+        // retraction written after one of them on the same physical line unread (batch-46 review,
+        // Codex P2). \R splits on all of them.
+        for (String separator : new String[] { "\u2028", "\u2029", "\u0085", "\u000b", "\u000c" }) {
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, "前置き" + separator + REINSTATED_LINE)),
+                    "a retraction after U+" + Integer.toHexString(separator.charAt(0)).toUpperCase()
+                            + " on the same physical line slipped past");
+        }
         // NFD ON THE RETRACTION ONLY. Normalising the WHOLE document made this fixture green
         // under the sabotage that removes normalisation — the statement arm threw first and
         // satisfied the assertThrows, so the retraction side measured nothing (batch-42 review,
@@ -1250,10 +1310,13 @@ class ReleaseReadinessIsMeasuredTest {
                 // AND THE FORMATTING CHARACTERS, all of them now: isPadding does not take any
                 // off, because the category holds both the prepended concatenation marks —
                 // which render, and whose being taken off refused a correct canon (batch-43
-                // review: Codex P2, subagent P2-1) — and the invisible ones. Three of the
-                // thirteen marks Unicode has, two of them outside the BMP, plus the invisible
-                // ones a retraction can now hide behind: that fail-open side is the price, and
-                // it is listed with isPadding and in the canon's §5.
+                // review: Codex P2, subagent P2-1) — and the invisible ones. FOUR of the thirteen
+                // marks Unicode lists — and that thirteen is the SPECIFICATION's list, because the
+                // JDK exposes no predicate for them; both reviewers counted it, this tree cannot —
+                // ONE of them outside the BMP, plus the invisible ones a
+                // retraction can now hide behind: that fail-open side is the price, and it is
+                // listed with isPadding and in the canon's §5. The sentence here said three and
+                // two for a batch (batch-46 review, subagent P2-2, who counted the array).
                 "\u0600", "\u06dd", "\u0890", "\ud804\udcbd",
                 "\u200b", "\ufeff", "\u200e", "\u00ad", "\u2066", "\u2060" }) {
             assertDoesNotThrow(
