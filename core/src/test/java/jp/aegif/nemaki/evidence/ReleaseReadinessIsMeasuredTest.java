@@ -75,7 +75,8 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The canon's one line that states the plan-figure lock is withdrawn — a line IS it or is not.
      *
-     * <p>TEN ROUNDS. The escapes came in two families, and conflating them was itself a
+     * <p>EVERY ROUND SINCE BATCH 33. The escapes came in two families, and conflating them
+     * was itself a
      * finding (batch-41 review, Codex P3).
      * Reading the statement as prose broke first (batches 33-38: a bare substring, an emphasised
      * token, a cell, a quotation, a strike-through, {@code __…__}, spacing variants, a column the
@@ -110,7 +111,8 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>THE TWO ARMS DO NOT SHARE A COMPARISON, and that is this pair's whole point: for the
      * statement a near miss must not SATISFY the lock, for the retraction a near miss must not
-     * SLIP PAST it. So this one is compared with the line's invisible padding off. The sentence
+     * SLIP PAST it. So this one is compared with the listed padding characters off its ends.
+     * The sentence
      * here said 「counted the same way」 for a batch after that stopped being true (batch-42
      * review, subagent P2-4).
      *
@@ -788,7 +790,7 @@ class ReleaseReadinessIsMeasuredTest {
 
         // AND the residual says so, in the canon — on ONE LINE, compared RAW and WHOLE.
         //
-        // TEN ROUNDS over this one statement, and what failed every time was reading it as
+        // ROUND AFTER ROUND over this one statement, and what failed every time was reading it as
         // prose. Batch 39 moved it out of the residual table onto a line of its own, which closed
         // eight measured escapes; what batch 39 got wrong is that it compared the line AFTER
         // asProse had taken the inline code out of it, so 「whole line」 was not whole. Measured
@@ -814,20 +816,22 @@ class ReleaseReadinessIsMeasuredTest {
         // AND THE TWO ARMS NO LONGER SHARE ONE COMPARISON. 「exactly one line says it」 and 「no
         // line takes it back」 cannot both be fail-closed with the same equality: for the
         // statement a near miss must NOT satisfy the lock, and for the retraction a near miss must
-        // NOT slip past it. Nine shapes whose RENDERING is identical — one to three leading
-        // spaces, a trailing space or tab, a lone CR line ending, a decomposed 「げ」 — were
-        // measured green on the retraction side (batch-41 review, subagent P2-3, measured against
-        // the real canon). So the retraction is asked of the rendering's equivalence class:
-        // normalised, with leading and trailing whitespace off. The statement stays strict.
+        // NOT slip past it. Shapes whose RENDERING is identical — leading spaces, a trailing space
+        // or tab, a NO-BREAK SPACE, a lone CR line ending, a decomposed 「げ」 — were measured
+        // green on the retraction side (batch-41 and batch-43 reviews, both reviewers, against the
+        // real canon). So the retraction is compared after taking the characters on a CLOSED LIST
+        // off its ends. The statement stays strict.
         //
         // WHAT THIS LOCK NO LONGER CLAIMS, said plainly, because a withdrawal is a claim too:
         //   - WHERE the line sits. A section reader was tried and was defeated by one sentence
         //     mentioning 「## 5. 測定」 elsewhere (batch-40 review, subagent P2-2). A second copy
         //     anywhere still refuses; a single copy that MOVED does not.
         //   - the canon contradicting this line IN PROSE. It may, and this lock stays green.
-        //   - a retraction written with something other than whitespace in front of it — a 「* 」
-        //     bullet, a quotation mark — is still not read. That is the far side of the
-        //     equivalence class above, and widening it further means reading markdown again.
+        //   - a retraction written behind a character that is NOT on the PADDING list — a 「* 」
+        //     bullet, a quotation mark, a Hangul filler, a variation selector — is still not read.
+        //     The list is what this lock will take off; naming the class by a Unicode category
+        //     instead was wrong in both directions at once (batch-43 review: Codex P2 ×2,
+        //     subagent P2-1).
         // What catches an actual resurrection is the arm above, which reads this file's own code —
         // and that arm carries its own limits, listed with it: a third name is green, a unicode
         // escape inside either name is green, and the same method declared in another test class
@@ -857,11 +861,11 @@ class ReleaseReadinessIsMeasuredTest {
                         + "BOM, which a paste out of a rendered page brings along invisibly — no "
                         + "emphasis, no backticks, nothing else on the line. And it may appear only "
                         + "once in the whole document, an example in a fenced block included. Prose "
-                        + "saying it another way is not read, deliberately: ten rounds of findings "
+                        + "saying it another way is not read, deliberately: every round of findings "
                         + "came out of reading this statement any other way");
         assertEquals(0, found.takesBack(),
-                "the canon has " + found.takesBack() + " lines which, with their invisible "
-                        + "padding off, equal 「" + REINSTATED_LINE + "」 while this lock asserts the "
+                "the canon has " + found.takesBack() + " lines which, with the listed padding "
+                        + "characters off their ends, equal 「" + REINSTATED_LINE + "」 while this lock asserts the "
                         + "withdrawal stands. One of the two is wrong — decide, do not keep both. A "
                         + "quotation of that line inside a sentence is not it, which is how §5 "
                         + "explains the format; a copy on a line of its own IS it, fenced or not");
@@ -869,7 +873,7 @@ class ReleaseReadinessIsMeasuredTest {
 
     /**
      * The two statements counted in a document's lines — the statement strictly, the
-     * retraction with its invisible padding off.
+     * retraction with the listed padding characters off its ends.
      *
      * <p>NOTHING IS SKIPPED, AND NOTHING IS STRIPPED ON THE STATEMENT SIDE. Not a fenced
      * block, not an indented one, not a code span, not an
@@ -886,10 +890,10 @@ class ReleaseReadinessIsMeasuredTest {
      * point: a near miss must not SATISFY the first arm, and must not SLIP PAST the second.
      * {@code strip()} on the statement side made 「the statement with three spaces after it」
      * count as the statement (batch-40 review, Codex P2); the lack of it on the retraction side
-     * left nine shapes whose rendering is identical reading as 「no retraction」 (batch-41 review,
-     * subagent P2-3). KNOWN LIMIT: whitespace is where the retraction's equivalence class stops —
-     * a 「* 」 bullet or a quotation mark in front of it is still not read, and widening further
-     * means reading markdown again, which is what the rounds above were about.
+     * left shapes whose rendering is identical reading as 「no retraction」 (batch-41 review,
+     * subagent P2-3). What the retraction's trim takes off is the CLOSED LIST in {@code PADDING};
+     * anything else — a bullet, a quotation mark, a filler, a variation selector — is not taken
+     * off, and that limit is stated with the list.
      */
     private static Declared declarationsIn(String text) {
         long says = 0;
@@ -907,8 +911,8 @@ class ReleaseReadinessIsMeasuredTest {
                 says++;
             }
             // THE RETRACTION IS ASKED WIDER, on purpose: see the arms' comment. Leading and
-            // trailing whitespace is what the rendering drops, and nine such shapes were measured
-            // green before this batch.
+            // the PADDING list is what the rendering drops, and such shapes were measured
+            // green before this batch; the arrays below are the list.
             if (REINSTATED_LINE.equals(withoutPadding(rendered))) {
                 takesBack++;
             }
@@ -917,40 +921,45 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * A line with its invisible padding off — what the retraction is compared against.
+     * The characters this reader takes off the ends of a line before comparing a retraction.
      *
-     * <p>WHITESPACE IS NOT THE CLASS. {@code String.strip()} drops what
-     * {@link Character#isWhitespace} knows, and that leaves NBSP, FIGURE SPACE, NARROW NO-BREAK
-     * SPACE, ZERO WIDTH SPACE, a BOM, a left-to-right mark and NEL on the line — every one of
-     * them measured slipping a retraction past this lock, against the real canon (batch-42
-     * review: Codex P2, subagent P2-3). A space pasted out of a rendered page is NBSP more often
-     * than not, which is how that shape arrives.
+     * <p>A CLOSED LIST, and that is the point. The class was 「whitespace」 first, which left a
+     * NO-BREAK SPACE — what a paste out of a rendered page produces — hiding a retraction from
+     * this lock. It was then 「characters a reader cannot see」, named by Unicode category, and
+     * that was wrong in BOTH directions at once: too narrow for a Hangul filler, a blank braille
+     * pattern, a variation selector and every formatting character outside the BMP (the scan was
+     * per {@code char}), and too wide for the Arabic formatting marks that DO render (batch-43
+     * review: Codex P2 ×2, subagent P2-1, each measured character by character).
      *
-     * <p>So the class is 「characters a reader cannot see」: whitespace, the other space
-     * categories, formatting marks and controls. KNOWN LIMIT, and it is where this stops: a
-     * VISIBLE character in front of the line — a 「* 」 bullet, a quotation mark — is not padding
-     * and is not trimmed. Widening past invisibility means deciding what markdown means, which is
-     * what ten rounds of this lock were about.
+     * <p>No category predicate settles that, because 「can a reader see it」 is not a property of a
+     * category. So the set is listed instead: whoever reads this can check it, and it cannot be
+     * 「too wide」 because nothing is in it by accident. What it does not contain is a stated
+     * limit, not a claim — see the canon's §5, which carries the same list.
+     */
+    private static final String PADDING = " \t\n\u000b\f\r\u001c\u001d\u001e\u001f"
+            + "\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007"
+            + "\u2008\u2009\u200a\u200b\u200c\u200d\u200e\u200f\u2028\u2029\u202f"
+            + "\u205f\u2060\u3000\ufeff";
+
+    /**
+     * A line with the listed padding off — what the retraction is compared against.
+     *
+     * <p>THE STATEMENT IS NOT TRIMMED and this is, because the two arms ask opposite questions: a
+     * near miss must not SATISFY 「exactly one says it」, and must not SLIP PAST 「none takes it
+     * back」. KNOWN LIMIT: a character not on the list — a bullet, a quotation mark, a Hangul
+     * filler, a variation selector — is not taken off, so a retraction written behind one is not
+     * read. The canon's §5 says so, and tells authors to write the line plainly.
      */
     private static String withoutPadding(String line) {
         int from = 0;
         int to = line.length();
-        while (from < to && isPadding(line.charAt(from))) {
+        while (from < to && PADDING.indexOf(line.charAt(from)) >= 0) {
             from++;
         }
-        while (to > from && isPadding(line.charAt(to - 1))) {
+        while (to > from && PADDING.indexOf(line.charAt(to - 1)) >= 0) {
             to--;
         }
         return line.substring(from, to);
-    }
-
-    /** Whether a character is one a reader of the rendered document cannot see. */
-    private static boolean isPadding(char at) {
-        if (Character.isWhitespace(at) || Character.isSpaceChar(at)) {
-            return true;
-        }
-        int type = Character.getType(at);
-        return type == Character.FORMAT || type == Character.CONTROL;
     }
 
     /** A synthetic canon: the given lines, one per line. */
@@ -959,7 +968,7 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * A line IS the statement or it is not — driven with every shape ten rounds produced.
+     * A line IS the statement or it is not — driven with every shape these rounds produced.
      *
      * <p>ATTRIBUTION IS WHAT THE RUNNER DECLARES, and nothing finer. It was written finer than
      * that four rounds running and was wrong every time, including in the version that said it
@@ -1095,7 +1104,7 @@ class ReleaseReadinessIsMeasuredTest {
                             + "itself: " + written);
         }
 
-        // WHAT THE RENDERING CANNOT TELL APART, the retraction must not slip through. Nine such
+        // WHAT THE RENDERING CANNOT TELL APART, the retraction must not slip through. Such
         // shapes were measured GREEN against the real canon while §5 promised the opposite
         // (batch-41 review, subagent P2-3). The statement side stays strict, so the same shapes
         // are NOT the statement — that asymmetry is asserted both ways here.
@@ -1126,37 +1135,57 @@ class ReleaseReadinessIsMeasuredTest {
                                 java.text.Normalizer.Form.NFD))),
                 "a retraction written in NFD slipped past");
 
-        // WHAT A READER CANNOT SEE AT ALL. String.strip() stops at Character.isWhitespace, so a
-        // NO-BREAK SPACE, a FIGURE SPACE, a NARROW NO-BREAK SPACE, a zero-width space, a BOM, a
-        // left-to-right mark and a NEL all left a retraction readable on the page and invisible to
-        // this lock — every one measured against the real canon (batch-42 review: Codex P2,
-        // subagent P2-3). A space pasted out of a rendered page is a NO-BREAK SPACE more often
-        // than not, which is how the shape arrives.
+        // THE PADDING LIST, character by character. String.strip() stops at
+        // Character.isWhitespace, so a NO-BREAK SPACE, a FIGURE SPACE, a NARROW NO-BREAK SPACE, a
+        // zero-width space, a BOM, a left-to-right mark and a NEL all left a retraction readable
+        // on the page and unread by this lock — every one measured against the real canon
+        // (batch-42 review: Codex P2, subagent P2-3). A space pasted out of a rendered page is a
+        // NO-BREAK SPACE more often than not, which is how the shape arrives. Every character
+        // here is ON the list; what is NOT on it is the limit below.
         for (String invisible : new String[] {
                 "\u00a0", "\u2007", "\u202f", "\u200b", "\ufeff", "\u200e", "\u0085" }) {
             assertThrows(AssertionError.class,
                     () -> theCanonSaysTheWithdrawalStands(
                             canonWith(WITHDRAWN_LINE, invisible + REINSTATED_LINE)),
-                    "a retraction behind an invisible character slipped past: U+"
+                    "a retraction behind a listed padding character slipped past: U+"
                             + Integer.toHexString(invisible.charAt(0)).toUpperCase());
             assertThrows(AssertionError.class,
                     () -> theCanonSaysTheWithdrawalStands(
                             canonWith(WITHDRAWN_LINE, REINSTATED_LINE + invisible)),
-                    "a retraction followed by an invisible character slipped past: U+"
+                    "a retraction followed by a listed padding character slipped past: U+"
                             + Integer.toHexString(invisible.charAt(0)).toUpperCase());
         }
 
         // AND WHERE THE EQUIVALENCE CLASS STOPS, said as a test rather than only in a comment: a
         // bullet or a quotation mark in front of the retraction is NOT read. Widening past
-        // whitespace means reading markdown again, which is what ten rounds were about.
-        for (String visible : new String[] { "* ", "+ ", "> ", "「" }) {
+        // whitespace means reading markdown again, which is what round after round was about.
+        for (String off : new String[] { "* ", "+ ", "> ", "「",
+                "\u3164", "\u2800", "\ufe0f", "\u034f", "\udb40\udc20" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
-                            canonWith(WITHDRAWN_LINE, visible + REINSTATED_LINE)),
-                    "the recorded limit changed: a retraction behind the VISIBLE character 「"
-                            + visible.trim() + "」 is now read, which is a wider claim than the "
-                            + "canon's §5 makes. Widening past invisibility means deciding what "
-                            + "markdown means");
+                            canonWith(WITHDRAWN_LINE, off + REINSTATED_LINE)),
+                    "the recorded limit changed: a retraction behind 「" + off.trim() + "」 (U+"
+                            + Integer.toHexString(off.codePointAt(0)).toUpperCase() + "), which is "
+                            + "NOT on the PADDING list, is now read. That is a wider claim than "
+                            + "the canon's §5 makes — the list is the claim, and naming the class "
+                            + "by a Unicode category instead was wrong in both directions at once");
+        }
+
+        // A RETRACTION ON A LINE OF ITS OWN IS READ WHEREVER IT SITS. §5 and the constant's
+        // javadoc both say so and nothing drove it; three rounds added and removed a fence skip,
+        // so the shape is one that comes back (batch-43 review, subagent P3-4).
+        for (String[] hidden : new String[][] {
+                { "```", REINSTATED_LINE, "```" },
+                { "    ```", REINSTATED_LINE, "    ```" },
+                { "~~~", REINSTATED_LINE, "~~~" },
+                { "<!--", REINSTATED_LINE, "-->" } }) {
+            String[] canon = new String[hidden.length + 1];
+            canon[0] = WITHDRAWN_LINE;
+            System.arraycopy(hidden, 0, canon, 1, hidden.length);
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(canonWith(canon)),
+                    "a retraction on a line of its own inside 「" + hidden[0].trim()
+                            + "」 was not read, while §5 says it is");
         }
     }
 
