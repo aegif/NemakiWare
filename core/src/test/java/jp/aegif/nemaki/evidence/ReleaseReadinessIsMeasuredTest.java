@@ -1127,6 +1127,26 @@ class ReleaseReadinessIsMeasuredTest {
                             + "this reader counts");
         }
 
+        // AND THE LIMIT ON THE OTHER SIDE OF THAT STRICTNESS, said as a test and not only in
+        // §5: a SECOND copy written behind one of the five separators is NOT a second copy.
+        // The statement side is compared raw, and those characters are not line endings, so
+        // the line is simply a different line — while a reader sees two lines that look
+        // alike. The retraction side carries the mirror image of this limit (a retraction
+        // behind one is read when it is at the line start, not read when it is inside the
+        // line), and §5 said only the retraction half for a batch (batch-48 review, subagent
+        // P3-6, measured). Trimming the statement side instead is the batch-40 defect: it
+        // made 「the statement with three spaces after it」 count as the statement.
+        for (String separator : new String[] { "\u2028", "\u2029", "\u0085", "\u000b", "\u000c" }) {
+            assertDoesNotThrow(
+                    () -> theCanonSaysTheWithdrawalStands(
+                            canonWith(WITHDRAWN_LINE, separator + WITHDRAWN_LINE)),
+                    "the recorded limit changed: a second copy of the statement behind U+"
+                            + Integer.toHexString(separator.charAt(0)).toUpperCase()
+                            + " is now counted as a second copy. That is a wider claim than "
+                            + "the canon's §5 makes — say it there first. Trimming this side "
+                            + "to get it is the batch-40 defect");
+        }
+
         // AND AN EXAMPLE THAT IS NOT THE LINE ITSELF is how the format gets documented: a prefix,
         // a sentence around it, or a line with anything else on it.
         assertDoesNotThrow(
@@ -1177,12 +1197,27 @@ class ReleaseReadinessIsMeasuredTest {
      * stability policy, which is the SPECIFICATION's promise and not something this tree measures
      * (the same qualification the thirteen prepended concatenation marks carry below).
      *
-     * <p>THE THIRD ARM CANNOT BE MADE TO FIRE BY CHANGING THIS TREE, and no control measures it.
-     * Given the first two arms the class is exactly those four categories, and none of their
-     * members is outside the BMP, so 「none outside the BMP」 follows rather than being checked
-     * (batch-47 review, subagent P3-1, who derived it). It is a tripwire on the JDK: if a future
-     * version puts a member of one of these categories outside the BMP, this arm is what says that
-     * {@code withoutPadding}'s code-point scan has stopped being inert.
+     * <p>THE THIRD ARM TAKES TWO LINES TO REACH, and no control measures it. 「It cannot be
+     * reached by changing this tree」 stood here for a batch and was measured FALSE (batch-48
+     * review, subagent P2-1). The derivation holds only while the FIRST arm's expected set is
+     * these four categories — and that set is one line away. Widen the class to the formatting
+     * characters and widen the expected set to match, which is the natural edit after reading the
+     * first arm's message, and: the second arm sees nothing, because its branches count the four
+     * NAMED categories and a fifth moves none of them; the first arm is satisfied; and this arm
+     * fires on the 127 supplementary {@code Cf} code points — with a message that used to send
+     * the reader to the JDK.
+     *
+     * <p>WHAT DEFENDS THE DECISION IN THAT CASE IS NOT THIS LOCK. It is the fixture loop over the
+     * prepended concatenation marks in {@link #theWithdrawalIsTakenBackOnlyByItsOwnLine}, which
+     * refuses a canon this widened class would read as retracted. Measured on that two-line edit:
+     * both locks fail, this one on the supplementary count and that one on {@code U+0600}.
+     * Control NZ5 is the one-line version of the same widening.
+     *
+     * <p>So the arm is two things at once and its message names both: a tripwire on the JDK (a
+     * future version putting a member of these four categories outside the BMP, which is what
+     * would make {@code withoutPadding}'s code-point scan stop being inert), and the second half
+     * of a two-line widening of this tree. {@code withoutPadding}'s javadoc said that correctly
+     * while this paragraph did not.
      */
     @Test
     @DisplayName("the padding class is the four categories it names, counted")
@@ -1244,10 +1279,14 @@ class ReleaseReadinessIsMeasuredTest {
                         + "back by excluding the character that version added. When this was "
                         + "written all three JDKs measured 17/1/1/65");
         assertEquals(0, outsideTheBmp,
-                "the padding class now takes off a character outside the BMP, so withoutPadding's "
+                "the padding class takes off a character outside the BMP, so withoutPadding's "
                         + "code-point scan has stopped being inert — say so where that scan is "
-                        + "explained. This arm cannot be reached by changing this tree: it is a "
-                        + "tripwire on the JDK's Unicode version, and no control measures it");
+                        + "explained. TWO CAUSES, AND THIS ARM CANNOT TELL THEM APART: either the "
+                        + "class and the first arm's expected set were widened together — look at "
+                        + "isPadding and at the expected set above before looking anywhere else, "
+                        + "because the formatting characters alone bring 127 supplementary code "
+                        + "points — or this JDK's Unicode version moved a member of these four "
+                        + "categories outside the BMP. No control measures this arm");
     }
 
     /**
