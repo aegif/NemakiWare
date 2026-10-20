@@ -71,11 +71,30 @@ class ReleaseReadinessIsMeasuredTest {
 
     private static final String FREEZE_MARK = "凍結（ユーザー指示 2026-09-20）";
 
-    /** The mark R212 carries while the plan-figure lock stays withdrawn. */
-    private static final String WITHDRAWN = "取り下げ: 済み";
+    /**
+     * The mark R212 carries while the plan-figure lock stays withdrawn, with its emphasis.
+     *
+     * <p>BOLDED, AND THAT IS THE DELIMITER. Read as a bare substring, 「取り下げ: 済みではない」 —
+     * the row saying the opposite — CONTAINS the mark and satisfied the arm (batch-37 review,
+     * Codex P2). The emphasis makes the token end: 「**取り下げ: 済みではない**」 does not contain
+     * it. KNOWN LIMIT, measured and left open: 「**取り下げ: 済み**ではない」, a negation placed
+     * immediately after the closing emphasis, still contains it and is GREEN. A word check cannot
+     * close that; what it can do is make the forms someone would actually write loud.
+     */
+    private static final String WITHDRAWN = "**取り下げ: 済み**";
 
-    /** The mark that would say that lock came back. Forbidden anywhere in that row. */
-    private static final String REINSTATED = "取り下げ: 撤回";
+    /**
+     * The mark that would say that lock came back. Forbidden in the row's RENDERED cells.
+     *
+     * <p>BOLDED for the other reason too: a bare substring refused a row that QUOTES the mark in
+     * order to deny it — 「「取り下げ: 撤回」とは書かない」 — which is the over-refusal direction
+     * (batch-37 review, subagent P2-3, measured). Quoting it, or writing it unemphasised, is not
+     * asserting it. KNOWN LIMIT: the same goes for backticks, and there the quotation disappears
+     * before this reader sees it, because asProse takes inline code out (batch-37 review, subagent
+     * P3-2). That is why the require side's refusal says not to put the mark in backticks and this
+     * one does not need to.
+     */
+    private static final String REINSTATED = "**取り下げ: 撤回**";
 
     /**
      * Read, having first checked the file is there.
@@ -124,9 +143,19 @@ class ReleaseReadinessIsMeasuredTest {
      * bold marker first and are <b>not</b> closed — the marker is deliberately not a strike.
      */
     private static boolean isClosed(String canon, String id) {
-        Matcher row = Pattern.compile("(?m)^\\| " + id + " \\| (.*)$").matcher(canon);
-        assertTrue(row.find(), "the canon has no row for " + id);
-        return row.group(1).startsWith("~~");
+        // THROUGH THE LOCATOR, so that 「I cannot read this row」 is not answered with 「there is no
+        // such row」. This method used to assert on a 「^| id |」 match, which is the shape batch 37
+        // called the one thing this tree's rule forbids while leaving it here (batch-37 review,
+        // subagent P3-4).
+        String row = theResidualRow(canon, id);
+        assertNotNull(row, "the canon has no row for " + id);
+        String[] cells = cellsOf(row);
+        int from = cells.length > 0 && cells[0].isBlank() ? 1 : 0;
+        if (cells.length <= from + 1) {
+            throw new HarnessBroken("the canon's " + id + " row has nothing after its id, so this "
+                    + "reader cannot tell a struck-through description from a missing one: " + row);
+        }
+        return cells[from + 1].stripLeading().startsWith("~~");
     }
 
     @Test
@@ -685,8 +714,12 @@ class ReleaseReadinessIsMeasuredTest {
         //     and does not match the pattern (batch-32 review, subagent P3-1). A regex cannot decode
         //     what javac decodes before lexing.
         //   - the same method declared in ANOTHER test class is green: this reads one file.
-        // What the require half still catches is the note, or the canon, being changed to say the
-        // lock is back.
+        // WHAT THIS ARM CATCHES, and only this: the two names that lock had, declared in THIS
+        // file, returning void. The sentence that used to sit here — 「what the require half still
+        // catches is the canon being changed to say the lock is back」 — became false in batch 38,
+        // when the canon side was reduced to a mark and the prose around it was deliberately left
+        // unread. It stayed here for a batch while the record said the opposite (batch-37 review,
+        // subagent P2-2).
         // LITERAL TEXT OUT TOO, not only comments: withoutComments keeps the contents of strings
         // (its own javadoc says so, because an assertion about a query string needs them), so a
         // QUOTED mention of the declaration — in an assertion message, a fixture, a text block —
@@ -726,7 +759,11 @@ class ReleaseReadinessIsMeasuredTest {
         // WHAT THIS LOCK NO LONGER CLAIMS — said plainly, because a withdrawal is a claim too: a
         // row that carries the mark and ALSO says in prose that the lock came back is GREEN. What
         // catches an actual resurrection is the arm above, where the method must not be declared
-        // in this file, and that one reads code rather than prose.
+        // in this file — and that arm carries its OWN limits, listed with it: a THIRD name is
+        // green, a unicode escape inside either name is green, and the same method declared in
+        // another test class is green. 「the declaration arm catches an actual resurrection」 was
+        // written here without them, which is a claim stronger than the code (batch-37 review:
+        // Codex P3, subagent P2-2).
         //
         // THE ROW is located by its ID, read from the PROSE: 「| R212 |」 anywhere matched a quoted
         // row fragment (batch-33 review, Codex P2-2), and the raw text WOULD count a row written
@@ -744,21 +781,75 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The canon's row for a residual, by its ID in the FIRST field — or a refusal.
      *
-     * <p>NEVER 「absent」 FOR A ROW THIS READER CANNOT READ. The previous version matched
-     * {@code ^| R212 |} and asserted that it found something, so a row whose ID had moved out of
-     * the first field — a status column inserted before it — failed with 「R212 is not a row in the
-     * canon」. That reports a read failure with the value of an absence, which is the one thing
-     * this tree's rule forbids, and the runner scores the resulting {@code AssertionError} as 「the
-     * protection fired」 (batch-36 review: Codex P2, subagent P3-3, each measured). A line carrying
-     * the ID as a field somewhere other than the first is {@link HarnessBroken}; a line that merely
-     * mentions the ID inside a longer field is not a candidate at all.
+     * <p>NEVER 「absent」 FOR A ROW THIS READER CANNOT READ, in TWO tiers. Tier one takes the lines
+     * whose id cell HOLDS the id, however it is written, and refuses when that cell is not the id
+     * itself: 「| **R212** |」, 「|　R212　|」 with ideographic spaces and 「| R212. |」 were each
+     * measured answering 「absent」 under a reader that compared the cell for equality, and this
+     * table writes bold ids elsewhere (batch-37 review, subagent P2-1). Tier two takes TABLE ROWS
+     * — lines opening with a pipe — carrying the id as a cell of its own, which is what a status
+     * column inserted before it leaves, and refuses as well (batch-36 review: Codex P2, subagent
+     * P3-3). Restricting tier two to lines that open with a pipe is what keeps a sentence quoting
+     * a row fragment out of it: 「例: | R212 | は残件 ID である」 was measured becoming a second
+     * candidate and refusing a correct canon (batch-37 review, Codex P2).
      *
-     * <p>Returns null when no line carries the ID. That is a genuine absence, and the caller
-     * asserts on it with its own message — the one case where 「not there」 is the answer.
+     * <p>KNOWN LIMIT: an id cell written inside backticks is gone before this reader sees the row,
+     * because asProse takes inline code out, so that one still reads as an absence (batch-37
+     * review, subagent P2-1 — the fourth of its four shapes).
+     *
+     * <p>Returns null when nothing claims the id and no table row carries it. That is a genuine
+     * absence, and the caller asserts on it with its own message.
      */
     private static String theResidualRow(String canon, String id) {
+        // TIER ONE: the lines that CLAIM to be this residual's row, by holding the id in their id
+        // cell — whatever else that cell holds. 「the cell equals the id」 answered 「absent」 for a
+        // row written 「| **R212** |」, 「|　R212　|」 with ideographic spaces, or 「| R212. |」, and
+        // this table writes bold ids elsewhere (batch-37 review, subagent P2-1, four shapes
+        // measured). An id cell this reader cannot parse is a refusal, not an absence.
+        //
+        // AS A TOKEN, NOT A SUBSTRING. 「the id cell contains the id」 made 111 rows claim to be R1
+        // — R10, R100, R119 all contain it — and the refusal took four other locks in this class
+        // down with it, measured on the first run after the change. The id ends where a digit
+        // stops following it.
+        //
+        // AND THE LINE HAS TO LOOK LIKE A ROW. A continuation line of prose that happens to hold a
+        // pipe later on and mentions 「（→ R56）」 in its first field claimed to be R56, and the
+        // refusal took three other locks in this class down with it — measured on the next run
+        // after the token fix. A line that OPENS with a pipe is this table's shape; a line whose
+        // id cell is EXACTLY the id covers the other shape the extension allows, where the
+        // leading pipe is omitted.
+        Pattern token = Pattern.compile("(?<![0-9A-Za-z])" + Pattern.quote(id) + "(?![0-9])");
+        List<String> claiming = new ArrayList<>();
+        for (String line : canon.split("\n", -1)) {
+            String cell = idCellOf(line);
+            boolean looksLikeARow = line.startsWith("|") && token.matcher(cell).find();
+            if (looksLikeARow || cell.trim().equals(id)) {
+                claiming.add(line);
+            }
+        }
+        if (claiming.size() == 1) {
+            String only = claiming.get(0);
+            if (!idCellOf(only).trim().equals(id)) {
+                throw new HarnessBroken("the canon's " + id + " row writes its id as 「"
+                        + idCellOf(only).trim() + "」, which this reader cannot take for the id "
+                        + "itself, so it can neither read the row nor say the row is missing: "
+                        + only);
+            }
+            return only;
+        }
+        if (claiming.size() > 1) {
+            throw new HarnessBroken("the canon has " + claiming.size() + " rows claiming to be "
+                    + id + ", so this lock cannot tell which one records the withdrawal");
+        }
+        // TIER TWO: no row claims the id, but a TABLE ROW carries it as a cell of its own — a
+        // status column inserted before it would do that. Refused rather than reported absent
+        // (batch-36 review: Codex P2, subagent P3-3). Restricted to lines that OPEN with a pipe,
+        // because a sentence may legitimately quote a row fragment: 「例: | R212 | は残件 ID」 was
+        // measured as a second candidate and refused a correct canon (batch-37 review, Codex P2).
         List<String> carrying = new ArrayList<>();
         for (String line : canon.split("\n", -1)) {
+            if (!line.startsWith("|")) {
+                continue;
+            }
             for (String cell : cellsOf(line)) {
                 if (cell.trim().equals(id)) {
                     carrying.add(line);
@@ -766,25 +857,29 @@ class ReleaseReadinessIsMeasuredTest {
                 }
             }
         }
-        if (carrying.isEmpty()) {
-            return null;
+        if (!carrying.isEmpty()) {
+            throw new HarnessBroken("the canon has a table row carrying " + id + " as a cell, but "
+                    + "not as its id cell, so this reader cannot tell a residual row from a row "
+                    + "that mentions one: " + carrying.get(0));
         }
-        if (carrying.size() > 1) {
-            // NOT an assertion: 「there are two and I cannot tell which」 is this reader losing its
-            // subject, and the runner scores an AssertionError as 「the protection fired」. The
-            // document recorded this as HarnessBroken for a batch while the code asserted
-            // (batch-34 review: Codex P1, subagent P2-3).
-            throw new HarnessBroken("the canon has " + carrying.size() + " lines carrying " + id
-                    + " as a field, so this lock cannot tell which one records the withdrawal");
-        }
-        String row = carrying.get(0);
+        // NOTHING CLAIMS IT AND NOTHING CARRIES IT: the one case where 「not there」 is the answer.
+        return null;
+    }
+
+    /**
+     * A row's id cell: its first cell, with a leading empty field dropped.
+     *
+     * <p>The leading pipe is optional in the GFM tables extension, so 「R212 | … | …」 is a row
+     * whose id cell is the FIRST field and 「| R212 | … |」 is a row whose id cell is the second.
+     * Taking index 1 unconditionally made the refusal say 「does not carry its ID in the first
+     * field」 about a row whose id was plainly in its first cell (batch-37 review, subagent P3-3).
+     */
+    private static String idCellOf(String row) {
         String[] cells = cellsOf(row);
-        if (cells.length < 2 || !cells[1].trim().equals(id)) {
-            throw new HarnessBroken("the canon's " + id + " line does not carry its ID in the "
-                    + "first field, so this reader cannot tell a residual row from a line that "
-                    + "happens to hold " + id + " in some other cell: " + row);
+        if (cells.length == 0) {
+            return "";
         }
-        return row;
+        return cells[0].isBlank() && cells.length > 1 ? cells[1] : cells[0];
     }
 
     /**
@@ -797,18 +892,50 @@ class ReleaseReadinessIsMeasuredTest {
     private static void theRowSaysTheWithdrawalStands(String row) {
         assertNotNull(row,
                 "R212 is not a row in the canon, so the withdrawal has no residual behind it");
-        assertTrue(row.contains(WITHDRAWN),
+        // THE RENDERED CELLS, not the row. The canon's header declares four columns and a GFM
+        // reader drops a row's extra cells, so a mark in the fifth is in the file and NOT in the
+        // document: 「| R212 | この錠はいまも現役である | **P3** | 開けるときは: … | 取り下げ: 済み |」
+        // was measured GREEN while the rendered row said nothing about a withdrawal (batch-37
+        // review, subagent P2-4). R212 already carries an empty fifth cell, so moving the mark
+        // there was a one-cell edit.
+        String rendered = renderedCells(row);
+        assertTrue(rendered.contains(WITHDRAWN),
                 "the canon's R212 row no longer carries 「" + WITHDRAWN + "」, so it no longer "
                         + "states that the plan-figure lock is withdrawn. If the lock was "
                         + "reinstated, delete the withdrawal note and this method; otherwise put "
                         + "the mark back. Prose that says it another way is NOT read, deliberately "
                         + "— four rounds of findings came out of reading this row's prose — and the "
                         + "mark must not be inside backticks, because asProse takes inline code out "
-                        + "before this reader sees the row: " + row);
-        assertFalse(row.contains(REINSTATED),
-                "the canon's R212 row carries 「" + REINSTATED + "」 while this lock asserts the "
-                        + "withdrawal stands. One of the two is wrong — decide, do not keep both: "
-                        + row);
+                        + "before this reader sees the row: " + rendered);
+        assertFalse(rendered.contains(REINSTATED),
+                "the canon's R212 row carries 「" + REINSTATED + "」 in a rendered cell while "
+                        + "this lock asserts the withdrawal stands. One of the two is wrong — "
+                        + "decide, do not keep both. Quoting the mark, or writing it without the "
+                        + "emphasis, is not asserting it and is not read: " + rendered);
+    }
+
+    /**
+     * The cells of a row that a reader of the rendered document sees: the first four.
+     *
+     * <p>FOUR, because that is how many columns the canon's residual table declares, and the GFM
+     * tables extension says of a row with more cells that 「the excess is ignored」. The table runs
+     * from its delimiter row to the first blank line — the extension breaks a table only at a
+     * blank line or the start of another block — and the canon has none between its header and
+     * line 273, so every residual row is under that four-column header (batch-37 review, subagent
+     * P2-4, settled from the specification after two parsers disagreed: markdown-it 15 follows it,
+     * remarkable 2 ends the table at a line without a pipe, which the extension does not say).
+     *
+     * <p>A leading empty field is dropped first, because the leading pipe is optional in that
+     * extension and its presence shifts every index by one.
+     */
+    private static String renderedCells(String row) {
+        String[] cells = cellsOf(row);
+        int from = cells.length > 0 && cells[0].isBlank() ? 1 : 0;
+        StringBuilder shown = new StringBuilder();
+        for (int at = from; at < Math.min(cells.length, from + 4); at++) {
+            shown.append(cells[at]).append('|');
+        }
+        return shown.toString();
     }
 
     /**
@@ -849,9 +976,11 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>WHICH FIXTURE IS MEASURED BY WHAT, because the earlier version of this javadoc said
      * 「every row here DISCRIMINATES」 and four of its eight rows discriminated nothing (batch-36
      * review: Codex P3, subagent P3-1, each measured one by one). Here: the ID outside the first
-     * field is measured by NN5, the escaped pipe by NO5, the two carrying lines by NR5. The other
-     * two — a line that only MENTIONS the ID, and a canon with no such row — are regression guards
-     * with no control over them, and that is said rather than implied.
+     * field is measured by NN5, the escaped pipe by NO5, the two carrying lines by NR5. THREE have
+     * no control over them — the baseline that finds the real row, the line that only MENTIONS the
+     * ID, and a canon with no such row — and 「the other two」 was itself one short, which is the
+     * same kind of miscount one layer down (batch-37 review, subagent P3-1, measured against all
+     * five sabotages).
      */
     @Test
     @DisplayName("a residual row is found by its ID in the first field, or refused")
@@ -882,10 +1011,48 @@ class ReleaseReadinessIsMeasuredTest {
                 "an even run of backslashes was read as escaping the pipe, so the ID stopped being "
                         + "a field of its own and the row read as absent");
 
-        // TWO CARRYING LINES. HarnessBroken, not the first one silently. NR5.
+        // TWO ROWS WHOSE ID CELLS ARE NOT EXACTLY THE ID. Tier two cannot catch these — it looks
+        // for a cell equal to the id — so this is the shape that measures tier one's own refusal.
+        // The plain duplicate below is answered by either tier, which is why it stopped measuring
+        // anything when the reader went to two tiers (NR5 measured DID NOT FIRE in that state).
+        assertThrows(HarnessBroken.class,
+                () -> theResidualRow("| **R212** | a | — |\n| **R212** | b | — |", "R212"),
+                "two rows claiming the id with an id cell this reader cannot parse were not "
+                        + "refused, so the locator answers 「absent」 for a canon that has two");
+
+        // TWO CARRYING LINES. HarnessBroken either way now; kept as a regression guard.
         assertThrows(HarnessBroken.class, () -> theResidualRow(real + "\n" + real, "R212"),
                 "two lines carrying the ID were not refused, so this lock reads whichever comes "
                         + "first");
+
+        // AN ID CELL THIS READER CANNOT PARSE is a refusal, not an absence — four shapes, each
+        // measured answering 「absent」 under the reader that compared the cell for equality
+        // (batch-37 review, subagent P2-1). NT5 measures the first.
+        for (String written : new String[] { "**R212**", "　R212　", "R212.", "R212 (開)" }) {
+            assertThrows(HarnessBroken.class,
+                    () -> theResidualRow("| " + written + " | 取り下げた | — |", "R212"),
+                    "a row whose id cell is written 「" + written + "」 was reported absent rather "
+                            + "than refused");
+        }
+
+        // THE ID IS A TOKEN, not a substring: 「the id cell contains R1」 made 111 rows claim to be
+        // R1 and took four other locks in this class down with it (measured, batch 38). NT5.
+        String ten = "| R10 | 別の残件 | — |";
+        String one = "| R1 | 取り下げ: 済み の行 | — |";
+        assertEquals(one, theResidualRow(ten + "\n" + one + "\n| R100 | また別 | — |", "R1"),
+                "the id was matched as a substring, so a row for R10 or R100 claimed to be R1's");
+
+        // A CONTINUATION LINE OF PROSE is not a row, even when it holds a pipe later on and names
+        // the id in the text before it. That shape claimed to be R56 and refused a correct canon
+        // (measured, batch 38).
+        assertEquals(real, theResidualRow("述べる（→ R212）。残りは `a` | `b` の形\n" + real, "R212"),
+                "a continuation line of prose was taken for a second row claiming the id");
+
+        // THE LEADING PIPE IS OPTIONAL in the GFM tables extension, so a row written without one
+        // is still this residual's row (batch-37 review, subagent P3-3).
+        String bare = "R212 | 取り下げ: 済み の行 | — |";
+        assertEquals(bare, theResidualRow(bare, "R212"),
+                "a row written without its leading pipe was not located");
 
         // NO SUCH ROW is the one case where 「not there」 is the answer, and the caller asserts on
         // it. Regression guard, no control.
@@ -932,6 +1099,45 @@ class ReleaseReadinessIsMeasuredTest {
         assertThrows(AssertionError.class, () -> theRowSaysTheWithdrawalStands(null),
                 "a missing row did not refuse — 「the canon has no such row」 must be an assertion "
                         + "with a message, not a NullPointerException");
+
+        // THE MARK HAS TO BE IN A CELL THE DOCUMENT RENDERS. The canon's header declares four
+        // columns and the extension drops a row's extras, so a mark in the fifth is in the file
+        // and not in the document — measured GREEN before this batch (batch-37 review, subagent
+        // P2-4). R212 already carries an empty fifth cell, so this was a one-cell edit away. NS5.
+        assertThrows(AssertionError.class,
+                () -> theRowSaysTheWithdrawalStands("| R212 | この錠はいまも現役である | **P3** "
+                        + "| 開けるときは: … | " + WITHDRAWN + " |"),
+                "a mark in a cell the document does not render satisfied this lock, so the row a "
+                        + "person reads says nothing about the withdrawal");
+
+        // NEGATED AND UNEMPHASISED FORMS. 「取り下げ: 済みではない」 contains the bare mark and
+        // satisfied the arm (batch-37 review, Codex P2); the emphasis is what ends the token.
+        for (String written : new String[] { "**取り下げ: 済みではない**", "取り下げ: 済み",
+                "**取り下げ:  済み**" }) {
+            assertThrows(AssertionError.class,
+                    () -> theRowSaysTheWithdrawalStands("| R212 | " + written + " | **P3** "
+                            + "| 開けるときは: … |"),
+                    "a row whose statement reads 「" + written + "」 satisfied the mark arm");
+        }
+
+        // THE ESCAPE PARITY DECIDES WHICH CELLS ARE RENDERED. With an even run of backslashes the
+        // pipe is a real boundary, so the mark below sits in the FIFTH cell and is not rendered;
+        // read as an escape, the fields join, the mark lands in the fourth and the row passes.
+        // This is the shape that measures the parity now that the locator refuses both readings of
+        // the earlier fixture (NO5 measured DID NOT FIRE in that state). NO5.
+        assertThrows(AssertionError.class,
+                () -> theRowSaysTheWithdrawalStands("| R212 | a \\\\| b | c | " + WITHDRAWN + " |"),
+                "an even run of backslashes was read as escaping the pipe, so a mark in a cell the "
+                        + "document does not render satisfied this lock");
+
+        // QUOTING THE COUNTER-MARK, or writing it without the emphasis, is not asserting it — the
+        // over-refusal direction, measured RED before this batch (batch-37 review, subagent P2-3).
+        for (String written : new String[] { "「取り下げ: 撤回」とは書かない", "取り下げ: 撤回はしない" }) {
+            assertDoesNotThrow(
+                    () -> theRowSaysTheWithdrawalStands("| R212 | " + WITHDRAWN + " の行 | **P3** "
+                            + "| 開けるときは: " + written + " |"),
+                    "a correct row was refused for a quotation of the counter-mark: " + written);
+        }
     }
 
     /**
