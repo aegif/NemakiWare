@@ -72,32 +72,42 @@ class ReleaseReadinessIsMeasuredTest {
     private static final String FREEZE_MARK = "凍結（ユーザー指示 2026-09-20）";
 
     /**
-     * The canon's one line that states the plan-figure lock is withdrawn, read WHOLE and EQUAL.
+     * The canon's one line that states the plan-figure lock is withdrawn — a line IS it or is not.
      *
-     * <p>SIX ROUNDS OF STRING CHECKS over a free-form table row, and every one of them was broken
-     * in both directions by the next review. A bare substring passed 「取り下げ: 済みではない」
-     * and refused a row QUOTING the counter-mark (batch-37 review: Codex P2, subagent P2-3).
-     * Emphasising the token fixed those two and left 「~~**取り下げ: 済み**~~」, 「「**取り下げ:
-     * 済み**」は誤り」, 「__取り下げ: 撤回__」 (the same {@code <strong>} in GFM), 「**取り下げ:
-     * 撤回 と決めた**」 and a half-dozen spacing variants (batch-38 review: Codex P2 ×2, subagent
-     * P2-2 and P2-3, all measured). Reading a CELL instead would have needed the row restructured,
-     * and the row is in a table whose rows carry 3 to 11 fields.
+     * <p>EIGHT ROUNDS, and every escape lived in the machinery that decided which lines to skip.
+     * Reading the statement as prose broke first (batches 33-38: a bare substring, an emphasised
+     * token, a cell, a quotation, a strike-through, {@code __…__}, spacing variants, a column the
+     * document does not render). Moving it to a line of its own fixed that and moved the problem
+     * into the SKIPPING: a fence's length and which line closes it, a nested fence, a backtick
+     * run's parity, four spaces, a tab that is not first, an HTML comment, a sliced section
+     * defeated by one plain-text mention of its own heading (batches 39-40: Codex P2 ×7, subagent
+     * P2 ×8, each measured, several of them on the real canon).
      *
-     * <p>So the statement moved OUT of the row and onto a line of its own, and this reader asks
-     * for that line WHOLE: a quotation puts other text on the line, a strike-through puts tildes
-     * on it, emphasis puts asterisks on it, and none of them is equal. R212's own text says the
-     * answer to all of this is 「decide on one format」; this is that.
+     * <p>SO THERE IS NO CONTEXT LEFT TO GET WRONG. This reader counts lines equal to this string,
+     * raw, with nothing skipped and nothing stripped but a trailing carriage return. There is no
+     * fence rule, no indent rule, no parity, no section: a line is the statement or it is not, and
+     * neither a quotation nor an example nor an emphasis can be it.
      *
-     * <p>KNOWN LIMITS, both directions. The line inside a fenced block or an HTML comment is gone
-     * before this reader sees it, so an EXAMPLE of the format does not satisfy the lock and does
-     * not refuse it either — that is deliberate, and it is how the canon can document the format.
-     * A line indented four spaces is an indented code block, which asProse keeps, so it DOES
-     * count. And the canon may still contradict the line in prose: see what this lock no longer
-     * claims, below.
+     * <p>THE PRICE, and it is the canon's to pay: this line may not appear a second time ANYWHERE,
+     * not even inside a fenced example. §5 says so. A format can be described without reproducing
+     * it on a line of its own, which is what §5 now does.
+     *
+     * <p>WHAT IS NO LONGER CLAIMED: where the line sits. 「§5 の中」 was asserted for one batch
+     * with a section reader, and the reader was defeated by adding one sentence mentioning
+     * 「## 5. 測定」 elsewhere — measured on the real canon (batch-40 review, subagent P2-2). A
+     * second copy outside §5 still refuses, because the count is over the whole document; what is
+     * not read is a SINGLE copy that moved.
      */
     private static final String WITHDRAWN_LINE = "- 取り下げ: plan-figure-lock（R212）";
 
-    /** The line that would take that statement back. Forbidden anywhere in the canon's prose. */
+    /**
+     * The line that would take that statement back, counted the same way, over the whole canon.
+     *
+     * <p>A quotation of it, a copy inside backticks, an emphasised phrase containing it and a copy
+     * in a fenced example are all NOT it — not by a rule, but because none of them is a line equal
+     * to this string. That is why §5 can explain the format by quoting this line inside a
+     * sentence, as it does.
+     */
     private static final String REINSTATED_LINE = "- 取り下げ撤回: plan-figure-lock（R212）";
 
     /**
@@ -160,9 +170,16 @@ class ReleaseReadinessIsMeasuredTest {
         //   - residualRows does not see a row whose id cell is written any other way
         //     (「| **R84** |」), so such a row drops out of the ids instead of being reported here.
         //     Dropping one row changes the count theReadinessCountsAreTheCanonsRows compares with
-        //     the readiness document, so that edit alone is loud. RENAMING one is not: an id
-        //     changed to an unused one keeps 212/135/77 and nothing notices the old id is gone
-        //     (batch-39 review, Codex P2 — the earlier version of this comment claimed otherwise).
+        //     the readiness document, so that edit alone is loud. RENAMING one keeps 212/135/77,
+        //     and whether anything notices depends on the row: an OPEN one is caught by
+        //     everyOpenResidualIsInExactlyOneGroup, which requires every open id to be named
+        //     somewhere, so the 37 CLOSED rows whose ids appear in no other document are the ones
+        //     that go by unnoticed (batch-39 review, Codex P2; batch-40 review, subagent P3-3 —
+        //     the earlier versions of this comment claimed first too little and then too much).
+        //   - NO CONTROL REACHES THIS METHOD. The nineteen controls anchored in this class all sit
+        //     in the readers below it, and what batch 40 changed here is the CLASSIFICATION of a
+        //     failure — assertion or harness breakage — which a sabotage of another line cannot
+        //     move. Said rather than implied (batch-40 review, subagent P3-8).
         //   - the locator batch 39 removed also refused two rows claiming one id. This reader
         //     takes the first silently; theReadinessCountsAreTheCanonsRows notices a duplicate id
         //     in the same class, and nothing else does (batch-39 review, subagent P3-5).
@@ -792,127 +809,82 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * BOTH arms of the withdrawal check, over a whole document, so synthetic ones can drive them.
      *
-     * <p>Counted, not searched, and counted TWICE: once over the canon, which is what makes a
-     * second copy anywhere loud, and once over §5, which is where the canon and this lock agree
-     * the statement lives. Reading only the whole document left 「move it to another section」
-     * green (batch-39 review: Codex P2, subagent P3-7).
+     * <p>Counted over the WHOLE canon, which is what makes a second copy anywhere loud. The
+     * section the statement sits in is no longer asserted — see the constant's javadoc for why,
+     * and for what that gives up.
      */
     private static void theCanonSaysTheWithdrawalStands(String canon) {
-        Declared whole = declarationsIn(canon);
-        Declared inSectionFive = declarationsIn(
-                slice(canon, "## 5. 測定", "\n## 6. ", "the canon's measurement section"));
-        assertEquals(1, whole.says(),
-                "the canon has " + whole.says() + " lines reading exactly 「" + WITHDRAWN_LINE
-                        + "」, and this lock needs one. If the plan-figure lock was reinstated, "
-                        + "delete the withdrawal note and this method; otherwise write that line, "
-                        + "on a line of its own, at the start of the line, outside backticks, "
-                        + "outside a fenced block and not indented four spaces. Prose saying it "
-                        + "another way is NOT read, deliberately — seven rounds of findings came "
-                        + "out of reading this statement as prose");
-        assertEquals(1, inSectionFive.says(),
-                "the canon states the withdrawal " + inSectionFive.says() + " times inside 「## 5. "
-                        + "測定」, and this lock needs one there. The canon's own §5 says 「下の行は "
-                        + "…が読みます」, so the statement and the sentence introducing it have to "
-                        + "stay together");
-        assertEquals(0, whole.takesBack(),
-                "the canon has " + whole.takesBack() + " lines reading exactly 「" + REINSTATED_LINE
+        Declared found = declarationsIn(canon);
+        assertEquals(1, found.says(),
+                "the canon has " + found.says() + " lines equal to 「" + WITHDRAWN_LINE + "」, and "
+                        + "this lock needs exactly one. If the plan-figure lock was reinstated, "
+                        + "delete the withdrawal note and this method. Otherwise: the line is "
+                        + "compared RAW and WHOLE — no leading or trailing space, no emphasis, no "
+                        + "backticks, nothing else on the line — and it may appear only once in "
+                        + "the whole document, an example in a fenced block included. Prose saying "
+                        + "it another way is not read, deliberately: eight rounds of findings came "
+                        + "out of reading this statement any other way");
+        assertEquals(0, found.takesBack(),
+                "the canon has " + found.takesBack() + " lines equal to 「" + REINSTATED_LINE
                         + "」 while this lock asserts the withdrawal stands. One of the two is "
-                        + "wrong — decide, do not keep both. A quotation of that line, or a copy "
-                        + "of it inside backticks or a fenced block, is not read");
+                        + "wrong — decide, do not keep both. A quotation of that line inside a "
+                        + "sentence is not it, which is how §5 explains the format");
     }
 
     /**
-     * The two statements counted in a document's lines, RAW, with the code contexts skipped.
+     * The two statements counted in a document's lines, raw.
      *
-     * <p>RAW, because asProse takes inline code out of a line before anything compares it, and a
-     * line with a span removed is not the line: 「`例:` + the statement」 then equalled the
-     * statement and refused a correct canon, while the counter-line written in backticks did not
-     * refuse at all (batch-39 review: subagent P2-1, measured both ways).
+     * <p>NOTHING IS SKIPPED. Not a fenced block, not an indented one, not a code span, not an
+     * HTML comment, not a section. Every one of those rules was an escape of its own (see the
+     * constant's javadoc), and none of them is needed: a quotation, a prefix, an emphasis, a
+     * strike-through and a trailing space all make a line that is not equal to the statement.
      *
-     * <p>THE SKIPS ARE THIS READER'S OWN, because asProse's are not the same set. A fenced block
-     * at ANY indent — its opener may be indented four spaces, which is where an example under a
-     * bullet lands, and asProse's opener stops at three (batch-39 review, subagent P2-2, measured
-     * green for indents 4 and 6). A line indented four or more, which is an indented code block
-     * and which asProse deliberately keeps (batch-39 review: Codex P2, subagent P2-2). A line
-     * inside a code span an earlier line left open, tracked by backtick parity (batch-39 review,
-     * Codex P2). An HTML comment.
-     *
-     * <p>KNOWN LIMIT: the parity is per line, so a line holding an odd number of backticks flips
-     * it. Measured on this canon 2026-10-20: the only two such lines are its single fenced block's
-     * delimiters, which the fence skip consumes before the parity sees them, and no line in it is
-     * indented four or more. A document written otherwise could suppress the statement — which is
-     * the over-refusal direction, and the refusal above says what to check.
+     * <p>A trailing carriage return is dropped, so a document saved with CRLF reads the same.
+     * {@code strip()} is NOT used: it took trailing spaces and ideographic spaces off too, which
+     * made 「the statement with three spaces after it」 count as the statement (batch-40 review,
+     * Codex P2).
      */
     private static Declared declarationsIn(String text) {
         long says = 0;
         long takesBack = 0;
-        String fence = null;
-        boolean inComment = false;
-        boolean inSpan = false;
         for (String line : text.split("\n", -1)) {
-            String trimmed = line.strip();
-            if (fence != null) {
-                if (trimmed.startsWith(fence)) {
-                    fence = null;
-                }
-                continue;
-            }
-            if (inComment) {
-                inComment = !line.contains("-->");
-                continue;
-            }
-            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
-                fence = trimmed.startsWith("```") ? "```" : "~~~";
-                continue;
-            }
-            if (line.contains("<!--") && !line.contains("-->")) {
-                inComment = true;
-                continue;
-            }
-            boolean openedEarlier = inSpan;
-            if (line.chars().filter(at -> at == '`').count() % 2 == 1) {
-                inSpan = !inSpan;
-            }
-            if (openedEarlier) {
-                continue;
-            }
-            if (line.startsWith("\t") || line.length() - line.stripLeading().length() > 3) {
-                continue;
-            }
-            if (WITHDRAWN_LINE.equals(trimmed)) {
+            String raw = line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
+            if (WITHDRAWN_LINE.equals(raw)) {
                 says++;
             }
-            if (REINSTATED_LINE.equals(trimmed)) {
+            if (REINSTATED_LINE.equals(raw)) {
                 takesBack++;
             }
         }
         return new Declared(says, takesBack);
     }
 
-    /** A synthetic canon: §5 with the given lines in it, framed so slice() can find the section. */
+    /** A synthetic canon: the given lines, one per line. */
     private static String canonWith(String... lines) {
-        return "## 5. 測定\n" + String.join("\n", lines) + "\n\n## 6. 巡の追記規則\n";
+        return String.join("\n", lines) + "\n";
     }
 
     /**
-     * The statement is compared RAW, line for line, with this reader's own skips.
+     * A line IS the statement or it is not — driven with every shape eight rounds produced.
      *
-     * <p>WHAT EACH CONTROL MEASURES IS STATED AS THE RUNNER REPORTS IT — control X fails test Y —
-     * and NOTHING FINER. Per-fixture attribution was written into this javadoc three rounds in a
-     * row and was wrong all three times (batch-38 review, subagent P2-1, measured every sabotage
-     * one by one). NN5, NO5, NQ5, NR5, NT5 and NU5 fail this test; NP5, NS5 and NV5 fail the one
-     * below; NL5 and NM5 fail thePlanFigureLockStaysWithdrawn.
+     * <p>ATTRIBUTION IS WHAT THE RUNNER DECLARES, and nothing finer. It was written finer than
+     * that four rounds running and was wrong every time, including in the version that said it
+     * would not be (batch-38 review, subagent P2-1; batch-39 review, Codex P3; batch-40 review:
+     * Codex P3, subagent P2-4). The runner's own expect_fail lists are the record; this javadoc
+     * does not restate them.
      */
     @Test
-    @DisplayName("the canon's withdrawal statement is compared raw, whole, and in its section")
+    @DisplayName("the canon's withdrawal statement is one raw line, counted once in the document")
     void theWithdrawalStatementIsReadAsAWholeLine() {
         assertDoesNotThrow(() -> theCanonSaysTheWithdrawalStands(canonWith("前置き", WITHDRAWN_LINE)),
                 "the statement on a line of its own was not read");
+        assertDoesNotThrow(
+                () -> theCanonSaysTheWithdrawalStands("前置き\r\n" + WITHDRAWN_LINE + "\r\n"),
+                "a document saved with CRLF did not read the same");
 
-        // RAW IS WHAT MAKES THESE UNEQUAL. Each puts other characters on the line; none of them
-        // needs a rule of its own. The last two were measured against the reader that compared
-        // after asProse: the first of them REFUSED a correct canon (batch-39 review, subagent
-        // P2-1), the rest passed or refused under earlier designs (batches 37 and 38).
+        // NOT THE STATEMENT, and none of these needs a rule of its own: each is simply a different
+        // line. The first six broke substring and token designs (batches 37-38); the rest broke
+        // the skipping machinery (batches 39-40), and here they are all the same answer.
         for (String written : new String[] {
                 "「" + WITHDRAWN_LINE + "」は誤り",
                 "~~" + WITHDRAWN_LINE + "~~",
@@ -921,77 +893,57 @@ class ReleaseReadinessIsMeasuredTest {
                 "- 取り下げ:  plan-figure-lock（R212）",
                 "- 取り下げ： plan-figure-lock（R212）",
                 "`例:` " + WITHDRAWN_LINE,
-                "`" + WITHDRAWN_LINE + "`は誤り。錠は現役" }) {
+                "`" + WITHDRAWN_LINE + "`は誤り。錠は現役",
+                WITHDRAWN_LINE + "   ",
+                " " + WITHDRAWN_LINE,
+                "   " + WITHDRAWN_LINE,
+                "\t" + WITHDRAWN_LINE,
+                " \t" + WITHDRAWN_LINE,
+                "    " + WITHDRAWN_LINE }) {
             assertThrows(AssertionError.class,
                     () -> theCanonSaysTheWithdrawalStands(canonWith("前置き", written)),
-                    "a line reading 「" + written + "」 satisfied a reader that compares the "
-                            + "statement raw and whole");
+                    "a line reading 「" + written.replace("\t", "⇥") + "」 was taken for the "
+                            + "statement, which is compared raw and whole");
         }
 
-        // AND A PREFIXED COPY DOES NOT REFUSE A CORRECT CANON either — the other direction of the
-        // same finding, which the asProse version failed (says=2, measured).
-        assertDoesNotThrow(
-                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, "`例:` " + WITHDRAWN_LINE)),
-                "a canon that states it once and shows a backticked copy was refused");
+        // A SECOND COPY ANYWHERE, including in a fenced example, is the price of having no context
+        // rules — and the canon's §5 says so instead of promising an exclusion this reader cannot
+        // make safely. Each of these shapes satisfied or refused the lock wrongly under some
+        // earlier design (batches 39-40, both reviewers): a fence at indent 0, 4 and 6, a nested
+        // fence, a tilde fence, an indented block, a multi-line code span, an HTML comment.
+        for (String[] example : new String[][] {
+                { "```", WITHDRAWN_LINE, "```" },
+                // An INDENTED copy is not a copy — the leading spaces make it a different line,
+                // so it belongs in the list above and not here. Measured: this row asserted a
+                // refusal that cannot happen (batch 41, the first run of this test).
+                { "    ```", WITHDRAWN_LINE, "    ```" },
+                { "````", "```", WITHDRAWN_LINE, "```", "````" },
+                { "~~~", WITHDRAWN_LINE, "~~~" },
+                { "`例:", WITHDRAWN_LINE, "`" },
+                { "<!--", WITHDRAWN_LINE, "-->" } }) {
+            String[] canon = new String[example.length + 1];
+            canon[0] = WITHDRAWN_LINE;
+            System.arraycopy(example, 0, canon, 1, example.length);
+            assertThrows(AssertionError.class, () -> theCanonSaysTheWithdrawalStands(canonWith(canon)),
+                    "a second copy of the statement was accepted, so 「exactly one」 is not what "
+                            + "this reader counts");
+        }
 
-        // TWO SAYING IT is a document this reader cannot vouch for, and the count says so.
+        // AND AN EXAMPLE THAT IS NOT THE LINE ITSELF is how the format gets documented: a prefix,
+        // a sentence around it, or a line with anything else on it.
+        assertDoesNotThrow(
+                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
+                        "```", "例: " + WITHDRAWN_LINE, "```", "本文では `" + WITHDRAWN_LINE + "` と書きます")),
+                "a canon that states it once and describes the format without reproducing the line "
+                        + "was refused");
+
+        // NONE AT ALL, and TWO, are both documents this reader will not vouch for.
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(canonWith("前置き", "後書き")),
+                "a canon that never states the withdrawal passed");
         assertThrows(AssertionError.class,
                 () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, WITHDRAWN_LINE)),
                 "two lines stating the withdrawal were accepted as one");
-
-        // AND A SECOND COPY OUTSIDE §5 is what only the WHOLE-canon count can answer. Without
-        // this shape the section count answers every duplicate fixture, and the control over the
-        // whole-canon arm measured DID NOT FIRE — a sibling arm returning the same outcome
-        // (batch 40, measured).
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands("## 1. 何を主張するか\n" + WITHDRAWN_LINE
-                        + "\n\n## 5. 測定\n" + WITHDRAWN_LINE + "\n\n## 6. 巡の追記規則\n"),
-                "a second copy outside the section was accepted, so only the section is counted");
-
-        // A FENCED EXAMPLE, AT ANY INDENT, is not a statement. Indent 4 and 6 — where an example
-        // under a bullet lands — satisfied the lock on their own (batch-39 review, subagent P2-2).
-        for (String indent : new String[] { "", "   ", "    ", "      " }) {
-            assertThrows(AssertionError.class,
-                    () -> theCanonSaysTheWithdrawalStands(canonWith("前置き",
-                            indent + "```", indent + WITHDRAWN_LINE, indent + "```")),
-                    "a statement written only inside a fence indented 「" + indent.length()
-                            + "」 satisfied this lock");
-        }
-        assertDoesNotThrow(
-                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
-                        "```", WITHDRAWN_LINE, "```")),
-                "a canon that states it once and ALSO shows it in a fenced example was refused, so "
-                        + "the format cannot be documented where it is used");
-
-        // A TILDE FENCE, because a backtick fence's own delimiters hold three backticks and the
-        // span parity below answers that fixture on its own: the control over the fence skip
-        // measured DID NOT FIRE until this shape existed (batch 40, measured).
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(canonWith("前置き",
-                        "~~~", WITHDRAWN_LINE, "~~~")),
-                "a statement written only inside a tilde fence satisfied this lock");
-
-        // INDENTED FOUR OR MORE is an indented code block, and this reader skips it — so an
-        // example written under a bullet does not satisfy the lock. asProse KEEPS such a block
-        // (its javadoc says so, for a different reader with a three-space limit), which is why
-        // this count does its own skipping (batch-39 review: Codex P2, subagent P2-2).
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(canonWith("前置き", "    " + WITHDRAWN_LINE)),
-                "a statement written only as an indented example satisfied this lock");
-
-        // A CODE SPAN LEFT OPEN BY AN EARLIER LINE. CommonMark lets a span cross lines, and
-        // asProse's own span reader deliberately does not, so this one counted (batch-39 review,
-        // Codex P2).
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(canonWith("前置き", "`例:", WITHDRAWN_LINE, "`")),
-                "a statement inside a code span that opens on an earlier line satisfied this lock");
-
-        // WHERE IT SITS IS ASSERTED. Moving it out of §5 kept the count at one and every arm
-        // stayed green (batch-39 review: Codex P2, subagent P3-7).
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(
-                        "## 1. 何を主張するか\n" + WITHDRAWN_LINE + "\n\n## 5. 測定\n前置き\n\n## 6. 巡の追記規則\n"),
-                "the statement was accepted from outside the section the canon says holds it");
     }
 
     /**
@@ -1010,6 +962,12 @@ class ReleaseReadinessIsMeasuredTest {
                 "a canon carrying both lines passed, so this lock asserts a withdrawal the canon "
                         + "takes back");
 
+        // ANYWHERE in the document, not only beside the statement.
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(canonWith("## 1. 何を主張するか",
+                        REINSTATED_LINE, "## 5. 測定", WITHDRAWN_LINE)),
+                "a line taking the withdrawal back elsewhere in the canon was not read");
+
         assertDoesNotThrow(
                 () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE,
                         "この錠はいまも現役で、取り下げを撤回した。錠を戻した。")),
@@ -1017,28 +975,19 @@ class ReleaseReadinessIsMeasuredTest {
                         + "lock withdrew, and refusing on it is the over-refusal the withdrawal "
                         + "exists to avoid");
 
-        // QUOTED, EMPHASISED, OR IN BACKTICKS is not the statement — and the canon's own §5 writes
-        // the counter-line in backticks while explaining the format, which is why that had to be
-        // true (batch-39 review, subagent P2-1: the earlier reader let a backticked counter-line
-        // through, and §5 promised the opposite).
+        // QUOTED, EMPHASISED, IN BACKTICKS, OR IN AN EXAMPLE is not the statement — which is what
+        // lets §5 explain the counter-line's format while the canon stays green.
         for (String written : new String[] {
                 "「" + REINSTATED_LINE + "」とは書かない",
                 "__取り下げ撤回: plan-figure-lock（R212）__",
                 "**" + REINSTATED_LINE + " と決めた**",
-                "`" + REINSTATED_LINE + "`" }) {
+                "`" + REINSTATED_LINE + "`",
+                "撤回側は `" + REINSTATED_LINE + "` です" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, written)),
                     "a quotation, an emphasis or a backticked copy was taken for the statement "
                             + "itself: " + written);
         }
-
-        // AND A COUNTER-LINE ANYWHERE IN THE CANON refuses, not only inside §5: the retraction is
-        // read over the whole document while the statement is also required in its section.
-        assertThrows(AssertionError.class,
-                () -> theCanonSaysTheWithdrawalStands(
-                        "## 1. 何を主張するか\n" + REINSTATED_LINE + "\n\n## 5. 測定\n"
-                                + WITHDRAWN_LINE + "\n\n## 6. 巡の追記規則\n"),
-                "a line taking the withdrawal back outside §5 was not read");
     }
 
     /**
