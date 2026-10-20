@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -74,7 +75,8 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The canon's one line that states the plan-figure lock is withdrawn — a line IS it or is not.
      *
-     * <p>EIGHT ROUNDS, and every escape lived in the machinery that decided which lines to skip.
+     * <p>NINE ROUNDS. The escapes came in two families, and conflating them was itself a
+     * finding (batch-41 review, Codex P3).
      * Reading the statement as prose broke first (batches 33-38: a bare substring, an emphasised
      * token, a cell, a quotation, a strike-through, {@code __…__}, spacing variants, a column the
      * document does not render). Moving it to a line of its own fixed that and moved the problem
@@ -173,13 +175,19 @@ class ReleaseReadinessIsMeasuredTest {
         //     the readiness document, so that edit alone is loud. RENAMING one keeps 212/135/77,
         //     and whether anything notices depends on the row: an OPEN one is caught by
         //     everyOpenResidualIsInExactlyOneGroup, which requires every open id to be named
-        //     somewhere, so the 37 CLOSED rows whose ids appear in no other document are the ones
-        //     that go by unnoticed (batch-39 review, Codex P2; batch-40 review, subagent P3-3 —
-        //     the earlier versions of this comment claimed first too little and then too much).
-        //   - NO CONTROL REACHES THIS METHOD. The nineteen controls anchored in this class all sit
-        //     in the readers below it, and what batch 40 changed here is the CLASSIFICATION of a
-        //     failure — assertion or harness breakage — which a sabotage of another line cannot
-        //     move. Said rather than implied (batch-40 review, subagent P3-8).
+        //     somewhere, so a CLOSED row is the one that can be renamed unnoticed. HOW MANY is
+        //     not stated here: the figure 「37」 written a batch ago reproduced at no scope the
+        //     reviewer tried — tracked files 19, docs/ 33, docs/design 50, the three carriers 58,
+        //     readiness alone 70 — because 「no other document」 was never defined (batch-39
+        //     review, Codex P2; batch-40 review, subagent P3-3; batch-41 review, subagent P3-2 —
+        //     the earlier versions claimed first too little, then too much, then a number).
+        //   - NO CONTROL REACHES THIS METHOD. Counted with ast over the runner's CONTROLS, by
+        //     the file each sabotages: 16 controls are anchored in this class today, and every
+        //     one of them sits below this method, in the readers. What batch 40 changed here is
+        //     the CLASSIFICATION of a failure — assertion or harness breakage — which a sabotage
+        //     of another line cannot move. The figure written here a batch ago said nineteen,
+        //     which was this class's count BEFORE the same commit retired three of them
+        //     (batch-40 review, subagent P3-8; batch-41 review, subagent P2-2).
         //   - the locator batch 39 removed also refused two rows claiming one id. This reader
         //     takes the first silently; theReadinessCountsAreTheCanonsRows notices a duplicate id
         //     in the same class, and nothing else does (batch-39 review, subagent P3-5).
@@ -784,21 +792,33 @@ class ReleaseReadinessIsMeasuredTest {
         //     an example merely indented four spaces, and a statement inside a code span that
         //     opens on one line and closes on another.
         //
-        // SO THIS READER DOES ITS OWN EXCLUDING, on the raw text: a fenced block at ANY indent, an
-        // HTML comment, a line indented four or more, and a line inside a code span left open by
-        // an earlier line are all skipped, and what is left is compared RAW. Comparing raw is what
-        // makes a quotation, a prefix, an emphasis or a strike-through simply unequal — none of
-        // them needs its own rule, and none of them can refuse a correct canon either.
+        // SO THERE IS NO CONTEXT LEFT TO GET WRONG. This reader skips nothing — not a fence, not
+        // an indented block, not a code span, not an HTML comment, not a section. Every one of
+        // those rules was an escape of its own, and none is needed for the STATEMENT: a quotation,
+        // a prefix, an emphasis, a strike-through, a trailing space and an indent all make a line
+        // that is not equal to it. The constant's javadoc lists the rounds.
         //
-        // AND WHERE IT SITS IS ASSERTED. 「§5 の冒頭」 is what the canon and the record say, and
-        // nothing read it: moving the line to another section kept the count at one and every arm
-        // stayed green (batch-39 review: Codex P2, subagent P3-7).
+        // AND THE TWO ARMS NO LONGER SHARE ONE COMPARISON. 「exactly one line says it」 and 「no
+        // line takes it back」 cannot both be fail-closed with the same equality: for the
+        // statement a near miss must NOT satisfy the lock, and for the retraction a near miss must
+        // NOT slip past it. Nine shapes whose RENDERING is identical — one to three leading
+        // spaces, a trailing space or tab, a lone CR line ending, a decomposed 「げ」 — were
+        // measured green on the retraction side (batch-41 review, subagent P2-3, measured against
+        // the real canon). So the retraction is asked of the rendering's equivalence class:
+        // normalised, with leading and trailing whitespace off. The statement stays strict.
         //
-        // WHAT THIS LOCK NO LONGER CLAIMS — said plainly, because a withdrawal is a claim too: the
-        // canon may contradict this line in prose and stay green. What catches an actual
-        // resurrection is the arm above, which reads this file's own code — and that arm carries
-        // its own limits, listed with it: a third name is green, a unicode escape inside either
-        // name is green, and the same method declared in another test class is green.
+        // WHAT THIS LOCK NO LONGER CLAIMS, said plainly, because a withdrawal is a claim too:
+        //   - WHERE the line sits. A section reader was tried and was defeated by one sentence
+        //     mentioning 「## 5. 測定」 elsewhere (batch-40 review, subagent P2-2). A second copy
+        //     anywhere still refuses; a single copy that MOVED does not.
+        //   - the canon contradicting this line IN PROSE. It may, and this lock stays green.
+        //   - a retraction written with something other than whitespace in front of it — a 「* 」
+        //     bullet, a quotation mark — is still not read. That is the far side of the
+        //     equivalence class above, and widening it further means reading markdown again.
+        // What catches an actual resurrection is the arm above, which reads this file's own code —
+        // and that arm carries its own limits, listed with it: a third name is green, a unicode
+        // escape inside either name is green, and the same method declared in another test class
+        // is green.
         String canon = read(CANON);
         theCanonSaysTheWithdrawalStands(canon);
     }
@@ -839,20 +859,39 @@ class ReleaseReadinessIsMeasuredTest {
      * constant's javadoc), and none of them is needed: a quotation, a prefix, an emphasis, a
      * strike-through and a trailing space all make a line that is not equal to the statement.
      *
-     * <p>A trailing carriage return is dropped, so a document saved with CRLF reads the same.
-     * {@code strip()} is NOT used: it took trailing spaces and ideographic spaces off too, which
-     * made 「the statement with three spaces after it」 count as the statement (batch-40 review,
-     * Codex P2).
+     * <p>Lines are split on every ending CommonMark knows, and compared after Unicode
+     * normalisation, so CRLF, a lone CR and a decomposed character all read as what they render
+     * as. Those three were each measured as a silent 「the statement is not there」 (batch-40
+     * review, Codex P2; batch-41 review: Codex P2, subagent P2-3 and P3-5).
+     *
+     * <p>THE STATEMENT IS COMPARED UNTRIMMED and the RETRACTION TRIMMED, and the asymmetry is the
+     * point: a near miss must not SATISFY the first arm, and must not SLIP PAST the second.
+     * {@code strip()} on the statement side made 「the statement with three spaces after it」
+     * count as the statement (batch-40 review, Codex P2); the lack of it on the retraction side
+     * left nine shapes whose rendering is identical reading as 「no retraction」 (batch-41 review,
+     * subagent P2-3). KNOWN LIMIT: whitespace is where the retraction's equivalence class stops —
+     * a 「* 」 bullet or a quotation mark in front of it is still not read, and widening further
+     * means reading markdown again, which is what the rounds above were about.
      */
     private static Declared declarationsIn(String text) {
         long says = 0;
         long takesBack = 0;
-        for (String line : text.split("\n", -1)) {
-            String raw = line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
-            if (WITHDRAWN_LINE.equals(raw)) {
+        // EVERY LINE ENDING COMMONMARK KNOWS. Splitting on \n alone read a document whose lines
+        // end in a lone CR as ONE line, so its statement counted as absent — 「I could not read
+        // this」 reported with the value of 「it is not there」, which is the one thing this tree's
+        // rule forbids, and an over-refusal besides (batch-41 review: Codex P2, subagent P2-3).
+        for (String line : text.split("\r\n|\n|\r", -1)) {
+            // NORMALISED, so a decomposed 「げ」 is the same character it renders as. A canon saved
+            // in NFD counted zero statements and the refusal named causes none of which applied
+            // (batch-41 review, subagent P3-5).
+            String rendered = Normalizer.normalize(line, Normalizer.Form.NFC);
+            if (WITHDRAWN_LINE.equals(rendered)) {
                 says++;
             }
-            if (REINSTATED_LINE.equals(raw)) {
+            // THE RETRACTION IS ASKED WIDER, on purpose: see the arms' comment. Leading and
+            // trailing whitespace is what the rendering drops, and nine such shapes were measured
+            // green before this batch.
+            if (REINSTATED_LINE.equals(rendered.strip())) {
                 takesBack++;
             }
         }
@@ -881,6 +920,16 @@ class ReleaseReadinessIsMeasuredTest {
         assertDoesNotThrow(
                 () -> theCanonSaysTheWithdrawalStands("前置き\r\n" + WITHDRAWN_LINE + "\r\n"),
                 "a document saved with CRLF did not read the same");
+        assertDoesNotThrow(
+                () -> theCanonSaysTheWithdrawalStands("前置き\r" + WITHDRAWN_LINE + "\r"),
+                "a document whose lines end in a lone CR read as one line, so its statement "
+                        + "counted as absent — a read failure reported as an absence");
+        assertDoesNotThrow(
+                () -> theCanonSaysTheWithdrawalStands(
+                        java.text.Normalizer.normalize("前置き\n" + WITHDRAWN_LINE + "\n",
+                                java.text.Normalizer.Form.NFD)),
+                "a document saved in NFD counted no statement, and the refusal named causes none "
+                        + "of which applied");
 
         // NOT THE STATEMENT, and none of these needs a rule of its own: each is simply a different
         // line. The first six broke substring and token designs (batches 37-38); the rest broke
@@ -913,9 +962,11 @@ class ReleaseReadinessIsMeasuredTest {
         // fence, a tilde fence, an indented block, a multi-line code span, an HTML comment.
         for (String[] example : new String[][] {
                 { "```", WITHDRAWN_LINE, "```" },
-                // An INDENTED copy is not a copy — the leading spaces make it a different line,
-                // so it belongs in the list above and not here. Measured: this row asserted a
-                // refusal that cannot happen (batch 41, the first run of this test).
+                // A fence indented four spaces, with the copy itself at the line start: the copy
+                // IS a copy, so this refuses. An indented COPY would not be one — the leading
+                // spaces make it a different line — and that shape is in the list above. The note
+                // sat on this row for a batch while describing that one (batch-41 review,
+                // subagent P3-6).
                 { "    ```", WITHDRAWN_LINE, "    ```" },
                 { "````", "```", WITHDRAWN_LINE, "```", "````" },
                 { "~~~", WITHDRAWN_LINE, "~~~" },
@@ -988,6 +1039,40 @@ class ReleaseReadinessIsMeasuredTest {
                     "a quotation, an emphasis or a backticked copy was taken for the statement "
                             + "itself: " + written);
         }
+
+        // WHAT THE RENDERING CANNOT TELL APART, the retraction must not slip through. Nine such
+        // shapes were measured GREEN against the real canon while §5 promised the opposite
+        // (batch-41 review, subagent P2-3). The statement side stays strict, so the same shapes
+        // are NOT the statement — that asymmetry is asserted both ways here.
+        for (String invisible : new String[] {
+                " " + REINSTATED_LINE,
+                "   " + REINSTATED_LINE,
+                REINSTATED_LINE + " ",
+                REINSTATED_LINE + "  ",
+                REINSTATED_LINE + "\t",
+                "\t" + REINSTATED_LINE,
+                "　" + REINSTATED_LINE }) {
+            assertThrows(AssertionError.class,
+                    () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, invisible)),
+                    "a retraction the rendering cannot tell from the line itself slipped past: 「"
+                            + invisible.replace("\t", "⇥") + "」");
+        }
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(
+                        canonWith(WITHDRAWN_LINE, "前置き\r" + REINSTATED_LINE)),
+                "a retraction on a lone-CR line slipped past");
+        assertThrows(AssertionError.class,
+                () -> theCanonSaysTheWithdrawalStands(java.text.Normalizer.normalize(
+                        canonWith(WITHDRAWN_LINE, REINSTATED_LINE), java.text.Normalizer.Form.NFD)),
+                "a retraction written in NFD slipped past");
+
+        // AND WHERE THE EQUIVALENCE CLASS STOPS, said as a test rather than only in a comment: a
+        // bullet or a quotation mark in front of the retraction is NOT read. Widening past
+        // whitespace means reading markdown again, which is what nine rounds were about.
+        assertDoesNotThrow(
+                () -> theCanonSaysTheWithdrawalStands(canonWith(WITHDRAWN_LINE, "* " + REINSTATED_LINE)),
+                "the recorded limit changed: a bulleted retraction is now read, which is a wider "
+                        + "claim than the canon's §5 makes");
     }
 
     /**
