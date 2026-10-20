@@ -4,6 +4,8 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -68,6 +70,12 @@ class ReleaseReadinessIsMeasuredTest {
     private static final Set<String> FROZEN = Set.of("R62", "R63");
 
     private static final String FREEZE_MARK = "凍結（ユーザー指示 2026-09-20）";
+
+    /** The mark R212 carries while the plan-figure lock stays withdrawn. */
+    private static final String WITHDRAWN = "取り下げ: 済み";
+
+    /** The mark that would say that lock came back. Forbidden anywhere in that row. */
+    private static final String REINSTATED = "取り下げ: 撤回";
 
     /**
      * Read, having first checked the file is there.
@@ -692,289 +700,238 @@ class ReleaseReadinessIsMeasuredTest {
                 "a lock over the batch plan's control total is back while the withdrawal note is "
                         + "still here. One of the two is wrong — decide, do not keep both");
 
-        // AND the residual says so, in the canon.
-        // THE ROW, anchored to a line start, read from the PROSE: 「| R212 |」 anywhere matched a
-        // quoted row fragment (batch-33 review, Codex P2-2), and the raw text WOULD count a row
-        // written inside a fenced block or an HTML comment — this document talks ABOUT its own
-        // table (batch-34 review, Codex P2-2). asProse is in this class for that.
+        // AND the residual says so, in the canon — by a MARK, not by its prose.
         //
-        // A LATENT GUARD, and said as one. Measured 2026-10-20: the canon has exactly one line
-        // starting 「| R212 |」 in the RAW text as well, its single fenced block contains no table
-        // row, and it has no HTML comment at all. So this step is not the repair of an observed
-        // miss. The earlier version of this sentence was written in the present tense and read as
-        // one (batch-35 review, subagent P3-3).
+        // FOUR ROUNDS OF PROSE. A lock over 「what this row says happened」 produced a finding in
+        // each of batches 33, 34, 35 and 36, and three of those were defects this method
+        // introduced while fixing the one before. The last pair was not two mistakes but a
+        // TENSION: excluding the plan column — so that a legitimate 「if we reinstate it, …」
+        // cannot make a correct row red — leaves everything from that column to the end of the
+        // row unread, and a forbidden word written there is missed (batch-36 review, subagent
+        // P2-3, measured); including it brings the over-refusal back (batch-34 review: Codex P2,
+        // subagent P3-2, measured). No reading of the prose closes both.
+        //
+        // AND THE COLUMN COULD NOT BE FOUND RELIABLY. It was located by its own wording,
+        // 「開けるときは…」 at the start of a field. Measured 2026-10-20 over all 212 rows: that
+        // finds it in 31 — field 3 in 28 rows, field 4 in 3 — and NOT in the other 181, which
+        // write it in bold (2 rows), as 「次に開けるときは」, as 「…とき」, or not at all. Rewording
+        // THIS row the way its siblings are written turns the reader back into a whole-row reader
+        // without a word of warning (batch-36 review, subagent P2-2, measured).
+        //
+        // SO THE ROW CARRIES A MARK. WITHDRAWN is required and REINSTATED is forbidden, ANYWHERE
+        // in the row. Prose is then free in every column and there is no over-refusal left to
+        // trade against. R212's own text says the answer to all of this is 「decide on one
+        // format」; this is that, for one row.
+        //
+        // WHAT THIS LOCK NO LONGER CLAIMS — said plainly, because a withdrawal is a claim too: a
+        // row that carries the mark and ALSO says in prose that the lock came back is GREEN. What
+        // catches an actual resurrection is the arm above, where the method must not be declared
+        // in this file, and that one reads code rather than prose.
+        //
+        // THE ROW is located by its ID, read from the PROSE: 「| R212 |」 anywhere matched a quoted
+        // row fragment (batch-33 review, Codex P2-2), and the raw text WOULD count a row written
+        // inside a fenced block or an HTML comment — this document talks ABOUT its own table
+        // (batch-34 review, Codex P2-2). asProse is in this class for that.
+        //
+        // A LATENT GUARD, and said as one. Measured 2026-10-20: exactly one line in the canon
+        // carries R212 as a field in the RAW text as well, its single fenced block contains no
+        // table row, and it has no HTML comment at all. So this step is not the repair of an
+        // observed miss (batch-35 review, subagent P3-3).
         String canon = asProse(read(CANON), "the canon");
-        Matcher r212 = Pattern.compile("(?m)^\\| R212 \\|.*$").matcher(canon);
-        assertTrue(r212.find(), "R212 is not a row in the canon, so the withdrawal has no residual "
-                + "behind it");
-        String text = r212.group();
-        if (r212.find()) {
+        theRowSaysTheWithdrawalStands(theResidualRow(canon, "R212"));
+    }
+
+    /**
+     * The canon's row for a residual, by its ID in the FIRST field — or a refusal.
+     *
+     * <p>NEVER 「absent」 FOR A ROW THIS READER CANNOT READ. The previous version matched
+     * {@code ^| R212 |} and asserted that it found something, so a row whose ID had moved out of
+     * the first field — a status column inserted before it — failed with 「R212 is not a row in the
+     * canon」. That reports a read failure with the value of an absence, which is the one thing
+     * this tree's rule forbids, and the runner scores the resulting {@code AssertionError} as 「the
+     * protection fired」 (batch-36 review: Codex P2, subagent P3-3, each measured). A line carrying
+     * the ID as a field somewhere other than the first is {@link HarnessBroken}; a line that merely
+     * mentions the ID inside a longer field is not a candidate at all.
+     *
+     * <p>Returns null when no line carries the ID. That is a genuine absence, and the caller
+     * asserts on it with its own message — the one case where 「not there」 is the answer.
+     */
+    private static String theResidualRow(String canon, String id) {
+        List<String> carrying = new ArrayList<>();
+        for (String line : canon.split("\n", -1)) {
+            for (String cell : cellsOf(line)) {
+                if (cell.trim().equals(id)) {
+                    carrying.add(line);
+                    break;
+                }
+            }
+        }
+        if (carrying.isEmpty()) {
+            return null;
+        }
+        if (carrying.size() > 1) {
             // NOT an assertion: 「there are two and I cannot tell which」 is this reader losing its
             // subject, and the runner scores an AssertionError as 「the protection fired」. The
             // document recorded this as HarnessBroken for a batch while the code asserted
             // (batch-34 review: Codex P1, subagent P2-3).
-            throw new HarnessBroken("the canon has two R212 rows, so this lock cannot tell which "
-                    + "one records the withdrawal");
+            throw new HarnessBroken("the canon has " + carrying.size() + " lines carrying " + id
+                    + " as a field, so this lock cannot tell which one records the withdrawal");
         }
-        // THE COMPLETED POSITIVE FORM. 「the word 取り下げ appears」 was satisfied by a row saying
-        // 取り下げていない, 錠を戻した, 取り下げなかった, 取り下げを撤回した, … — 10 of 13 negations
-        // measured green, and widening the forbidden list chases an infinite set (batch-31 review
-        // subagent P2-1; batch-32 review: both reviewers again). Requiring 「取り下げた」 discriminated
-        // all 14 rows the reviewer measured, because every negation of it reads differently.
-        //
-        // BOTH HALVES. Requiring the completed positive form alone was WEAKER than the enumeration
-        // it replaced: a row saying 「…取り下げた。なお錠を戻した」 passed the new arm and had fired
-        // under the old one (batch-33 review: both reviewers, each measured it). So the positive
-        // form is required AND the resurrection wordings are still forbidden.
-        //
-        // KNOWN LIMITS, both directions:
-        //   - a row that says the same thing another way (「取り下げ済み」) is REFUSED — the
-        //     over-refusal direction, which is the safe one: a refusal is read by a person.
-        //   - a row whose STATEMENT cell quotes a forbidden word in order to deny it
-        //     (「「錠を戻した」という記録は誤り」) is REFUSED — over-refusal again, and this arm
-        //     cannot tell a quotation from an assertion. A correct row should not need to quote
-        //     them; if one does, move the quotation to the plan column.
-        //   - a row that negates the positive form in words the list does not know
-        //     (「「取り下げた」という記録は誤りで、いまは在る」) is GREEN. Natural-language negation is
-        //     an infinite set; what a word check can do is make the common rewrites loud. The
-        //     earlier version of this sentence said 「words NEITHER list knows」, which was wrong:
-        //     取り下げていない was in the batch-32 list and had been dropped (subagent P2-1).
-        //   - the canon is read through asProse, whose FIRST step takes inline code out, so a row
-        //     that writes the required word inside backticks (「`取り下げた`」) is REFUSED. This row
-        //     already quotes identifiers that way, so the shape is reachable (batch-35 review,
-        //     subagent P3-3, measured). Over-refusal again, and the way out is in the message: do
-        //     not put the word itself in backticks.
-        //
-        // THE STATEMENT IS EVERYTHING BETWEEN THE ID AND THE PLAN COLUMN, and BOTH arms read it.
-        // Four findings close here (batch-34 review: subagent P2-1 and P3-2, Codex P2; batch-35
-        // review: Codex P2, subagent P2-1 and P3-1):
-        //   - the require half still read the WHOLE row, so a row whose statement said the lock is
-        //     CURRENT passed as long as the plan cell happened to contain 「取り下げた」 — and the
-        //     plan column is the one this lock had just declared may say anything (batch-35
-        //     review, subagent P2-1, measured on both arms).
-        //   - reading the whole row over-refused in the other direction: 「取り下げを撤回する予定は
-        //     無い」 in the plan column made a correct row red (batch-34 review).
-        //   - reading ONE field could be escaped. A raw 「|」 inside the statement pushed the rest
-        //     of it — a forbidden word included — into the next field (batch-35 review, subagent
-        //     P3-1, measured green), and a column inserted before the statement moved it off field
-        //     2 altogether (batch-35 review, Codex P2).
-        //   - 「fewer than four fields is HarnessBroken」 refused shapes this very list uses: two of
-        //     its rows are written 「| Rnn | what happened」 with no further columns (batch-35
-        //     review, subagent P3-2, measured).
-        // Reading the RANGE closes the first three by WIDENING what is read rather than by
-        // refusing, and the fourth goes away with it: a row with no plan column has a statement
-        // that runs to the end.
-        theRowSaysTheWithdrawalStands(text);
+        String row = carrying.get(0);
+        String[] cells = cellsOf(row);
+        if (cells.length < 2 || !cells[1].trim().equals(id)) {
+            throw new HarnessBroken("the canon's " + id + " line does not carry its ID in the "
+                    + "first field, so this reader cannot tell a residual row from a line that "
+                    + "happens to hold " + id + " in some other cell: " + row);
+        }
+        return row;
     }
 
     /**
-     * BOTH arms of the withdrawal check, over one residual row, so synthetic rows can drive them.
+     * BOTH arms of the withdrawal check, over one row, so synthetic rows can drive them.
      *
-     * <p>Taking a row rather than reading the canon is what makes the arms measurable. Scoping the
-     * REQUIRE half to the statement cannot be measured against the real row at all — that row's
-     * statement contains the required word, so field-2, the range and the whole row all answer the
-     * same way, and a code sabotage over it was measured GREEN. A document sabotage would have to
-     * edit two places at once (take the word out of the statement, put it in the plan), and a
-     * control carries one edit.
+     * <p>Taking a row rather than reading the canon is what makes the arms measurable: against the
+     * real row, every reading of it answers the same way, and a code sabotage over one was measured
+     * GREEN (batch 36).
      */
     private static void theRowSaysTheWithdrawalStands(String row) {
-        String stated = statementOf(cellsOf(row));
-        assertTrue(stated.contains("取り下げた"),
-                "the R212 row does not say, in that form, that the lock WAS withdrawn. If it was "
-                        + "reinstated, delete the withdrawal note and this method; if the row just "
-                        + "says it differently, this arm demands 「取り下げた」 in the statement, "
-                        + "outside backticks: " + stated);
-        for (String back : new String[] { "取り下げていない", "取り下げない", "錠を戻した", "錠を復活",
-                "取り下げを撤回", "取り下げを取り消" }) {
-            assertFalse(stated.contains(back), "the R212 row's statement says 「" + back + "」 while "
-                    + "this lock asserts the withdrawal stands. One of the two is wrong — decide "
-                    + "(a PLAN to reinstate belongs in the 「開けるときは」 column, which neither arm "
-                    + "reads): " + stated);
-        }
+        assertNotNull(row,
+                "R212 is not a row in the canon, so the withdrawal has no residual behind it");
+        assertTrue(row.contains(WITHDRAWN),
+                "the canon's R212 row no longer carries 「" + WITHDRAWN + "」, so it no longer "
+                        + "states that the plan-figure lock is withdrawn. If the lock was "
+                        + "reinstated, delete the withdrawal note and this method; otherwise put "
+                        + "the mark back. Prose that says it another way is NOT read, deliberately "
+                        + "— four rounds of findings came out of reading this row's prose — and the "
+                        + "mark must not be inside backticks, because asProse takes inline code out "
+                        + "before this reader sees the row: " + row);
+        assertFalse(row.contains(REINSTATED),
+                "the canon's R212 row carries 「" + REINSTATED + "」 while this lock asserts the "
+                        + "withdrawal stands. One of the two is wrong — decide, do not keep both: "
+                        + row);
     }
 
     /**
      * A table row's fields, split the way markdown renders the row.
      *
-     * <p>AN ESCAPED PIPE IS NOT A COLUMN BOUNDARY. Markdown writes a literal pipe inside a cell as
-     * a backslash and a pipe; splitting on every pipe pushes the rest of that cell into the next
-     * field, so a word a lock forbids could sit after one and never be read (batch-35 review:
-     * Codex P2). The limit {@code -1} keeps trailing empty fields, because a row's shape is part
-     * of what the caller asserts.
+     * <p>A PIPE IS A BOUNDARY UNLESS AN ODD NUMBER OF BACKSLASHES PRECEDES IT. Markdown writes a
+     * literal pipe inside a cell as a backslash and a pipe, and a literal BACKSLASH in front of a
+     * real boundary as two of them. A lookbehind for ONE backslash reads the second case wrong: it
+     * refuses to split, the next column is swallowed into this field, and a lock over this field
+     * then reads the next column's text — measured as an over-refusal (batch-36 review: Codex P2,
+     * subagent P3-2). Counting the run settles both cases.
+     *
+     * <p>Trailing empty fields are kept, so a row ending in a pipe reports the field the pipe
+     * closed. No caller asserts on the count today; the earlier version of this sentence said one
+     * did (batch-36 review, subagent P3-2).
      */
     private static String[] cellsOf(String row) {
-        return row.split("(?<!\\\\)\\|", -1);
+        List<String> cells = new ArrayList<>();
+        StringBuilder cell = new StringBuilder();
+        int backslashes = 0;
+        for (int at = 0; at < row.length(); at++) {
+            char c = row.charAt(at);
+            if (c == '|' && backslashes % 2 == 0) {
+                cells.add(cell.toString());
+                cell.setLength(0);
+            } else {
+                cell.append(c);
+            }
+            backslashes = c == '\\' ? backslashes + 1 : 0;
+        }
+        cells.add(cell.toString());
+        return cells.toArray(new String[0]);
     }
 
     /**
-     * What a residual row states happened: every field between the ID and the plan column, joined.
+     * The locator, driven — including the shapes that made the old one answer 「absent」.
      *
-     * <p>A RANGE, NOT A FIELD. The plan column (「開けるときは…」) is excluded because that is where a
-     * plan to reinstate a lock belongs, and a lock over the row's statement must not be satisfied
-     * — or refused — by it. Everything else after the ID is included, which is what makes a raw
-     * pipe inside the statement, or a column inserted before it, unable to move a word out of
-     * reach: both of those were measured green against a reader that took field 2 (batch-35
-     * review: subagent P3-1, Codex P2).
-     *
-     * <p>BY ITS OWN WORDING, because the header is not available. The canon's residual list has one
-     * header-and-delimiter pair, above its first table; the block this row sits in starts at R57
-     * with no header of its own, and the rows in it carry 3, 5, 6, 7, 9 and 11 fields against a
-     * four-column header (measured 2026-10-20 over all 212 rows). So 「the column the header calls
-     * 内容」 cannot be resolved here, and what this reader can state is where the plan column is.
-     *
-     * <p>{@link HarnessBroken}, not an assertion, when there is no statement to read at all: 「I
-     * cannot tell which part states what happened」 is this reader losing its subject, and the
-     * runner scores an {@code AssertionError} as 「the protection fired」. Every control over the
-     * calling lock reads as DID NOT FIRE while this throws, so the arm is kept to the shapes that
-     * really cannot be read: a row with nothing after its ID, or one whose plan column IS the
-     * first field after it.
-     */
-    private static String statementOf(String[] cells) {
-        // FROM THE END. Taking the FIRST field that opens with the plan wording reopened the same
-        // bypass in a narrower shape: a raw pipe inside the statement, followed by text that opens
-        // with 「開けるときは」, made the range stop inside the statement and a forbidden word after
-        // it was not read (measured before this batch went to review — the fix for a bypass had the
-        // bypass in it). The statement precedes the plan, so the LAST such field is the plan
-        // column, and fragments the writer did not mean as columns stay in the range.
-        int plan = cells.length;
-        for (int i = cells.length - 1; i >= 2; i--) {
-            if (cells[i].trim().startsWith("開けるときは")) {
-                plan = i;
-                break;
-            }
-        }
-        if (cells.length < 3 || plan <= 2) {
-            throw new HarnessBroken("this residual row has nothing between its ID and its plan "
-                    + "column, so this reader cannot tell what it states happened. It read "
-                    + cells.length + " fields and the plan column at " + plan + ": "
-                    + String.join("|", cells));
-        }
-        StringBuilder statement = new StringBuilder();
-        for (int i = 2; i < plan; i++) {
-            if (i > 2) {
-                statement.append('|');
-            }
-            statement.append(cells[i]);
-        }
-        return statement.toString();
-    }
-
-    /**
-     * The reader above, driven with the row shapes that got past the one it replaces.
-     *
-     * <p>DRIVEN, because the canon has one shape today. The two bypasses the reviewers measured —
-     * a raw pipe inside the statement, a column inserted before it — and the over-refusal — a row
-     * written with no plan column, which two rows of that very list use — cannot be put to the
-     * real document without editing it, and a reader nobody drives is the reader that let them
-     * through (batch-35 review: Codex P2, subagent P3-1 and P3-2).
-     *
-     * <p>Every row here DISCRIMINATES: each one is read differently by the field-2 reader this
-     * replaces, or by a splitter that treats an escaped pipe as a boundary. A fixture both
-     * versions answer the same way measures nothing.
+     * <p>WHICH FIXTURE IS MEASURED BY WHAT, because the earlier version of this javadoc said
+     * 「every row here DISCRIMINATES」 and four of its eight rows discriminated nothing (batch-36
+     * review: Codex P3, subagent P3-1, each measured one by one). Here: the ID outside the first
+     * field is measured by NN5, the escaped pipe by NO5, the two carrying lines by NR5. The other
+     * two — a line that only MENTIONS the ID, and a canon with no such row — are regression guards
+     * with no control over them, and that is said rather than implied.
      */
     @Test
-    @DisplayName("a residual row's statement is every field between its ID and its plan column")
-    void theStatementIsEverythingBetweenTheIdAndThePlan() {
-        String today = "| R212 | 取り下げた。罠は 3 つ | **P3** | 開けるときは: 書式を 1 つに決める |  |";
-        String plain = statementOf(cellsOf(today));
-        assertTrue(plain.contains("取り下げた"),
-                "a row in the shape the canon uses today did not read as stating anything: " + plain);
-        assertFalse(plain.contains("書式を 1 つに決める"),
-                "the plan column was read as part of the statement, which is the over-refusal this "
-                        + "range exists to avoid: " + plain);
+    @DisplayName("a residual row is found by its ID in the first field, or refused")
+    void theResidualRowIsFoundByItsIdInTheFirstField() {
+        String real = "| R212 | " + WITHDRAWN + " 罠は 3 つ | **P3** | 開けるときは: … |";
+        assertEquals(real, theResidualRow("前置き\n" + real + "\n後書き", "R212"),
+                "the row the canon really has was not located");
 
-        // A RAW PIPE pushes the rest of the statement into the next field. A reader taking field 2
-        // stopped at the pipe and never saw the word after it (subagent P3-1, measured green).
-        String piped = "| R212 | 取り下げた（書式の例: ID | 内容 | 重大度。なお錠を戻した） | **P3** "
-                + "| 開けるときは: … |";
-        assertTrue(statementOf(cellsOf(piped)).contains("錠を戻した"),
-                "a word written after a raw pipe inside the statement is out of reach again: "
-                        + statementOf(cellsOf(piped)));
+        // A LINE THAT ONLY MENTIONS THE ID is not a candidate: its field holds more than the ID.
+        // Regression guard, no control (see the javadoc).
+        assertEquals(real, theResidualRow("| R15 | R212 と同じ話 | — |\n" + real, "R212"),
+                "a row that mentions the ID in a longer field was taken for the residual row");
 
-        // AN ESCAPED PIPE is not a boundary (Codex P2), on a row with NO plan column — and the
-        // shape matters. The first version of this fixture put the same escape on a row that HAD
-        // a plan column, and once the reader above began taking the LAST field opening with the
-        // plan wording, a naive splitter answered it identically: the real plan column is still
-        // the last one, so the range was never cut short. Measured as DID NOT FIRE (NO5), which
-        // is the runner saying the fixture had stopped discriminating. With no plan column, the
-        // fragment after the backslash IS the last field opening with that wording, so splitting
-        // naively stops the range inside the statement and loses the word at its end.
-        String escaped = "| R212 | 取り下げた。なお「\\|開けるときは」と書いた例。錠を戻した";
-        assertTrue(statementOf(cellsOf(escaped)).contains("錠を戻した"),
-                "an escaped pipe was read as a column boundary, so a fragment of the statement was "
-                        + "taken for the plan column and the rest of it was dropped: "
-                        + statementOf(cellsOf(escaped)));
-
-        // A RAW PIPE FOLLOWED BY THE PLAN WORDING. The first version of this reader took the
-        // FIRST field opening with 「開けるときは」, so this row stopped the range inside the
-        // statement and lost the word after it — the fix for the bypass above, with the bypass
-        // still in it. Measured before this batch went to review.
-        String early = "| R212 | 取り下げた | 開けるときはの例。なお錠を戻した | **P3** "
-                + "| 開けるときは: … |";
-        assertTrue(statementOf(cellsOf(early)).contains("錠を戻した"),
-                "the range stopped at a fragment inside the statement that merely opens with the "
-                        + "plan wording, so the word after it is out of reach: "
-                        + statementOf(cellsOf(early)));
-
-        // A COLUMN INSERTED before the statement moves it off field 2 (Codex P2).
-        String inserted = "| R212 | P3 | 取り下げた。なお錠を復活させた | 重大度 | 開けるときは: … |";
-        assertTrue(statementOf(cellsOf(inserted)).contains("錠を復活"),
-                "a column inserted before the statement moved it out of reach: "
-                        + statementOf(cellsOf(inserted)));
-
-        // NO PLAN COLUMN is a shape this list really uses, and it is READ, not refused
-        // (subagent P3-2: 「fewer than four fields」 made the whole class red for it).
-        assertTrue(statementOf(cellsOf("| R54 | 取り下げた")).contains("取り下げた"),
-                "a row written 「| Rnn | what happened」 — two of this list's rows are — was not read");
-
-        // THE TWO SHAPES THAT CANNOT BE READ. HarnessBroken, not an assertion, so the runner does
-        // not score either as a protection firing.
-        assertThrows(HarnessBroken.class, () -> statementOf(cellsOf("| R212")),
-                "a row with nothing after its ID was read as stating something");
+        // THE ID OUTSIDE THE FIRST FIELD. The old reader matched 「^| R212 |」 and asserted it found
+        // something, so this row failed with 「R212 is not a row in the canon」 — a read failure
+        // reported as an absence (batch-36 review: Codex P2, subagent P3-3). NN5.
         assertThrows(HarnessBroken.class,
-                () -> statementOf(cellsOf("| R212 | 開けるときは: … | x |")),
-                "a row whose plan column is the first field after the ID was read as stating "
-                        + "whatever the plan says");
+                () -> theResidualRow("| status | R212 | 取り下げた | — |", "R212"),
+                "a row carrying its ID outside the first field was read as if the ID were there, "
+                        + "or reported as absent");
+
+        // AN ESCAPED PIPE, with an EVEN run of backslashes before the boundary: markdown reads
+        // that as a literal backslash and a real column break, so the ID IS in field 2 here and
+        // this row is unreadable. A lookbehind for one backslash joins the fields instead, finds
+        // no field equal to the ID, and answers 「absent」. NO5.
+        assertThrows(HarnessBroken.class,
+                () -> theResidualRow("| 例: C:\\\\| R212 | 取り下げた | — |", "R212"),
+                "an even run of backslashes was read as escaping the pipe, so the ID stopped being "
+                        + "a field of its own and the row read as absent");
+
+        // TWO CARRYING LINES. HarnessBroken, not the first one silently. NR5.
+        assertThrows(HarnessBroken.class, () -> theResidualRow(real + "\n" + real, "R212"),
+                "two lines carrying the ID were not refused, so this lock reads whichever comes "
+                        + "first");
+
+        // NO SUCH ROW is the one case where 「not there」 is the answer, and the caller asserts on
+        // it. Regression guard, no control.
+        assertNull(theResidualRow("| R15 | 別の残件 | — |", "R212"),
+                "a canon with no R212 row did not report a plain absence");
     }
 
     /**
-     * The withdrawal arms refuse the rows they should, and only those — driven, in both directions.
+     * The arms read the MARK, in both directions — and the claim they no longer make.
      *
-     * <p>FOUR FORMS, each measured by hand in an earlier round and none of them held by anything.
-     * The first is the one that made the batch-35 fix necessary: the require half read the whole
-     * row, so a row stating the lock is CURRENT passed because the PLAN cell happened to contain
-     * the required word — the column this lock had just declared may say anything (batch-35
-     * review, subagent P2-1). The second is the weakness that made the batch-33 form worse than
-     * the enumeration it replaced. The last two are the over-refusal direction: a correct row must
-     * stay green when its plan column talks about reinstating, which is what that column is for.
+     * <p>THE PROSE ROW IS THE POINT. A row carrying the mark while its prose says the lock came
+     * back is GREEN, deliberately: four rounds of findings came out of reading this row's prose,
+     * and the last pair of them could not both be closed by any reading of it (batch-34 review:
+     * Codex P2, subagent P3-2; batch-36 review: subagent P2-2 and P2-3). This fixture is here so
+     * that the withdrawal is written down as a test rather than only as a comment.
+     *
+     * <p>Measured by: the missing mark by NP5, the counter-mark by NQ5. The null row and the prose
+     * row are regression guards with no control over them.
      */
     @Test
-    @DisplayName("the withdrawal arms refuse a row that says the lock is back, and only those")
-    void theWithdrawalArmsRefuseExactlyTheRowsTheyShould() {
-        AssertionError current = assertThrows(AssertionError.class,
-                () -> theRowSaysTheWithdrawalStands("| R212 | この錠はいまも現役である | **P3** "
-                        + "| 開けるときは: 取り下げた当時の 3 つの罠を先に読む |"),
-                "a row whose statement says the lock is CURRENT passed, because the required word "
-                        + "sits in the plan column");
-        assertTrue(current.getMessage().contains("取り下げた"),
-                "the refusal does not say which word it wanted: " + current.getMessage());
+    @DisplayName("the withdrawal arms read the mark, not the row's prose")
+    void theWithdrawalArmsReadTheMarkNotTheProse() {
+        assertDoesNotThrow(
+                () -> theRowSaysTheWithdrawalStands("| R212 | " + WITHDRAWN
+                        + " なお錠を戻した・取り下げを撤回する予定は無い | **P3** "
+                        + "| 開けるときは: 錠を戻したいなら書式を決める |"),
+                "a row carrying the mark was refused for what its prose says — that is the claim "
+                        + "this lock withdrew, and refusing on it is the over-refusal it withdrew "
+                        + "the claim to avoid");
+
+        AssertionError missing = assertThrows(AssertionError.class,
+                () -> theRowSaysTheWithdrawalStands("| R212 | 取り下げた。罠は 3 つ | **P3** "
+                        + "| 開けるときは: … |"),
+                "a row that states the withdrawal only in prose satisfied the mark arm");
+        assertTrue(missing.getMessage().contains(WITHDRAWN),
+                "the refusal does not name the mark it wanted: " + missing.getMessage());
 
         assertThrows(AssertionError.class,
-                () -> theRowSaysTheWithdrawalStands("| R212 | 取り下げた。なお錠を戻した | **P3** "
-                        + "| 開けるときは: … |"),
-                "a row that states the withdrawal AND the resurrection passed — this is the form "
-                        + "that made the positive-form-only arm weaker than the list it replaced");
+                () -> theRowSaysTheWithdrawalStands("| R212 | " + WITHDRAWN + " 罠は 3 つ | **P3** "
+                        + "| 開けるときは: " + REINSTATED + " と決めた |"),
+                "a row carrying BOTH marks passed, so this lock asserts a withdrawal the row "
+                        + "contradicts");
 
-        assertDoesNotThrow(
-                () -> theRowSaysTheWithdrawalStands("| R212 | 取り下げた。罠は 3 つ | **P3** "
-                        + "| 開けるときは: 取り下げを撤回する予定は無い |"),
-                "a correct row was refused for what its PLAN column says, which is the column this "
-                        + "lock does not read");
-
-        assertDoesNotThrow(
-                () -> theRowSaysTheWithdrawalStands("| R212 | 取り下げた | **P3** "
-                        + "| 開けるときは: 錠を戻したいなら書式を決める |"),
-                "a correct row was refused for a forbidden word in its plan column");
+        assertThrows(AssertionError.class, () -> theRowSaysTheWithdrawalStands(null),
+                "a missing row did not refuse — 「the canon has no such row」 must be an assertion "
+                        + "with a message, not a NullPointerException");
     }
 
     /**
