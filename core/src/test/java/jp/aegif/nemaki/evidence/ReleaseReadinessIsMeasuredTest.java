@@ -1393,8 +1393,10 @@ class ReleaseReadinessIsMeasuredTest {
      * subagent P3-3).
      *
      * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. The controls
-     * that name this lock fail on one of the OTHER arms — the identity, the count, the positions,
-     * or the extent — and the first arm's own shape, a normalisation inside the removal, does not
+     * that name this lock fail on one of the OTHER arms — the identity, the count, the CONTENT
+     * (a line that does not carry the code point it was built for, which is where OQ5 lands), the
+     * positions, or the extent — and the first arm's own shape, a normalisation inside the
+     * removal, does not
      * change any answer, because {@code NFKC(NFC(x))} equals {@code NFKC(x)} (batch-55 review,
      * subagent P3-2, who measured both; 「all five controls」 stood here and was six by the next
      * batch, one of which fails on the extent rather than the identity — batch-56 review,
@@ -1456,7 +1458,13 @@ class ReleaseReadinessIsMeasuredTest {
                 // character repeated k times is what it does to that character, k times.
                 String one = new String(Character.toChars(codePoint));
                 String once = withoutWhatCarriesNoMeaningHere(one);
-                for (int k = 2; k <= 4; k++) {
+                // k UP TO 8, AND 64. The bound is the claim: 「keep it when it occurs more than
+                // FOUR times」 and 「exactly five」 were ALL-GREEN while this said 2..4, and the
+                // javadoc claimed the count was covered without qualification (batch-57 review:
+                // Codex P2-1, subagent P2-1, each measured). A test can only cover a bound; what
+                // is left is a rule keyed on a count in 9..63 or above 64, and the named line
+                // carrying sixty zero-width spaces covers that count for one character.
+                for (int k : new int[] { 2, 3, 4, 5, 6, 7, 8, 64 }) {
                     if (!withoutWhatCarriesNoMeaningHere(one.repeat(k)).equals(once.repeat(k))) {
                         countDependent++;
                         if (firstThatIsCountDependent < 0) {
@@ -1482,7 +1490,22 @@ class ReleaseReadinessIsMeasuredTest {
                 boolean everyOneCarriesIt = three.stream().allMatch(line -> line.contains(one));
                 boolean oneOpensWithIt = three.stream().anyMatch(line -> line.startsWith(one));
                 boolean oneClosesWithIt = three.stream().anyMatch(line -> line.endsWith(one));
-                if (!threeDistinct || !everyOneCarriesIt || !oneOpensWithIt || !oneClosesWithIt) {
+                // AND ONE CARRIES IT STRICTLY INSIDE. Asking only for a head and a tail let
+                // head/tail/tail pass with the inside position gone, while the failure message
+                // named three positions (batch-57 review: Codex P2-2, subagent P3-1, measured).
+                // 「Strictly inside」 is an occurrence that neither starts the line nor ends it —
+                // which is why it is asked as an occurrence and not as a position of the FIRST
+                // one: the declaration's own text contains 「-」 and 「）」 at its edges.
+                boolean oneCarriesItInside = three.stream().anyMatch(line -> {
+                    for (int at = line.indexOf(one); at >= 0; at = line.indexOf(one, at + 1)) {
+                        if (at > 0 && at + one.length() < line.length()) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+                if (!threeDistinct || !everyOneCarriesIt || !oneOpensWithIt || !oneClosesWithIt
+                        || !oneCarriesItInside) {
                     positionsNotCovered++;
                     if (firstWithoutPositions < 0) {
                         firstWithoutPositions = codePoint;
@@ -1523,6 +1546,35 @@ class ReleaseReadinessIsMeasuredTest {
         // 「assigned only」, or the BMP — narrowed the sweep with every arm still green (batch-55
         // review, user P2-1). Both numbers are asserted: the code points visited, and the lines
         // they produced with the named ones.
+        // AND THE NAMED CORPUS IS STILL THERE. Its size was asserted against its own size, so
+        // emptying it was ALL-GREEN — and it is load-bearing: the cap-at-40 sabotage that batch
+        // 53 was built around goes green when the named lines are gone (batch-57 review: Codex
+        // P2-3, subagent P2-2, who measured both). The shapes are asserted rather than the list,
+        // so adding a line is free and losing one of these is not.
+        assertTrue(named.size() >= 20, "the named corpus is down to " + named.size() + " lines");
+        assertTrue(named.stream().anyMatch(line -> line.codePoints()
+                        .filter(ReleaseReadinessIsMeasuredTest::carriesNoMeaningHere).count() >= 50),
+                "no named line carries a long RUN of removable characters any more. That is what "
+                        + "a rule keyed on a large count hides behind, and the sweep cannot "
+                        + "replace it: every swept line carries its code point a handful of times");
+        assertTrue(named.stream().anyMatch(line -> line.indexOf('\u00a8') >= 0),
+                "no named line carries U+00A8 any more. It is the shape that tells the two "
+                        + "normalisations apart — its compatibility expansion CONTAINS a removable "
+                        + "character — and nothing in the sweep does that");
+        assertTrue(named.stream().anyMatch(line -> line.codePoints().anyMatch(
+                        codePoint -> codePoint > Character.MAX_VALUE)),
+                "no named line carries a supplementary code point any more");
+        assertTrue(named.stream().anyMatch(line -> line.startsWith("xx")),
+                "no named line starts with a repeated prefix any more. That is the context a rule "
+                        + "keyed on startsWith hides behind");
+        assertTrue(named.stream().anyMatch(line -> line.codePoints().anyMatch(codePoint ->
+                        Character.getType(codePoint) == Character.NON_SPACING_MARK)),
+                "no named line carries a COMBINING MARK any more. The shapes that do — a base, a "
+                        + "removable character, and a mark the outer normalisation joins to the "
+                        + "base — are what made an earlier arm's claim false against correct "
+                        + "code, and they are fixtures here. (They are not caught by asking "
+                        + "whether a line is decomposed: the separator is exactly what stops the "
+                        + "composition, so NFC leaves them alone.)");
         assertEquals(0, countDependent,
                 "the removal depends on HOW MANY times a character appears: " + countDependent
                         + " code points answer differently when repeated, the first being U+"
@@ -1591,7 +1643,8 @@ class ReleaseReadinessIsMeasuredTest {
      * that control names. The number that name it is the one to multiply by, and it moves with
      * every control added here: 91 at the time of writing, so a full sweep runs this class 182
      * times and three lines instead of one costs 5.6s × 182 ≈ 17 minutes. 「Five and a half
-     * hours」 came from multiplying by ALL 2,342 controls, which contradicts what this tree
+     * hours」 came from multiplying by all 2,338 controls — the total at the time, which is what
+     * a record of a past mistake has to say — which contradicts what this tree
      * already records: a control runs one test class only (batch-55 review: all three reviews,
      * independently; batch-56 review: Codex P3 and subagent P3-1, who each caught the multiplier
      * going stale in the batch that corrected it).
@@ -2164,12 +2217,14 @@ class ReleaseReadinessIsMeasuredTest {
                 // pattern (So). They carry meaning here in the only sense this reader has — not
                 // whitespace, not a control, not a formatting character, not a variation selector
                 // — so a line behind one is a different line. 「Invisible to a reader」 stood here
-                // and 「was measured FALSE for both」 replaced it, which was ALSO wrong: both
-                // ADVANCE (13.55px and 10.94px at 16px) and both leave NO INK — the braille blank
-                // in all five font stacks, the filler in four of five (batch-55 review, subagent
-                // P2-4). So they are invisible AND not removed, which is the same fail-open as
-                // the characters listed above; what separates them is only that they take space.
-                // The variation selectors were in this list until batch 53.
+                // and 「was measured FALSE for both」 replaced it, which was ALSO wrong, and
+                // 「both leave NO INK」 replaced THAT, which is wrong for the filler: both
+                // ADVANCE (13.55px and 10.94px at 16px); the braille blank draws nothing in all
+                // five stacks, and the filler draws 1,616 pixels in serif and nothing in the
+                // other four (batch-55 review, subagent P2-4; batch-57 review, subagent P2-4,
+                // who found this sentence still carrying the stronger claim). So 「not removed」
+                // is one question and 「invisible」 is another, and for the filler the answer
+                // depends on the font. The variation selectors were in this list until batch 53.
                 "\u3164", "\u2800" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
