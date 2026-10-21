@@ -1065,12 +1065,13 @@ class ReleaseReadinessIsMeasuredTest {
      *   for a batch; excluding either by hand is the exception-set path four batches measured
      *   wrong, so they are recorded instead.
      *   <li>A character in none of these categories is not taken off: a Hangul filler and a
-     *   blank braille pattern, which ADVANCE 13.55px and 10.94px at 16px — and leave NO INK, both
-     *   of them, which is why they are not evidence that 「not removed」 means 「visible」
-     *   (batch-54 review, subagent P2-5, who measured the ink; the braille blank draws nothing in
-     *   all five stacks and the Hangul filler in four of five) — and the seven that advance
-     *   0.00px as well (U+034F, U+17B4, U+17B5, U+180B to U+180D, U+FFFC). The variation
-     *   selectors used to be in this list and are taken off by block since batch 53.
+     *   blank braille pattern, which ADVANCE 13.55px and 10.94px at 16px. The braille blank draws
+     *   NOTHING in all five stacks; the filler draws nothing in four of five and 1,616 pixels in
+     *   serif. So 「not removed」 does not mean 「visible」, and it does not mean 「invisible」
+     *   either — the two questions are separate and both are measured (batch-54 review, subagent
+     *   P2-5; batch-56 review, subagent P3-4, who caught the unqualified half of this sentence
+     *   twice). And the seven that advance 0.00px as well (U+034F, U+17B4, U+17B5, U+180B to
+     *   U+180D, U+FFFC). The variation selectors were in this list until batch 53.
      *   </ul>
      */
     private static boolean isPadding(int codePoint) {
@@ -1391,13 +1392,16 @@ class ReleaseReadinessIsMeasuredTest {
      * neither this corpus's size nor the figure two lines below it — batch-55 review,
      * subagent P3-3).
      *
-     * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. All five
-     * controls that name this lock fail on the SECOND arm; the first arm's own shape — a
-     * normalisation inside the removal — does not change any answer, because {@code NFKC(NFC(x))}
-     * equals {@code NFKC(x)} (batch-55 review, subagent P3-2, who measured both). The second arm
-     * is an identity between the pipeline and the per-character answer, so an edit that changes
-     * what the reader ANSWERS necessarily shows there. The first arm is the narrower claim —
-     * nothing is transformed or added — and it is kept because it names the defect in one line
+     * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. The controls
+     * that name this lock fail on one of the OTHER arms — the identity, the count, the positions,
+     * or the extent — and the first arm's own shape, a normalisation inside the removal, does not
+     * change any answer, because {@code NFKC(NFC(x))} equals {@code NFKC(x)} (batch-55 review,
+     * subagent P3-2, who measured both; 「all five controls」 stood here and was six by the next
+     * batch, one of which fails on the extent rather than the identity — batch-56 review,
+     * subagent P3-2). The identity arm is an identity between the pipeline and the per-character
+     * answer, so an edit that changes what the reader ANSWERS shows there unless it is keyed on a
+     * count or a position, which the two arms after it cover. The first arm is the narrower claim
+     * — nothing is transformed or added — and it is kept because it names the defect in one line
      * when it does fire.
      *
      * <p>WHAT A SWEEP STILL CANNOT SHOW: a rule keyed on a context no corpus line contains. The
@@ -1430,14 +1434,66 @@ class ReleaseReadinessIsMeasuredTest {
         long notThePerCharacterAnswer = 0;
         long lines = 0;
         long codePointsSwept = 0;
+        long countDependent = 0;
+        long linesWithoutTheirCodePoint = 0;
+        long positionsNotCovered = 0;
+        int firstThatIsCountDependent = -1;
+        int firstWithoutPositions = -1;
         String firstThatIsNotADeletion = null;
         String firstThatDiffers = null;
         for (int codePoint = -1; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
             if (codePoint >= 0) {
                 codePointsSwept++;
             }
+            if (codePoint >= 0) {
+                // COUNT-INDEPENDENT, which POSITION cannot show. Three lines each carry the swept
+                // code point ONCE, which is the same multiplicity as the single-character probe,
+                // so a rule keyed on 「more than once」 is invisible to the arms below; one line
+                // carrying it three times hides 「exactly once」 instead. Position and count are
+                // different axes, and batch 55 traded one for the other twice (batch-56 review:
+                // Codex P2, subagent P2-4, each measuring the opposite direction of the trade).
+                // So the count is asserted directly, on short strings: what the removal does to a
+                // character repeated k times is what it does to that character, k times.
+                String one = new String(Character.toChars(codePoint));
+                String once = withoutWhatCarriesNoMeaningHere(one);
+                for (int k = 2; k <= 4; k++) {
+                    if (!withoutWhatCarriesNoMeaningHere(one.repeat(k)).equals(once.repeat(k))) {
+                        countDependent++;
+                        if (firstThatIsCountDependent < 0) {
+                            firstThatIsCountDependent = codePoint;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (codePoint >= 0) {
+                // AND THE THREE POSITIONS ARE THE THREE POSITIONS. Returning the head line three
+                // times keeps every count right and every line carrying its code point, with each
+                // arm green — so a rule keyed on WHERE the character sits would be invisible
+                // (batch-56 review, subagent P2-1, measured as ALL-GREEN).
+                List<String> three = linesFor(codePoint, named);
+                String one = new String(Character.toChars(codePoint));
+                // NOT a second copy of the construction — that would pass when both copies are
+                // edited. Three DISTINCT lines, each carrying the code point, one of them opening
+                // with it and one closing with it: the head line cannot be the tail line, and the
+                // remaining one has it somewhere else.
+                boolean threeDistinct = three.size() == 3
+                        && new TreeSet<>(three).size() == 3;
+                boolean everyOneCarriesIt = three.stream().allMatch(line -> line.contains(one));
+                boolean oneOpensWithIt = three.stream().anyMatch(line -> line.startsWith(one));
+                boolean oneClosesWithIt = three.stream().anyMatch(line -> line.endsWith(one));
+                if (!threeDistinct || !everyOneCarriesIt || !oneOpensWithIt || !oneClosesWithIt) {
+                    positionsNotCovered++;
+                    if (firstWithoutPositions < 0) {
+                        firstWithoutPositions = codePoint;
+                    }
+                }
+            }
             for (String line : linesFor(codePoint, named)) {
                 lines++;
+                if (codePoint >= 0 && !line.contains(new String(Character.toChars(codePoint)))) {
+                    linesWithoutTheirCodePoint++;
+                }
                 String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
                 String removed = withoutWhatCarriesNoMeaningHere(normalised);
                 if (!isADeletionOf(removed, normalised)) {
@@ -1467,6 +1523,30 @@ class ReleaseReadinessIsMeasuredTest {
         // 「assigned only」, or the BMP — narrowed the sweep with every arm still green (batch-55
         // review, user P2-1). Both numbers are asserted: the code points visited, and the lines
         // they produced with the named ones.
+        assertEquals(0, countDependent,
+                "the removal depends on HOW MANY times a character appears: " + countDependent
+                        + " code points answer differently when repeated, the first being U+"
+                        + (firstThatIsCountDependent < 0 ? "?"
+                                : String.format("%04X", firstThatIsCountDependent))
+                        + ". A rule keyed on a count passes the sweep below, because every line "
+                        + "there carries the swept code point exactly once — the same multiplicity "
+                        + "as the single-character probe the other arm compares against. Measured "
+                        + "both ways: 「keep it when it occurs exactly once」 and 「keep it when it "
+                        + "occurs more than once」 each left every other lock green under one of "
+                        + "the two corpora");
+        assertEquals(0, linesWithoutTheirCodePoint,
+                linesWithoutTheirCodePoint + " of the swept lines do not CONTAIN the code point "
+                        + "they were built for, so the sweep visits numbers without feeding them "
+                        + "to the reader. Counting the loop is not enough: a linesFor that returns "
+                        + "empty strings, or the same line three times, keeps both totals right "
+                        + "while never exercising what it claims to cover");
+        assertEquals(0, positionsNotCovered,
+                positionsNotCovered + " code points are not swept at all three positions — the "
+                        + "first is U+" + (firstWithoutPositions < 0 ? "?"
+                                : String.format("%04X", firstWithoutPositions)) + ". The head, "
+                        + "the inside and the tail are three different questions, and collapsing "
+                        + "them to one keeps every count right while a rule keyed on WHERE a "
+                        + "character sits goes unseen");
         assertEquals(Character.MAX_CODE_POINT + 1, codePointsSwept,
                 "the sweep visited " + codePointsSwept + " code points, not all "
                         + (Character.MAX_CODE_POINT + 1) + ". A filter on the loop — undefined, "
@@ -1508,12 +1588,13 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>AND THE TIME IT COSTS WAS OVERSTATED BY THIRTEEN TIMES. The runner starts the named test
      * class twice per control — sabotaged, and again after the restore — and only for the class
-     * that control names. 87 controls name this one, so a full sweep runs it 174 times: three
-     * lines instead of one is 5.6s × 174 ≈ 16 minutes, and the whole sweep of this class costs
-     * 8.3s × 174 ≈ 24 minutes more than it did before the sweep existed. 「Five and a half
-     * hours」 came from multiplying by all 2,338 controls, which contradicts what this tree
+     * that control names. The number that name it is the one to multiply by, and it moves with
+     * every control added here: 91 at the time of writing, so a full sweep runs this class 182
+     * times and three lines instead of one costs 5.6s × 182 ≈ 17 minutes. 「Five and a half
+     * hours」 came from multiplying by ALL 2,342 controls, which contradicts what this tree
      * already records: a control runs one test class only (batch-55 review: all three reviews,
-     * independently).
+     * independently; batch-56 review: Codex P3 and subagent P3-1, who each caught the multiplier
+     * going stale in the batch that corrected it).
      */
     private static List<String> linesFor(int codePoint, List<String> named) {
         if (codePoint < 0) {
@@ -2038,11 +2119,19 @@ class ReleaseReadinessIsMeasuredTest {
                         + "— update §5 and this comment, and say what made it possible");
 
         // AND THE FAIL-OPEN THAT IS LEFT: SEVEN CHARACTERS, in all three positions. A sweep of
-        // every assigned code point outside this reader's classes found 263 that BOTH advance
-        // 0.00px AND leave no ink in five font stacks — neither condition alone gives 263: ink
-        // alone admits U+2800 (68.36px at 100px) and U+FFA0 (50.00px), and advance alone admits
-        // 662, including the inked combining marks this reader must NOT remove (batch-54 review,
-        // subagent P2-3 and P2-4, who measured both) — and
+        // every assigned code point outside Zs/Zl/Zp/Cc/Cf found 263 that BOTH advance 0.00px AND
+        // leave no ink — neither condition alone gives 263: ink alone admits U+2800 (68.36px at
+        // 100px) and U+FFA0 (50.00px), and advance alone admits the inked combining marks this
+        // reader must NOT remove (batch-54 review, subagent P2-3 and P2-4).
+        //
+        // THE METHOD, because without it the number did not reproduce and 「14」 was recorded for
+        // a batch: five stacks — sans-serif, serif, monospace, system-ui, 'Hiragino Sans' — at
+        // 100px, drawn into a 400×400 canvas WITH THE PEN AT x=150, y=250. The pen matters: a
+        // zero-advance mark draws to the LEFT of it, so at x=20 seven ordinary combining marks
+        // (U+0740, U+0EC8, U+0F87, U+1DCE, U+1DDD, U+20D3, U+1E130) read as 0 ink and the sweep
+        // returned 270 = 256 + 14. At x=150 they ink 129 to 414 pixels in all five stacks, while
+        // these seven ink nothing at either origin (batch-56 review, subagent P1, who found the
+        // artifact in their own earlier sweep; re-measured here before reverting) — and
         // 256 of those are the two variation-selector blocks, which batch 53 now removes. These
         // seven are the rest: U+034F COMBINING GRAPHEME JOINER, U+17B4 and U+17B5 KHMER VOWEL
         // INHERENT, U+180B to U+180D MONGOLIAN FREE VARIATION SELECTOR, and U+FFFC OBJECT
@@ -2056,16 +2145,7 @@ class ReleaseReadinessIsMeasuredTest {
         // 「The JDK cannot say invisible」 stood here and was too strong — it could say 256 of
         // them by block (batch-52 review, subagent P2-2).
         for (String invisibleButKept : new String[] { "\u034f", "\u17b4", "\u17b5",
-                "\u180b", "\u180c", "\u180d", "\ufffc",
-                // AND SEVEN MORE on an independent sweep whose method IS recorded: five
-                // font stacks, advance 0.00px in all five AND no ink in all five, over
-                // the 286,465 assigned code points outside this reader's classes. All
-                // Mn, all behaving exactly like the first seven (batch-55 review,
-                // subagent P2-5, who could not reproduce 263/7 from the record because
-                // the earlier sweep's stacks, pixel size and scope were never written
-                // down — so the number here is this measurement's, 270 = 256 + 14).
-                "\u0740", "\u0ec8", "\u0f87", "\u1dce", "\u1ddd", "\u20d3",
-                "\ud838\udd30" }) {
+                "\u180b", "\u180c", "\u180d", "\ufffc" }) {
             String name = "U+" + String.format("%04X", invisibleButKept.codePointAt(0));
             for (String shape : new String[] { invisibleButKept + REINSTATED_LINE,
                     REINSTATED_LINE + invisibleButKept,
