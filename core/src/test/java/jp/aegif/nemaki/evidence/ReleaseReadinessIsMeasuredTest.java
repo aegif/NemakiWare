@@ -1776,13 +1776,14 @@ class ReleaseReadinessIsMeasuredTest {
                         // first occurrence sits and not WHICH code point sits there, and the six
                         // characters of 「取り下げ撤回」 are distinct, so reordering them keeps
                         // {2,3,4,5,6,7} (batch-63 review: Codex P2, subagent P2-1, who each
-                        // wrote an edit; both measured here). The two conditions are the ones
-                        // the index tier already had. They pin 「the canon line with k copies
-                        // inserted」 and not WHERE the copies sit — position is the other
-                        // tier's claim.
-                        if (thatManyTimes.length()
-                                        != REINSTATED_LINE.length() + k * one.length()
-                                || !isADeletionOf(REINSTATED_LINE, thatManyTimes)
+                        // wrote an edit; both measured here).
+                        // WHERE THE COPIES SIT is held by the index SETS, not by the index tier:
+                        // 「canon[0..j] + k copies + canon[j..]」 passes every arm for j = 0 and
+                        // j = 1 and reddens the removable set from j = 2, because the canon
+                        // line's own first space stops being pushed along. 「Position is the
+                        // other tier's claim」 stood here and was wrong about which arm holds it
+                        // (batch-64 review, subagent P3-2, measured; re-measured here).
+                        if (!isTheLineWithThatManyInsertions(REINSTATED_LINE, thatManyTimes, one, k)
                                 || thatManyTimes.codePoints().filter(each -> each == sweptDense)
                                         .count() != k + inTheLine) {
                             denseNotTheCountItSaid++;
@@ -1927,8 +1928,10 @@ class ReleaseReadinessIsMeasuredTest {
                         + "one position this cannot tell from that collapse, so 32 of the 33 "
                         + "fire");
         assertEquals(0, denseNotTheCountItSaid,
-                denseNotTheCountItSaid + " of the dense COUNT lines do not carry the code point "
-                        + "as many times as the sweep says — the first is for U+"
+                denseNotTheCountItSaid + " of the dense COUNT lines are not the canon line with "
+                        + "that many copies of the code point inserted — the count is wrong, or "
+                        + "the line is not that length, or the canon line is no longer a "
+                        + "subsequence of it. The first is for U+"
                         + (firstNotCount < 0 ? "?" : String.format("%04X", firstNotCount))
                         + ". Collapsing the repetition keeps all three totals right and reopens "
                         + "the count axis. A count of one is the one case this cannot tell from "
@@ -1938,9 +1941,10 @@ class ReleaseReadinessIsMeasuredTest {
         // collapses to {0..32, 61, 65, 129}: the end of the reach is not the reach (batch-61
         // review, Codex P2-1, measured). 「{0..32, 65, 129}」 stood here for a batch and was the
         // set BEFORE the accumulation was widened to the named lines in the same batch — 61 is
-        // the own first space of the named line that carries SIXTY ZERO-WIDTH SPACES — not the
-        // one that carries sixty ordinary spaces, whose own first space is at index 0 and which
-        // contributes nothing there (batch-62 review, subagent P2-2, who
+        // the own first space of the named line that carries SIXTY ZERO-WIDTH SPACES IN
+        // FRONT of it — not the one that carries sixty ordinary spaces (its own first space is
+        // at index 0) and not the one that carries sixty zero-width spaces BEHIND it (that one
+        // reaches {1, 32}) (batch-62 review, subagent P2-2; batch-64 review, subagent P3-3, who
         // measured it; the fourth figure in this paragraph's family to be recorded from the
         // wrong state). The sets below ARE the position bound written beside the sweep, so that
         // sentence cannot go stale while this is green.
@@ -2173,6 +2177,25 @@ class ReleaseReadinessIsMeasuredTest {
             }
             at += Character.charCount(codePoint);
         }
+    }
+
+    /**
+     * Whether {@code line} is {@code base} with exactly {@code k} occurrences of {@code one} in
+     * it, wherever they sit.
+     *
+     * <p>TWO CONDITIONS, AND THE CALLER ASKS A THIRD. The length says exactly {@code k} copies'
+     * worth of code units were added; the subsequence says nothing of the base was changed; and
+     * the caller's own count says those code units are {@code k} copies of {@code one} and not
+     * something else. KEPT TOGETHER because the length is the only one of the three that a
+     * measured edit reaches: appending a hyphen to the canon line fires it alone, 32,640 lines
+     * of 32,640, with the subsequence, the count and both index sets untouched — and until this
+     * batch no control measured it, so deleting it as 「implied by the subsequence」 would have
+     * been ALL GREEN (batch-64 review, subagent P2-1, who measured all four controls' firing
+     * arms). Its control is PN5.
+     */
+    private static boolean isTheLineWithThatManyInsertions(String base, String line, String one,
+            int k) {
+        return line.length() == base.length() + k * one.length() && isADeletionOf(base, line);
     }
 
     /**
