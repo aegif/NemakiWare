@@ -1094,8 +1094,11 @@ class ReleaseReadinessIsMeasuredTest {
      * {@code Cf} has 120 to 127 supplementary members depending on the JDK. A {@code charAt} scan
      * would leave a tag character or a supplementary variation selector in place as two unpaired
      * surrogates. {@link #whatCarriesNoMeaningHereIsTheFiveCategoriesItNames}'s per-category arm
-     * is what measures it: the FORMAT count would fall from 161 to 41 (batch-51 review, subagent
-     * P2-3, who carried out the instruction the paragraph gave itself).
+     * is what measures it: the FORMAT count would fall by every supplementary member — 170 to
+     * 43 on the JDK 21 this was measured on, 161 to 41 on the JDK the earlier reviewer used
+     * (batch-51 review, subagent P2-3, who carried out the instruction the paragraph gave
+     * itself; batch-55 review, subagent P3-4, who measured that these are the JDK's numbers
+     * and not this tree's).
      */
     private static String withoutWhatCarriesNoMeaningHere(String line) {
         StringBuilder kept = new StringBuilder(line.length());
@@ -1383,7 +1386,19 @@ class ReleaseReadinessIsMeasuredTest {
      * a correct canon — one keyed on an UNDEFINED code point (U+0378, which an 「assigned only」
      * sweep never shows) and one stripping the WHOLE supplementary range, which is where the 240
      * ideographic variation selectors this reader removes live (batch-54 review: Codex P2,
-     * subagent P2-2). It is streamed rather than collected: a list of 1.25M lines is 100MB.
+     * subagent P2-2). It is streamed rather than collected: the 3,342,358 lines it visits
+     * would be hundreds of megabytes as a list (「1.25M lines is 100MB」 stood here and was
+     * neither this corpus's size nor the figure two lines below it — batch-55 review,
+     * subagent P3-3).
+     *
+     * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. All five
+     * controls that name this lock fail on the SECOND arm; the first arm's own shape — a
+     * normalisation inside the removal — does not change any answer, because {@code NFKC(NFC(x))}
+     * equals {@code NFKC(x)} (batch-55 review, subagent P3-2, who measured both). The second arm
+     * is an identity between the pipeline and the per-character answer, so an edit that changes
+     * what the reader ANSWERS necessarily shows there. The first arm is the narrower claim —
+     * nothing is transformed or added — and it is kept because it names the defect in one line
+     * when it does fire.
      *
      * <p>WHAT A SWEEP STILL CANNOT SHOW: a rule keyed on a context no corpus line contains. The
      * named lines below are the shapes the reviewers' sabotages used — long runs of removables, a
@@ -1414,9 +1429,13 @@ class ReleaseReadinessIsMeasuredTest {
         long notADeletion = 0;
         long notThePerCharacterAnswer = 0;
         long lines = 0;
+        long codePointsSwept = 0;
         String firstThatIsNotADeletion = null;
         String firstThatDiffers = null;
         for (int codePoint = -1; codePoint <= Character.MAX_CODE_POINT; codePoint++) {
+            if (codePoint >= 0) {
+                codePointsSwept++;
+            }
             for (String line : linesFor(codePoint, named)) {
                 lines++;
                 String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
@@ -1443,6 +1462,22 @@ class ReleaseReadinessIsMeasuredTest {
                 }
             }
         }
+        // THE EXTENT IS PART OF THE CLAIM. It was described as 「every code point」 and counted
+        // into a variable only the failure messages printed, so a filter put back on the loop —
+        // 「assigned only」, or the BMP — narrowed the sweep with every arm still green (batch-55
+        // review, user P2-1). Both numbers are asserted: the code points visited, and the lines
+        // they produced with the named ones.
+        assertEquals(Character.MAX_CODE_POINT + 1, codePointsSwept,
+                "the sweep visited " + codePointsSwept + " code points, not all "
+                        + (Character.MAX_CODE_POINT + 1) + ". A filter on the loop — undefined, "
+                        + "surrogate, supplementary, assigned-only — narrows what this lock "
+                        + "covers without moving either arm, because what it measures is a "
+                        + "property of what it visits");
+        assertEquals(named.size() + 3L * (Character.MAX_CODE_POINT + 1), lines,
+                "the corpus is " + lines + " lines, not the " + named.size() + " named ones plus "
+                        + "three per code point. Three lines with ONE occurrence each is the "
+                        + "point: one line carrying the same code point three times cannot catch "
+                        + "a rule keyed on 「exactly once」, which was measured passing every arm");
         assertEquals(0, notADeletion,
                 "the REMOVAL does not only delete, for " + notADeletion + " of " + lines
                         + " lines — the first is 「" + describe(firstThatIsNotADeletion) + "」. It "
@@ -1464,20 +1499,30 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The corpus lines for one code point, or the named lines when given -1.
      *
-     * <p>ONE LINE, THREE POSITIONS: the code point at the head, inside, and at the tail of the
-     * same line. Three separate lines cost three times as much and show the same thing — a rule
-     * keyed on any of those positions, on a length, or on a neighbour makes the line's answer
-     * differ from its characters'. The sweep is over every code point, so it runs 1.1M times per
-     * class run: at three lines each it took 10 seconds, which is five and a half hours across a
-     * full sweep of the controls.
+     * <p>THREE LINES, ONE OCCURRENCE EACH: the code point at the head, inside, and at the tail.
+     * Batch 55 packed the three positions into ONE line to save time, and that line carries the
+     * code point THREE times — so 「remove X when it occurs exactly once」 stopped being caught.
+     * The subagent sabotaged 41 shapes across both corpora: four differ, and for two of them
+     * (U+180E, U+E0101) nothing else in this class fires, which means a canon stating the
+     * declaration TWICE reads as stating it once (batch-55 review, subagent P2-2, measured).
+     *
+     * <p>AND THE TIME IT COSTS WAS OVERSTATED BY THIRTEEN TIMES. The runner starts the named test
+     * class twice per control — sabotaged, and again after the restore — and only for the class
+     * that control names. 87 controls name this one, so a full sweep runs it 174 times: three
+     * lines instead of one is 5.6s × 174 ≈ 16 minutes, and the whole sweep of this class costs
+     * 8.3s × 174 ≈ 24 minutes more than it did before the sweep existed. 「Five and a half
+     * hours」 came from multiplying by all 2,338 controls, which contradicts what this tree
+     * already records: a control runs one test class only (batch-55 review: all three reviews,
+     * independently).
      */
     private static List<String> linesFor(int codePoint, List<String> named) {
         if (codePoint < 0) {
             return named;
         }
         String one = new String(Character.toChars(codePoint));
-        return List.of(one + REINSTATED_LINE.substring(0, 9) + one
-                + REINSTATED_LINE.substring(9) + one);
+        return List.of(one + REINSTATED_LINE,
+                REINSTATED_LINE.substring(0, 9) + one + REINSTATED_LINE.substring(9),
+                WITHDRAWN_LINE + one);
     }
 
     /** Whether {@code shorter} is {@code longer} with zero or more code points deleted. */
@@ -1923,9 +1968,13 @@ class ReleaseReadinessIsMeasuredTest {
         // AND WHERE THE CLASS STOPS, said as tests rather than only in a comment: a character
         // this reader does not remove — a bullet, a quotation mark, a Hangul filler, a blank
         // braille pattern — is NOT taken off, so a retraction written behind one is not read.
-        // 「A character that does not render」 stood here and was wrong twice over: a bullet and a
-        // quotation mark plainly render, and the Hangul filler and the braille blank measured
-        // 13.55px and 10.94px (batch-52 review, subagent P2-4). 「Widening
+        // 「A character that does not render」 stood here and was wrong about the bullet and the
+        // quotation mark, which plainly render. It was NOT wrong about the other two, and the
+        // correction overshot: the Hangul filler and the braille blank ADVANCE 13.55px and
+        // 10.94px at 16px but leave NO INK — the braille blank in five font stacks of five, the
+        // filler in four of five (batch-52 review, subagent P2-4; batch-55 review, subagent P2-4
+        // and P3-1, who measured the ink). Advance is not evidence of ink, which is the whole
+        // reason the 263 are counted by BOTH conditions. 「Widening
         // past whitespace」 was the earlier wording and was wrong twice over: the class passed
         // whitespace in batch 43 — batch 42 trimmed exactly Character.isWhitespace, and batch 43
         // added the space separators, the formatting characters and the controls — and this line
@@ -2007,7 +2056,16 @@ class ReleaseReadinessIsMeasuredTest {
         // 「The JDK cannot say invisible」 stood here and was too strong — it could say 256 of
         // them by block (batch-52 review, subagent P2-2).
         for (String invisibleButKept : new String[] { "\u034f", "\u17b4", "\u17b5",
-                "\u180b", "\u180c", "\u180d", "\ufffc" }) {
+                "\u180b", "\u180c", "\u180d", "\ufffc",
+                // AND SEVEN MORE on an independent sweep whose method IS recorded: five
+                // font stacks, advance 0.00px in all five AND no ink in all five, over
+                // the 286,465 assigned code points outside this reader's classes. All
+                // Mn, all behaving exactly like the first seven (batch-55 review,
+                // subagent P2-5, who could not reproduce 263/7 from the record because
+                // the earlier sweep's stacks, pixel size and scope were never written
+                // down — so the number here is this measurement's, 270 = 256 + 14).
+                "\u0740", "\u0ec8", "\u0f87", "\u1dce", "\u1ddd", "\u20d3",
+                "\ud838\udd30" }) {
             String name = "U+" + String.format("%04X", invisibleButKept.codePointAt(0));
             for (String shape : new String[] { invisibleButKept + REINSTATED_LINE,
                     REINSTATED_LINE + invisibleButKept,
@@ -2021,21 +2079,23 @@ class ReleaseReadinessIsMeasuredTest {
             }
         }
 
-        for (String visible : new String[] { "* ", "+ ", "> ", "「",
+        for (String notRemoved : new String[] { "* ", "+ ", "> ", "「",
                 // NOT characters this reader removes: a Hangul filler (Lo) and a blank braille
                 // pattern (So). They carry meaning here in the only sense this reader has — not
                 // whitespace, not a control, not a formatting character, not a variation selector
                 // — so a line behind one is a different line. 「Invisible to a reader」 stood here
-                // and was measured FALSE for both: the Hangul filler advances 13.55px and the
-                // braille blank 10.94px (batch-51 review, subagent P2-1, five font stacks). The
-                // variation selectors were in this list until batch 53; the seven that do
-                // advance 0.00px are the recorded fail-open above.
+                // and 「was measured FALSE for both」 replaced it, which was ALSO wrong: both
+                // ADVANCE (13.55px and 10.94px at 16px) and both leave NO INK — the braille blank
+                // in all five font stacks, the filler in four of five (batch-55 review, subagent
+                // P2-4). So they are invisible AND not removed, which is the same fail-open as
+                // the characters listed above; what separates them is only that they take space.
+                // The variation selectors were in this list until batch 53.
                 "\u3164", "\u2800" }) {
             assertDoesNotThrow(
                     () -> theCanonSaysTheWithdrawalStands(
-                            canonWith(WITHDRAWN_LINE, visible + REINSTATED_LINE)),
-                    "the recorded limit changed: a retraction behind 「" + visible.trim()
-                            + "」 (U+" + String.format("%04X", visible.codePointAt(0))
+                            canonWith(WITHDRAWN_LINE, notRemoved + REINSTATED_LINE)),
+                    "the recorded limit changed: a retraction behind 「" + notRemoved.trim()
+                            + "」 (U+" + String.format("%04X", notRemoved.codePointAt(0))
                             + "), which this reader does not remove, is now read. That is "
                             + "a wider claim than the canon's §5 makes.\n\n"
                             + "THE FORMATTING CHARACTERS USED TO BE IN THIS LIST — a "
