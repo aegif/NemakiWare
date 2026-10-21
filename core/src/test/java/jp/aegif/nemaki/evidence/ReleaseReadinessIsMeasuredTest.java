@@ -1418,16 +1418,13 @@ class ReleaseReadinessIsMeasuredTest {
      * neither this corpus's size nor the figure two lines below it — batch-55 review,
      * subagent P3-3).
      *
-     * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. The controls
-     * that name this lock fail on one of the OTHER arms — the identity, the count (sparse for
-     * every code point, dense for the ones the removal empties), the CONTENT (a line that does
-     * not carry the code point it was built for, which is where OQ5 lands), the positions, the
-     * SEPARATION of those positions into three different lines, the CORPUS (the near-copies its
-     * named lines have to tell apart, which is where OT5 lands), WHERE the dense index lines put
-     * the code point (OZ5), HOW MANY times the dense count lines carry it (PA5), the count of the
-     * INSERTED occurrence in each swept line (PB5), how many code points the position separation
-     * SKIPS (PC5), the two farthest first-occurrence indices the sweep reaches, or the extent
-     * — and the first
+     * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. Every control
+     * that names this lock fails on one of the OTHER assertions in this method — which is the
+     * list, and it is deliberately not written out here: the enumeration that stood in its place
+     * went stale in four batches running, each time in the batch that had just added an arm to
+     * it (batch-59 review, subagent P3-1; batch-60 P3-1; batch-61 P3-2; batch-62 P3-2). Each
+     * control's own entry in the runner names what it breaks, and the assertions below carry
+     * their own reasons. The first
      * arm's own shape, a normalisation inside the
      * removal, does not
      * change any answer, because {@code NFKC(NFC(x))} equals {@code NFKC(x)} (batch-55 review,
@@ -1577,8 +1574,9 @@ class ReleaseReadinessIsMeasuredTest {
                 // inserted, and the weaker arm above is all that holds for those.
                 // AND EXACTLY ONE OCCURRENCE WAS INSERTED INTO EACH — asked of EVERY code
                 // point, with no exclusion. The separation below cannot be asked of the 27 the
-                // two lines carry themselves, and 「ONE OCCURRENCE EACH」 was claimed in three
-                // places while nothing asserted it: an OY5-shaped edit applied only to those 27
+                // two lines carry themselves, and 「ONE OCCURRENCE EACH」 was claimed in the
+                // javadoc and in two failure messages while nothing asserted it: an OY5-shaped
+                // edit applied only to those 27
                 // was measured ALL-GREEN (batch-59 review, Codex P2-2). The count CAN be asked
                 // universally, because it is relative to the line each one is built from — one
                 // more than the reinstatement line, or one more than the withdrawal line.
@@ -1623,13 +1621,22 @@ class ReleaseReadinessIsMeasuredTest {
                 // with one — counted, so the order of the list does not matter. The length
                 // tells the two bases apart: the withdrawal line is two characters shorter, and
                 // it is itself a subsequence of the reinstatement line.
-                long fromReinstated = three.stream()
-                        .filter(line -> isTheLineWithOneInsertion(REINSTATED_LINE, line, one))
-                        .count();
-                long fromWithdrawn = three.stream()
-                        .filter(line -> isTheLineWithOneInsertion(WITHDRAWN_LINE, line, one))
-                        .count();
-                if (fromReinstated != 2 || fromWithdrawn != 1) {
+                // AND WHICH LINE CARRIES IT WHERE. Counting two from one base and one from
+                // the other leaves the PAIRING free: moving the head to the withdrawal line and
+                // the tail to the reinstatement line keeps both totals, every count, every
+                // position and both index sets, and the input 「the withdrawal line with the
+                // code point at its tail」 disappears (batch-62 review, Codex P2-1, measured).
+                // Each line is classified by its base and by where the insertion sits — which
+                // end of the base, if either, the line is that base plus one — and the MULTISET
+                // of those three classes is what is asked, so the order of the list still does
+                // not matter.
+                List<String> wantedShapes = new ArrayList<>(
+                        List.of("reinstated:head", "reinstated:inside", "withdrawn:tail"));
+                List<String> carriedShapes = new ArrayList<>(
+                        three.stream().map(line -> shapeOf(line, one)).toList());
+                Collections.sort(wantedShapes);
+                Collections.sort(carriedShapes);
+                if (!wantedShapes.equals(carriedShapes)) {
                     linesNotBuiltFromACanonLine++;
                     if (firstNotBuiltFrom < 0) {
                         firstNotBuiltFrom = codePoint;
@@ -1676,8 +1683,9 @@ class ReleaseReadinessIsMeasuredTest {
                 //     ALL-GREEN (batch-59 review, Codex P2-1, who found 「above 64」 missing from
                 //     this list).
                 //   - POSITIONS PAST WHERE ANY LINE REACHES. A rule keyed on 「the first
-                //     occurrence sits at index N」 needs a line that puts one there. The two
-                //     farthest N are asserted below; what the corpus actually covers is 0..65
+                //     occurrence sits at index N」 needs a line that puts one there. The SETS of
+                //     such N are asserted below — they were the two farthest N for a batch, and
+                //     a maximum is not a set; what the corpus covers is 0..65
                 //     and the ODD 67..129 for a removable code point (the even 66..128 are
                 //     open, because a supplementary selector repeated k times shifts the line's
                 //     own first space by 2k), and 0..159 except 158 for a kept one. Everything
@@ -1724,8 +1732,19 @@ class ReleaseReadinessIsMeasuredTest {
                         // for them DID NOT FIRE (measured, this batch).
                         addFirstIndices(atThatIndex, firstIndicesOfARemovable,
                                 firstIndicesOfAKept);
+                        // AND THE WHOLE LINE, not the prefix and the count. Nothing here
+                        // looked at what came AFTER the insertion, so reversing that part left
+                        // every arm green — including both index sets, which the reversal does
+                        // not move — while the lines that put a removable character before an
+                        // 「f」 fell from 510 to none, and a rule keyed on that neighbour had
+                        // nothing left to catch it. It is the same defect PJ5 closed one tier
+                        // up (batch-62 review, subagent P2-1, who wrote the edit and found the
+                        // discriminating rule). 15,810 of the 16,830 index lines redden: at the
+                        // last two positions the suffix is one character or empty, so reversing
+                        // it changes nothing.
                         if (!atThatIndex.startsWith(REINSTATED_LINE.substring(0, at))
                                 || !atThatIndex.startsWith(one, at)
+                                || !isTheLineWithOneInsertion(REINSTATED_LINE, atThatIndex, one)
                                 || atThatIndex.codePoints().filter(each -> each == sweptDense)
                                         .count() != inTheLine + 1) {
                             denseNotWhereItSaid++;
@@ -1878,8 +1897,8 @@ class ReleaseReadinessIsMeasuredTest {
                         + "the 27 the two canon lines carry between them. The skip is derived "
                         + "from those lines, so editing either moves it — and then the arm below "
                         + "quietly covers more or less than this says. A hand-written figure "
-                        + "with no lock on it is what this batch removed from three other "
-                        + "places");
+                        + "with no lock on it is the shape this family has had to correct "
+                        + "in this file again and again");
         assertEquals(0, denseNotWhereItSaid,
                 denseNotWhereItSaid + " of the dense INDEX lines do not carry the code point "
                         + "where the sweep says, or carry it more than once — the first is for U+"
@@ -1898,9 +1917,18 @@ class ReleaseReadinessIsMeasuredTest {
                         + "that collapse, so 63 of the 64 fire");
         // THE SET, NOT THE MAXIMUM. Both of these were asserted as their largest member,
         // and prefixing the repetitions only at k == 64 keeps both maxima while the covered set
-        // collapses to {0..32, 65, 129}: the end of the reach is not the reach (batch-61 review,
-        // Codex P2-1, measured). The sets below ARE the position bound written beside the sweep,
-        // so that sentence cannot go stale while this is green.
+        // collapses to {0..32, 61, 65, 129}: the end of the reach is not the reach (batch-61
+        // review, Codex P2-1, measured). 「{0..32, 65, 129}」 stood here for a batch and was the
+        // set BEFORE the accumulation was widened to the named lines in the same batch — 61 is
+        // the sixty-space named line's own first space (batch-62 review, subagent P2-2, who
+        // measured it; the fourth figure in this paragraph's family to be recorded from the
+        // wrong state). The sets below ARE the position bound written beside the sweep, so that
+        // sentence cannot go stale while this is green.
+        // WHAT THEY DO AND DO NOT CATCH, measured per source: only the dense COUNT tier has a
+        // contribution of its own. The named lines, the three swept ones and the dense INDEX
+        // tier each add nothing the others do not, so an edit that SHRINKS or rewrites any of
+        // those three does not move these sets — an edit that makes a line reach FARTHER does.
+        // The arms above are what hold the other direction.
         BitSet removableIndicesTheSweepReaches = new BitSet();
         removableIndicesTheSweepReaches.set(0, 66);
         for (int at = 67; at <= 129; at += 2) {
@@ -2123,6 +2151,36 @@ class ReleaseReadinessIsMeasuredTest {
             }
             at += Character.charCount(codePoint);
         }
+    }
+
+    /**
+     * Which canon line this swept line is built from, and where the insertion sits in it.
+     *
+     * <p>「reinstated:head」, 「reinstated:inside」, 「withdrawn:tail」 — or 「neither」 when the
+     * line is not either canon line with exactly one occurrence of {@code one} inserted. The
+     * PAIRING is the claim: counting two lines from one base and one from the other leaves the
+     * head and the tail free to swap bases, which keeps every other arm green and silently
+     * drops one of the three input shapes (batch-62 review, Codex P2-1).
+     *
+     * <p>WHICH END is decided by taking the insertion off that end and comparing — not by an
+     * index, because the canon lines carry 27 of the swept code points themselves and an index
+     * cannot tell their own occurrence from the inserted one.
+     */
+    private static String shapeOf(String line, String one) {
+        for (String base : new String[] { REINSTATED_LINE, WITHDRAWN_LINE }) {
+            if (!isTheLineWithOneInsertion(base, line, one)) {
+                continue;
+            }
+            String name = base.equals(REINSTATED_LINE) ? "reinstated" : "withdrawn";
+            if (line.substring(one.length()).equals(base)) {
+                return name + ":head";
+            }
+            if (line.substring(0, line.length() - one.length()).equals(base)) {
+                return name + ":tail";
+            }
+            return name + ":inside";
+        }
+        return "neither";
     }
 
     /**
