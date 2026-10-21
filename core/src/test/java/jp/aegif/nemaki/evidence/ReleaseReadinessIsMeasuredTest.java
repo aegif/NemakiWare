@@ -1391,7 +1391,10 @@ class ReleaseReadinessIsMeasuredTest {
      *   count, and two one-line rules were measured ALL-GREEN against it: 「keep it when it
      *   occurs exactly nine times」, and 「keep it when its first occurrence is at index five」 —
      *   the second because every line in this class puts a removable character at one of
-     *   {0, 1, 3, 6, 9, the end} (batch-58 review: Codex P2-1, subagent P2-1, who measured the
+     *   {0, 1, 2, 3} by its FIRST removable character, or {0, 1, 6, 9, 30, 32} by its first
+     *   zero-width space — 「{0, 1, 3, 6, 9, the end}」 stood here and is NEITHER, a reviewer's
+     *   figure I recorded without measuring it (batch-59 review, subagent P3-1; re-measured
+     *   here) (batch-58 review: Codex P2-1, subagent P2-1, who measured the
      *   count and the position axis respectively). Both axes are now swept DENSELY, for the code
      *   points the removal acts on; what is left of them is written where that sweep is.
      *   </ul>
@@ -1457,12 +1460,19 @@ class ReleaseReadinessIsMeasuredTest {
         long linesWithoutTheirCodePoint = 0;
         long positionsNotCovered = 0;
         long edgesNotSeparated = 0;
+        long insertedMoreThanOnce = 0;
+        long positionsNotAsked = 0;
+        long denseNotWhereItSaid = 0;
+        long denseNotTheCountItSaid = 0;
         long denseCodePoints = 0;
         long denseLines = 0;
         long denseAnswersDiffer = 0;
         int firstThatIsCountDependent = -1;
         int firstWithoutPositions = -1;
         int firstWithoutEdges = -1;
+        int firstInsertedTwice = -1;
+        int firstNotWhere = -1;
+        int firstNotCount = -1;
         int firstDense = -1;
         String firstThatIsNotADeletion = null;
         String firstThatDiffers = null;
@@ -1485,8 +1495,13 @@ class ReleaseReadinessIsMeasuredTest {
                 // FOUR times」 and 「exactly five」 were ALL-GREEN while this said 2..4, and the
                 // javadoc claimed the count was covered without qualification (batch-57 review:
                 // Codex P2-1, subagent P2-1, each measured). A test can only cover a bound; what
-                // is left is a rule keyed on a count in 9..63 or above 64, and the named line
-                // carrying sixty zero-width spaces covers that count for one character.
+                // is left for the code points the removal KEEPS is a rule keyed on a count
+                // in 9..63 or above 64; for the ones it empties, the dense tier below covers
+                // 1..64 and above 64 is still open. The most removable characters any line in
+                // this class carries is 66 — a dense line of sixty-four plus the two spaces of
+                // the reinstatement line — so a cap ABOVE sixty-six touches nothing here, on
+                // either side (batch-59 review, subagent P2-2, who measured the maximum;
+                // re-measured here: 62 among the named lines, 66 among the dense ones).
                 for (int k : new int[] { 2, 3, 4, 5, 6, 7, 8, 64 }) {
                     if (!withoutWhatCarriesNoMeaningHere(one.repeat(k)).equals(once.repeat(k))) {
                         countDependent++;
@@ -1543,6 +1558,30 @@ class ReleaseReadinessIsMeasuredTest {
                 // ASKED ONLY WHERE THE TWO LINES DO NOT ALREADY CARRY THE CODE POINT: for the 27
                 // that they do, an occurrence the line brought itself cannot be told from the one
                 // inserted, and the weaker arm above is all that holds for those.
+                // AND EXACTLY ONE OCCURRENCE WAS INSERTED INTO EACH — asked of EVERY code
+                // point, with no exclusion. The separation below cannot be asked of the 27 the
+                // two lines carry themselves, and 「ONE OCCURRENCE EACH」 was claimed in three
+                // places while nothing asserted it: an OY5-shaped edit applied only to those 27
+                // was measured ALL-GREEN (batch-59 review, Codex P2-2). The count CAN be asked
+                // universally, because it is relative to the line each one is built from — one
+                // more than the reinstatement line, or one more than the withdrawal line.
+                final int sweptHere = codePoint;
+                long inReinstated = REINSTATED_LINE.codePoints()
+                        .filter(each -> each == sweptHere).count();
+                long inWithdrawn = WITHDRAWN_LINE.codePoints()
+                        .filter(each -> each == sweptHere).count();
+                if (!three.stream().allMatch(line -> {
+                    long here = line.codePoints().filter(each -> each == sweptHere).count();
+                    return here == inReinstated + 1 || here == inWithdrawn + 1;
+                })) {
+                    insertedMoreThanOnce++;
+                    if (firstInsertedTwice < 0) {
+                        firstInsertedTwice = codePoint;
+                    }
+                }
+                if (REINSTATED_LINE.contains(one) || WITHDRAWN_LINE.contains(one)) {
+                    positionsNotAsked++;
+                }
                 if (!REINSTATED_LINE.contains(one) && !WITHDRAWN_LINE.contains(one)) {
                     final int swept = codePoint;
                     long opening = three.stream().filter(line -> line.startsWith(one)).count();
@@ -1565,20 +1604,55 @@ class ReleaseReadinessIsMeasuredTest {
                 // character at every index of the reinstatement line, and repeated once through
                 // sixty-four times. Each was ONE line and each was ALL-GREEN before this
                 // (batch-58 review: Codex P2-1, subagent P2-1).
-                // WHAT IS LEFT, AND WHAT CLOSING IT COSTS: the same sweep for the code points the
-                // removal KEEPS took 9.3s to 60.4s in a copy of this reader — 51 seconds on EVERY
-                // run of this class, and a full sweep of the controls runs it twice for each
-                // control that names it. (No figure for that here: three batches running, a
-                // number written into this file's javadoc went stale in the next batch.) So a
-                // rule that DROPS a kept character at a count in 9..63, or at an index past this
-                // line's length, is not caught — measured ALL-GREEN, and left that way.
+                // WHAT IS LEFT, ON BOTH AXES AND BOTH SIDES:
+                //   - COUNTS ABOVE 64, for every code point. Nothing in this class carries one
+                //     more than 66 times. A rule keyed on 65 was measured ALL-GREEN for the code
+                //     points the removal keeps; for the ones it empties it reddened only 16 of
+                //     510, and only because the reinstatement line's own two spaces push those
+                //     totals past 64 — which is an accident, not coverage.
+                //   - COUNTS 9..63 for the code points the removal KEEPS (the sparse arm samples
+                //     {2..8, 64}). 「Drop a kept character at exactly nine」 was measured
+                //     ALL-GREEN (batch-59 review, Codex P2-1, who found 「above 64」 missing from
+                //     this list).
+                //   - EVERY INDEX BUT 0, 9 AND THE END, for the code points the removal KEEPS:
+                //     this tier is gated on the removal EMPTYING the character, so the only
+                //     places a kept one appears are where linesFor puts it. The mirror of the
+                //     position rule this tier closed — keep a kept character when its first
+                //     occurrence is at index five — was measured ALL-GREEN (batch-59 review,
+                //     subagent P2-2, who wrote it; re-measured here).
+                // WHAT CLOSING THE KEPT SIDE COSTS: 108,019,394 lines, measured at 260,000
+                // lines a second in a copy of this reader — about 415 SECONDS on every run of
+                // this class, against the 0.29 seconds this tier costs. 「9.3s to 60.4s」 stood
+                // here and was a DIFFERENT experiment (counts only, no index sweep), so it
+                // understated the price by eight times (batch-59 review, subagent P3-5, who
+                // could not reproduce it; re-measured here).
                 String one = new String(Character.toChars(codePoint));
                 if (withoutWhatCarriesNoMeaningHere(one).isEmpty()) {
                     denseCodePoints++;
+                    final int sweptDense = codePoint;
+                    long inTheLine = REINSTATED_LINE.codePoints()
+                            .filter(each -> each == sweptDense).count();
+                    // AND WHAT IT SWEPT IS ASSERTED, NOT ONLY HOW MUCH. The three totals below
+                    // stay right when either construction is collapsed to 「one + the line」: the
+                    // loops still turn, so 510, 49,470 and 0 are unchanged and every arm is
+                    // green — and then BOTH holes this tier closed reopen (measured: OV5 and OU5
+                    // each went ALL-GREEN again). It is the same defect the swept corpus fixed
+                    // with its own content arm, and the failure message there says so
+                    // (batch-59 review, subagent P2-1, who found both collapses).
                     for (int at = 0; at <= REINSTATED_LINE.length(); at++) {
                         denseLines++;
-                        if (!isThePerCharacterAnswer(REINSTATED_LINE.substring(0, at) + one
-                                + REINSTATED_LINE.substring(at))) {
+                        String atThatIndex = REINSTATED_LINE.substring(0, at) + one
+                                + REINSTATED_LINE.substring(at);
+                        if (!atThatIndex.startsWith(REINSTATED_LINE.substring(0, at))
+                                || !atThatIndex.startsWith(one, at)
+                                || atThatIndex.codePoints().filter(each -> each == sweptDense)
+                                        .count() != inTheLine + 1) {
+                            denseNotWhereItSaid++;
+                            if (firstNotWhere < 0) {
+                                firstNotWhere = codePoint;
+                            }
+                        }
+                        if (!isThePerCharacterAnswer(atThatIndex)) {
                             denseAnswersDiffer++;
                             if (firstDense < 0) {
                                 firstDense = codePoint;
@@ -1587,7 +1661,15 @@ class ReleaseReadinessIsMeasuredTest {
                     }
                     for (int k = 1; k <= 64; k++) {
                         denseLines++;
-                        if (!isThePerCharacterAnswer(one.repeat(k) + REINSTATED_LINE)) {
+                        String thatManyTimes = one.repeat(k) + REINSTATED_LINE;
+                        if (thatManyTimes.codePoints().filter(each -> each == sweptDense).count()
+                                != k + inTheLine) {
+                            denseNotTheCountItSaid++;
+                            if (firstNotCount < 0) {
+                                firstNotCount = codePoint;
+                            }
+                        }
+                        if (!isThePerCharacterAnswer(thatManyTimes)) {
                             denseAnswersDiffer++;
                             if (firstDense < 0) {
                                 firstDense = codePoint;
@@ -1609,15 +1691,11 @@ class ReleaseReadinessIsMeasuredTest {
                         firstThatIsNotADeletion = line;
                     }
                 }
-                StringBuilder perCharacter = new StringBuilder();
-                normalised.codePoints().forEach(each -> {
-                    if (!withoutWhatCarriesNoMeaningHere(new String(Character.toChars(each)))
-                            .isEmpty()) {
-                        perCharacter.appendCodePoint(each);
-                    }
-                });
-                if (!Normalizer.normalize(perCharacter.toString(), Normalizer.Form.NFKC)
-                        .equals(asNearCopy(line))) {
+                // THROUGH THE SAME HELPER the dense tier uses. A second copy of this
+                // calculation sat here, so an edit that weakened one left the other green — and
+                // the helper's own javadoc claimed both asked it the same way (batch-59 review,
+                // subagent P3-2).
+                if (!isThePerCharacterAnswer(line)) {
                     notThePerCharacterAnswer++;
                     if (firstThatDiffers == null) {
                         firstThatDiffers = line;
@@ -1683,22 +1761,60 @@ class ReleaseReadinessIsMeasuredTest {
                         + "removal acts on (JDK 21.0.10: Cc 65 + Cf 170 + Zs 17 + Zl 1 + Zp 1 + "
                         + "256 variation selectors). Narrowing it leaves the count and the "
                         + "position axes sparse again, which is where the two ALL-GREEN rules "
-                        + "lived. A JDK whose Unicode version moves these counts reddens this and "
-                        + "the per-category arm together, and both figures are then re-measured");
+                        + "lived. THIS IS THE ONLY HAND-WRITTEN COPY of the removal set's size "
+                        + "in this class: the per-category arm takes both sides of its comparison "
+                        + "from the same JDK, so a Unicode version that moves these counts cannot "
+                        + "redden it — by design, and its javadoc says so. On a JDK where the "
+                        + "supplementary FORMAT count is 120 rather than 127 this arm reddens "
+                        + "ALONE, at 503, and the figure here is what gets re-measured");
         assertEquals(denseCodePoints * (REINSTATED_LINE.length() + 1L + 64L), denseLines,
                 "the dense sweep built " + denseLines + " lines, not every index of the "
                         + "reinstatement line plus every count to sixty-four, for each of the "
                         + denseCodePoints + " code points it covers. Shortening either loop "
                         + "narrows an axis without moving the total above it");
+        assertEquals(0, insertedMoreThanOnce,
+                insertedMoreThanOnce + " code points are carried more than ONCE by one of their "
+                        + "three lines — the first is U+" + (firstInsertedTwice < 0 ? "?"
+                                : String.format("%04X", firstInsertedTwice)) + ". Each line is "
+                        + "one of the two canon lines with the code point inserted once, so its "
+                        + "count must be one more than that line's own. Asked of every code "
+                        + "point: the separation below cannot be asked of the ones the two lines "
+                        + "carry themselves, and an edit scoped to exactly those was measured "
+                        + "passing every arm");
+        assertEquals(27, positionsNotAsked,
+                positionsNotAsked + " code points were skipped by the position separation, not "
+                        + "the 27 the two canon lines carry between them. The skip is derived "
+                        + "from those lines, so editing either moves it — and then the arm below "
+                        + "quietly covers more or less than this says. A hand-written figure "
+                        + "with no lock on it is what this batch removed from three other "
+                        + "places");
+        assertEquals(0, denseNotWhereItSaid,
+                denseNotWhereItSaid + " of the dense INDEX lines do not carry the code point "
+                        + "where the sweep says, or carry it more than once — the first is for U+"
+                        + (firstNotWhere < 0 ? "?" : String.format("%04X", firstNotWhere))
+                        + ". Collapsing the construction to 「the code point then the line」 "
+                        + "keeps the count of lines, the count of code points and the answers "
+                        + "all correct, and reopens the whole position axis. Index zero is the "
+                        + "one position this cannot tell from that collapse, so 32 of the 33 "
+                        + "fire");
+        assertEquals(0, denseNotTheCountItSaid,
+                denseNotTheCountItSaid + " of the dense COUNT lines do not carry the code point "
+                        + "as many times as the sweep says — the first is for U+"
+                        + (firstNotCount < 0 ? "?" : String.format("%04X", firstNotCount))
+                        + ". Collapsing the repetition keeps all three totals right and reopens "
+                        + "the count axis. A count of one is the one case this cannot tell from "
+                        + "that collapse, so 63 of the 64 fire");
         assertEquals(0, edgesNotSeparated,
                 edgesNotSeparated + " code points are not swept at three SEPARATE positions — the "
                         + "first is U+" + (firstWithoutEdges < 0 ? "?"
                                 : String.format("%04X", firstWithoutEdges)) + ". Exactly one of "
                         + "the three lines may open with it, exactly one may close with it, "
-                        + "exactly one may do neither, and each carries it once: a middle line "
-                        + "that also opens with the code point satisfies 「some line carries it "
-                        + "inside」 while the purely-inside sample is gone. The 27 code points the "
-                        + "two lines carry themselves are not asked this");
+                        + "exactly one may do neither: a middle line that also opens with the "
+                        + "code point satisfies 「some line carries it inside」 while the "
+                        + "purely-inside sample is gone. The 27 code points the two lines carry "
+                        + "themselves are not asked this — how many were skipped is asserted "
+                        + "above, and the count of the INSERTED occurrence is asked of all of "
+                        + "them");
         assertEquals(0, positionsNotCovered,
                 positionsNotCovered + " code points are not swept at all three positions — the "
                         + "first is U+" + (firstWithoutPositions < 0 ? "?"
@@ -1738,7 +1854,12 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * The corpus lines for one code point, or the named lines when given -1.
      *
-     * <p>THREE LINES, ONE OCCURRENCE EACH: the code point at the head, inside, and at the tail.
+     * <p>THREE LINES, ONE INSERTED OCCURRENCE EACH: the code point at the head, inside, and at
+     * the tail. 「ONE OCCURRENCE EACH」 stood here unqualified and is FALSE for the 27 code
+     * points the two lines carry themselves — 「（R212）」 alone means the line for R holds two —
+     * and nothing asserted either reading, so an edit that doubled the middle line for exactly
+     * those 27 passed every arm (batch-59 review, Codex P2-2, measured). What is asserted is the
+     * INSERTED one: each line carries the code point once more than the line it is built from.
      * Batch 55 packed the three positions into ONE line to save time, and that line carries the
      * code point THREE times — so 「remove X when it occurs exactly once」 stopped being caught.
      * The subagent sabotaged 41 shapes across both corpora: four differ, and for two of them
@@ -1867,6 +1988,11 @@ class ReleaseReadinessIsMeasuredTest {
                         line -> compatibility(withoutWhatCarriesNoMeaningHere(line))),
                 Map.entry("the OUTER compatibility normalisation dropped",
                         line -> withoutWhatCarriesNoMeaningHere(compatibility(line))),
+                // THIS ONE ASKS NOTHING OF THE CORPUS: 19 of the 22 named lines separate it,
+                // and so does a corpus degenerated to single-character lines, so it is the one
+                // entry here that OW5 does not redden. It stays because the assertion is also a
+                // fixed point — a reader that BECOMES this is caught — but it is not what the
+                // named lines are for (batch-59 review, subagent P3-4, measured).
                 Map.entry("an upper-casing inside the near-copy",
                         line -> asNearCopy(line).toUpperCase(java.util.Locale.ROOT)),
                 Map.entry("the whole supplementary range stripped as well",
