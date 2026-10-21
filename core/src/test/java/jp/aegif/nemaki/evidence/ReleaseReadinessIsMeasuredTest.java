@@ -1391,10 +1391,13 @@ class ReleaseReadinessIsMeasuredTest {
      *   count, and two one-line rules were measured ALL-GREEN against it: 「keep it when it
      *   occurs exactly nine times」, and 「keep it when its first occurrence is at index five」 —
      *   the second because every line in this class puts a removable character at one of
-     *   {0, 1, 2, 3} by its FIRST removable character, or {0, 1, 6, 9, 30, 32} by its first
-     *   zero-width space — 「{0, 1, 3, 6, 9, the end}」 stood here and is NEITHER, a reviewer's
-     *   figure I recorded without measuring it (batch-59 review, subagent P3-1; re-measured
-     *   here) (batch-58 review: Codex P2-1, subagent P2-1, who measured the
+     *   {0, 1, 2, 3} by its FIRST removable character. 「{0, 1, 3, 6, 9, the end}」 stood here
+     *   and was NEITHER that nor anything else — a reviewer's figure recorded without measuring
+     *   it; 「{0, 1, 6, 9, 30, 32} by its first zero-width space」 replaced it and was the
+     *   corpus as it stood BEFORE the dense tier, which now puts one at every index of the
+     *   reinstatement line (batch-59 review, subagent P3-1; batch-60 review, subagent P3-1,
+     *   who caught the replacement being stale on arrival; both re-measured here)
+     *   (batch-58 review: Codex P2-1, subagent P2-1, who measured the
      *   count and the position axis respectively). Both axes are now swept DENSELY, for the code
      *   points the removal acts on; what is left of them is written where that sweep is.
      *   </ul>
@@ -1414,7 +1417,11 @@ class ReleaseReadinessIsMeasuredTest {
      * every code point, dense for the ones the removal empties), the CONTENT (a line that does
      * not carry the code point it was built for, which is where OQ5 lands), the positions, the
      * SEPARATION of those positions into three different lines, the CORPUS (the near-copies its
-     * named lines have to tell apart, which is where OT5 lands), or the extent — and the first
+     * named lines have to tell apart, which is where OT5 lands), WHERE the dense index lines put
+     * the code point (OZ5), HOW MANY times the dense count lines carry it (PA5), the count of the
+     * INSERTED occurrence in each swept line (PB5), how many code points the position separation
+     * SKIPS (PC5), the two farthest first-occurrence indices the sweep reaches, or the extent
+     * — and the first
      * arm's own shape, a normalisation inside the
      * removal, does not
      * change any answer, because {@code NFKC(NFC(x))} equals {@code NFKC(x)} (batch-55 review,
@@ -1465,6 +1472,8 @@ class ReleaseReadinessIsMeasuredTest {
         long denseNotWhereItSaid = 0;
         long denseNotTheCountItSaid = 0;
         long denseCodePoints = 0;
+        int farthestFirstRemovable = -1;
+        int farthestFirstKept = -1;
         long denseLines = 0;
         long denseAnswersDiffer = 0;
         int firstThatIsCountDependent = -1;
@@ -1570,17 +1579,29 @@ class ReleaseReadinessIsMeasuredTest {
                         .filter(each -> each == sweptHere).count();
                 long inWithdrawn = WITHDRAWN_LINE.codePoints()
                         .filter(each -> each == sweptHere).count();
-                if (!three.stream().allMatch(line -> {
-                    long here = line.codePoints().filter(each -> each == sweptHere).count();
-                    return here == inReinstated + 1 || here == inWithdrawn + 1;
-                })) {
+                // PER LINE, NOT 「either base will do」. Taking the two as alternatives was
+                // loose for exactly two code points — 撤 and 回, the only ones the withdrawal
+                // line does not carry as often as the reinstatement line — and that is enough:
+                // a tail line built from the WRONG base, or carrying the code point twice, has
+                // a total that matches the other base's and passed (batch-60 review: Codex P2-2,
+                // who wrote the edit; subagent P3-3, who measured that those two are the only
+                // loose ones). linesFor's contract is that the first two lines come from the
+                // reinstatement line and the third from the withdrawal line, so that is what is
+                // asked. The TOTAL is asked as well, which catches a redistribution between
+                // them that leaves each line's own count plausible.
+                long wanted = 2 * (inReinstated + 1) + inWithdrawn + 1;
+                long carried = three.stream()
+                        .mapToLong(line -> line.codePoints()
+                                .filter(each -> each == sweptHere).count())
+                        .sum();
+                if (countIn(three.get(0), sweptHere) != inReinstated + 1
+                        || countIn(three.get(1), sweptHere) != inReinstated + 1
+                        || countIn(three.get(2), sweptHere) != inWithdrawn + 1
+                        || carried != wanted) {
                     insertedMoreThanOnce++;
                     if (firstInsertedTwice < 0) {
                         firstInsertedTwice = codePoint;
                     }
-                }
-                if (REINSTATED_LINE.contains(one) || WITHDRAWN_LINE.contains(one)) {
-                    positionsNotAsked++;
                 }
                 if (!REINSTATED_LINE.contains(one) && !WITHDRAWN_LINE.contains(one)) {
                     final int swept = codePoint;
@@ -1588,14 +1609,23 @@ class ReleaseReadinessIsMeasuredTest {
                     long closing = three.stream().filter(line -> line.endsWith(one)).count();
                     long neither = three.stream()
                             .filter(line -> !line.startsWith(one) && !line.endsWith(one)).count();
-                    boolean onceEach = three.stream().allMatch(line -> line.codePoints()
-                            .filter(each -> each == swept).count() == 1);
-                    if (opening != 1 || closing != 1 || neither != 1 || !onceEach) {
+                    // 「each carries it once」 stood here and is now DEAD: on this gated set
+                    // both canon lines carry the code point zero times, so the arm above —
+                    // which asks every code point for the inserted count — subsumes it exactly.
+                    // A condition that can never fire on its own produces a failure message
+                    // that names the wrong cause (batch-60 review, subagent P3-4).
+                    if (opening != 1 || closing != 1 || neither != 1) {
                         edgesNotSeparated++;
                         if (firstWithoutEdges < 0) {
                             firstWithoutEdges = codePoint;
                         }
                     }
+                } else {
+                    // COUNTED BY THE GATE ITSELF. A second copy of the condition stood here, so
+                    // narrowing the gate — 「and the code point is not ASCII」 — shrank what the
+                    // separation covers from 1,114,085 to a fraction while this count stayed at
+                    // 27 and every arm was green (batch-60 review, subagent P2-3, measured).
+                    positionsNotAsked++;
                 }
             }
             if (codePoint >= 0) {
@@ -1614,18 +1644,31 @@ class ReleaseReadinessIsMeasuredTest {
                 //     {2..8, 64}). 「Drop a kept character at exactly nine」 was measured
                 //     ALL-GREEN (batch-59 review, Codex P2-1, who found 「above 64」 missing from
                 //     this list).
-                //   - EVERY INDEX BUT 0, 9 AND THE END, for the code points the removal KEEPS:
-                //     this tier is gated on the removal EMPTYING the character, so the only
-                //     places a kept one appears are where linesFor puts it. The mirror of the
-                //     position rule this tier closed — keep a kept character when its first
-                //     occurrence is at index five — was measured ALL-GREEN (batch-59 review,
-                //     subagent P2-2, who wrote it; re-measured here).
-                // WHAT CLOSING THE KEPT SIDE COSTS: 108,019,394 lines, measured at 260,000
-                // lines a second in a copy of this reader — about 415 SECONDS on every run of
-                // this class, against the 0.29 seconds this tier costs. 「9.3s to 60.4s」 stood
-                // here and was a DIFFERENT experiment (counts only, no index sweep), so it
-                // understated the price by eight times (batch-59 review, subagent P3-5, who
-                // could not reproduce it; re-measured here).
+                //   - POSITIONS PAST WHERE ANY LINE REACHES. A rule keyed on 「the first
+                //     occurrence sits at index N」 needs a line that puts one there. The two
+                //     farthest N are asserted below; what the corpus actually covers is 0..65
+                //     and the ODD 67..129 for a removable code point (the even 66..128 are
+                //     open, because a supplementary selector repeated k times shifts the line's
+                //     own first space by 2k), and 0..159 except 158 for a kept one. Everything
+                //     past 129 and 159 respectively is open, and the real canon has lines far
+                //     longer than either.
+                //     「EVERY INDEX BUT 0, 9 AND THE END, for the code points the removal
+                //     KEEPS」 stood here and was wrong by 155 indices: the COUNT tier carries
+                //     the line's own kept characters out to index 159 even though it is gated
+                //     on removable ones. And the evidence cited for it — 「keep a kept
+                //     character when its first occurrence is at index five」 — changes no
+                //     verdict about either canon line, because a line carrying that character
+                //     is not a near-copy of either one with or without the rule; index five is
+                //     in fact CLOSED, since NFKC of the reinstatement line has げ there and
+                //     DROPPING a kept character at its first index reddens this arm (batch-60
+                //     review: Codex P3, subagent P2-2, who measured both halves; re-measured
+                //     here).
+                // WHAT CLOSING THE KEPT SIDE OF THE COUNT AXIS COSTS: 108,019,394 lines,
+                // measured at 260,000 lines a second in a copy of this reader — about 415
+                // SECONDS on every run of this class, against the 0.29 seconds this tier
+                // costs. 「9.3s to 60.4s」 stood here and was a DIFFERENT experiment (counts
+                // only, no index sweep), so it understated the price by eight times (batch-59
+                // review, subagent P3-5, who could not reproduce it; re-measured here).
                 String one = new String(Character.toChars(codePoint));
                 if (withoutWhatCarriesNoMeaningHere(one).isEmpty()) {
                     denseCodePoints++;
@@ -1643,6 +1686,15 @@ class ReleaseReadinessIsMeasuredTest {
                         denseLines++;
                         String atThatIndex = REINSTATED_LINE.substring(0, at) + one
                                 + REINSTATED_LINE.substring(at);
+                        // FROM THE LINE THE SWEEP USES, not from a second copy of how it is
+                        // built. Written out again here, the two maxima below measured the
+                        // construction in THIS statement rather than the one above it, so
+                        // reordering the repetitions left them at 129 and 159 and the control
+                        // for them DID NOT FIRE (measured, this batch).
+                        farthestFirstRemovable = Math.max(farthestFirstRemovable,
+                                farthestFirstIndex(atThatIndex, true));
+                        farthestFirstKept = Math.max(farthestFirstKept,
+                                farthestFirstIndex(atThatIndex, false));
                         if (!atThatIndex.startsWith(REINSTATED_LINE.substring(0, at))
                                 || !atThatIndex.startsWith(one, at)
                                 || atThatIndex.codePoints().filter(each -> each == sweptDense)
@@ -1652,7 +1704,8 @@ class ReleaseReadinessIsMeasuredTest {
                                 firstNotWhere = codePoint;
                             }
                         }
-                        if (!isThePerCharacterAnswer(atThatIndex)) {
+                        if (!isThePerCharacterAnswer(atThatIndex,
+                                Normalizer.normalize(atThatIndex, Normalizer.Form.NFKC))) {
                             denseAnswersDiffer++;
                             if (firstDense < 0) {
                                 firstDense = codePoint;
@@ -1662,6 +1715,10 @@ class ReleaseReadinessIsMeasuredTest {
                     for (int k = 1; k <= 64; k++) {
                         denseLines++;
                         String thatManyTimes = one.repeat(k) + REINSTATED_LINE;
+                        farthestFirstRemovable = Math.max(farthestFirstRemovable,
+                                farthestFirstIndex(thatManyTimes, true));
+                        farthestFirstKept = Math.max(farthestFirstKept,
+                                farthestFirstIndex(thatManyTimes, false));
                         if (thatManyTimes.codePoints().filter(each -> each == sweptDense).count()
                                 != k + inTheLine) {
                             denseNotTheCountItSaid++;
@@ -1669,7 +1726,8 @@ class ReleaseReadinessIsMeasuredTest {
                                 firstNotCount = codePoint;
                             }
                         }
-                        if (!isThePerCharacterAnswer(thatManyTimes)) {
+                        if (!isThePerCharacterAnswer(thatManyTimes,
+                                Normalizer.normalize(thatManyTimes, Normalizer.Form.NFKC))) {
                             denseAnswersDiffer++;
                             if (firstDense < 0) {
                                 firstDense = codePoint;
@@ -1695,7 +1753,7 @@ class ReleaseReadinessIsMeasuredTest {
                 // calculation sat here, so an edit that weakened one left the other green — and
                 // the helper's own javadoc claimed both asked it the same way (batch-59 review,
                 // subagent P3-2).
-                if (!isThePerCharacterAnswer(line)) {
+                if (!isThePerCharacterAnswer(line, normalised)) {
                     notThePerCharacterAnswer++;
                     if (firstThatDiffers == null) {
                         firstThatDiffers = line;
@@ -1804,6 +1862,21 @@ class ReleaseReadinessIsMeasuredTest {
                         + ". Collapsing the repetition keeps all three totals right and reopens "
                         + "the count axis. A count of one is the one case this cannot tell from "
                         + "that collapse, so 63 of the 64 fire");
+        assertEquals(129, farthestFirstRemovable,
+                "the farthest index at which a REMOVABLE code point first appears in a densely "
+                        + "swept line is " + farthestFirstRemovable + ", not 129. That number is "
+                        + "the end of this lock's reach on the position axis, and the bound "
+                        + "written beside the sweep is derived from it: 0 to 65 and the odd "
+                        + "67 to 129 are covered, because a supplementary selector repeated k "
+                        + "times shifts the line's own first space by 2k. Moving the corpus "
+                        + "moves this, and then that bound has to be re-measured");
+        assertEquals(159, farthestFirstKept,
+                "the farthest index at which a KEPT code point first appears in a densely swept "
+                        + "line is " + farthestFirstKept + ", not 159. 159 is 128 + 31, the last "
+                        + "index of the reinstatement line behind sixty-four supplementary "
+                        + "selectors; 158 is the one gap below it, because the character at "
+                        + "index 30 of that line first appears at index 28. 「Every index but 0, "
+                        + "9 and the end」 stood in the bound here and was wrong by 155 indices");
         assertEquals(0, edgesNotSeparated,
                 edgesNotSeparated + " code points are not swept at three SEPARATE positions — the "
                         + "first is U+" + (firstWithoutEdges < 0 ? "?"
@@ -1830,9 +1903,11 @@ class ReleaseReadinessIsMeasuredTest {
                         + "property of what it visits");
         assertEquals(named.size() + 3L * (Character.MAX_CODE_POINT + 1), lines,
                 "the corpus is " + lines + " lines, not the " + named.size() + " named ones plus "
-                        + "three per code point. Three lines with ONE occurrence each is the "
-                        + "point: one line carrying the same code point three times cannot catch "
-                        + "a rule keyed on 「exactly once」, which was measured passing every arm");
+                        + "three per code point. Three lines with ONE INSERTED occurrence "
+                        + "each is the point — the raw count is one more than the line each is "
+                        + "built from, which for the 27 code points those lines carry is two: "
+                        + "one line carrying the same code point three times cannot catch a rule "
+                        + "keyed on 「exactly once」, which was measured passing every arm");
         assertEquals(0, notADeletion,
                 "the REMOVAL does not only delete, for " + notADeletion + " of " + lines
                         + " lines — the first is 「" + describe(firstThatIsNotADeletion) + "」. It "
@@ -1921,11 +1996,16 @@ class ReleaseReadinessIsMeasuredTest {
     /**
      * Whether the near-copy of this line is the per-character answer applied everywhere.
      *
-     * <p>The contract of the removal, as one question, so the sweep and the dense tier ask it the
-     * same way.
+     * <p>THE REFERENCE IS THE CALLER'S. {@code normalised} is the compatibility-normalised line
+     * the caller computed, and the comparison is against it — not against a copy this method
+     * takes for itself. Batch 60 moved the calculation in here and let it normalise for itself,
+     * which looked like removing a duplicate and was a loss: the only remaining reader of the
+     * sweep's own {@code normalised} was a subsequence check that is true whatever it holds, so
+     * 「{@code String normalised = line}」 went from firing 159 times to firing nothing
+     * (batch-60 review, subagent P2-1, measured; re-measured here). A weakened reference makes
+     * this arm compare the reader against itself.
      */
-    private static boolean isThePerCharacterAnswer(String line) {
-        String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
+    private static boolean isThePerCharacterAnswer(String line, String normalised) {
         StringBuilder perCharacter = new StringBuilder();
         normalised.codePoints().forEach(each -> {
             if (!withoutWhatCarriesNoMeaningHere(new String(Character.toChars(each))).isEmpty()) {
@@ -1948,6 +2028,34 @@ class ReleaseReadinessIsMeasuredTest {
             }
         });
         return kept.toString();
+    }
+
+    /** How many times {@code codePoint} appears in {@code line}. */
+    private static long countIn(String line, int codePoint) {
+        return line.codePoints().filter(each -> each == codePoint).count();
+    }
+
+    /**
+     * The largest index at which some code point of the asked-for class FIRST appears.
+     *
+     * <p>WHAT THE POSITION BOUND IS MADE OF. A rule keyed on 「the first occurrence sits at index
+     * N」 can only be caught if some line puts a first occurrence there, so the largest N any
+     * line reaches is the end of this lock's reach on that axis. It is asserted rather than
+     * written down, because the figure moves with the corpus and a hand-written one goes stale
+     * silently — which is the shape this family removed from four other places.
+     */
+    private static int farthestFirstIndex(String line, boolean removable) {
+        String normalised = Normalizer.normalize(line, Normalizer.Form.NFKC);
+        Set<Integer> seen = new LinkedHashSet<>();
+        int farthest = -1;
+        for (int at = 0; at < normalised.length(); ) {
+            int codePoint = normalised.codePointAt(at);
+            if (carriesNoMeaningHere(codePoint) == removable && seen.add(codePoint)) {
+                farthest = at;
+            }
+            at += Character.charCount(codePoint);
+        }
+        return farthest;
     }
 
     /** The line with every code point {@code removes} accepts taken out. */
