@@ -1421,8 +1421,12 @@ class ReleaseReadinessIsMeasuredTest {
      * <p>NO CONTROL FIRES THE FIRST ARM, and that is recorded rather than fixed. Every control
      * that names this lock fails on one of the OTHER assertions in this method — which is the
      * list, and it is deliberately not written out here: the enumeration that stood in its place
-     * went stale in four batches running, each time in the batch that had just added an arm to
-     * it (batch-59 review, subagent P3-1; batch-60 P3-1; batch-61 P3-2; batch-62 P3-2). Each
+     * went stale FOUR TIMES, each time in the batch that had just added an arm to it — the
+     * batch-57, batch-58, batch-60 and batch-62 reviews, which are not consecutive: the
+     * batch-59 and batch-61 reviews did not raise it. Three of the four citations that stood
+     * here pointed at other findings of the same rounds, copied from the paragraph above and
+     * shifted by one, and they were a claim this batch made without checking the record
+     * (batch-63 review, subagent P2-3, who traced all four). Each
      * control's own entry in the runner names what it breaks, and the assertions below carry
      * their own reasons. The first
      * arm's own shape, a normalisation inside the
@@ -1726,10 +1730,11 @@ class ReleaseReadinessIsMeasuredTest {
                         String atThatIndex = REINSTATED_LINE.substring(0, at) + one
                                 + REINSTATED_LINE.substring(at);
                         // FROM THE LINE THE SWEEP USES, not from a second copy of how it is
-                        // built. Written out again here, the two maxima below measured the
+                        // built. Written out again here, what stood below at the time — two
+                        // MAXIMA, which batch 62 replaced with the two sets — measured the
                         // construction in THIS statement rather than the one above it, so
                         // reordering the repetitions left them at 129 and 159 and the control
-                        // for them DID NOT FIRE (measured, this batch).
+                        // for them DID NOT FIRE (measured in batch 61).
                         addFirstIndices(atThatIndex, firstIndicesOfARemovable,
                                 firstIndicesOfAKept);
                         // AND THE WHOLE LINE, not the prefix and the count. Nothing here
@@ -1765,8 +1770,21 @@ class ReleaseReadinessIsMeasuredTest {
                         String thatManyTimes = one.repeat(k) + REINSTATED_LINE;
                         addFirstIndices(thatManyTimes, firstIndicesOfARemovable,
                                 firstIndicesOfAKept);
-                        if (thatManyTimes.codePoints().filter(each -> each == sweptDense).count()
-                                != k + inTheLine) {
+                        // AND THE CANON LINE BEHIND THEM. Only the count of the swept code
+                        // point was asked here, so rewriting the canon line itself left every
+                        // arm green — including both index sets, because those record WHERE a
+                        // first occurrence sits and not WHICH code point sits there, and the six
+                        // characters of 「取り下げ撤回」 are distinct, so reordering them keeps
+                        // {2,3,4,5,6,7} (batch-63 review: Codex P2, subagent P2-1, who each
+                        // wrote an edit; both measured here). The two conditions are the ones
+                        // the index tier already had. They pin 「the canon line with k copies
+                        // inserted」 and not WHERE the copies sit — position is the other
+                        // tier's claim.
+                        if (thatManyTimes.length()
+                                        != REINSTATED_LINE.length() + k * one.length()
+                                || !isADeletionOf(REINSTATED_LINE, thatManyTimes)
+                                || thatManyTimes.codePoints().filter(each -> each == sweptDense)
+                                        .count() != k + inTheLine) {
                             denseNotTheCountItSaid++;
                             if (firstNotCount < 0) {
                                 firstNotCount = codePoint;
@@ -1920,7 +1938,9 @@ class ReleaseReadinessIsMeasuredTest {
         // collapses to {0..32, 61, 65, 129}: the end of the reach is not the reach (batch-61
         // review, Codex P2-1, measured). 「{0..32, 65, 129}」 stood here for a batch and was the
         // set BEFORE the accumulation was widened to the named lines in the same batch — 61 is
-        // the sixty-space named line's own first space (batch-62 review, subagent P2-2, who
+        // the own first space of the named line that carries SIXTY ZERO-WIDTH SPACES — not the
+        // one that carries sixty ordinary spaces, whose own first space is at index 0 and which
+        // contributes nothing there (batch-62 review, subagent P2-2, who
         // measured it; the fourth figure in this paragraph's family to be recorded from the
         // wrong state). The sets below ARE the position bound written beside the sweep, so that
         // sentence cannot go stale while this is green.
@@ -2133,7 +2153,9 @@ class ReleaseReadinessIsMeasuredTest {
      * N」 can only be caught if some line puts a first occurrence there, so the SET of such N is
      * this lock's reach on that axis. It was the largest N for a batch, and a maximum is not a
      * set: prefixing the dense repetitions only at the largest count kept both maxima while the
-     * set collapsed to three fragments (batch-61 review, Codex P2-1, measured). It is asserted
+     * set collapsed to four runs (batch-61 review, Codex P2-1, measured; 「three fragments」
+     * stood here, counted on the set before the same batch widened the accumulation — batch-63
+     * review, subagent P2-2). It is asserted
      * rather than written down, because the sets move with the corpus and a hand-written figure
      * goes stale silently — which is what this family keeps having to correct.
      *
