@@ -2180,18 +2180,24 @@ class ReleaseReadinessIsMeasuredTest {
     }
 
     /**
-     * Whether {@code line} is {@code base} with exactly {@code k} occurrences of {@code one} in
-     * it, wherever they sit.
+     * Whether {@code line} is {@code base} with {@code k} occurrences of {@code one} added to
+     * whatever {@code base} already carries, wherever they sit.
+     *
+     * <p>NOT 「exactly k occurrences in it」, which stood here and is false of the 27 code points
+     * the canon lines carry themselves: for a space and k = 1 the line holds three, and the
+     * caller's count — which is relative to the base — passes it (batch-65 review, Codex P3).
      *
      * <p>TWO CONDITIONS, AND THE CALLER ASKS A THIRD. The length says exactly {@code k} copies'
      * worth of code units were added; the subsequence says nothing of the base was changed; and
      * the caller's own count says those code units are {@code k} copies of {@code one} and not
-     * something else. KEPT TOGETHER because the length is the only one of the three that a
-     * measured edit reaches: appending a hyphen to the canon line fires it alone, 32,640 lines
-     * of 32,640, with the subsequence, the count and both index sets untouched — and until this
-     * batch no control measured it, so deleting it as 「implied by the subsequence」 would have
-     * been ALL GREEN (batch-64 review, subagent P2-1, who measured all four controls' firing
-     * arms). Its control is PN5.
+     * something else. EACH HAS A CONTROL THAT REACHES IT ALONE, which is the whole reason the
+     * three are kept: PN5 appends a hyphen (length alone, 32,640 of 32,640), PM5 reorders the
+     * canon line's own words (subsequence alone, 32,640), PO5 swaps the swept code point for a
+     * fixed removable of the same char length (count alone, 32,512). 「The length is the only
+     * one of the three that a measured edit reaches」 stood here and was wrong twice over — PM5
+     * already reached the subsequence, and the COUNT was the one nothing reached (batch-64
+     * review, subagent P2-1 on the length; batch-65 review, subagent P2-1 and P3-1 on the count
+     * and on this sentence; all measured).
      */
     private static boolean isTheLineWithThatManyInsertions(String base, String line, String one,
             int k) {
