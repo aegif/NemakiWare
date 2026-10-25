@@ -941,16 +941,15 @@ public class LineageBarrierTest {
             @SuppressWarnings("unchecked")
             Map<String, String> fixture = new tools.jackson.databind.ObjectMapper()
                     .readValue(bytes, Map.class);
-            if (!theJdkGivesASecureDirectoryStream(root)) {
-                LineageBinaryDigest.UnmeasurableException refused = assertThrows(
-                        LineageBinaryDigest.UnmeasurableException.class,
-                        () -> LineageBinaryDigest.compute(root));
-                assertTrue(refused.getMessage().contains("SecureDirectoryStream"),
-                        "without a secure directory stream the distribution must be REFUSED, and"
-                                + " the refusal must name that as the cause — it said: "
-                                + refused.getMessage());
-                return;
-            }
+            // NO PLATFORM BRANCH HERE, deliberately. 2026-10-25 this asserted the REFUSAL on a
+            // JDK without secure directory streams, which made the gate green on JDK 21 — and a
+            // green gate there would no longer mean the digest's VALUE was compared. The gate's
+            // green is recorded against Maven's default JDK 27 (readiness §gate table,
+            // 2026-10-07), and on this mac's JDK 17 and 21 exactly this one test fails because
+            // the product refuses as intended. Measured 2026-10-25 across six JDKs on this
+            // machine: Homebrew 27 and Temurin 25 give a secure stream, Temurin 21.0.10,
+            // Homebrew 21.0.12.1, Homebrew 17.0.20.1 and JBR 17.0.12 do not. So the failure IS
+            // the signal that the run is on a JDK that cannot measure this, and it stays loud.
             assertEquals(fixture.get("barrierBinaryDigest"),
                     LineageBinaryDigest.compute(root));
         }
