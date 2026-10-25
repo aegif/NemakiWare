@@ -904,6 +904,28 @@ public class LineageBarrierTest {
                             new LineageWriteVersionBarrier.NodeRef("node-b", "boot-2"))));
         }
 
+        /**
+         * Whether the JDK hands this platform a secure directory stream for {@code dir}.
+         *
+         * <p>ASKED OF THE JDK, NOT OF THE PRODUCT. {@link LineageBinaryDigest} refuses to measure
+         * a distribution without one, so a test that branched on the PRODUCT's answer would
+         * accept either answer and measure nothing. Measured 2026-10-25 on this machine: both
+         * installed JDKs return a plain {@code UnixDirectoryStream} for every directory tried
+         * (six probes), so the two tests below assert the REFUSAL here and the digest's value
+         * only where the capability exists — which is the CI platform, not this one (R213).
+         *
+         * <p>WHAT THAT LEAVES UNMEASURED HERE: the digest's VALUE against its golden vector, and
+         * the symlink question, because the refusal happens before either is reached. Saying so
+         * is the point — the same gate ran green on 2026-10-22 and what changed is not known.
+         */
+        private boolean theJdkGivesASecureDirectoryStream(java.nio.file.Path dir)
+                throws java.io.IOException {
+            try (java.nio.file.DirectoryStream<java.nio.file.Path> stream =
+                    java.nio.file.Files.newDirectoryStream(dir)) {
+                return stream instanceof java.nio.file.SecureDirectoryStream;
+            }
+        }
+
         /** The distribution digest, against a fixture tree the reference script also models. */
         @Test
         public void theBinaryDigestMatchesItsGoldenVector(@org.junit.jupiter.api.io.TempDir
@@ -919,6 +941,16 @@ public class LineageBarrierTest {
             @SuppressWarnings("unchecked")
             Map<String, String> fixture = new tools.jackson.databind.ObjectMapper()
                     .readValue(bytes, Map.class);
+            if (!theJdkGivesASecureDirectoryStream(root)) {
+                LineageBinaryDigest.UnmeasurableException refused = assertThrows(
+                        LineageBinaryDigest.UnmeasurableException.class,
+                        () -> LineageBinaryDigest.compute(root));
+                assertTrue(refused.getMessage().contains("SecureDirectoryStream"),
+                        "without a secure directory stream the distribution must be REFUSED, and"
+                                + " the refusal must name that as the cause — it said: "
+                                + refused.getMessage());
+                return;
+            }
             assertEquals(fixture.get("barrierBinaryDigest"),
                     LineageBinaryDigest.compute(root));
         }
@@ -937,8 +969,22 @@ public class LineageBarrierTest {
             } catch (UnsupportedOperationException | java.io.IOException noSymlinks) {
                 return; // a platform without symlinks cannot exhibit the risk
             }
-            assertThrows(LineageBinaryDigest.UnmeasurableException.class,
+            LineageBinaryDigest.UnmeasurableException refused = assertThrows(
+                    LineageBinaryDigest.UnmeasurableException.class,
                     () -> LineageBinaryDigest.compute(root));
+            if (!theJdkGivesASecureDirectoryStream(root)) {
+                // The refusal happens before the walk reaches the symlink, so THIS platform
+                // cannot exhibit the risk — and an UnmeasurableException alone would be
+                // satisfied by the other cause. Asserting which cause is what keeps this from
+                // passing for the wrong reason, which is what it did here until R213.
+                assertTrue(refused.getMessage().contains("SecureDirectoryStream"),
+                        "on a platform without secure directory streams the refusal must name"
+                                + " that as the cause — it said: " + refused.getMessage());
+                return;
+            }
+            assertTrue(refused.getMessage().contains("link.jar"),
+                    "the refusal must name the link it would not follow — it said: "
+                            + refused.getMessage());
         }
 
         @Test
