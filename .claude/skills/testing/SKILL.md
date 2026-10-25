@@ -5,6 +5,27 @@ description: NemakiWare のテスト実行。QA 統合テスト、CMIS TCK 全 3
 
 # テスト実行
 
+## 全ユニットのゲートは JDK 27 で流す
+
+全ユニット（下の `-Dtest='!MultiThreadTest,…'`）の緑は **Maven の既定の JDK 27** で取っています
+（readiness §1.4 の表、2026-10-07 以降の実測はすべてそれ）。この mac のシェル既定
+（`.zshrc` の `JAVA_HOME` = Temurin 21）や JDK 17 で流すと、
+**`LineageBarrierTest$FrozenFormulas.theBinaryDigestMatchesItsGoldenVector` の 1 件だけが
+`Unmeasurable` で落ちます**。macOS 向けの JDK 17 / 21 は `openat` を能力フラグに立てておらず
+`Files.newDirectoryStream` が `SecureDirectoryStream` を返さないため、`LineageBinaryDigest.compute` が
+意図どおり「測れない」と拒むからです（製品の fail-closed。JDK 25 / 27 と Linux の Temurin 21 では通る）。
+2026-10-25 に 6 つの JDK × 3 ディレクトリで実測: Homebrew 27・Temurin 25 = secure、
+Temurin 21.0.10・Homebrew 21.0.12.1・Homebrew 17.0.20.1・JBR 17.0.12 = 非 secure。
+
+```bash
+JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home mvn test -Dtest='!MultiThreadTest,!InheritedFlagTest,!*IT,!jp.aegif.nemaki.cmis.tck.**,!AtlasManualDataLoader' -f core/pom.xml -Pdevelopment
+```
+
+この 1 件だけが赤いときは、原因を探す前に `mvn -v` の Java version を見ること。
+2026-10-25 に JDK 21 で流した赤を「環境の変化」と誤診して残件を起票し、同日に取り下げた
+（正典 R213）。Homebrew の 27 は `/usr/libexec/java_home -V` にも `~/.gradle/jdks` にも出ないので、
+JDK を数えるときは `/opt/homebrew/opt/openjdk*` も見る。
+
 ## QA 統合テスト (推奨・最短)
 
 ```bash
