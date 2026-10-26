@@ -303,11 +303,11 @@ class EveryFieldNameIsEscapedOnceTest {
     @Test
     @DisplayName("the manual parser re-throws a refusal instead of answering null — null becomes \"*:*\", the whole WHERE dropped")
     void theManualFallbackReThrowsARefusal() throws IOException {
-        // SolrQueryProcessor answers "*:*" when the walker produced nothing AND the manual parser
-        // answered nothing: no WHERE clause at all legitimately means every document. A REFUSAL must
-        // not take that path — it would turn "this property cannot be queried" into "here is
-        // everything" (round-7 review). The two remaining *:* fallbacks, for a WHERE clause that
-        // could not be translated at all, are recorded as a residual (R188).
+        // SolrQueryProcessor answers "*:*" only for a statement with no WHERE clause, which
+        // legitimately means every document. A REFUSAL must not become null here — the caller
+        // would then refuse with its own, vaguer message instead of this one (round-7 review). Since
+        // R188 (3.4.1) a WHERE clause nothing translates is refused rather than answered as "*:*";
+        // that is driven end to end by AnUntranslatedWhereIsRefusedNotDroppedTest.
         String processor = withoutLiteralText(read(PROCESSOR));
         int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
         assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");

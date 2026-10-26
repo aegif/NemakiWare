@@ -309,21 +309,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// ANTLR3's Tree.isNil() was `token == null || token.getType() == INVALID_TOKEN_TYPE`,
 		// and INVALID_TOKEN_TYPE is 0. CmisTree (the ANTLR4 stack) exposes no isNil, so the
 		// same condition is spelled out: a node with no token type is the nil root.
-		if (whereTree == null || whereTree.getType() == 0) {
+		//
+		// "*:*" ONLY when the statement has no WHERE clause (R188). A WHERE clause that could not be
+		// translated used to fall back to "*:*" too: the condition vanished and every document of the
+		// type was returned as if it matched — measured on bedroom, `WHERE chatChannelName = 'x'` and
+		// `WHERE cmis:rm_expirationDate IS NULL` returned all 2,449. No WHERE and "could not read the
+		// WHERE" are told apart by the statement's text, not by the parse: a parse that failed leaves
+		// no tree either.
+		if ((whereTree == null || whereTree.getType() == 0) && !hasWhereClause(statement)) {
+			whereQueryString = "*:*";
+		} else if (whereTree == null || whereTree.getType() == 0) {
 			// CRITICAL FIX (2025-12-18): Try to parse secondary type properties manually
 			// when OpenCMIS parsing fails (e.g., due to FailedPredicateException)
-			String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
-			if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
-				whereQueryString = manualWhereQuery;
-				if (logger.isDebugEnabled()) {
-					logger.debug("Using manually parsed WHERE clause for secondary type: " + whereQueryString);
-				}
-			} else {
-				whereQueryString = "*:*";
-				if (logger.isDebugEnabled()) {
-					logger.debug("whereTree is null or nil, using default query: *:*");
-				}
-			}
+			whereQueryString = wholeWhereOrRefuse(repositoryId, statement,
+					"the WHERE clause could not be parsed");
 		} else {
 			try {
 				SolrPredicateWalker solrPredicateWalker = new SolrPredicateWalker(repositoryId,
@@ -336,18 +335,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 					whereQueryString = whereQuery.toString();
 				} else {
 					// Fall back to manual parsing
-					String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
-					if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
-						whereQueryString = manualWhereQuery;
-						if (logger.isDebugEnabled()) {
-							logger.debug("walkPredicate returned null, using manually parsed WHERE clause: " + whereQueryString);
-						}
-					} else {
-						whereQueryString = "*:*";
-						if (logger.isDebugEnabled()) {
-							logger.debug("walkPredicate returned null, using default query: *:*");
-						}
-					}
+					whereQueryString = wholeWhereOrRefuse(repositoryId, statement,
+							"the WHERE clause has a form this server does not translate");
 				}
 			} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException refusal) {
 				// A REFUSAL is not a translation failure, and it must NOT be handed to the manual
@@ -362,14 +351,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			} catch (Exception e) {
 				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
 				// CRITICAL FIX (2025-12-18): Try manual parsing before throwing exception
-				String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
-				if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
-					whereQueryString = manualWhereQuery;
-					logger.info("Using manually parsed WHERE clause after walkPredicate error: " + whereQueryString);
-				} else {
-					e.printStackTrace();
-					exceptionService.invalidArgument("Invalid CMIS SQL statement: " + e.getMessage());
-				}
+				whereQueryString = wholeWhereOrRefuse(repositoryId, statement,
+						"Invalid CMIS SQL statement: " + e.getMessage());
 			}
 		}
 
@@ -1005,6 +988,103 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	/**
+	 * The manual parser's translation when it covers the WHOLE WHERE clause; otherwise a refusal
+	 * (R188).
+	 *
+	 * <p>The three places that fell back to {@code *:*} — or to whatever single predicate the manual
+	 * parser recognised — come here. A statement is answered only with a translation of everything
+	 * it asked; a WHERE clause this server cannot translate is refused with invalidArgument (HTTP
+	 * 400), which says so, instead of being answered with fewer conditions than were asked.
+	 */
+	private String wholeWhereOrRefuse(String repositoryId, String statement, String why) {
+		String manualWhereQuery = parseSecondaryTypeWhereClause(repositoryId, statement);
+		if (manualWhereQuery != null && !manualWhereQuery.isEmpty()) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("Using manually parsed WHERE clause: " + manualWhereQuery);
+			}
+			return manualWhereQuery;
+		}
+		String refusal = "The WHERE clause of this statement cannot be translated, so the statement is refused"
+				+ " rather than answered without its conditions (" + why + ")";
+		logger.warn(refusal);
+		exceptionService.invalidArgument(refusal);
+		// invalidArgument throws. If it ever stopped doing so, the statement must still not be answered.
+		throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(refusal);
+	}
+
+	private static final Pattern STRING_LITERAL = Pattern.compile("'(?:[^']|'')*'");
+	private static final Pattern WHERE_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])WHERE(?![A-Za-z0-9_:.])");
+	private static final Pattern ORDER_BY_KEYWORD =
+			Pattern.compile("(?i)(?<![A-Za-z0-9_:.])ORDER\\s+BY(?![A-Za-z0-9_:.])");
+
+	/**
+	 * Whether the statement has a WHERE clause: the keyword, standing alone, outside a string literal
+	 * (R188).
+	 *
+	 * <p>Read from the TEXT because the parse cannot tell it: a statement whose WHERE clause failed
+	 * to parse leaves no tree, exactly like one that has none. A value that says "where" is inside a
+	 * literal and is not a clause; a property whose name contains the word does not stand alone.
+	 */
+	static boolean hasWhereClause(String statement) {
+		return statement != null && WHERE_KEYWORD.matcher(withoutStringLiterals(statement)).find();
+	}
+
+	/**
+	 * The WHERE clause's text — after the keyword, before ORDER BY — with parentheses that enclose the
+	 * whole of it removed. Null when the statement has no WHERE clause.
+	 */
+	static String whereClauseText(String statement) {
+		if (statement == null) {
+			return null;
+		}
+		String blanked = withoutStringLiterals(statement);
+		Matcher where = WHERE_KEYWORD.matcher(blanked);
+		if (!where.find()) {
+			return null;
+		}
+		int start = where.end();
+		Matcher orderBy = ORDER_BY_KEYWORD.matcher(blanked);
+		int end = orderBy.find(start) ? orderBy.start() : statement.length();
+		String clause = statement.substring(start, end).trim();
+		String blankedClause = blanked.substring(start, end).trim();
+		while (clause.length() >= 2 && clause.startsWith("(") && clause.endsWith(")")
+				&& theFirstParenthesisClosesAtTheEnd(blankedClause)) {
+			clause = clause.substring(1, clause.length() - 1).trim();
+			blankedClause = blankedClause.substring(1, blankedClause.length() - 1).trim();
+		}
+		return clause;
+	}
+
+	/** Whether the opening parenthesis at index 0 is closed by the last character, not before it. */
+	private static boolean theFirstParenthesisClosesAtTheEnd(String blankedClause) {
+		int depth = 0;
+		for (int i = 0; i < blankedClause.length(); i++) {
+			char c = blankedClause.charAt(i);
+			if (c == '(') {
+				depth++;
+			} else if (c == ')') {
+				depth--;
+				if (depth == 0) {
+					return i == blankedClause.length() - 1;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** The statement with every string literal's content blanked — same length, same positions. */
+	private static String withoutStringLiterals(String statement) {
+		StringBuilder blanked = new StringBuilder(statement);
+		Matcher literal = STRING_LITERAL.matcher(statement);
+		while (literal.find()) {
+			for (int i = literal.start() + 1; i < literal.end() - 1; i++) {
+				blanked.setCharAt(i, ' ');
+			}
+		}
+		return blanked.toString();
+	}
+
+	/**
 	 * CRITICAL FIX (2025-12-18): Manual parser for secondary type WHERE clauses.
 	 * This is a fallback when OpenCMIS QueryUtilStrict fails to parse queries
 	 * containing secondary type properties (throws FailedPredicateException).
@@ -1027,14 +1107,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 
 		try {
-			// Extract WHERE clause
-			String upperStatement = statement.toUpperCase();
-			int whereIndex = upperStatement.indexOf(" WHERE ");
-			if (whereIndex < 0) {
+			// The WHOLE WHERE clause, and every pattern below must match ALL of it (R188). They used
+			// find(), so the first predicate a pattern recognised was returned and the rest of the
+			// clause discarded: `WHERE nemaki:tag = 'x' AND nemaki:dueDate IS NULL` came back as a
+			// successful query for tag alone. A clause these patterns cannot cover whole answers null,
+			// and the caller refuses the statement.
+			String whereClause = whereClauseText(statement);
+			if (whereClause == null) {
 				return null;
 			}
-
-			String whereClause = statement.substring(whereIndex + 7).trim();
 			String upperWhereClause = whereClause.toUpperCase();
 
 			// CRITICAL FIX (2025-12-18): Handle cmis:secondaryObjectTypeIds queries
@@ -1045,7 +1126,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 					Pattern.CASE_INSENSITIVE
 				);
 				Matcher anyInMatcher = anyInPattern.matcher(whereClause);
-				if (anyInMatcher.find()) {
+				if (anyInMatcher.matches()) {
 					String valuesStr = anyInMatcher.group(1);
 					// Parse values: 'value1', 'value2', ...
 					Pattern valuePattern = Pattern.compile("'([^']*)'");
@@ -1086,7 +1167,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 					Pattern.CASE_INSENSITIVE
 				);
 				Matcher equalsMatcher = equalsPattern.matcher(whereClause);
-				if (equalsMatcher.find()) {
+				if (equalsMatcher.matches()) {
 					String value = equalsMatcher.group(1);
 					// Quote the value as a phrase so its whole content (incl.
 					// spaces / boolean words) is a literal term and cannot
@@ -1126,7 +1207,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Pattern.CASE_INSENSITIVE
 			);
 			Matcher likeMatcher = likePattern.matcher(whereClause);
-			if (likeMatcher.find()) {
+			if (likeMatcher.matches()) {
 				String propertyName = likeMatcher.group(1);
 				String pattern = likeMatcher.group(2);
 
@@ -1154,7 +1235,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Pattern.CASE_INSENSITIVE
 			);
 			Matcher equalsMatcher = equalsPattern.matcher(whereClause);
-			if (equalsMatcher.find()) {
+			if (equalsMatcher.matches()) {
 				String propertyName = equalsMatcher.group(1);
 				String value = equalsMatcher.group(2);
 				String solrFieldName = SolrUtil.queryableFieldName(
@@ -1171,7 +1252,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Pattern.CASE_INSENSITIVE
 			);
 			Matcher notEqualsMatcher = notEqualsPattern.matcher(whereClause);
-			if (notEqualsMatcher.find()) {
+			if (notEqualsMatcher.matches()) {
 				String propertyName = notEqualsMatcher.group(1);
 				String value = notEqualsMatcher.group(2);
 				String solrFieldName = SolrUtil.queryableFieldName(
@@ -1188,7 +1269,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Pattern.CASE_INSENSITIVE
 			);
 			Matcher isNullMatcher = isNullPattern.matcher(whereClause);
-			if (isNullMatcher.find()) {
+			if (isNullMatcher.matches()) {
 				String propertyName = isNullMatcher.group(1);
 				// Escaped once, through the same method the walker uses. This fallback is the path
 				// that ANSWERS when the walker throws, and the DATETIME arm of the property map
@@ -1204,7 +1285,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				Pattern.CASE_INSENSITIVE
 			);
 			Matcher isNotNullMatcher = isNotNullPattern.matcher(whereClause);
-			if (isNotNullMatcher.find()) {
+			if (isNotNullMatcher.matches()) {
 				String propertyName = isNotNullMatcher.group(1);
 				String solrFieldName = SolrUtil.queryableFieldName(
 						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
