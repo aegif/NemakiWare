@@ -28,6 +28,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.Lock;
@@ -47,6 +48,7 @@ import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ExtensionsData;
 import org.apache.chemistry.opencmis.commons.data.ObjectList;
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
@@ -182,12 +184,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		
 		// Handle case where Solr client creation failed due to HTTP Client compatibility
 		if (solrClient == null) {
-			logger.warn("Solr client unavailable due to HTTP Client compatibility issues - returning empty result");
-			logger.warn("CMIS query will not use full-text search functionality: " + statement);
-			ObjectListImpl nullList = new ObjectListImpl();
-			nullList.setHasMoreItems(false);
-			nullList.setNumItems(BigInteger.ZERO);
-			return nullList;
+			// NOT an empty result: that answered 「nothing matches」 for a search that was never run (closing batch 3
+			// review, subagent P3-7 — the sibling of the parser-initialisation exit Codex named in the batch before).
+			logger.error("Solr client unavailable; the CMIS query was not run: " + statement);
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The search engine could not be reached, so the query was not run");
 		}
 		
 		// replacing backslashed for TIMESTAMP only
@@ -377,11 +378,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 				logger.debug("Exception in getMainFromName() during FROM query: " + e.getMessage());
 			}
 			logger.error("Exception in getMainFromName() during FROM query", e);
-			// Return empty result instead of crashing
-			ObjectListImpl nullList = new ObjectListImpl();
-			nullList.setHasMoreItems(false);
-			nullList.setNumItems(BigInteger.ZERO);
-			return nullList;
+			// NOT an empty result (closing batch 3 review, subagent P3-7): the type in FROM could not be read, which is
+			// not a finding that nothing matches.
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The type in FROM could not be resolved, so the query was not run: " + e.getMessage(), e);
 		}
 
 		// Check if td is null before proceeding
@@ -389,10 +389,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("TypeDefinition is null, cannot proceed with query");
 			}
-			ObjectListImpl nullList = new ObjectListImpl();
-			nullList.setHasMoreItems(false);
-			nullList.setNumItems(BigInteger.ZERO);
-			return nullList;
+			// FROM names no type this repository has: the client's error, not 「no document matches」 — `FROM
+			// nemaki:typo` answered 200 with nothing (closing batch 3 review, subagent P3-7, measured on bedroom).
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+					"FROM names no type this repository has, so the query was not run: " + statement);
 		}
 
 		// includedInSupertypeQuery
@@ -530,8 +530,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		} catch (SolrServerException | IOException e) {
 			logger.error("Solr query failed: " + e.getMessage(), e);
-			exceptionService.invalidArgument("Solr query execution failed: " + e.getMessage());
-			return null;
+			// The SERVER's failure, not the client's: invalidArgument made a search engine that did not answer a 400 —
+			// through API v1 too once that endpoint stopped reading the message (closing batch 3 review, subagent P3-2).
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The search engine did not answer, so the query was not run: " + e.getMessage(), e);
 		}
 
 		long numFound =0;
@@ -1135,6 +1137,38 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return at == list.length() ? values : null;
 	}
 
+	/** The definition {@code secondary} carries for a property, by query name or id; null when it carries none. */
+	private static PropertyDefinition<?> definitionIn(TypeDefinition secondary, String propertyName) {
+		if (secondary == null || secondary.getPropertyDefinitions() == null) {
+			return null;
+		}
+		for (PropertyDefinition<?> definition : secondary.getPropertyDefinitions().values()) {
+			if (propertyName.equals(definition.getQueryName()) || propertyName.equals(definition.getId())) {
+				return definition;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a property can be compared with a quoted literal by {@code =}, {@code <>} or LIKE — the walker's rule:
+	 * single-valued, and a string, HTML, id or URI.
+	 */
+	private static boolean comparableAsText(PropertyDefinition<?> definition) {
+		return definition != null
+				&& definition.getCardinality() == org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE
+				&& textual(definition);
+	}
+
+	/** A string, HTML, id or URI property — the types a quoted literal is compared with. */
+	private static boolean textual(PropertyDefinition<?> definition) {
+		org.apache.chemistry.opencmis.commons.enums.PropertyType type = definition.getPropertyType();
+		return type == org.apache.chemistry.opencmis.commons.enums.PropertyType.STRING
+				|| type == org.apache.chemistry.opencmis.commons.enums.PropertyType.HTML
+				|| type == org.apache.chemistry.opencmis.commons.enums.PropertyType.ID
+				|| type == org.apache.chemistry.opencmis.commons.enums.PropertyType.URI;
+	}
+
 	/** The Solr field a property is indexed under, escaped once — the rule the walker uses. */
 	private String fieldFor(String repositoryId, String propertyQueryName) {
 		return SolrUtil.queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, propertyQueryName));
@@ -1205,42 +1239,97 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// property no type defines (a typo, a type since deleted) was translated into a field nothing is indexed
 			// under: `IS NULL` then matched every document, which is R188's answer again. Names are read outside
 			// the literals, so a value that looks like prefix:name decides nothing.
+			// AND the property must be one a query may use, the way the walker would use it (closing batch 3 review,
+			// Codex P1): the gate asked only whether some secondary type DEFINES the name, so a property that is not
+			// queryable, a multi-valued one compared with `=`, or a number compared with LIKE was answered here although
+			// the walker refuses each. The definition is kept, and every production below checks it.
 			Matcher named = Pattern.compile("(?<![A-Za-z0-9_:])([A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*)")
 					.matcher(withoutStringLiterals(whereClause));
-			int names = 0;
+			Map<String, PropertyDefinition<?>> definitions = new HashMap<>();
 			while (named.find()) {
-				names++;
 				String propertyName = named.group(1);
-				if (propertyName.startsWith("cmis:") || typeManager == null
-						|| typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName) == null) {
+				if (propertyName.startsWith("cmis:") || typeManager == null) {
 					return null;
 				}
+				TypeDefinition secondary;
+				try {
+					secondary = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
+				} catch (RuntimeException unreadable) {
+					// The type system could not be searched: not a finding that no type defines the name, so not the
+					// client's 400 (closing batch 3 review, subagent P3-2).
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"The type definitions could not be read, so the query was not run: " + unreadable.getMessage(),
+							unreadable);
+				}
+				PropertyDefinition<?> definition = definitionIn(secondary, propertyName);
+				if (definition == null || !Boolean.TRUE.equals(definition.isQueryable())) {
+					return null;
+				}
+				definitions.put(propertyName, definition);
 			}
-			if (names == 0) {
+			if (definitions.isEmpty()) {
 				return null;
 			}
 
-			// One predicate on that property, matched over the whole clause.
+			// One predicate on that property, matched over the whole clause. The field is the one the property's
+			// DEFINITION is indexed under — by its id. The name as written may be its query name, and the index does not
+			// know that name, so `IS NULL` on it matched every document (closing batch 3 review, subagent P3-5).
+			//
+			// ANY ... IN over a multi-valued property a secondary type defines: CMIS's way to ask a multi-valued
+			// property, which the walker answers too. Without it the statement was refused although it can be
+			// translated whole (closing batch 3 review, subagent P2-4).
+			Matcher anyInProperty = Pattern.compile("ANY\\s+" + QUALIFIER + PROPERTY + "\\s+IN\\s*\\((.*)\\)",
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (anyInProperty.matches()) {
+				PropertyDefinition<?> definition = definitions.get(anyInProperty.group(1));
+				if (definition.getCardinality() != org.apache.chemistry.opencmis.commons.enums.Cardinality.MULTI
+						|| !textual(definition)) {
+					return null;
+				}
+				List<String> values = inListValues(anyInProperty.group(2));
+				if (values == null || values.isEmpty()) {
+					return null;
+				}
+				StringBuilder solrQuery = new StringBuilder(fieldFor(repositoryId, definition.getId())).append(":(");
+				for (int i = 0; i < values.size(); i++) {
+					if (i > 0) {
+						solrQuery.append(" OR ");
+					}
+					solrQuery.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(values.get(i)));
+				}
+				return solrQuery.append(")").toString();
+			}
 			Matcher like = Pattern.compile(QUALIFIER + PROPERTY + "\\s+LIKE\\s+" + LITERAL,
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (like.matches()) {
-				// SQL '%' -> Solr '*', SQL '_' -> Solr '?', every other char escaped one by one.
-				return fieldFor(repositoryId, like.group(1)) + ":"
-						+ likeToEscapedSolrWildcard(unescapeLiteral(like.group(2)));
+				// The walker's rule: LIKE on a single-valued string property only.
+				if (!comparableAsText(definitions.get(like.group(1)))) {
+					return null;
+				}
+				// SQL '%' -> Solr '*', SQL '_' -> Solr '?', every other char escaped one by one. The RAW literal: the
+				// conversion reads CMIS's escapes itself, so an escaped % stays a percent sign.
+				return fieldFor(repositoryId, definitions.get(like.group(1)).getId()) + ":" + likeToEscapedSolrWildcard(like.group(2));
 			}
 			Matcher equals = Pattern.compile(QUALIFIER + PROPERTY + "\\s*=\\s*" + LITERAL,
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (equals.matches()) {
-				return fieldFor(repositoryId, equals.group(1)) + ":"
+				// A quoted literal compared with `=`: a single-valued string property (a multi-valued one takes ANY).
+				if (!comparableAsText(definitions.get(equals.group(1)))) {
+					return null;
+				}
+				return fieldFor(repositoryId, definitions.get(equals.group(1)).getId()) + ":"
 						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(unescapeLiteral(equals.group(2)));
 			}
 			Matcher notEquals = Pattern.compile(QUALIFIER + PROPERTY + "\\s*(?:!=|<>)\\s*" + LITERAL,
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (notEquals.matches()) {
+				if (!comparableAsText(definitions.get(notEquals.group(1)))) {
+					return null;
+				}
 				// A comparison with a property that has no value is not a match (CMIS follows SQL here), so the
 				// document must HAVE the field as well as not have this value — a bare negation also matched every
 				// document that never set it (closing batch 2 review, Codex P1).
-				String field = fieldFor(repositoryId, notEquals.group(1));
+				String field = fieldFor(repositoryId, definitions.get(notEquals.group(1)).getId());
 				return "+" + field + ":[* TO *] -" + field + ":"
 						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(unescapeLiteral(notEquals.group(2)));
 			}
@@ -1248,16 +1337,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (isNull.matches()) {
 				// Escaped once, through the same method the walker uses (round-5 review).
-				return "-" + fieldFor(repositoryId, isNull.group(1)) + ":[* TO *]";
+				return "-" + fieldFor(repositoryId, definitions.get(isNull.group(1)).getId()) + ":[* TO *]";
 			}
 			Matcher isNotNull = Pattern.compile(QUALIFIER + PROPERTY + "\\s+IS\\s+NOT\\s+NULL",
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (isNotNull.matches()) {
-				return fieldFor(repositoryId, isNotNull.group(1)) + ":[* TO *]";
+				return fieldFor(repositoryId, definitions.get(isNotNull.group(1)).getId()) + ":[* TO *]";
 			}
 
 			return null;
 
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException failure) {
+			// A FAILURE to read what the gate needs: answering null would turn it into the client's 400.
+			throw failure;
 		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException refusal) {
 			// A REFUSAL, not a parse failure: answering null here would make the caller fall back to
 			// "*:*" — the whole WHERE clause dropped, every document returned. The refusal has to
@@ -1284,22 +1376,33 @@ public class SolrQueryProcessor implements QueryProcessor {
 		StringBuilder sb = new StringBuilder(pattern.length() * 2);
 		for (int i = 0; i < pattern.length(); i++) {
 			char c = pattern.charAt(i);
-			if (c == '%') {
+			if (c == '\\' && i + 1 < pattern.length()) {
+				// CMIS's escape: the character after a backslash is literal — \% and \_ are a percent sign and an
+				// underscore, not wildcards (closing batch 3 review, Codex P1: the fallback unescaped first and then
+				// read the wildcards, so an escaped % became one again and the query matched more than was asked).
+				appendLiteral(sb, pattern.charAt(++i));
+			} else if (c == '%') {
 				sb.append('*');
 			} else if (c == '_') {
 				sb.append('?');
-			} else if (Character.isWhitespace(c)) {
-				// Whitespace is a token separator in the Lucene query parser
-				// (an implicit OR between terms). SolrQuerySanitizer.escape
-				// does NOT escape it, so escape it here to keep the value a
-				// single term — otherwise 'foo OR bar' would become two
-				// clauses joined by a live OR operator.
-				sb.append('\\').append(c);
 			} else {
-				sb.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escape(String.valueOf(c)));
+				appendLiteral(sb, c);
 			}
 		}
 		return sb.toString();
+	}
+
+	private static void appendLiteral(StringBuilder sb, char c) {
+		if (Character.isWhitespace(c)) {
+			// Whitespace is a token separator in the Lucene query parser
+			// (an implicit OR between terms). SolrQuerySanitizer.escape
+			// does NOT escape it, so escape it here to keep the value a
+			// single term — otherwise 'foo OR bar' would become two
+			// clauses joined by a live OR operator.
+			sb.append('\\').append(c);
+		} else {
+			sb.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escape(String.valueOf(c)));
+		}
 	}
 
 	public void setTypeManager(TypeManager typeManager) {

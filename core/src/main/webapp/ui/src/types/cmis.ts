@@ -1,5 +1,7 @@
 export interface PropertyDefinition {
   id: string;
+  /** The name a CMIS query uses for this property — not always its id. */
+  queryName?: string;
   displayName: string;
   description: string;
   propertyType: 'string' | 'integer' | 'decimal' | 'boolean' | 'datetime';
@@ -21,6 +23,8 @@ export interface Choice {
 
 export interface TypeDefinition {
   id: string;
+  /** The name a CMIS query's FROM uses for this type — not always its id. */
+  queryName?: string;
   displayName: string;
   description: string;
   baseTypeId: string;

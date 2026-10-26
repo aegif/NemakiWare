@@ -597,6 +597,7 @@ export class CMISService {
 
         propertyDefinitions[propId] = {
           id: rawPropDef.id || propId,
+          queryName: rawPropDef.queryName,
           displayName: rawPropDef.displayName || rawPropDef.localName || propId,
           description: rawPropDef.description || '',
           propertyType: propertyTypeMap[rawPropDef.propertyType?.toLowerCase()] || 'string',
@@ -615,6 +616,7 @@ export class CMISService {
 
     return {
       id: rawType?.id || 'unknown',
+      queryName: rawType?.queryName,
       displayName: rawType?.displayName || rawType?.id || 'Unknown Type',
       description: rawType?.description || `${rawType?.displayName || rawType?.id || 'Unknown'} type definition`,
       baseTypeId: rawType?.baseTypeId || rawType?.baseId || (rawType?.id?.startsWith('cmis:folder') ? 'cmis:folder' : 'cmis:document'),

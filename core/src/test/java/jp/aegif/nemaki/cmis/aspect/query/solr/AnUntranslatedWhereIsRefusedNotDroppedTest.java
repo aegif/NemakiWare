@@ -43,12 +43,16 @@ import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.server.support.query.CmisTree;
 import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.SolrParams;
@@ -81,6 +85,8 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     private static final String REPO = "bedroom";
 
     private SolrQueryProcessor processor;
+    private TypeManager types;
+    private SolrUtil solrUtil;
     /** Every {@code q} the processor sent to Solr, in order. */
     private final List<String> sent = new ArrayList<>();
 
@@ -126,7 +132,7 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         plainProperties.put("cmis:objectTypeId", properties.get("cmis:objectTypeId"));
         plain.setPropertyDefinitions(plainProperties);
 
-        TypeManager types = mock(TypeManager.class);
+        types = mock(TypeManager.class);
         when(types.getTypeByQueryName(REPO, "cmis:document")).thenReturn(document);
         when(types.getTypeByQueryName(REPO, "nemaki:plain")).thenReturn(plain);
         when(types.getPropertyIdForQueryName(eq(REPO), any(TypeDefinition.class), anyString()))
@@ -139,13 +145,38 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         // The properties a SECONDARY TYPE defines — the only ones the manual fallback may translate. A statement
         // naming one without the JOIN fails the strict parse and reaches the fallback; a property no type defines
         // must be refused, not translated into a field nothing is indexed under (closing batch 2 review, P1).
-        org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl aspect =
-                new org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl();
+        // The type carries the DEFINITIONS (closing batch 3 review, Codex P1): the gate checks that a query may use the
+        // property the way the statement uses it, as the walker does — queryable, and single-valued text for `=`,
+        // `<>` and LIKE.
+        SecondaryTypeDefinitionImpl aspect = new SecondaryTypeDefinitionImpl();
         aspect.setId("nemaki:aspect");
         aspect.setQueryName("nemaki:aspect");
-        for (String defined : List.of("nemaki:tag", "nemaki:due", "nemaki:other", "nemaki:note")) {
+        Map<String, PropertyDefinition<?>> aspectProperties = new LinkedHashMap<>();
+        for (String text : List.of("nemaki:tag", "nemaki:due", "nemaki:other", "nemaki:note")) {
+            aspectProperties.put(text, define(new PropertyStringDefinitionImpl(), text, PropertyType.STRING,
+                    Cardinality.SINGLE));
+        }
+        PropertyStringDefinitionImpl hidden = define(new PropertyStringDefinitionImpl(), "nemaki:hidden",
+                PropertyType.STRING, Cardinality.SINGLE);
+        hidden.setIsQueryable(false);
+        aspectProperties.put("nemaki:hidden", hidden);
+        aspectProperties.put("nemaki:aspectMulti", define(new PropertyStringDefinitionImpl(), "nemaki:aspectMulti",
+                PropertyType.STRING, Cardinality.MULTI));
+        aspectProperties.put("nemaki:count", define(new PropertyIntegerDefinitionImpl(), "nemaki:count",
+                PropertyType.INTEGER, Cardinality.SINGLE));
+        // A property whose query name is not its id: the index knows it by its id (closing batch 3 review, subagent P3-5).
+        PropertyStringDefinitionImpl renamed = define(new PropertyStringDefinitionImpl(), "nemaki:renamedId",
+                PropertyType.STRING, Cardinality.SINGLE);
+        renamed.setQueryName("nemaki:renamed");
+        aspectProperties.put("nemaki:renamedId", renamed);
+        aspect.setPropertyDefinitions(aspectProperties);
+        for (String defined : List.of("nemaki:tag", "nemaki:due", "nemaki:other", "nemaki:note", "nemaki:hidden",
+                "nemaki:aspectMulti", "nemaki:count", "nemaki:renamed")) {
             when(types.findSecondaryTypeByPropertyQueryName(REPO, defined)).thenReturn(aspect);
         }
+        // A lookup that FAILS: the type system could not be searched (closing batch 3 review, subagent P3-2).
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:unreadable"))
+                .thenThrow(new IllegalStateException("No types are loaded for repository " + REPO));
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -157,7 +188,7 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
             when(response.getResults()).thenReturn(none);
             return response;
         });
-        SolrUtil solrUtil = mock(SolrUtil.class);
+        solrUtil = mock(SolrUtil.class);
         when(solrUtil.getSolrClient()).thenReturn(client);
         when(solrUtil.getPropertyNameInSolr(eq(REPO), anyString()))
                 .thenAnswer(call -> ((String) call.getArgument(1)).replace(':', '_'));
@@ -338,5 +369,113 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         // ORDER BY inside a literal is the value, not the end of the clause.
         assertEquals("nemaki_tag:\"order by x\"",
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag = 'order by x'"));
+    }
+    @Test
+    @DisplayName("the fallback answers only what a query may ask of the property: queryable, and single-valued text for =, <> and LIKE (closing batch 3 review)")
+    void aPropertyAQueryCannotUseThatWayIsRefused() {
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:hidden = 'x'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:hidden IS NULL");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:aspectMulti = 'x'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:aspectMulti LIKE 'x%'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:aspectMulti <> 'x'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:count LIKE '1%'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:count = '1'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:tag IN ('a')");
+        // And not more than that: whether a property has a value can be asked of any of them.
+        assertEquals("-nemaki_aspectMulti:[* TO *]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:aspectMulti IS NULL"));
+        assertEquals("nemaki_count:[* TO *]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:count IS NOT NULL"));
+    }
+
+    @Test
+    @DisplayName("ANY ... IN over a multi-valued secondary-type property is translated by the fallback (closing batch 3 review)")
+    void anyInOverASecondaryMultiValuedPropertyIsTranslated() {
+        assertEquals("nemaki_aspectMulti:(\"a\" OR \"b'c\")", assertAnsweredWithOneQuery(
+                "SELECT * FROM cmis:document WHERE ANY nemaki:aspectMulti IN ('a', 'b\\'c')"));
+    }
+
+    @Test
+    @DisplayName("an escaped % or _ in a LIKE pattern is that character, not a wildcard — in both readers (closing batch 3 review)")
+    void anEscapedWildcardIsALiteral() {
+        // The fallback.
+        assertEquals("nemaki_tag:100%",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag LIKE '100\\%'"));
+        assertEquals("nemaki_tag:a_b",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag LIKE 'a\\_b'"));
+        assertEquals("nemaki_tag:100*",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag LIKE '100%'"));
+        // The walker, which read the escaped text and kept the backslash.
+        assertEquals("cmis_name:100%",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE cmis:name LIKE '100\\%'"));
+        assertEquals("cmis_name:100*",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE cmis:name LIKE '100%'"));
+    }
+
+    @Test
+    @DisplayName("the walker reads a literal's escapes: \\' is a quote in the value (closing batch 3 review)")
+    void theWalkerReadsTheLiteralsEscapes() {
+        assertEquals("cmis_name:a'b",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE cmis:name = 'a\\'b'"));
+        String in = assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:labels IN ('a\\'b', 'c')");
+        assertTrue(in.contains("nemaki_labels:a'b"), "the escaped quote stayed escaped in the value: " + in);
+    }
+
+    @Test
+    @DisplayName("<>, NOT LIKE and NOT IN match documents that HAVE the property — in the walker as in the fallback (closing batch 3 review)")
+    void aNegationNeedsTheProperty() {
+        assertEquals("+cmis_name:[* TO *] -cmis_name:x",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE cmis:name <> 'x'"));
+        assertEquals("+nemaki_known:[* TO *] -nemaki_known:a*",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:known NOT LIKE 'a%'"));
+        assertEquals("+nemaki_known:[* TO *] -(nemaki_known:a nemaki_known:b)",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:known NOT IN ('a', 'b')"));
+    }
+
+    @Test
+    @DisplayName("the field is the one the property's definition is indexed under — its id, not the name written (closing batch 3 review)")
+    void theFieldIsTheDefinitionsId() {
+        assertEquals("-nemaki_renamedId:[* TO *]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:renamed IS NULL"));
+    }
+
+    @Test
+    @DisplayName("a failure to read what the query needs is the server's failure, not the client's 400 and not an empty answer (closing batch 3 review)")
+    void aFailureIsNotARefusalOrAnEmptyAnswer() throws Exception {
+        sent.clear();
+        assertThrows(CmisRuntimeException.class,
+                () -> run("SELECT * FROM cmis:document WHERE nemaki:unreadable IS NULL"),
+                "a type system that could not be searched was answered as the client's mistake");
+        assertEquals(List.of(), sent, "a statement whose gate could not be read was sent anyway");
+
+        SolrUtil noClient = mock(SolrUtil.class);
+        SolrQueryProcessor withoutSolr = processorOver(noClient);
+        assertThrows(CmisRuntimeException.class, () -> withoutSolr.query(null, REPO, "SELECT * FROM cmis:document",
+                false, false, null, null, BigInteger.TEN, BigInteger.ZERO, null),
+                "a search engine that could not be reached was answered as «nothing matches»");
+
+        SolrClient failing = mock(SolrClient.class);
+        when(failing.query(any(SolrParams.class))).thenThrow(new SolrServerException("down"));
+        SolrUtil failingUtil = mock(SolrUtil.class);
+        when(failingUtil.getSolrClient()).thenReturn(failing);
+        SolrQueryProcessor overFailing = processorOver(failingUtil);
+        assertThrows(CmisRuntimeException.class, () -> overFailing.query(null, REPO, "SELECT * FROM cmis:document",
+                false, false, null, null, BigInteger.TEN, BigInteger.ZERO, null),
+                "a search engine that did not answer was answered as the client's mistake");
+    }
+
+    @Test
+    @DisplayName("FROM a type the repository does not have is the client's 400, not an empty answer (closing batch 3 review)")
+    void anUnknownTypeInFromIsRefused() {
+        assertRefusedWithoutAQuery("SELECT * FROM nemaki:typo");
+    }
+
+    private SolrQueryProcessor processorOver(SolrUtil util) {
+        SolrQueryProcessor other = new SolrQueryProcessor();
+        other.setTypeManager(types);
+        other.setSolrUtil(util);
+        other.setContentService(mock(ContentService.class));
+        other.setExceptionService(new ExceptionServiceImpl());
+        return other;
     }
 }

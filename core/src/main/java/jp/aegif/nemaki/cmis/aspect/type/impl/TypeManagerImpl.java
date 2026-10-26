@@ -4755,8 +4755,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			ensureInitialized();
 			Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 			if (types == null || types.isEmpty()) {
-				log.warn("findSecondaryTypeByPropertyQueryName: No types found for repository " + repositoryId);
-				return null;
+				// No type map at all is the type system not being readable, not 「no secondary type defines this」
+				// (closing batch 3 review, subagent P3-2): the query fallback's gate would refuse the statement as the
+				// client's mistake.
+				throw new IllegalStateException("No types are loaded for repository " + repositoryId
+						+ ", so whether a secondary type defines '" + propertyQueryName + "' cannot be answered");
 			}
 			Collection<TypeDefinitionContainer> allTypes = types.values();
 
@@ -4832,8 +4835,12 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			if (log.isDebugEnabled()) {
 				log.debug("findSecondaryTypeByPropertyQueryName: Property '" + propertyQueryName + "' not found in any secondary type");
 			}
+		} catch (IllegalStateException unreadable) {
+			throw unreadable;
 		} catch (Exception e) {
-			log.warn("Error finding secondary type for property '" + propertyQueryName + "': " + e.getMessage(), e);
+			// A search that failed is not a search that found nothing (closing batch 3 review, subagent P3-2).
+			throw new IllegalStateException("Could not search the secondary types for property '" + propertyQueryName
+					+ "': " + e.getMessage(), e);
 		}
 
 		return null;

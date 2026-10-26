@@ -193,9 +193,26 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkNotEquals(CmisTree leftNode, CmisTree rightNode) {
+		// A comparison with a property that has no value is not a match (CMIS follows SQL here), so the document must
+		// HAVE the field as well as not have this value. The bare negation also returned every document that never
+		// set the property, and the manual fallback answered the same statement the other way (closing batch 3
+		// review, subagent P3-3).
+		HashMap<String, String> map = walkCompareInternal(leftNode, rightNode);
+		return hasAndIsNot(map.get(FLD), walkEquals(leftNode, rightNode));
+	}
+
+	/** {@code +field:[* TO *] -excluded}: the document has the field, and does not match {@code excluded}. */
+	private static Query hasAndIsNot(String field, Query excluded) {
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-			builder.add(walkEquals(leftNode, rightNode), Occur.MUST_NOT);
+		builder.add(new TermRangeQuery(field, null, null, true, true), Occur.MUST);
+		builder.add(excluded, Occur.MUST_NOT);
 		return builder.build();
+	}
+
+	/** The Solr field a column is indexed under, escaped once — what walkLike and walkIn query. */
+	private String fieldOf(CmisTree colNode) {
+		return queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, getColumnReference(colNode).getPropertyQueryName()));
 	}
 
 	private Query walkGreaterThan(CmisTree leftNode, CmisTree rightNode) {
@@ -375,16 +392,20 @@ public class SolrPredicateWalker{
 		// carries and LIKE matched nothing (round-5 review). Escaped once, as everywhere else.
 		String field = queryableFieldName(
 				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));
-		String pattern = translatePattern((String) rVal); // Solr wildcard expression
+		// The RAW literal, read with CMIS's escapes: \% and \_ are a percent sign and an underscore, \' and \\ a quote
+		// and a backslash. walkString had already escaped the backslash for Solr, so an escaped % went out as a
+		// backslash and a percent sign (closing batch 3 review, both reviewers). The manual fallback reads LIKE
+		// through the same method, so the two readers answer one statement the same way.
+		String literal = stringNode.getText();
+		String pattern = SolrQueryProcessor.likeToEscapedSolrWildcard(literal.substring(1, literal.length() - 1));
 		
 		WildcardQuery q = new WildcardQuery(new Term(field, pattern));
 		return q;
 	}
 
 	private Query walkNotLike(CmisTree colNode, CmisTree stringNode) {
-		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		builder.add(walkLike(colNode, stringNode), Occur.MUST_NOT);
-		return builder.build();
+		// Has the property, and does not match: the bare negation returned every document without it too.
+		return hasAndIsNot(fieldOf(colNode), walkLike(colNode, stringNode));
 	}
 
 	// //////////////////////////////////////////////////////////////////////////////
@@ -415,9 +436,8 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkNotIn(CmisTree colNode, CmisTree listNode) {
-		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-			builder.add(walkIn(colNode, listNode), Occur.MUST_NOT);
-		return builder.build();
+		// Has the property, and its value is none of these: the bare negation returned every document without it too.
+		return hasAndIsNot(fieldOf(colNode), walkIn(colNode, listNode));
 	}
 
 	private Query walkInAny(CmisTree leftNode, CmisTree rightNode) {
@@ -917,6 +937,10 @@ public class SolrPredicateWalker{
 	private Object walkString(CmisTree node) {
 		String s = node.getText();
 		s = s.substring(1, s.length() - 1);
+		// CMIS's escapes undone first: \' is a quote and \\ a backslash in the VALUE. Escaping the raw text for Solr
+		// kept the backslash, so 'a\'b' was searched as a, backslash, quote, b (closing batch 3 review, subagent P3-4).
+		// LIKE does not come through here for its pattern — it reads the raw literal (walkLike).
+		s = s.replaceAll("\\\\(.)", "$1");
 		//return "\"" + ClientUtils.escapeQueryChars(s) + "\"";
 		return ClientUtils.escapeQueryChars(s);
 	}
@@ -956,52 +980,6 @@ public class SolrPredicateWalker{
 	/**
 	 * Utility methods
 	 */
-
-	/**
-	 * Translate a full-text search expression from SQL style to Solr style
-	 *
-	 * @param wildcardString
-	 * @return
-	 */
-	private static String translatePattern(String wildcardString) {
-		int index = 0;
-		int start = 0;
-		StringBuilder res = new StringBuilder();
-
-		while (index >= 0) {
-			index = wildcardString.indexOf('%', start);
-			if (index < 0) {
-				res.append(wildcardString.substring(start));
-			} else if (index == 0 || index > 0
-					&& wildcardString.charAt(index - 1) != '\\') {
-				res.append(wildcardString.substring(start, index));
-				res.append("*");
-			} else {
-				res.append(wildcardString.substring(start, index + 1));
-			}
-			start = index + 1;
-		}
-		wildcardString = res.toString();
-
-		index = 0;
-		start = 0;
-		res = new StringBuilder();
-
-		while (index >= 0) {
-			index = wildcardString.indexOf('_', start);
-			if (index < 0) {
-				res.append(wildcardString.substring(start));
-			} else if (index == 0 || index > 0
-					&& wildcardString.charAt(index - 1) != '\\') {
-				res.append(wildcardString.substring(start, index));
-				res.append("?"); //
-			} else {
-				res.append(wildcardString.substring(start, index + 1));
-			}
-			start = index + 1;
-		}
-		return res.toString();
-	}
 
 	private ColumnReference getColumnReference(CmisTree columnNode) {
 		CmisSelector sel = queryObject.getColumnReference(columnNode

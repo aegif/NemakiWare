@@ -281,6 +281,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const [secondaryTypes, setSecondaryTypes] = useState<TypeDefinition[]>([]);
   const [lastExecutedQuery, setLastExecutedQuery] = useState<string>('');
   const [selectedTypeProperties, setSelectedTypeProperties] = useState<PropertyDefinition[]>([]);
+  // The selected type's QUERY name, which FROM needs and which is not always its id (closing batch 3 review).
+  const [selectedTypeQueryName, setSelectedTypeQueryName] = useState<string | undefined>(undefined);
   const [selectedSecondaryTypeProperties, setSelectedSecondaryTypeProperties] = useState<PropertyDefinition[]>([]);
   const [loadingProperties, setLoadingProperties] = useState(false);
   const [loadingSecondaryProperties, setLoadingSecondaryProperties] = useState(false);
@@ -334,12 +336,15 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
 
     if (!typeId) {
       setSelectedTypeProperties([]);
+      setSelectedTypeQueryName(undefined);
       return;
     }
+    setSelectedTypeQueryName(undefined);
 
     setLoadingProperties(true);
     try {
       const typeDefinition = await cmisService.getType(repositoryId, typeId);
+      setSelectedTypeQueryName(typeDefinition.queryName);
 
       // Auto-set baseType from the selected objectType's baseTypeId
       if (typeDefinition.baseTypeId) {
@@ -457,7 +462,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
         query = `SELECT * FROM ${fullTextBaseType} WHERE ${searchConditions.join(' OR ')}`;
       }
     } else {
-      query = buildMetadataSearchQuery(values, selectedTypeProperties, selectedSecondaryTypeProperties);
+      query = buildMetadataSearchQuery(values, selectedTypeProperties, selectedSecondaryTypeProperties,
+        selectedTypeQueryName);
     }
     
     if (query) {
@@ -929,6 +935,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
                 form.resetFields();
                 setLastExecutedQuery('');
                 setSelectedTypeProperties([]);
+                setSelectedTypeQueryName(undefined);
                 setSelectedSecondaryTypeProperties([]);
               }}>
                 {t('common.clear')}

@@ -2548,6 +2548,53 @@ class DirectorySyncWritesOnlyTheMembersItCanNameTest {
                 "v reported a loss the nesting kept below does not make: " + errors(result));
     }
 
+    /**
+     * R160: an orphan kept for one group above it does not keep another group's nesting of it. Keeping the orphan put
+     * back the nesting from EVERY group above it, so the group counted second saw alice still reached through the
+     * orphan, counted no loss, held nothing — and its nesting of the orphan, which LDAP no longer states, was removed:
+     * alice lost that group with no error. Measured in a scratch tree before the fix (batch 14 review round 2,
+     * subagent P1-1). Both LDAP orders, because the first group counted is the one that held it.
+     */
+    private void anOrphanUnderTwoGroupsIsHeldByBoth(String first, String second) {
+        when(properties.readBoolean(PropertyKey.DIRECTORY_SYNC_DELETE_ORPHAN_GROUPS)).thenReturn(true);
+        user(ALICE, "alice");
+        user(BOB, "bob");
+        // LDAP, in the order u, first, second: u came back in ranges, so anyone could be named in it; p and v both name
+        // bob and nest u. o is not in LDAP — an orphan — and holds alice; both p and v nest it.
+        ranged(U_DN, "u");
+        group(first.equals("p") ? P_DN : V_DN, first, BOB, U_DN);
+        group(second.equals("p") ? P_DN : V_DN, second, BOB, U_DN);
+        stored("u", List.of(), List.of());
+        stored("p", List.of("bob"), List.of(PREFIX + "u", PREFIX + "o"));
+        stored("v", List.of("bob"), List.of(PREFIX + "u", PREFIX + "o"));
+        stored("o", List.of("alice"), List.of());
+
+        DirectorySyncResult result = sync.syncGroups(REPO, false);
+
+        verify(contentService, never()).deleteGroup(REPO, PREFIX + "o");
+        for (String id : List.of("p", "v")) {
+            assertTrue(persisted.get(PREFIX + id).getGroups().contains(PREFIX + "o"),
+                    "with LDAP returning " + first + " before " + second + ", " + id + "'s nesting of the orphan o was "
+                            + "removed — alice, whom u may name in " + id + ", lost it through o: "
+                            + persisted.get(PREFIX + id).getGroups() + "; errors: " + errors(result));
+            assertTrue(errors(result).contains(PREFIX + id + ": group " + PREFIX + id + ": whom LDAP names"),
+                    "with LDAP returning " + first + " before " + second + ", " + id + " did not report the change it "
+                            + "did not make for alice: " + errors(result));
+        }
+    }
+
+    @Test
+    @DisplayName("an orphan under two groups keeps both nestings when LDAP returns p first (R160)")
+    void anOrphanUnderTwoGroupsIsHeldByBothWhenPComesFirst() {
+        anOrphanUnderTwoGroupsIsHeldByBoth("p", "v");
+    }
+
+    @Test
+    @DisplayName("an orphan under two groups keeps both nestings when LDAP returns v first (R160)")
+    void anOrphanUnderTwoGroupsIsHeldByBothWhenVComesFirst() {
+        anOrphanUnderTwoGroupsIsHeldByBoth("v", "p");
+    }
+
     @Test
     @DisplayName("an orphan kept below counts as kept for the groups above — none of them reports it again (batch 14)")
     void anOrphanKeptBelowCountsForTheGroupsAbove() {

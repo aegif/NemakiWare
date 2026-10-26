@@ -366,7 +366,9 @@ class EveryFieldNameIsEscapedOnceTest {
                 "the number of calls of the property map that produce a VALUE rather than a field"
                         + " name changed; there is exactly one (buildQualField) and a new one must"
                         + " be looked at, not assumed");
-        assertEquals(9, found,
+        // Ten since closing batch 4: fieldOf, which the negations (<>, NOT LIKE, NOT IN) use to require the field
+        // to be present, is the tenth — and goes through the rule like the others.
+        assertEquals(10, found,
                 "the number of calls of the property map in this walker changed; each one has to go"
                         + " through queryableFieldName — or be the ONE exemption below — and be"
                         + " counted here");

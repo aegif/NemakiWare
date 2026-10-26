@@ -1050,8 +1050,15 @@ public class DirectorySyncServiceImpl implements DirectorySyncService {
                     if (orphans.contains(below) && !Collections.disjoint(descendantsOrSelf(below, nestingBefore), targets)
                             && orphansKept.add(below)) {
                         // Deleting it strips the nesting of it from the groups above (R154): it is kept this sync.
+                        // Only the nestings of it that STAY go back: those no removal is planned for (a group of
+                        // NemakiWare's own, or a nesting that could not be checked). A planned one stays only if it is
+                        // held, and the hold above has already put it back. Putting back every group's nesting of it let
+                        // the group counted later see the orphan's members still reached, count no loss and hold
+                        // nothing — while its nesting of the orphan, which LDAP no longer states, was removed, and they
+                        // lost that group with no error (R160).
                         for (Map.Entry<String, List<String>> e : nestingBefore.entrySet()) {
-                            if (e.getValue().contains(below)) {
+                            if (e.getValue().contains(below)
+                                    && !plannedGone.getOrDefault(e.getKey(), List.of()).contains(below)) {
                                 nestingAfter.get(e.getKey()).add(below);
                             }
                         }
