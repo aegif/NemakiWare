@@ -40,8 +40,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Refuses a {@code /rest/*} request whose path, as sent, names different segments from the path the container mapped it
- * by (R163).
+ * Refuses a {@code /rest/*} or {@code /odata/*} request whose path, as sent, names different segments from the path the
+ * container mapped it by (R163).
  *
  * <p>The two disagree when the path carries a dot segment. The container normalises {@code /rest/repo/../group/list} to
  * {@code /rest/group/list} and applies the filters mapped onto that, and none of the authentication filter's
@@ -49,6 +49,11 @@ import org.slf4j.LoggerFactory;
  * repository id of {@code ..}. Measured on nb33 before this filter: with no credentials, {@code ..}, {@code %2e%2e},
  * {@code %2E%2E}, {@code .%2e} and {@code repo;x=1/..} all reached the group resource, and
  * {@code repo/../importexport/export/x} got as far as reading the content.
+ *
+ * <p>{@code /odata/*} has the same split one level down: the authentication filter takes the repository from the
+ * normalised path and {@code ODataServlet} from the path as sent, so {@code /odata/canopy/../bedroom/Documents} was
+ * authenticated against bedroom and served from canopy (closing batch 1 review; Olingo then rejected the URI as
+ * malformed, so no data was measured to leave).
  *
  * <p>NOT a list of bad shapes. It compares the two views segment by segment: the path as sent, with each segment's path
  * parameters cut and the rest percent-decoded as UTF-8, against the context path, servlet path and path info the

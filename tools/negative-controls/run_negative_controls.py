@@ -26409,7 +26409,7 @@ CONTROLS = [
         find='            if (!decoded.isEmpty()) {\n                segments.add(decoded);\n            }',
         replace='            if (decoded.equals("..") && !segments.isEmpty()) {\n                segments.remove(segments.size() - 1);\n            } else if (!decoded.isEmpty() && !decoded.equals(".")) {\n                segments.add(decoded);\n            }',
         test='ADotSegmentCannotRouteAroundTheFilterTest',
-        expect_fail=['aDotSegmentIsRefusedInEverySpelling', 'aDotSegmentThatLandsInsideTheMappingIsRefusedToo'],
+        expect_fail=['aDotSegmentIsRefusedInEverySpelling', 'aDotSegmentThatLandsInsideTheMappingIsRefusedToo', 'anOdataDotSegmentIsRefused'],
     ),
     dict(
         id='PQ5',
@@ -26419,7 +26419,7 @@ CONTROLS = [
         find='                && !theRoutedPathIsTheMappedPath(http)) {',
         replace='                && false && !theRoutedPathIsTheMappedPath(http)) {',
         test='ADotSegmentCannotRouteAroundTheFilterTest',
-        expect_fail=['aDotSegmentIsRefusedInEverySpelling', 'aDotSegmentThatLandsInsideTheMappingIsRefusedToo', 'anEncodedSlashIsRefused', 'aPathThatCannotBeReadIsRefused'],
+        expect_fail=['aDotSegmentIsRefusedInEverySpelling', 'aDotSegmentThatLandsInsideTheMappingIsRefusedToo', 'anEncodedSlashIsRefused', 'aPathThatCannotBeReadIsRefused', 'anOdataDotSegmentIsRefused'],
     ),
     dict(
         id='PR5',
@@ -26640,6 +26640,16 @@ CONTROLS = [
         replace='\t\t\t\twhereQueryString = "*:*";',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
         expect_fail=['aWalkerFailureIsNotAnsweredWithPartOfTheWhere'],
+    ),
+    dict(
+        id='QN5',
+        what='the path agreement filter is not mapped onto /odata/*, so /odata/canopy/../bedroom/Documents is authenticated against the repository the normalised path names and served from the one the path as sent names (closing batch 1 review, subagent P2-1)',
+        module='core',
+        file='core/src/main/webapp/WEB-INF/web.xml',
+        find='\t<filter-mapping>\n\t\t<filter-name>restPathAgreementFilter</filter-name>\n\t\t<url-pattern>/odata/*</url-pattern>\n\t</filter-mapping>\n',
+        replace='',
+        test='ADotSegmentCannotRouteAroundTheFilterTest',
+        expect_fail=['theFilterIsOnTheWholeOfOdata'],
     ),
 ]
 

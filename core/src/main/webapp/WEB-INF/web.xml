@@ -123,7 +123,11 @@
 	<!-- R163: the authentication filter is mapped onto chosen /rest/* paths, which the container matches AFTER it has
 	     normalised the path, while Jersey routes on the path as sent. /rest/repo/../group/list was mapped as
 	     /rest/group/list (no authentication filter) and routed to /repo/{repositoryId}/group/list. This refuses a
-	     /rest/* request whose two views disagree, before any filter or resource sees it. -->
+	     /rest/* or /odata/* request whose two views disagree, before the authentication filter and the resource see
+	     it (the CORS filter, mapped earlier in this file, runs first). /odata/*: the authentication filter decides
+	     the repository from the normalised path and ODataServlet from the path as sent, so
+	     /odata/canopy/../bedroom/Documents was authenticated against bedroom and served from canopy (closing
+	     batch 1 review, subagent P2-1; Olingo rejected that URI as malformed, so no data was measured to leave). -->
 	<filter>
 		<filter-name>restPathAgreementFilter</filter-name>
 		<filter-class>jp.aegif.nemaki.rest.RestPathAgreementFilter</filter-class>
@@ -209,6 +213,10 @@
 	<filter-mapping>
 		<filter-name>restPathAgreementFilter</filter-name>
 		<url-pattern>/rest/*</url-pattern>
+	</filter-mapping>
+	<filter-mapping>
+		<filter-name>restPathAgreementFilter</filter-name>
+		<url-pattern>/odata/*</url-pattern>
 	</filter-mapping>
 
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->

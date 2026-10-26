@@ -157,6 +157,25 @@ class ADotSegmentCannotRouteAroundTheFilterTest {
     }
 
     @Test
+    @DisplayName("an /odata/* request whose repository segment is undone by a dot segment is refused")
+    void anOdataDotSegmentIsRefused() throws Exception {
+        // Authenticated against the repository the normalised path names, served from the one the path as sent names.
+        assertRefused("/core/odata/canopy/../bedroom/Documents", "/odata", "/bedroom/Documents");
+        assertPassedOn("/core/odata/bedroom/Documents", "/odata", "/bedroom/Documents");
+    }
+
+    @Test
+    @DisplayName("web.xml puts the filter on the whole of /odata/* as well")
+    void theFilterIsOnTheWholeOfOdata() throws IOException {
+        String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"), StandardCharsets.UTF_8)
+                .replaceAll("(?s)<!--.*?-->", "");
+        assertTrue(Pattern.compile("<filter-mapping>\\s*<filter-name>restPathAgreementFilter</filter-name>\\s*"
+                        + "<url-pattern>/odata/\\*</url-pattern>\\s*</filter-mapping>").matcher(webXml).find(),
+                "the path agreement filter is not mapped onto /odata/* — the authentication filter there decides the "
+                        + "repository from the normalised path and ODataServlet from the path as sent");
+    }
+
+    @Test
     @DisplayName("web.xml puts the filter on the whole of /rest/*")
     void theFilterIsOnTheWholeOfRest() throws IOException {
         String webXml = Files.readString(Path.of("src/main/webapp/WEB-INF/web.xml"), StandardCharsets.UTF_8)
