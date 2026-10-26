@@ -156,11 +156,7 @@ public class QueryResource {
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
-            logger.severe("Error executing query: " + e.getMessage());
-            if (e.getMessage() != null && (e.getMessage().contains("parse") || e.getMessage().contains("syntax"))) {
-                throw ApiException.invalidArgument("Invalid query syntax: " + e.getMessage());
-            }
-            throw ApiException.internalError("Failed to execute query: " + e.getMessage(), e);
+            throw queryFailure(e);
         }
     }
     
@@ -252,11 +248,7 @@ public class QueryResource {
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {
-            logger.severe("Error executing query: " + e.getMessage());
-            if (e.getMessage() != null && (e.getMessage().contains("parse") || e.getMessage().contains("syntax"))) {
-                throw ApiException.invalidArgument("Invalid query syntax: " + e.getMessage());
-            }
-            throw ApiException.internalError("Failed to execute query: " + e.getMessage(), e);
+            throw queryFailure(e);
         }
     }
     
@@ -347,6 +339,23 @@ public class QueryResource {
         }
     }
     
+    /**
+     * What a failed query is to the client. A statement the repository REFUSED — an untranslatable WHERE clause (R188),
+     * a property that cannot be queried — is the client's 400 whatever its message says; reading the words "parse" or
+     * "syntax" out of the message made the same refusal a 400 through the CMIS bindings and a 500 here (closing batch 2
+     * review, Codex P2). One method for both endpoints, so they cannot answer the same refusal differently.
+     */
+    static ApiException queryFailure(Exception e) {
+        if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException) {
+            return ApiException.invalidArgument(e.getMessage());
+        }
+        logger.severe("Error executing query: " + e.getMessage());
+        if (e.getMessage() != null && (e.getMessage().contains("parse") || e.getMessage().contains("syntax"))) {
+            return ApiException.invalidArgument("Invalid query syntax: " + e.getMessage());
+        }
+        return ApiException.internalError("Failed to execute query: " + e.getMessage(), e);
+    }
+
     private void validateRepository(String repositoryId) {
         if (!repositoryService.hasThisRepositoryId(repositoryId)) {
             throw ApiException.repositoryNotFound(repositoryId);

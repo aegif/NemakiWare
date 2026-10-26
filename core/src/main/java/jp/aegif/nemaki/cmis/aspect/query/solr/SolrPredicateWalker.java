@@ -123,7 +123,10 @@ public class SolrPredicateWalker{
 			return walkIn(node.getChild(0), node.getChild(1));
 		case CmisQlStrictLexer.NOT_IN:
 			return walkNotIn(node.getChild(0), node.getChild(1));
-		case CmisQlStrictLexer.ANY:
+		// IN_ANY is the node the parser builds for `ANY col IN (...)`; ANY is only the keyword's token, which never
+		// reaches here as a node. Dispatching on ANY left walkInAny unreachable: the walker answered null, and the
+		// statement fell to the manual fallback — `*:*` before R188, a refusal after it (closing batch 2 review).
+		case CmisQlStrictLexer.IN_ANY:
 			return walkInAny(node.getChild(0), node.getChild(1));
 		case CmisQlStrictLexer.NOT_IN_ANY:
 			return walkNotInAny(node.getChild(0), node.getChild(1));

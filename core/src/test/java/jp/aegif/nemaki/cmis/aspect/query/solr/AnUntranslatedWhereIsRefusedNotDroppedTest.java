@@ -110,8 +110,25 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 "cmis:secondaryObjectTypeIds", PropertyType.ID, Cardinality.MULTI));
         document.setPropertyDefinitions(properties);
 
+        // A type that does not declare cmis:secondaryObjectTypeIds: a statement about the secondary types FROM it fails
+        // the strict parse, which is the one way the fallback's own IN-list reading is reached.
+        DocumentTypeDefinitionImpl plain = new DocumentTypeDefinitionImpl();
+        plain.setId("nemaki:plain");
+        plain.setLocalName("plain");
+        plain.setQueryName("nemaki:plain");
+        plain.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
+        plain.setIsQueryable(true);
+        plain.setIsFulltextIndexed(false);
+        plain.setIsIncludedInSupertypeQuery(true);
+        Map<String, PropertyDefinition<?>> plainProperties = new LinkedHashMap<>();
+        plainProperties.put("cmis:name", properties.get("cmis:name"));
+        plainProperties.put("cmis:objectId", properties.get("cmis:objectId"));
+        plainProperties.put("cmis:objectTypeId", properties.get("cmis:objectTypeId"));
+        plain.setPropertyDefinitions(plainProperties);
+
         TypeManager types = mock(TypeManager.class);
         when(types.getTypeByQueryName(REPO, "cmis:document")).thenReturn(document);
+        when(types.getTypeByQueryName(REPO, "nemaki:plain")).thenReturn(plain);
         when(types.getPropertyIdForQueryName(eq(REPO), any(TypeDefinition.class), anyString()))
                 .thenAnswer(call -> {
                     String queryName = call.getArgument(2);
@@ -119,6 +136,16 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 });
         when(types.getTypesDescendants(eq(REPO), anyString(), any(BigInteger.class), anyBoolean()))
                 .thenReturn(Collections.emptyList());
+        // The properties a SECONDARY TYPE defines — the only ones the manual fallback may translate. A statement
+        // naming one without the JOIN fails the strict parse and reaches the fallback; a property no type defines
+        // must be refused, not translated into a field nothing is indexed under (closing batch 2 review, P1).
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl aspect =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl();
+        aspect.setId("nemaki:aspect");
+        aspect.setQueryName("nemaki:aspect");
+        for (String defined : List.of("nemaki:tag", "nemaki:due", "nemaki:other", "nemaki:note")) {
+            when(types.findSecondaryTypeByPropertyQueryName(REPO, defined)).thenReturn(aspect);
+        }
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -200,6 +227,16 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     }
 
     @Test
+    @DisplayName("a property no type defines is refused — not translated into a field nothing is indexed under (closing batch 2 review)")
+    void aPropertyNoTypeDefinesIsRefused() {
+        // Measured on bedroom before this: `nemaki:doesNotExist IS NULL` answered 200 with all 2,449 documents.
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:doesNotExist IS NULL");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:doesNotExist <> 'x'");
+        // A value that looks like prefix:name names no property: the gate reads the clause with the literals blanked.
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE cmis:nmae <> 'a:b'");
+    }
+
+    @Test
     @DisplayName("a walker failure is not answered by a fallback that covers part of the WHERE")
     void aWalkerFailureIsNotAnsweredWithPartOfTheWhere() {
         // Parses (both properties belong to the type), and the walker throws on ANY over a
@@ -210,9 +247,21 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     @Test
     @DisplayName("a WHERE the walker answers nothing for, and the fallback does not cover, is refused")
     void aWhereTheWalkerAnswersNothingForIsRefused() {
-        // ANY ... IN over a multi-valued property other than the secondary type ids: the walker has
-        // no arm for it and returns null, and this went out as every document.
-        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:labels IN ('a', 'b')");
+        // `literal = ANY column`: the walker has no arm for EQ_ANY and returns null, and this went out as every
+        // document. (`ANY column IN (...)` used to be here; its arm existed and was dispatched on the wrong token —
+        // closing batch 2 review — so it is translated now, below.)
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE 'a' = ANY nemaki:labels");
+    }
+
+    @Test
+    @DisplayName("ANY ... IN over a multi-valued property is translated by the walker — its arm was dispatched on the keyword's token")
+    void anyInOverAMultiValuedPropertyIsTranslated() {
+        String q = assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:labels IN ('a', 'b')");
+        assertTrue(q.contains("nemaki_labels"), "ANY ... IN went out without its field: " + q);
+        String combined = assertAnsweredWithOneQuery(
+                "SELECT * FROM cmis:document WHERE cmis:name LIKE 'a%' AND ANY nemaki:labels IN ('a')");
+        assertTrue(combined.contains("nemaki_labels") && combined.contains("cmis_name"),
+                "a combined WHERE with ANY ... IN went out without one of its conditions: " + combined);
     }
 
     @Test
@@ -270,8 +319,22 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:due IS NULL"));
         assertEquals("nemaki_tag:\"x\"",
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE\tnemaki:tag = 'x'"));
+        // FROM a type that does not declare the property, so the fallback reads the list itself.
         assertEquals("secondary_object_type_ids:(\"a\" OR \"b\")", assertAnsweredWithOneQuery(
-                "SELECT * FROM cmis:document WHERE ANY cmis:secondaryObjectTypeIds IN ('a', 'b')"));
+                "SELECT * FROM nemaki:plain WHERE ANY cmis:secondaryObjectTypeIds IN ('a', 'b')"));
+        // A table qualifier names the same property (closing batch 2 review: it used to be refused).
+        assertEquals("nemaki_tag:\"x\"",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document d WHERE d.nemaki:tag = 'x'"));
+        // CMIS escapes a quote with a backslash; the escaped quote stays inside the value.
+        assertEquals("nemaki_tag:\"a'b\"",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag = 'a\\'b'"));
+        // `!=` matches documents that HAVE the property and not this value — a document without it is not a match.
+        assertEquals("+nemaki_tag:[* TO *] -nemaki_tag:\"x\"",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag <> 'x'"));
+        // An escaped quote inside an IN value does not split it in two.
+        // (escapeAndQuote also escapes the colon inside the phrase; Solr reads it back as the same value.)
+        assertEquals("secondary_object_type_ids:(\"acme\\:Bob's\" OR \"c\")", assertAnsweredWithOneQuery(
+                "SELECT * FROM nemaki:plain WHERE ANY cmis:secondaryObjectTypeIds IN ('acme:Bob\\'s', 'c')"));
         // ORDER BY inside a literal is the value, not the end of the clause.
         assertEquals("nemaki_tag:\"order by x\"",
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag = 'order by x'"));

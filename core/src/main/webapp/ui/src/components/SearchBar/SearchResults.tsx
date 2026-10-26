@@ -234,6 +234,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { buildMetadataSearchQuery } from './metadataSearchQuery';
 import {
   Card,
   Input,
@@ -456,100 +457,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
         query = `SELECT * FROM ${fullTextBaseType} WHERE ${searchConditions.join(' OR ')}`;
       }
     } else {
-      const conditions: string[] = [];
-
-      if (values.objectType) {
-        conditions.push(`cmis:objectTypeId = '${values.objectType}'`);
-      }
-
-      if (values.name) {
-        conditions.push(`cmis:name LIKE '%${values.name}%'`);
-      }
-
-      if (values.createdFrom) {
-        conditions.push(`cmis:creationDate >= TIMESTAMP '${values.createdFrom.toISOString()}'`);
-      }
-
-      if (values.createdTo) {
-        conditions.push(`cmis:creationDate <= TIMESTAMP '${values.createdTo.toISOString()}'`);
-      }
-
-      if (values.createdBy) {
-        conditions.push(`cmis:createdBy = '${values.createdBy}'`);
-      }
-
-      // Add secondary type filter condition
-      if (values.secondaryType) {
-        conditions.push(`ANY cmis:secondaryObjectTypeIds IN ('${values.secondaryType}')`);
-      }
-
-      // Add custom property conditions
-      selectedTypeProperties.forEach(propDef => {
-        const fieldName = `customProp_${propDef.id}`;
-        const value = values[fieldName];
-
-        if (value !== undefined && value !== null && value !== '') {
-          const propId = propDef.id;
-
-          switch (propDef.propertyType) {
-            case 'string':
-              // Use LIKE for string properties to support partial matching
-              conditions.push(`${propId} LIKE '%${value}%'`);
-              break;
-            case 'integer':
-            case 'decimal':
-              // Use exact match for numeric properties
-              conditions.push(`${propId} = ${value}`);
-              break;
-            case 'boolean':
-              // Boolean value (true/false)
-              conditions.push(`${propId} = ${value}`);
-              break;
-            case 'datetime':
-              // DateTime with TIMESTAMP keyword
-              conditions.push(`${propId} = TIMESTAMP '${value.toISOString()}'`);
-              break;
-            default:
-              // Default to string-like comparison
-              conditions.push(`${propId} LIKE '%${value}%'`);
-          }
-        }
-      });
-
-      // Add secondary type property conditions
-      selectedSecondaryTypeProperties.forEach(propDef => {
-        const fieldName = `secondaryProp_${propDef.id}`;
-        const value = values[fieldName];
-
-        if (value !== undefined && value !== null && value !== '') {
-          const propId = propDef.id;
-
-          switch (propDef.propertyType) {
-            case 'string':
-              conditions.push(`${propId} LIKE '%${value}%'`);
-              break;
-            case 'integer':
-            case 'decimal':
-              conditions.push(`${propId} = ${value}`);
-              break;
-            case 'boolean':
-              conditions.push(`${propId} = ${value}`);
-              break;
-            case 'datetime':
-              conditions.push(`${propId} = TIMESTAMP '${value.toISOString()}'`);
-              break;
-            default:
-              conditions.push(`${propId} LIKE '%${value}%'`);
-          }
-        }
-      });
-
-      const baseType = values.baseType || 'cmis:document';
-      query = `SELECT * FROM ${baseType}`;
-
-      if (conditions.length > 0) {
-        query += ` WHERE ${conditions.join(' AND ')}`;
-      }
+      query = buildMetadataSearchQuery(values, selectedTypeProperties, selectedSecondaryTypeProperties);
     }
     
     if (query) {

@@ -217,13 +217,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 				logger.debug("QueryUtilStrict initialization failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
 			}
 			logger.error("QueryUtilStrict initialization failed during Jakarta EE operation", e);
-			
-			// Return empty result for Jakarta EE compatibility
-			ObjectListImpl emptyResult = new ObjectListImpl();
-			emptyResult.setHasMoreItems(false);
-			emptyResult.setNumItems(BigInteger.ZERO);
-			emptyResult.setObjects(new ArrayList<>());
-			return emptyResult;
+			// NOT an empty result. That answered a statement the server could not even begin to read as
+			// 「nothing matches」 — objects [], numItems 0, a success (closing batch 2 review, Codex P2).
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The query could not be prepared, so it was not run: " + e.getMessage(), e);
 		}
 		
 		// Get queryObject before processStatement
@@ -916,15 +913,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 
 		try {
-			// Extract WHERE clause to find property names
+			// Extract WHERE clause to find property names — found the way hasWhereClause finds it (any whitespace
+			// around the keyword, never inside a literal). This looked for " WHERE " with a space on each side, so a
+			// keyword after a newline got no JOIN while the rest of the processor saw a WHERE clause (closing batch 2
+			// review, subagent P3). The names are read with the literals blanked, so a value cannot add a JOIN.
 			String upperStatement = statement.toUpperCase();
-			int whereIndex = upperStatement.indexOf(" WHERE ");
-			if (whereIndex < 0) {
+			String blanked = withoutStringLiterals(statement);
+			Matcher where = WHERE_KEYWORD.matcher(blanked);
+			if (!where.find()) {
 				// No WHERE clause, nothing to do
 				return statement;
 			}
+			int whereIndex = where.start();
 
-			String whereClause = statement.substring(whereIndex + 7); // After " WHERE "
+			String whereClause = blanked.substring(where.end());
 
 			// Find property names in WHERE clause (pattern: prefix:name)
 			// This regex matches CMIS property names like "nemaki:comment", "cmis:name", etc.
@@ -962,11 +964,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// Find the end of the FROM clause (either WHERE, ORDER BY, or end of string)
 				int fromEndIndex = whereIndex; // We know WHERE exists
 
-				// Build the JOIN clause string
+				// Build the JOIN clause string — a space after it as well, since the keyword need not follow one.
 				StringBuilder joinClause = new StringBuilder();
 				for (String secondaryTypeId : secondaryTypesToJoin) {
 					joinClause.append(" JOIN ").append(secondaryTypeId);
 				}
+				joinClause.append(' ');
 
 				// Insert JOIN clause before WHERE
 				String beforeWhere = statement.substring(0, fromEndIndex);
@@ -1012,7 +1015,16 @@ public class SolrQueryProcessor implements QueryProcessor {
 		throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(refusal);
 	}
 
-	private static final Pattern STRING_LITERAL = Pattern.compile("'(?:[^']|'')*'");
+	/**
+	 * A CMIS string literal's content: single quotes, with {@code \'} and {@code \\} escaped by a backslash (CMIS 1.1,
+	 * 2.1.14.2.4.3). Possessive, so a literal thousands of characters long cannot exhaust the stack on backtracking.
+	 * The first version read SQL's {@code ''} instead, which is not CMIS's escape: {@code 'a\' ORDER BY x'} was cut in
+	 * the middle (closing batch 2 review, subagent P3).
+	 */
+	private static final String LITERAL = "'((?:[^'\\\\]++|\\\\.)*+)'";
+	/** An optional table qualifier ({@code d.} in {@code FROM cmis:document d}), which names the same property. */
+	private static final String QUALIFIER = "(?:[A-Za-z_][A-Za-z0-9_]*\\.)?";
+	private static final String PROPERTY = "([A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*)";
 	private static final Pattern WHERE_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])WHERE(?![A-Za-z0-9_:.])");
 	private static final Pattern ORDER_BY_KEYWORD =
 			Pattern.compile("(?i)(?<![A-Za-z0-9_:.])ORDER\\s+BY(?![A-Za-z0-9_:.])");
@@ -1072,16 +1084,60 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return false;
 	}
 
-	/** The statement with every string literal's content blanked — same length, same positions. */
+	/**
+	 * The statement with every string literal's content blanked — same length, same positions. Read the CMIS way: a
+	 * backslash escapes the character after it, and an unterminated literal runs to the end.
+	 */
 	private static String withoutStringLiterals(String statement) {
 		StringBuilder blanked = new StringBuilder(statement);
-		Matcher literal = STRING_LITERAL.matcher(statement);
-		while (literal.find()) {
-			for (int i = literal.start() + 1; i < literal.end() - 1; i++) {
-				blanked.setCharAt(i, ' ');
+		boolean inLiteral = false;
+		for (int i = 0; i < statement.length(); i++) {
+			char c = statement.charAt(i);
+			if (!inLiteral) {
+				inLiteral = c == '\'';
+				continue;
+			}
+			if (c == '\'') {
+				inLiteral = false;
+				continue;
+			}
+			blanked.setCharAt(i, ' ');
+			if (c == '\\' && i + 1 < statement.length()) {
+				blanked.setCharAt(++i, ' ');
 			}
 		}
 		return blanked.toString();
+	}
+
+	/** A literal's content with its CMIS escapes undone. */
+	private static String unescapeLiteral(String content) {
+		return content.replaceAll("\\\\(.)", "$1");
+	}
+
+	/**
+	 * The values of an IN list — {@code 'a', 'b'} — or null when it is anything else. Each value is a CMIS literal, so
+	 * an escaped quote stays inside its value (closing batch 2 review, Codex P1: a pattern that took every quoted run
+	 * split one value in two and widened the query).
+	 */
+	static List<String> inListValues(String list) {
+		Matcher value = Pattern.compile("\\s*" + LITERAL + "\\s*(,|$)", Pattern.DOTALL).matcher(list);
+		List<String> values = new ArrayList<>();
+		int at = 0;
+		boolean another = true;
+		while (another) {
+			if (!value.find(at) || value.start() != at) {
+				return null;
+			}
+			values.add(unescapeLiteral(value.group(1)));
+			at = value.end();
+			another = !value.group(2).isEmpty();
+		}
+		return at == list.length() ? values : null;
+	}
+
+	/** The Solr field a property is indexed under, escaped once — the rule the walker uses. */
+	private String fieldFor(String repositoryId, String propertyQueryName) {
+		return SolrUtil.queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, propertyQueryName));
 	}
 
 	/**
@@ -1116,180 +1172,88 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (whereClause == null) {
 				return null;
 			}
-			String upperWhereClause = whereClause.toUpperCase();
 
-			// CRITICAL FIX (2025-12-18): Handle cmis:secondaryObjectTypeIds queries
-			// Pattern: ANY cmis:secondaryObjectTypeIds IN ('value1', 'value2', ...)
-			if (upperWhereClause.contains("SECONDARYOBJECTTYPEIDS")) {
-				Pattern anyInPattern = Pattern.compile(
-					"ANY\\s+cmis:secondaryObjectTypeIds\\s+IN\\s*\\(([^)]+)\\)",
-					Pattern.CASE_INSENSITIVE
-				);
-				Matcher anyInMatcher = anyInPattern.matcher(whereClause);
-				if (anyInMatcher.matches()) {
-					String valuesStr = anyInMatcher.group(1);
-					// Parse values: 'value1', 'value2', ...
-					Pattern valuePattern = Pattern.compile("'([^']*)'");
-					Matcher valueMatcher = valuePattern.matcher(valuesStr);
-
-					List<String> values = new ArrayList<>();
-					while (valueMatcher.find()) {
-						values.add(valueMatcher.group(1));
-					}
-
-					if (!values.isEmpty()) {
-						// Build Solr query for multi-valued field
-						// secondary_object_type_ids:(value1 OR value2 OR ...)
-						StringBuilder solrQuery = new StringBuilder();
-						solrQuery.append("secondary_object_type_ids:(");
-						for (int i = 0; i < values.size(); i++) {
-							if (i > 0) {
-								solrQuery.append(" OR ");
-							}
-							// Quote each type ID as a phrase so its whole content
-							// (including spaces and words like OR/AND) is a
-							// literal term and cannot inject Solr query syntax
-							// or boolean operators into the (...) group.
-							solrQuery.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(values.get(i)));
-						}
-						solrQuery.append(")");
-
-						if (logger.isDebugEnabled()) {
-							logger.debug("Parsed cmis:secondaryObjectTypeIds ANY IN query: " + solrQuery);
-						}
-						return solrQuery.toString();
-					}
+			// cmis:secondaryObjectTypeIds — the one cmis: property this fallback answers for.
+			Matcher anyIn = Pattern.compile("ANY\\s+" + QUALIFIER + "cmis:secondaryObjectTypeIds\\s+IN\\s*\\((.*)\\)",
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (anyIn.matches()) {
+				List<String> values = inListValues(anyIn.group(1));
+				if (values == null || values.isEmpty()) {
+					return null;
 				}
-
-				// Pattern: cmis:secondaryObjectTypeIds = 'value' (single value)
-				Pattern equalsPattern = Pattern.compile(
-					"cmis:secondaryObjectTypeIds\\s*=\\s*'([^']*)'",
-					Pattern.CASE_INSENSITIVE
-				);
-				Matcher equalsMatcher = equalsPattern.matcher(whereClause);
-				if (equalsMatcher.matches()) {
-					String value = equalsMatcher.group(1);
-					// Quote the value as a phrase so its whole content (incl.
-					// spaces / boolean words) is a literal term and cannot
-					// inject Solr query syntax.
-					String solrQuery = "secondary_object_type_ids:"
-							+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
-					if (logger.isDebugEnabled()) {
-						logger.debug("Parsed cmis:secondaryObjectTypeIds = query: " + solrQuery);
+				// Each type id quoted as a phrase, so its whole content is a literal term and cannot inject Solr
+				// syntax or boolean operators into the (...) group.
+				StringBuilder solrQuery = new StringBuilder("secondary_object_type_ids:(");
+				for (int i = 0; i < values.size(); i++) {
+					if (i > 0) {
+						solrQuery.append(" OR ");
 					}
-					return solrQuery;
+					solrQuery.append(jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(values.get(i)));
 				}
+				return solrQuery.append(")").toString();
+			}
+			Matcher secondaryEquals = Pattern.compile(QUALIFIER + "cmis:secondaryObjectTypeIds\\s*=\\s*" + LITERAL,
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (secondaryEquals.matches()) {
+				return "secondary_object_type_ids:"
+						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(unescapeLiteral(secondaryEquals.group(1)));
 			}
 
-			// Check if this WHERE clause contains secondary type properties (non-cmis: prefix)
-			Pattern propPattern = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)");
-			Matcher propMatcher = propPattern.matcher(whereClause);
-
-			boolean hasSecondaryTypeProperty = false;
-			while (propMatcher.find()) {
-				String propName = propMatcher.group(1);
-				if (!propName.startsWith("cmis:")) {
-					hasSecondaryTypeProperty = true;
-					break;
+			// Every other property this clause names must be one a SECONDARY TYPE defines (closing batch 2 review,
+			// both reviewers, P1). This fallback exists for those — a statement naming a secondary type's property
+			// without the JOIN fails the strict parse — and the gate used to be 「the name is not cmis:」 alone, so a
+			// property no type defines (a typo, a type since deleted) was translated into a field nothing is indexed
+			// under: `IS NULL` then matched every document, which is R188's answer again. Names are read outside
+			// the literals, so a value that looks like prefix:name decides nothing.
+			Matcher named = Pattern.compile("(?<![A-Za-z0-9_:])([A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*)")
+					.matcher(withoutStringLiterals(whereClause));
+			int names = 0;
+			while (named.find()) {
+				names++;
+				String propertyName = named.group(1);
+				if (propertyName.startsWith("cmis:") || typeManager == null
+						|| typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName) == null) {
+					return null;
 				}
 			}
-
-			if (!hasSecondaryTypeProperty) {
+			if (names == 0) {
 				return null;
 			}
 
-			// Parse the WHERE clause manually
-			// Support: LIKE, =, !=, <>, IS NULL, IS NOT NULL
-
-			// Pattern for LIKE: property LIKE 'value'
-			Pattern likePattern = Pattern.compile(
-				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+LIKE\\s+'([^']*)'",
-				Pattern.CASE_INSENSITIVE
-			);
-			Matcher likeMatcher = likePattern.matcher(whereClause);
-			if (likeMatcher.matches()) {
-				String propertyName = likeMatcher.group(1);
-				String pattern = likeMatcher.group(2);
-
-				// Convert to Solr field name, escaped once (the same rule the walker uses)
-				String solrFieldName = SolrUtil.queryableFieldName(
-						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
-
-				// Convert SQL LIKE pattern to a Solr wildcard pattern while
-				// keeping the rest of the value safe. Process char-by-char so
-				// there are no sentinel markers a value could collide with:
-				// SQL '%' -> Solr '*', SQL '_' -> Solr '?', and every other
-				// char is individually escaped so it can't inject query syntax.
-				String solrPattern = likeToEscapedSolrWildcard(pattern);
-
-				if (logger.isDebugEnabled()) {
-					logger.debug("Parsed secondary type LIKE query: " + propertyName + " -> " + solrFieldName + ":" + solrPattern);
-				}
-
-				return solrFieldName + ":" + solrPattern;
+			// One predicate on that property, matched over the whole clause.
+			Matcher like = Pattern.compile(QUALIFIER + PROPERTY + "\\s+LIKE\\s+" + LITERAL,
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (like.matches()) {
+				// SQL '%' -> Solr '*', SQL '_' -> Solr '?', every other char escaped one by one.
+				return fieldFor(repositoryId, like.group(1)) + ":"
+						+ likeToEscapedSolrWildcard(unescapeLiteral(like.group(2)));
 			}
-
-			// Pattern for equals: property = 'value'
-			Pattern equalsPattern = Pattern.compile(
-				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s*=\\s*'([^']*)'",
-				Pattern.CASE_INSENSITIVE
-			);
-			Matcher equalsMatcher = equalsPattern.matcher(whereClause);
-			if (equalsMatcher.matches()) {
-				String propertyName = equalsMatcher.group(1);
-				String value = equalsMatcher.group(2);
-				String solrFieldName = SolrUtil.queryableFieldName(
-						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
-				// Escape inside the phrase so a value containing '"' or '\\'
-				// cannot terminate the quoted term and inject query syntax.
-				return solrFieldName + ":"
-						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
+			Matcher equals = Pattern.compile(QUALIFIER + PROPERTY + "\\s*=\\s*" + LITERAL,
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (equals.matches()) {
+				return fieldFor(repositoryId, equals.group(1)) + ":"
+						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(unescapeLiteral(equals.group(2)));
 			}
-
-			// Pattern for not equals: property != 'value' or property <> 'value'
-			Pattern notEqualsPattern = Pattern.compile(
-				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s*(?:!=|<>)\\s*'([^']*)'",
-				Pattern.CASE_INSENSITIVE
-			);
-			Matcher notEqualsMatcher = notEqualsPattern.matcher(whereClause);
-			if (notEqualsMatcher.matches()) {
-				String propertyName = notEqualsMatcher.group(1);
-				String value = notEqualsMatcher.group(2);
-				String solrFieldName = SolrUtil.queryableFieldName(
-						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
-				// Escape inside the phrase (see equals case) to prevent
-				// query-syntax injection through the value.
-				return "-" + solrFieldName + ":"
-						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(value);
+			Matcher notEquals = Pattern.compile(QUALIFIER + PROPERTY + "\\s*(?:!=|<>)\\s*" + LITERAL,
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (notEquals.matches()) {
+				// A comparison with a property that has no value is not a match (CMIS follows SQL here), so the
+				// document must HAVE the field as well as not have this value — a bare negation also matched every
+				// document that never set it (closing batch 2 review, Codex P1).
+				String field = fieldFor(repositoryId, notEquals.group(1));
+				return "+" + field + ":[* TO *] -" + field + ":"
+						+ jp.aegif.nemaki.rag.util.SolrQuerySanitizer.escapeAndQuote(unescapeLiteral(notEquals.group(2)));
 			}
-
-			// Pattern for IS NULL: property IS NULL
-			Pattern isNullPattern = Pattern.compile(
-				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+IS\\s+NULL",
-				Pattern.CASE_INSENSITIVE
-			);
-			Matcher isNullMatcher = isNullPattern.matcher(whereClause);
-			if (isNullMatcher.matches()) {
-				String propertyName = isNullMatcher.group(1);
-				// Escaped once, through the same method the walker uses. This fallback is the path
-				// that ANSWERS when the walker throws, and the DATETIME arm of the property map
-				// returns a raw colon — which Solr rejects with 400 (round-5 review).
-				String solrFieldName = SolrUtil.queryableFieldName(
-						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
-				return "-" + solrFieldName + ":[* TO *]";
+			Matcher isNull = Pattern.compile(QUALIFIER + PROPERTY + "\\s+IS\\s+NULL",
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (isNull.matches()) {
+				// Escaped once, through the same method the walker uses (round-5 review).
+				return "-" + fieldFor(repositoryId, isNull.group(1)) + ":[* TO *]";
 			}
-
-			// Pattern for IS NOT NULL: property IS NOT NULL
-			Pattern isNotNullPattern = Pattern.compile(
-				"([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\\s+IS\\s+NOT\\s+NULL",
-				Pattern.CASE_INSENSITIVE
-			);
-			Matcher isNotNullMatcher = isNotNullPattern.matcher(whereClause);
-			if (isNotNullMatcher.matches()) {
-				String propertyName = isNotNullMatcher.group(1);
-				String solrFieldName = SolrUtil.queryableFieldName(
-						solrUtil.getPropertyNameInSolr(repositoryId, propertyName));
-				return solrFieldName + ":[* TO *]";
+			Matcher isNotNull = Pattern.compile(QUALIFIER + PROPERTY + "\\s+IS\\s+NOT\\s+NULL",
+					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
+			if (isNotNull.matches()) {
+				return fieldFor(repositoryId, isNotNull.group(1)) + ":[* TO *]";
 			}
 
 			return null;
