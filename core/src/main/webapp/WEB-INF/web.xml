@@ -120,6 +120,15 @@
 		<filter-class>jp.aegif.nemaki.audit.AuditRequestContextFilter</filter-class>
 	</filter>
 
+	<!-- R163: the authentication filter is mapped onto chosen /rest/* paths, which the container matches AFTER it has
+	     normalised the path, while Jersey routes on the path as sent. /rest/repo/../group/list was mapped as
+	     /rest/group/list (no authentication filter) and routed to /repo/{repositoryId}/group/list. This refuses a
+	     /rest/* request whose two views disagree, before any filter or resource sees it. -->
+	<filter>
+		<filter-name>restPathAgreementFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.rest.RestPathAgreementFilter</filter-class>
+	</filter>
+
 	<!-- REST authentication filter - re-enabled with Spring integration -->
 	<filter>
 		<filter-name>restAuthenticationFilter</filter-name>
@@ -194,6 +203,12 @@
 	<filter-mapping>
 		<filter-name>auditRequestContextFilter</filter-name>
 		<url-pattern>/services/*</url-pattern>
+	</filter-mapping>
+
+	<!-- R163: on the whole of /rest/*, so that no normalised path can fall outside it. -->
+	<filter-mapping>
+		<filter-name>restPathAgreementFilter</filter-name>
+		<url-pattern>/rest/*</url-pattern>
 	</filter-mapping>
 
 	<!-- Apply authentication to all /rest/* except /rest/all/* -->
