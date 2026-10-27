@@ -41,6 +41,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.PropertyManager;
 import jp.aegif.nemaki.util.constant.CallContextKey;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A session token and an API key end with the account they were issued to (3.4.1, zero-trust P0): deleting the account,
@@ -262,7 +263,7 @@ class CredentialsEndWithTheAccountTest {
         // The password logs in where the account allows it: a refusal below is the value's, not the harness's.
         UserItem allowed = passwordAccount("password", hash);
         when(contentService.getUserItemById("bedroom", "alice")).thenReturn(allowed);
-        assertTrue(withPassword("pw-1"), "the password did not log in where the account allows it — the lock would measure nothing");
+        HarnessBroken.unless(withPassword("pw-1"), "the password did not log in where the account allows it — the lock would measure nothing");
         for (String compound : List.of("password,disabled", "cloud, Disabled ")) {
             UserItem held = passwordAccount(compound, hash);
             when(contentService.getUserItemById("bedroom", "alice")).thenReturn(held);

@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -587,7 +588,7 @@ class SipVerifierTest {
         // settles it in one look at its span; this verifier cannot, and says so.
         List<String> oneLeaf = List.of("e0hash");
         String root = MerkleTree.root(oneLeaf);
-        assertEquals(SipVerifier.leaf("e0hash"), root,
+        HarnessBroken.unlessEqual(SipVerifier.leaf("e0hash"), root,
                 "the premise of this test is gone: a one-leaf root is no longer the leaf's hash");
         String payload = "the minutes";
         String evidence = "{ \"status\" : \"success\", \"inclusionProof\" : { \"leafHash\" : "

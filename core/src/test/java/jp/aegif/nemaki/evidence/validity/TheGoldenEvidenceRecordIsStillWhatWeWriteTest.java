@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,7 +55,7 @@ class TheGoldenEvidenceRecordIsStillWhatWeWriteTest {
             Path.of("../evidence-verifier-core/src/test/resources/golden/product-ers-root.txt");
 
     private static byte[] goldenDer() throws Exception {
-        assertTrue(Files.exists(GOLDEN), GOLDEN + " is not there. It is produced by "
+        HarnessBroken.unless(Files.exists(GOLDEN), GOLDEN + " is not there. It is produced by "
                 + "ErsGoldenWriter; that class's javadoc carries the command");
         return Files.readAllBytes(GOLDEN);
     }

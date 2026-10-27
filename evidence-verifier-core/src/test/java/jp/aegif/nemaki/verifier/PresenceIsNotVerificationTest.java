@@ -392,7 +392,7 @@ class PresenceIsNotVerificationTest {
                         .getEncoded("DER");
             }
         }
-        assertTrue(previousTokenDer != null, "the golden's own timestamp token was not found");
+        HarnessBroken.unless(previousTokenDer != null, "the golden's own timestamp token was not found");
         byte[] renewalImprint = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(previousTokenDer);
 
@@ -581,7 +581,7 @@ class PresenceIsNotVerificationTest {
                 token = ats.getObjectAt(i);
             }
         }
-        assertTrue(token != null, "the golden's own token was not found");
+        HarnessBroken.unless(token != null, "the golden's own token was not found");
         assertEquals(Outcome.FAILED, named(LongTermErs.check(atsWithExtra(token)), "ers parse")
                 .outcome(),
                 "an ArchiveTimeStamp carrying two timestamps was accepted, and the record was "

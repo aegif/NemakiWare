@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -110,7 +111,7 @@ class TypeCreatingPatchesReportIncompleteTest {
 
     private static String read(String patchName) throws IOException {
         Path file = PATCH_DIR.resolve(patchName + ".java");
-        assertTrue(Files.exists(file),
+        HarnessBroken.unless(Files.exists(file),
                 "no such patch: " + patchName + " — the list above names a file that has been "
                         + "renamed or deleted, so it is no longer protecting anything");
         return Files.readString(file, StandardCharsets.UTF_8);

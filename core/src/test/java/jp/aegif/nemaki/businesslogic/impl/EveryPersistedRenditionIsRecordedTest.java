@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -66,7 +67,7 @@ class EveryPersistedRenditionIsRecordedTest {
     private static final String RECORDING_METHOD = "storeRenditionAndRecordDuplication";
 
     private static String source() throws Exception {
-        assertTrue(Files.exists(SOURCE), "the scanned file has moved: " + SOURCE.toAbsolutePath());
+        HarnessBroken.unless(Files.exists(SOURCE), "the scanned file has moved: " + SOURCE.toAbsolutePath());
         return Files.readString(SOURCE, StandardCharsets.UTF_8);
     }
 

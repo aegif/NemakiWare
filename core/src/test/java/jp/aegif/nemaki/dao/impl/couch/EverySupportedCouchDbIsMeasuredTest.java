@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 import jp.aegif.nemaki.dao.impl.couch.StoreBehaviourFacts.Fact;
 import jp.aegif.nemaki.dao.impl.couch.StoreBehaviourFacts.Line;
 import jp.aegif.nemaki.init.CouchDbVersionRequirement;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -172,7 +173,7 @@ class EverySupportedCouchDbIsMeasuredTest {
         Path runnerFile = Path.of("../tools/negative-controls/run_negative_controls.py");
         Path canonFile = Path.of("../docs/design/fail-closed-reads.md");
         for (Path input : List.of(runnerFile, canonFile)) {
-            assertTrue(Files.exists(input),
+            HarnessBroken.unless(Files.exists(input),
                     "this lock reads " + input + ", which is not there — it would fail as a "
                             + "missing file rather than as a disagreement about the numbers");
         }
@@ -287,7 +288,7 @@ class EverySupportedCouchDbIsMeasuredTest {
         int sweptSeen = 0;
         int unsweptSeen = 0;
         for (Path carrier : carriers) {
-            assertTrue(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
+            HarnessBroken.unless(Files.exists(carrier), "this lock reads " + carrier + ", which is not there");
             String text = Files.readString(carrier, StandardCharsets.UTF_8);
             // Any other four-digit 「N 本」 in these documents is today's total — the readiness
             // lock applied this to the readiness document only, so a sweep figure written back

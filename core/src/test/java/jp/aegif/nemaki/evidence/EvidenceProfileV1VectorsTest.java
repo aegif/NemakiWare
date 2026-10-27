@@ -270,10 +270,10 @@ class EvidenceProfileV1VectorsTest {
         String text = Files.readString(source, StandardCharsets.UTF_8);
 
         int start = text.indexOf("public Verdict verdict() {");
-        assertTrue(start >= 0, "SipVerifier no longer declares verdict(), so this lock is "
+        HarnessBroken.unless(start >= 0, "SipVerifier no longer declares verdict(), so this lock is "
                 + "measuring a method that is gone rather than a delegation that is missing");
         int end = text.indexOf("\n        }", start);
-        assertTrue(end > start, "verdict()'s body does not end where this lock looks");
+        HarnessBroken.unless(end > start, "verdict()'s body does not end where this lock looks");
 
         // Comments stripped first. The body carries a comment naming ProfileVerdict, and a grep
         // that a comment can satisfy is the defect this batch has now hit four times: a sentence

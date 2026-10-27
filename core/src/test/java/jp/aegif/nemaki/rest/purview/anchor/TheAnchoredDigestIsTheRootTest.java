@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HexFormat;
 import java.util.List;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,7 +59,7 @@ class TheAnchoredDigestIsTheRootTest {
             Path.of("../evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier");
 
     private static String read(Path file) throws IOException {
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
@@ -135,7 +136,7 @@ class TheAnchoredDigestIsTheRootTest {
                         + "from the root itself");
 
         Path sidecar = Path.of("../docker/ots/server.py");
-        assertTrue(Files.exists(sidecar), sidecar + " is not there, so the sentence above is "
+        HarnessBroken.unless(Files.exists(sidecar), sidecar + " is not there, so the sentence above is "
                 + "checked against nothing");
         String server = Files.readString(sidecar, java.nio.charset.StandardCharsets.UTF_8);
         assertTrue(server.contains("hashlib.sha256(_digest_bytes(hex_digest)).digest()"),

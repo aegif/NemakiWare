@@ -1145,6 +1145,16 @@ public class AuthTokenResource extends ResourceBase{
 				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
 				return null;
 			}
+			// The rule again, of the copy just read back, and that copy from here on (closing batch 6 review, Codex
+			// P1): the binding was the only thing compared, so an account disabled, re-marked or made password-only
+			// between the rule and the read-back was entered on the copy judged before it.
+			String refusedAfter = SsoLogin.refusal(stored, route, binding);
+			if (refusedAfter != null) {
+				logger.info("{} login refused for the account read back: {}", SsoLogin.label(route), refusedAfter);
+				addErrMsg(errMsg, route, refusedAfter);
+				return null;
+			}
+			return stored;
 		}
 		return account;
 	}

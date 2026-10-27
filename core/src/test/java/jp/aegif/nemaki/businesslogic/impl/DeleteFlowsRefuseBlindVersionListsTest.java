@@ -179,7 +179,7 @@ class DeleteFlowsRefuseBlindVersionListsTest {
         int event = body.indexOf("writeChangeEvent(callContext, repositoryId, content, ChangeType.DELETED);");
         int archive = body.indexOf("createArchive(callContext, repositoryId, objectId, deletedWithParent");
         int delete = body.indexOf("contentDaoService.delete(repositoryId, objectId);");
-        assertTrue(edges >= 0 && event >= 0 && archive >= 0 && delete >= 0,
+        HarnessBroken.unless(edges >= 0 && event >= 0 && archive >= 0 && delete >= 0,
                 "deleteInternal no longer holds the four steps this lock orders: " + body);
         assertTrue(edges < event && edges < archive,
                 "the DELETED change event or the archive is written before the edges are deleted, "

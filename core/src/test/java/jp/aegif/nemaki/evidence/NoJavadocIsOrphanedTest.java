@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -377,7 +378,7 @@ class NoJavadocIsOrphanedTest {
         for (String root : ROOTS) {
             Path base = Path.of(root);
             if (!Files.isDirectory(base)) {
-                fail("source root " + root + " is not there, so this test checked nothing");
+                throw new HarnessBroken("source root " + root + " is not there, so this test checked nothing");
             }
             try (Stream<Path> walk = Files.walk(base)) {
                 for (Path file : walk.filter(p -> p.toString().endsWith(".java")).toList()) {

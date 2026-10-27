@@ -261,7 +261,7 @@ class HarnessBreakageIsNotAFiringTest {
                     + "(head.endswith(\"…\")), so this lock cannot tell whether the refusal type is "
                     + "still excluded");
         }
-        assertEquals(1, suffixes.size(),
+        HarnessBroken.unlessEqual(1, suffixes.size(),
                 "the runner names more than one breakage suffix " + suffixes + ", so which one "
                         + "decides is read from whichever line comes first — write the predicate "
                         + "once, or this lock measures the wrong one");
@@ -420,6 +420,23 @@ class HarnessBreakageIsNotAFiringTest {
                                 + "test/HarnessBroken.java")).isEmpty(),
                 "a file with the root's own package path in another module is read as the root, so "
                         + "the breakage name can be taken there");
+        // THE VERIFIER MODULES' ROOTS are roots, at their exact paths only (R191).
+        for (String verifierRoot : List.of(
+                "../evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/HarnessBroken.java",
+                "../evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/cli/HarnessBroken.java")) {
+            assertTrue(reservedNameViolations("public class HarnessBroken extends RuntimeException { }", suffix,
+                            Path.of(verifierRoot)).isEmpty(),
+                    "the verifier module's own breakage type at " + verifierRoot + " is refused, so a lock there "
+                            + "that could not look has nothing to throw but an assertion");
+        }
+        assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
+                        Path.of("../evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/cli/"
+                                + "HarnessBroken.java")).isEmpty(),
+                "a verifier module takes the breakage name at a path that is not its own root");
+        assertFalse(reservedNameViolations("class HarnessBroken { }", suffix,
+                        Path.of("../evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/"
+                                + "HarnessBroken.java")).isEmpty(),
+                "the cli module takes the breakage name at the core verifier module's path");
         // AND the root itself, with an annotation on its declaration line: the line-prefix test
         // refused this, which no tree can satisfy (round-34 review, subagent P2-2).
         assertTrue(reservedNameViolations(
@@ -725,8 +742,14 @@ class HarnessBreakageIsNotAFiringTest {
         // the 「src/test/java/…」 form was never reached — measured by dropping it and seeing no
         // fixture fail (round-35 review, subagent P3-1). 「/core/」 with both slashes, so that a
         // module whose name merely ends in core does not match.
-        return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")
-                && path.contains("/core/src/test/java/");
+        // THE VERIFIER MODULES' OWN ROOTS, by their exact paths (R191, 3.4.1 closing batch 7): their tests do not
+        // see core's test classes, so a lock there that could not look had no breakage type to throw, and the
+        // checks that said it were assertions the runner scored as firings. Each module gets one root, at one
+        // path; a same-named file anywhere else in them is still refused (the fixtures above).
+        return (path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")
+                        && path.contains("/core/src/test/java/"))
+                || path.endsWith("/evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/HarnessBroken.java")
+                || path.endsWith("/evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/cli/HarnessBroken.java");
     }
 
     /**

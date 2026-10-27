@@ -526,6 +526,15 @@ public class AuthResource {
                     throw ApiException.permissionDenied(
                             "The account's link to this identity could not be stored");
                 }
+                // The rule again, of the copy just read back, and that copy from here on (closing batch 6 review, Codex
+                // P1): the binding was the only thing compared, so an account disabled, re-marked or made password-only
+                // between the rule and the read-back was entered on the copy judged before it.
+                String refusedAfter = jp.aegif.nemaki.rest.OidcLogin.refusal(stored, outcome);
+                if (refusedAfter != null) {
+                    logger.info("API v1: OIDC login refused for the account read back: " + refusedAfter);
+                    throw ApiException.permissionDenied(refusedAfter);
+                }
+                user = stored;
             }
 
             // Whether SSO is allowed for the account, read from the account itself (no service lookup to fall through).
@@ -704,9 +713,11 @@ public class AuthResource {
             }
             newUser.setSubTypeProperties(subTypeProperties);
             
-            contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);
-            
-            return contentService.getUserItemById(repositoryId, userName);
+            // The created instance, as the REST door's creator answers. The caller reads the account back from the STORE,
+            // strictly (R211). Reading it again here through the ordinary lookup turned a read that could not be made —
+            // an undeployed view while provisioning, a store that did not answer — into null, which the caller reports
+            // as «Failed to create or find user» (closing batch 6 review, Codex P2).
+            return contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);
             
         } catch (Exception e) {
             logger.severe("Failed to get or create user: " + userName + " - " + e.getMessage());

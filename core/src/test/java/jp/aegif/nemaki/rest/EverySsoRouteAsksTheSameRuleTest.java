@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Every login that acts on an identity provider's word asks the same rule, and that rule does not read
@@ -243,7 +244,7 @@ public class EverySsoRouteAsksTheSameRuleTest {
                 JavaSource.withoutLiteralText(JavaSource.read(SYNC)), "private void ensureUserItem");
         int update = ensure.indexOf("if (existing != null)");
         int create = ensure.indexOf("Folder usersFolder");
-        assertTrue(update > 0 && create > update, "ensureUserItem no longer has an update path followed "
+        HarnessBroken.unless(update > 0 && create > update, "ensureUserItem no longer has an update path followed "
                 + "by a create path, so this lock is not reading the two places it is about: update="
                 + update + " create=" + create);
         assertTrue(ensure.substring(update, create).contains("ROUTE_KEY"),
@@ -276,7 +277,7 @@ public class EverySsoRouteAsksTheSameRuleTest {
             while (all.find()) {
                 calls++;
             }
-            assertTrue(calls > 0, provider[0] + " no longer calls ensureUserItem, so this lock is not "
+            HarnessBroken.unless(calls > 0, provider[0] + " no longer calls ensureUserItem, so this lock is not "
                     + "reading the place where the mark is written");
             assertEquals(calls, withTheRoute, provider[0] + " calls ensureUserItem " + calls + " time(s) "
                     + "and passes " + provider[1] + " in " + withTheRoute + " of them. A mark no login "
@@ -294,7 +295,7 @@ public class EverySsoRouteAsksTheSameRuleTest {
         for (String source : List.of(REST, API_V1)) {
             String body = JavaSource.withoutLiteralText(JavaSource.read(source));
             int write = body.indexOf("applyUserUpdate");
-            assertTrue(write > 0, source + " no longer writes the binding through applyUserUpdate, so "
+            HarnessBroken.unless(write > 0, source + " no longer writes the binding through applyUserUpdate, so "
                     + "this lock is not reading the write it is about");
             String after = body.substring(write);
             // The NAME was not enough: reading the stored value and then not comparing it, or

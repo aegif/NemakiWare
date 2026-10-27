@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,7 +48,7 @@ class TheReleaseSbomIsOfItsOwnTreeTest {
                 .matcher(script);
         assertTrue(install.find(), "make-sbom.sh does not run npm ci in the UI before the npm SBOM:\n" + script);
         int sbom = script.indexOf("npx --yes \"${NPM_TOOL}\"");
-        assertTrue(sbom > 0, "make-sbom.sh no longer asks cyclonedx-npm, so this lock reads nothing");
+        HarnessBroken.unless(sbom > 0, "make-sbom.sh no longer asks cyclonedx-npm, so this lock reads nothing");
         assertTrue(install.start() < sbom,
                 "make-sbom.sh asks cyclonedx-npm before it installs the tree's node_modules");
     }

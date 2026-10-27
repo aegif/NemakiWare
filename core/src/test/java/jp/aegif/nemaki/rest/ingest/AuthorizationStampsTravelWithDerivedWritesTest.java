@@ -8,6 +8,7 @@ import java.nio.file.Path;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * The authorisation stamps have to reach the writes that are DERIVED from an authorised one.
@@ -48,7 +49,7 @@ class AuthorizationStampsTravelWithDerivedWritesTest {
                 "src/main/java/jp/aegif/nemaki/rest/ingest/CanonicalImportServiceImpl.java"));
         int constructed = source.split("new ExternalIngestRequest\\(\\)", -1).length - 1;
         int stamped = source.split("copyAuthorizationStampsTo\\(", -1).length - 1;
-        assertTrue(constructed > 0, "the derived-request sites moved; this lock is measuring nothing");
+        HarnessBroken.unless(constructed > 0, "the derived-request sites moved; this lock is measuring nothing");
         assertEquals(constructed, stamped,
                 "a request derived inside the import service is built without the authorisation"
                         + " stamps: " + constructed + " constructed, " + stamped + " stamped");

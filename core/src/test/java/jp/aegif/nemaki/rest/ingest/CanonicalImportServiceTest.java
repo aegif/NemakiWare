@@ -13,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -2630,7 +2631,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the confinement did not refuse");
-        assertTrue(result.errors().get(0).contains("not the repository this caller authenticated"),
+        HarnessBroken.unless(result.errors().get(0).contains("not the repository this caller authenticated"),
                 "a different refusal fired, so this lock is not measuring the confinement: "
                         + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2656,7 +2657,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the cmis:all re-check did not refuse");
-        assertTrue(result.errors().get(0).contains("was not held when this import ran"),
+        HarnessBroken.unless(result.errors().get(0).contains("was not held when this import ran"),
                 "a different refusal fired, so this lock is not measuring cmis:all: "
                         + result.errors());
         // This one landed on 400 rather than 500, purely because the sentence contains
@@ -2683,7 +2684,7 @@ class CanonicalImportServiceTest {
         assertFalse(result.isSuccess(), "the connector re-check did not refuse");
         // This one is already the LAST arm, so nothing can stand in for it — but say which
         // refusal fired anyway, so the lock keeps meaning this arm if an arm is added after.
-        assertTrue(result.errors().get(0).contains("no longer delegated"),
+        HarnessBroken.unless(result.errors().get(0).contains("no longer delegated"),
                 "a different refusal fired, so this lock is not measuring the connector "
                         + "re-check: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2701,7 +2702,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "an unwired authorization service let the write run");
-        assertTrue(result.errors().get(0).contains("the authorization service is not available"),
+        HarnessBroken.unless(result.errors().get(0).contains("the authorization service is not available"),
                 "a different refusal fired, so this lock is not measuring the unwired arm: "
                         + result.errors());
         assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
@@ -2769,7 +2770,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        assertTrue(result.errors().get(0).toLowerCase().contains("permission denied"),
+        HarnessBroken.unless(result.errors().get(0).toLowerCase().contains("permission denied"),
                 "a different refusal fired, so this lock is not measuring the write's own "
                         + "ACL evaluation: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2794,7 +2795,7 @@ class CanonicalImportServiceTest {
         assertFalse(result.isSuccess(), "a failed profile read was treated as a resolution");
         String said = result.errors().get(0);
         assertTrue(said.contains("retry shortly"), "the retry marker is gone: " + said);
-        assertTrue(said.toLowerCase().contains("not found"),
+        HarnessBroken.unless(said.toLowerCase().contains("not found"),
                 "this lock needs BOTH tokens present to measure the ordering; the cause's "
                         + "wording no longer reaches the caller: " + said);
         assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
@@ -2821,7 +2822,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        assertTrue(result.errors().get(0).contains("[transient]"),
+        HarnessBroken.unless(result.errors().get(0).contains("[transient]"),
                 "this lock needs the product to still MIS-mark the denial for the ordering to "
                         + "be what is measured: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -3588,6 +3589,8 @@ class CanonicalImportServiceTest {
         java.util.List<String> declaredButNotFound =
                 new java.util.ArrayList<>(DECORATION_SCOPE.writersBelowADoor().keySet());
         declaredButNotFound.removeAll(writers);
+        // An assertion, not a breakage (closing batch 7, R191): the inventory claims to cover every writer below a door,
+        // and one it declares but no longer finds makes that claim false — GA3 drops a write form and must see this fail.
         assertTrue(declaredButNotFound.isEmpty(),
                 "the scope declares a writer that the enumeration no longer finds, so either the "
                         + "method is gone or WRITE_FORMS lost the shape it writes through — "
@@ -3638,7 +3641,7 @@ class CanonicalImportServiceTest {
         // all, so `execute` or `createLinkAuthorized` could be renamed and the scope would keep
         // naming a method that is not there (subagent review, P3).
         for (String declared : named) {
-            assertTrue(source.contains(declared + "("),
+            HarnessBroken.unless(source.contains(declared + "("),
                     "the scope names " + declared + ", which no longer exists — a list nobody "
                             + "prunes stops being a set of decisions and becomes a set of names");
         }
@@ -3728,7 +3731,7 @@ class CanonicalImportServiceTest {
         java.util.regex.Matcher job = java.util.regex.Pattern
                 .compile("\n  unit-tests:\n(.*?)(?=\n  [a-z])", java.util.regex.Pattern.DOTALL)
                 .matcher(yaml);
-        assertTrue(job.find(), "the workflow has no unit-tests job for this lock to read");
+        HarnessBroken.unless(job.find(), "the workflow has no unit-tests job for this lock to read");
         // Anchored to the start of a line, so the guard STEP's own grep pattern — which contains
         // the literal -Dtest='[^']*' inside a longer line — is not what gets read. Measured: the
         // unanchored version read "[^" as the job's first entry and failed on its own regex.

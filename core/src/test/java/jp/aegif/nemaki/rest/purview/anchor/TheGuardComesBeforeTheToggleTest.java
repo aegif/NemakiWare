@@ -85,7 +85,7 @@ class TheGuardComesBeforeTheToggleTest {
 
     /** Source with comments removed and string literals kept intact. */
     private static String code(Path file) throws IOException {
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         return COMMENTS_AND_LITERALS.matcher(Files.readString(file, StandardCharsets.UTF_8))
                 .replaceAll(m -> m.group(1) != null ? Matcher.quoteReplacement(m.group(1))
                         : m.group(2) != null ? Matcher.quoteReplacement(m.group(2)) : "");
@@ -97,7 +97,7 @@ class TheGuardComesBeforeTheToggleTest {
      * (Codex P2, subagent P3-5).
      */
     private static String structure(Path file) throws IOException {
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         return COMMENTS_AND_LITERALS.matcher(Files.readString(file, StandardCharsets.UTF_8))
                 .replaceAll(m -> m.group(1) != null ? "\"\"" : m.group(2) != null ? "' '" : "");
     }
@@ -110,7 +110,7 @@ class TheGuardComesBeforeTheToggleTest {
         // the lock reported "toggle wired ahead of the guard" on a tree where the guard was
         // there (measured on first run).
         int start = text.indexOf("RevocationMaterial collectRevocationMaterial(");
-        assertTrue(start >= 0, "Rfc3161AnchorTarget no longer declares collectRevocationMaterial");
+        HarnessBroken.unless(start >= 0, "Rfc3161AnchorTarget no longer declares collectRevocationMaterial");
         int open = text.indexOf('{', start);
         int depth = 0;
         for (int i = open; i < text.length(); i++) {
@@ -129,7 +129,7 @@ class TheGuardComesBeforeTheToggleTest {
         int start = text.indexOf("### O5-2.");
         assertTrue(start >= 0, "the runbook no longer has §O5-2 on revocation collection");
         int end = text.indexOf("### O5-3.", start);
-        assertTrue(end > start, "§O5-2 does not end where this lock looks");
+        HarnessBroken.unless(end > start, "§O5-2 does not end where this lock looks");
         return text.substring(start, end);
     }
 
@@ -171,7 +171,7 @@ class TheGuardComesBeforeTheToggleTest {
         String flag = "allowRestrictedHeaders=host";
         for (Path dockerfile : List.of(Path.of("../docker/core/Dockerfile"),
                 Path.of("../docker/core/Dockerfile.simple"))) {
-            assertTrue(Files.exists(dockerfile), dockerfile + " is not there");
+            HarnessBroken.unless(Files.exists(dockerfile), dockerfile + " is not there");
             assertTrue(Files.readString(dockerfile, StandardCharsets.UTF_8).contains(flag),
                     dockerfile + " no longer sets " + flag + ". Every http:// pin on that image "
                             + "then fails with 'restricted header name: Host'");

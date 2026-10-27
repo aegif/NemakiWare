@@ -32,6 +32,7 @@ import java.io.ByteArrayInputStream;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -237,7 +238,7 @@ class CopyRenditionsAreRecordedTest {
                                         + "ContentServiceImpl.java"),
                         "private void recordFormatDuplication"));
         int nullCheck = arm.indexOf("formatDuplicationRecorder == null");
-        org.junit.jupiter.api.Assertions.assertTrue(nullCheck >= 0,
+        HarnessBroken.unless(nullCheck >= 0,
                 "fixture check: the unwired-bean arm is gone, so this test guards nothing");
         String beforeReturn = arm.substring(nullCheck, arm.indexOf("return;", nullCheck));
         org.junit.jupiter.api.Assertions.assertTrue(beforeReturn.contains("log.warn"),

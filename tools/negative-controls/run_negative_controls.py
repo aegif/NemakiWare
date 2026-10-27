@@ -12574,7 +12574,7 @@ CONTROLS = [
     ),
     dict(
         id='QF3',
-        what='a nested package\'s own PREMIS is counted as a second package PREMIS — the payload exclusion and the package-over-representation preference both lost — so a CSIP AIP that keeps the original SIP as content cannot reach P0',
+        what="a nested package's own PREMIS is counted as a second package PREMIS — the payload exclusion and the package-over-representation preference both lost — so a CSIP AIP that keeps the original SIP as content cannot reach P0 (closing batch 7: aPayloadCopyDoesNotCloseTheMets is not declared — this sabotage changes the shape that lock compares, and it says so with HarnessBroken since R191)",
         module='evidence-verifier-core',
         file='evidence-verifier-core/src/main/java/jp/aegif/nemaki/verifier/PackageIntegrity.java',
         # Re-pointed 2026-09-26 after the sixth full sweep (Codex P2): the nested-package lock is held
@@ -12585,9 +12585,7 @@ CONTROLS = [
         find='        return top.isEmpty() ? paths : top;\n    }\n\n    /**\n     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.\n     *\n     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP\'s METS and PREMIS\n     * under a representation\'s own data directory. Counting them made the AIP "2 PREMIS documents"\n     * and {@code payload fixity} UNAVAILABLE: the nested-package over-refusal, surviving in the\n     * one lookup that was not moved (subagent, eighth review, P3).\n     */\n    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {\n        List<String> paths = new ArrayList<>();\n        for (String key : entries.keySet()) {\n            if (!isPayload(key) && key.endsWith(suffix)) {',
         replace='        return paths;\n    }\n\n    /**\n     * Metadata files whose path ends with {@code suffix} — PAYLOAD excluded.\n     *\n     * <p>A CSIP AIP that keeps the original SIP as CONTENT carries that SIP\'s METS and PREMIS\n     * under a representation\'s own data directory. Counting them made the AIP "2 PREMIS documents"\n     * and {@code payload fixity} UNAVAILABLE: the nested-package over-refusal, surviving in the\n     * one lookup that was not moved (subagent, eighth review, P3).\n     */\n    private static List<String> pathsEndingWith(Map<String, byte[]> entries, String suffix) {\n        List<String> paths = new ArrayList<>();\n        for (String key : entries.keySet()) {\n            if (key.endsWith(suffix)) {',
         test='PackageIntegrityIsCheckedNotAssumedTest',
-        expect_fail=['aNestedPackagesOwnMetadataIsNotCounted',
-                     'aPayloadCopyDoesNotCloseTheMets',
-                     'aRepresentationsOwnMetadataIsNotThePackages'],
+        expect_fail=['aNestedPackagesOwnMetadataIsNotCounted', 'aRepresentationsOwnMetadataIsNotThePackages'],
     ),
 
     dict(
@@ -23822,7 +23820,7 @@ CONTROLS = [
         find='\t\tif (binding != null && !binding.isBlank() && SsoLogin.unlinked(account, route)) {',
         replace='\t\tif (false) {',
         test='OidcLoginEntryPointsTest',
-        expect_fail=['theFirstLoginLinksTheAccount', 'aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anUnboundAccountFoundInTheRaceIsLinked'],
+        expect_fail=['theFirstLoginLinksTheAccount', 'aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anUnboundAccountFoundInTheRaceIsLinked', 'anAccountChangedBeforeTheReadBackIsJudgedAsReadBack'],
     ),
     dict(
         id='FV5',
@@ -23852,7 +23850,7 @@ CONTROLS = [
         find='\t\t\tif (binding != AuthenticationUtil.CredentialBinding.OK) {\n',
         replace='\t\t\tif (false) {\n',
         test='CredentialsEndWithTheAccountTest',
-        expect_fail=['aSessionTokenStopsWhenTheAccountIsDeleted', 'aSessionTokenStopsWhenTheAccountIsDisabled', 'aCompoundDisabledValueDisablesTheAccount'],
+        expect_fail=['aSessionTokenStopsWhenTheAccountIsDeleted', 'aSessionTokenStopsWhenTheAccountIsDisabled', 'aCompoundDisabledValueDisablesTheAccount', 'aSessionTokenFromBeforeAPasswordChangeIsRefusedThroughTheLogin', 'aSessionTokenIsRefusedWhenTheAccountsGenerationCannotBeRead', 'aSessionTokenOfARecreatedAccountIsRefusedThroughTheLogin', 'theRegisteredTokenIsReadOnce'],
     ),
     dict(
         id='FY5',
@@ -24775,14 +24773,10 @@ CONTROLS = [
     ),
     dict(
         id='JK5',
-        what="the root breakage type is recognised by its file's base name again, so a "
-             "same-named file in ANOTHER MODULE declares itself the root and takes the name the "
-             "runner reads as a breakage (round-33 review: Codex P1, subagent P2-2). Only that "
-             "fixture flips: the nested-declaration fixture is caught by the top-level test, "
-             "which has its own control JP5 (round-34 review, subagent P3-①)",
+        what="the root breakage type is recognised by its file's base name again, so a same-named file in ANOTHER MODULE declares itself the root and takes the name the runner reads as a breakage (round-33 review: Codex P1, subagent P2-2). Only that fixture flips: the nested-declaration fixture is caught by the top-level test, which has its own control JP5 (round-34 review, subagent P3-①) (re-pointed 2026-10-27, closing batch 7): the root check names the verifier modules' roots too (R191)",
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
-        find='        return path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")\n                && path.contains("/core/src/test/java/");',
+        find='        return (path.endsWith("/jp/aegif/nemaki/util/test/HarnessBroken.java")\n                        && path.contains("/core/src/test/java/"))\n                || path.endsWith("/evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/HarnessBroken.java")\n                || path.endsWith("/evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/cli/HarnessBroken.java");',
         replace='        return path.endsWith("HarnessBroken.java");',
         test='HarnessBreakageIsNotAFiringTest',
         expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
@@ -25074,7 +25068,7 @@ CONTROLS = [
         find='\t\t\t\t\tLong.toString(current + 1)));\n\t\t\tuser.setSubTypeProperties(properties);',
         replace='\t\t\t\t\tLong.toString(current + 1)));',
         test='APasswordChangeGoesThroughOnePlaceTest',
-        expect_fail=['theHashIsWrittenAndTheGenerationGoesUp'],
+        expect_fail=['theHashIsWrittenAndTheGenerationGoesUp', 'anAccountWithNoGenerationStartsAtOne'],
     ),
     dict(
         id='KO5',
@@ -25196,9 +25190,7 @@ CONTROLS = [
         find='\t\t\tif (binding != AuthenticationUtil.CredentialBinding.OK) {\n\t\t\t\tlog.info("Token authentication refused: " + binding);',
         replace='\t\t\tif (binding == AuthenticationUtil.CredentialBinding.ACCOUNT_CANNOT_ACT) {\n\t\t\t\tlog.info("Token authentication refused: " + binding);',
         test='CredentialsEndWithTheAccountTest',
-        expect_fail=['aSessionTokenOfARecreatedAccountIsRefusedThroughTheLogin',
-                     'aSessionTokenFromBeforeAPasswordChangeIsRefusedThroughTheLogin',
-                     'aSessionTokenIsRefusedWhenTheAccountsGenerationCannotBeRead'],
+        expect_fail=['aSessionTokenOfARecreatedAccountIsRefusedThroughTheLogin', 'aSessionTokenFromBeforeAPasswordChangeIsRefusedThroughTheLogin', 'aSessionTokenIsRefusedWhenTheAccountsGenerationCannotBeRead', 'theRegisteredTokenIsReadOnce'],
     ),
     dict(
         id='KZ5',
@@ -25356,9 +25348,7 @@ CONTROLS = [
         find='                ErrorType.UNSUPPORTED_MIME_TYPE, false);',
         replace='                ErrorType.UNSUPPORTED_MIME_TYPE, true);',
         test='AMimeTypeThatCouldNotBeReadIsRetryableTest',
-        expect_fail=['aTypeWeDoNotExtractIsStillSkipped', 'anAttachmentWithNoRecordedTypeIsStillSkipped',
-                     'aDocumentWithNoAttachmentIsStillSkipped', 'anAttachmentTheStoreSaysIsNotThereIsSkipped',
-                     'aBlankAttachmentIdIsNoAttachment'],
+        expect_fail=['aTypeWeDoNotExtractIsStillSkipped', 'anAttachmentWithNoRecordedTypeIsStillSkipped', 'aDocumentWithNoAttachmentIsStillSkipped', 'anAttachmentTheStoreSaysIsNotThereIsSkipped', 'aBlankAttachmentIdIsNoAttachment', 'theReindexSkipTestCannotMatchARetryableFailure'],
     ),
     dict(
         id='LO5',
@@ -25428,7 +25418,7 @@ CONTROLS = [
         find='\t\t\tUserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);\n\t\t\tString storedBinding = stored == null ? null : SsoLogin.boundSubject(stored, route);',
         replace='\t\t\tUserItem stored = account;\n\t\t\tString storedBinding = binding;',
         test='OidcLoginEntryPointsTest',
-        expect_fail=['aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin'],
+        expect_fail=['aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anAccountChangedBeforeTheReadBackIsJudgedAsReadBack'],
     ),
     dict(
         id='LV5',
@@ -25564,7 +25554,7 @@ CONTROLS = [
         find='\t\t\tUserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);\n\t\t\tString storedBinding = stored == null ? null : SsoLogin.boundSubject(stored, route);',
         replace='\t\t\tUserItem stored = contentService.getUserItemById(repositoryId, userName);\n\t\t\tString storedBinding = stored == null ? null : SsoLogin.boundSubject(stored, route);',
         test='OidcLoginEntryPointsTest',
-        expect_fail=['aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anUnboundAccountFoundInTheRaceIsLinked'],
+        expect_fail=['aBindingThatIsNotStoredRefusesTheLogin', 'aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anUnboundAccountFoundInTheRaceIsLinked', 'anAccountChangedBeforeTheReadBackIsJudgedAsReadBack'],
     ),
     dict(
         id='MI5',
@@ -25697,7 +25687,7 @@ CONTROLS = [
         find='                UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);\n                if (stored == null) {',
         replace='                UserItem stored = contentService.getUserItemById(repositoryId, username);\n                if (stored == null) {',
         test='OidcLoginEntryPointsTest',
-        expect_fail=['aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anAccountThatAppearedDuringTheCreateIsJudgedByTheRule', 'anUnboundAccountFoundInTheRaceIsLinked', 'aCreatedAccountTheStoreDoesNotHaveIsRefusedForThatReason'],
+        expect_fail=['aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anAccountThatAppearedDuringTheCreateIsJudgedByTheRule', 'anUnboundAccountFoundInTheRaceIsLinked', 'aCreatedAccountTheStoreDoesNotHaveIsRefusedForThatReason', 'aCreatedAccountIsReadBackFromTheStoreOnly'],
     ),
     # ---- 3.4.1 batch 26: the confirmation round of batch 25 (driven locks, 2026-10-19) ----
     dict(
@@ -25773,11 +25763,11 @@ CONTROLS = [
     ),
     dict(
         id='NC5',
-        what="api/v1 judges the instance the creation handed back instead of the store's copy (R209 / R207) (re-pointed 2026-10-27, closing batch 6: the created arm and the existing-account arm are one procedure since R210)",
+        what="api/v1 judges the instance the creation handed back instead of the store's copy (R209 / R207) (re-pointed 2026-10-27, closing batch 6: the created arm and the existing-account arm are one procedure since R210) (re-pointed 2026-10-27, closing batch 7)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/api/v1/resource/AuthResource.java',
-        find='                user = stored;\n',
-        replace='                user = created;\n',
+        find='                user = stored;\n            }\n            String refused',
+        replace='                user = created;\n            }\n            String refused',
         test='OidcLoginEntryPointsTest',
         expect_fail=['aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin', 'anAccountThatAppearedDuringTheCreateIsJudgedByTheRule'],
     ),
@@ -25834,21 +25824,21 @@ CONTROLS = [
     ),
     dict(
         id='NJ5',
-        what="the withdrawn plan-figure lock is brought back at the end of the class while the withdrawal note still says it was taken out. Before this batch the 「do not bring it back」 arm read the NOTE, where a declaration can never appear, so it was structurally unfirable and this edit passed (batch-30 review: Codex P2-1, subagent P2-1)",
+        what='the withdrawn plan-figure lock is brought back at the end of the class while the withdrawal note still says it was taken out. Before this batch the 「do not bring it back」 arm read the NOTE, where a declaration can never appear, so it was structurally unfirable and this edit passed (batch-30 review: Codex P2-1, subagent P2-1) (re-pointed 2026-10-27, closing batch 7): the breakage check is HarnessBroken.unless since R191',
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java',
-        find='            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n}',
-        replace='            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n\n    @Test\n    void theNamedBatchSectionsControlCountIsTheRunners() {\n        assertTrue(true);\n    }\n}',
+        find='            HarnessBroken.unless(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n}',
+        replace='            HarnessBroken.unless(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n\n    @Test\n    void theNamedBatchSectionsControlCountIsTheRunners() {\n        assertTrue(true);\n    }\n}',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePlanFigureLockStaysWithdrawn'],
     ),
     dict(
         id='NK5',
-        what="the withdrawn plan-figure lock is brought back with the signature wrapped over two lines, which an exact-string forbid arm let past. The two readers of 「is this method declared」 — this lock and the runner's own expect_fail reader — disagreed on whitespace (batch-31 review: Codex P2, subagent P3-3)",
+        what="the withdrawn plan-figure lock is brought back with the signature wrapped over two lines, which an exact-string forbid arm let past. The two readers of 「is this method declared」 — this lock and the runner's own expect_fail reader — disagreed on whitespace (batch-31 review: Codex P2, subagent P3-3) (re-pointed 2026-10-27, closing batch 7): the breakage check is HarnessBroken.unless since R191",
         module='core',
         file='core/src/test/java/jp/aegif/nemaki/evidence/ReleaseReadinessIsMeasuredTest.java',
-        find='            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n}',
-        replace='            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n\n    @Test\n    void\n            theNewestBatchSectionsControlCountIsTheRunners() {\n        assertTrue(true);\n    }\n}',
+        find='            HarnessBroken.unless(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n}',
+        replace='            HarnessBroken.unless(sites >= 1, "the " + doc.getKey() + " no longer states the "\n                    + "added-since-sweep count anywhere, so nothing here can be checked");\n        }\n    }\n\n    @Test\n    void\n            theNewestBatchSectionsControlCountIsTheRunners() {\n        assertTrue(true);\n    }\n}',
         test='ReleaseReadinessIsMeasuredTest',
         expect_fail=['thePlanFigureLockStaysWithdrawn'],
     ),
@@ -26988,7 +26978,7 @@ CONTROLS = [
         find='    files = sorted(set(glob.glob(os.path.join(glob.escape(reports), "TEST-" + glob.escape(lock) + ".xml"))\n                       + glob.glob(os.path.join(glob.escape(reports), "TEST-" + glob.escape(lock) + "$*.xml"))))\n',
         replace='    files = sorted(glob.glob(os.path.join(glob.escape(reports), "TEST-" + glob.escape(lock) + ".xml")))\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aNestedClassCountsForItsLock', 'anUnreadableReportFails'],
+        expect_fail=['aNestedClassCountsForItsLock', 'anUnreadableReportFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt'],
     ),
     dict(
         id='RW5',
@@ -26998,7 +26988,7 @@ CONTROLS = [
         find='sys.exit(status)\n',
         replace='sys.exit(0)\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aLockWithNoReportFails', 'aLockThatRanNoTestsFails', 'aLockWithASkippedTestFails', 'aNestedClassCountsForItsLock', 'aReportForALongerNameIsNotTheLocks', 'anUnreadableReportFails', 'aMethodTakenOutAtDiscoveryFails', 'aClassOfTheSameNameElsewhereIsNotTheLock', 'aSimpleNameIsRefused', 'aLockWithNoSourceFails', 'aSourceWithNoReadableTestFails', 'aParameterizedMethodTakenOutFails'],
+        expect_fail=['aLockWithNoReportFails', 'aLockThatRanNoTestsFails', 'aLockWithASkippedTestFails', 'aNestedClassCountsForItsLock', 'aReportForALongerNameIsNotTheLocks', 'anUnreadableReportFails', 'aMethodTakenOutAtDiscoveryFails', 'aClassOfTheSameNameElsewhereIsNotTheLock', 'aSimpleNameIsRefused', 'aLockWithNoSourceFails', 'aSourceWithNoReadableTestFails', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt'],
     ),
     dict(
         id='RX5',
@@ -27342,11 +27332,11 @@ CONTROLS = [
     ),
     dict(
         id='TF5',
-        what='api/v1 refuses an account it found in the race when that account is not linked yet — what the created arm did before R210',
+        what='api/v1 refuses an account it found in the race when that account is not linked yet — what the created arm did before R210 (re-pointed 2026-10-27, closing batch 7)',
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/api/v1/resource/AuthResource.java',
-        find='                user = stored;\n',
-        replace='                if (jp.aegif.nemaki.rest.SsoLogin.unlinked(stored, jp.aegif.nemaki.rest.SsoLogin.OIDC)) {\n                    throw ApiException.permissionDenied("The account\'s link to this identity could not be stored");\n                }\n                user = stored;\n',
+        find='                user = stored;\n            }\n            String refused',
+        replace='                if (jp.aegif.nemaki.rest.SsoLogin.unlinked(stored, jp.aegif.nemaki.rest.SsoLogin.OIDC)) {\n                    throw ApiException.permissionDenied("The account\'s link to this identity could not be stored");\n                }\n                user = stored;\n            }\n            String refused',
         test='OidcLoginEntryPointsTest',
         expect_fail=['anUnboundAccountFoundInTheRaceIsLinked'],
     ),
@@ -27388,7 +27378,7 @@ CONTROLS = [
         find='    files = sorted(set(glob.glob(os.path.join(glob.escape(reports), "TEST-" + glob.escape(lock) + ".xml"))\n                       + glob.glob(os.path.join(glob.escape(reports), "TEST-" + glob.escape(lock) + "$*.xml"))))\n',
         replace='    files = sorted(glob.glob(os.path.join(glob.escape(reports), "TEST-*." + glob.escape(lock.rsplit(".", 1)[-1]) + ".xml")))\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aClassOfTheSameNameElsewhereIsNotTheLock', 'aNestedClassCountsForItsLock', 'anUnreadableReportFails'],
+        expect_fail=['aClassOfTheSameNameElsewhereIsNotTheLock', 'aNestedClassCountsForItsLock', 'anUnreadableReportFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt'],
     ),
     dict(
         id='TK5',
@@ -27408,7 +27398,7 @@ CONTROLS = [
         find='    if missing:\n',
         replace='    if False:\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aMethodTakenOutAtDiscoveryFails', 'aParameterizedMethodTakenOutFails'],
+        expect_fail=['aMethodTakenOutAtDiscoveryFails', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt'],
     ),
     dict(
         id='TM5',
@@ -27422,11 +27412,11 @@ CONTROLS = [
     ),
     dict(
         id='TN5',
-        what="the ran-check takes a parameterized case's reported name, name(args)[n], as a method of that name, so a lock whose parameterized method ran is refused (over-refusal) (closing batch 5 review)",
+        what="the ran-check takes a parameterized case's reported name, name(args)[n], as a method of that name, so a lock whose parameterized method ran is refused (over-refusal) (closing batch 5 review) (re-pointed 2026-10-27, closing batch 7)",
         module='core',
         file='tools/ci/named-locks-ran.sh',
-        find='            ran.add(re.split(r"[(\\[]", case.group(1), 1)[0].strip())\n',
-        replace='            ran.add(case.group(1))\n',
+        find='            ran.add((case.group(2), re.split(r"[(\\[]", case.group(1), 1)[0].strip()))\n',
+        replace='            ran.add((case.group(2), case.group(1)))\n',
         test='EveryNamedLockRanTest',
         expect_fail=['onlyDeclaredTestMethodsAreRequired'],
     ),
@@ -27590,6 +27580,116 @@ CONTROLS = [
         test='EveryNamedLockRanTest',
         expect_fail=['aParameterizedMethodTakenOutFails'],
     ),
+    dict(
+        id='UE5',
+        what='the REST door returns the copy it judged before writing the link, and does not ask the rule of the copy it read back — an account disabled before the read-back is entered (closing batch 6 review, Codex P1)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/rest/AuthTokenResource.java',
+        find='\t\t\t// The rule again, of the copy just read back, and that copy from here on (closing batch 6 review, Codex\n\t\t\t// P1): the binding was the only thing compared, so an account disabled, re-marked or made password-only\n\t\t\t// between the rule and the read-back was entered on the copy judged before it.\n\t\t\tString refusedAfter = SsoLogin.refusal(stored, route, binding);\n\t\t\tif (refusedAfter != null) {\n\t\t\t\tlogger.info("{} login refused for the account read back: {}", SsoLogin.label(route), refusedAfter);\n\t\t\t\taddErrMsg(errMsg, route, refusedAfter);\n\t\t\t\treturn null;\n\t\t\t}\n\t\t\treturn stored;\n',
+        replace='',
+        test='OidcLoginEntryPointsTest',
+        expect_fail=['anAccountChangedBeforeTheReadBackIsJudgedAsReadBack'],
+    ),
+    dict(
+        id='UF5',
+        what='api/v1 goes on with the copy it judged before writing the link, and does not ask the rule of the copy it read back (closing batch 6 review, Codex P1)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/api/v1/resource/AuthResource.java',
+        find='                // The rule again, of the copy just read back, and that copy from here on (closing batch 6 review, Codex\n                // P1): the binding was the only thing compared, so an account disabled, re-marked or made password-only\n                // between the rule and the read-back was entered on the copy judged before it.\n                String refusedAfter = jp.aegif.nemaki.rest.OidcLogin.refusal(stored, outcome);\n                if (refusedAfter != null) {\n                    logger.info("API v1: OIDC login refused for the account read back: " + refusedAfter);\n                    throw ApiException.permissionDenied(refusedAfter);\n                }\n                user = stored;\n',
+        replace='',
+        test='OidcLoginEntryPointsTest',
+        expect_fail=['anAccountChangedBeforeTheReadBackIsJudgedAsReadBack'],
+    ),
+    dict(
+        id='UG5',
+        what="api/v1's creator reads the account it created again through the ordinary lookup, and a read that could not be made is «Failed to create or find user» (closing batch 6 review, Codex P2)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/api/v1/resource/AuthResource.java',
+        find='            return contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);',
+        replace='            contentService.createUserItem(new SystemCallContext(repositoryId), repositoryId, newUser);\n            return contentService.getUserItemById(repositoryId, userName);',
+        test='OidcLoginEntryPointsTest',
+        expect_fail=['aCreatedAccountIsReadBackFromTheStoreOnly'],
+    ),
+    dict(
+        id='UH5',
+        what='the ran-check matches a declared method by its name alone, so a method of the same name in another class of the lock stands in for it (closing batch 6 review, both reviewers)',
+        module='core',
+        file='tools/ci/named-locks-ran.sh',
+        find='                     for suffix, method in declared if (lock + suffix, method) not in ran)',
+        replace='                     for suffix, method in declared if not any(m == method for _, m in ran))',
+        test='EveryNamedLockRanTest',
+        expect_fail=['aSameNamedMethodElsewhereInTheLockIsNotIt'],
+    ),
+    dict(
+        id='UI5',
+        what="the ran-check reads every declared method as the lock's own, whatever class encloses it",
+        module='core',
+        file='tools/ci/named-locks-ran.sh',
+        find='            names.add(("".join("$" + c for c in chain[1:]), name.group(1)))',
+        replace='            names.add(("", name.group(1)))',
+        test='EveryNamedLockRanTest',
+        expect_fail=['aSameNamedMethodElsewhereInTheLockIsNotIt', 'aNestedClassCountsForItsLock'],
+    ),
+    dict(
+        id='UJ5',
+        what='a CONTAINS phrase ending in an escaped backslash is split into words again — the check asks only whether it ends in \\" (closing batch 6 review, subagent P3-4)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\tif (text.length() >= 2 && text.startsWith("\\"") && closesWithUnescapedQuote(text)) {',
+        replace='\t\tif (text.length() >= 2 && text.startsWith("\\"") && text.endsWith("\\"") && !text.endsWith("\\\\\\"")) {',
+        test='AnUntranslatedWhereIsRefusedNotDroppedTest',
+        expect_fail=['aPhraseEndingInAnEscapedBackslashIsAPhrase'],
+    ),
+    dict(
+        id='UK5',
+        what='HarnessBroken.unless lets a lock that could not look go on, so its breakage is neither an assertion nor a breakage — it is not said at all (R191)',
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java',
+        find='    public static void unless(boolean looked, String message) {\n        if (!looked) {\n            throw new HarnessBroken(message);\n        }\n    }',
+        replace='    public static void unless(boolean looked, String message) {\n    }',
+        test='HarnessBrokenUnlessTest',
+        expect_fail=['aLockThatCouldNotLookIsBroken'],
+    ),
+    dict(
+        id='UL5',
+        what='HarnessBroken.unlessEqual lets a shape that is not the expected one go on (R191)',
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBroken.java',
+        find='    public static void unlessEqual(Object expected, Object actual, String message) {\n        if (!java.util.Objects.equals(expected, actual)) {',
+        replace='    public static void unlessEqual(Object expected, Object actual, String message) {\n        if (false) {',
+        test='HarnessBrokenUnlessTest',
+        expect_fail=['aShapeThatIsNotExpectedIsBroken'],
+    ),
+    dict(
+        id='UM5',
+        what="the verifier module's HarnessBroken.unless lets a lock that could not look go on (R191)",
+        module='evidence-verifier-core',
+        file='evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/HarnessBroken.java',
+        find='    public static void unless(boolean looked, String message) {\n        if (!looked) {\n            throw new HarnessBroken(message);\n        }\n    }',
+        replace='    public static void unless(boolean looked, String message) {\n    }',
+        test='HarnessBrokenUnlessTest',
+        expect_fail=['aLockThatCouldNotLookIsBroken'],
+    ),
+    dict(
+        id='UN5',
+        what="the cli module's HarnessBroken.unless lets a lock that could not look go on (R191)",
+        module='evidence-verifier-cli',
+        file='evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/cli/HarnessBroken.java',
+        find='    public static void unless(boolean looked, String message) {\n        if (!looked) {\n            throw new HarnessBroken(message);\n        }\n    }',
+        replace='    public static void unless(boolean looked, String message) {\n    }',
+        test='HarnessBrokenUnlessTest',
+        expect_fail=['aLockThatCouldNotLookIsBroken'],
+    ),
+    dict(
+        id='UO5',
+        what="the reserved-name sweep stops taking the verifier modules' own HarnessBroken as roots, so a lock there that could not look has no breakage type to throw (R191)",
+        module='core',
+        file='core/src/test/java/jp/aegif/nemaki/util/test/HarnessBreakageIsNotAFiringTest.java',
+        find='                || path.endsWith("/evidence-verifier-core/src/test/java/jp/aegif/nemaki/verifier/HarnessBroken.java")\n                || path.endsWith("/evidence-verifier-cli/src/test/java/jp/aegif/nemaki/verifier/cli/HarnessBroken.java");',
+        replace=';',
+        test='HarnessBreakageIsNotAFiringTest',
+        expect_fail=['theRefusalTypeIsStillExcludedByTheRunner'],
+    ),
 ]
 
 
@@ -27676,6 +27776,26 @@ UNDECLARED: list = []
 # the reader, not in the protections — but it makes the undeclared report incomplete without
 # saying so, which is the shape of defect that took four rounds to find last time.
 PARSE_GAPS: list = []
+# [control id, {lock: [words]}] for firings whose failure MESSAGE reads like a lock that could not
+# look (R191, 3.4.1 closing batch 7). The verdict is not changed: the words are a heuristic, and a
+# lock catching the product may say "is gone" about what the product lost. But a firing worded
+# like breakage is the shape R191 is about — the lock said it could not look, with an assertion —
+# so it is printed for a person to read, at the control and again in the summary.
+BREAKAGE_WORDED: list = []
+BREAKAGE_WORDS = ("this lock", "this reader", "is gone", "has moved", "needs updating", "no longer reads",
+                  "reads nothing", "measures nothing", "measured nothing", "is not there", "was not found",
+                  "cannot find", "where this lock looks", "nothing was checked", "nothing to check",
+                  "checks nothing")
+
+
+def breakage_worded(failure_text: str) -> list:
+    """The breakage words in a failure's MESSAGE — the text before its stack frames (R191).
+
+    A warning, never a verdict: see BREAKAGE_WORDED. The frames are left out because a class or
+    method name in them («…NoLongerReadsTest») is not something the lock said.
+    """
+    message = failure_text.split("\n\tat ", 1)[0].split("\n    at ", 1)[0].lower()
+    return sorted({w for w in BREAKAGE_WORDS if w in message})
 
 
 def purge_poisoned_classes() -> int:
@@ -27950,6 +28070,16 @@ def failure_is_assertion(failure_text: str) -> bool:
 
 
 SELF_TEST_CASES = [
+    # R191: the warning reads the MESSAGE only, and only warns.
+    ("a firing worded like breakage is named (R191)",
+     lambda: breakage_worded("org.opentest4j.AssertionFailedError: the anchor is gone — this lock no "
+                             "longer reads it\n\tat jp.aegif.SomeTest.someLock(SomeTest.java:1)"),
+     ["is gone", "no longer reads", "this lock"]),
+    ("a firing on the product's own words is not, whatever its cause says (R191)",
+     lambda: breakage_worded("org.opentest4j.AssertionFailedError: the refusal answered 200 with 2,449 "
+                             "documents\n\tat jp.aegif.SomeTest.x(SomeTest.java:1)\nCaused by: "
+                             "java.lang.IllegalStateException: the index is gone\n\tat jp.aegif.Y.z(Y.java:2)"),
+     []),
     # (name, callable -> actual, expected)
     # The reader had no case at all when it was added, and then four rounds of holes while it
     # parsed prose. It reads the XML now; these cases are the shapes this tree's reports
@@ -28481,6 +28611,13 @@ def main() -> None:
                     else:
                         results.append((control["id"], True, ", ".join(sorted(failed_methods))))
                         print(f"[{control['id']}] fired: {control['expect_fail']}")
+                        worded = {m: breakage_worded(failure_texts.get(m, ""))
+                                  for m in control["expect_fail"]}
+                        worded = {m: w for m, w in worded.items() if w}
+                        if worded:
+                            BREAKAGE_WORDED.append((control["id"], worded))
+                            print(f"[{control['id']}] WARNING: fired on a message worded like a lock "
+                                  f"that could not look (the verdict stands — read it): {worded}")
                         # Locks that failed WITHOUT being declared. Not a bad verdict — extra
                         # failures are tolerated by design — but the record of "which
                         # protections this sabotage removes" is then incomplete, and four
@@ -28553,6 +28690,12 @@ def main() -> None:
         print("\n== locks that failed without being declared (complete the expect_fail lists) ==")
         for cid, names in UNDECLARED:
             print(f"  {cid}: {names}")
+    if BREAKAGE_WORDED:
+        # Not fatal: a warning list (R191). The verdicts above stand.
+        print("\n== firings whose message reads like a lock that could not look (R191 — read each; "
+              "the verdict is unchanged) ==")
+        for cid, worded in BREAKAGE_WORDED:
+            print(f"  {cid}: {worded}")
     if PARSE_GAPS:
         print("\n== failing testcases this runner could not attribute (the undeclared report above is "
               "incomplete for these controls) ==")

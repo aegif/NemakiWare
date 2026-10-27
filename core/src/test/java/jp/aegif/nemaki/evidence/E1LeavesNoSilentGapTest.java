@@ -30,6 +30,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -423,7 +424,7 @@ class E1LeavesNoSilentGapTest {
         assertTrue(Files.exists(source), "the attachment delegate is not at " + source);
         String text = Files.readString(source, StandardCharsets.UTF_8);
         int at = text.indexOf("boolean canRetryStream");
-        assertTrue(at >= 0, "the attachment writer no longer decides retryability here, so this "
+        HarnessBroken.unless(at >= 0, "the attachment writer no longer decides retryability here, so this "
                 + "lock is reading a decision that has moved rather than one that is wrong");
         String decision = text.substring(at, text.indexOf(';', at)).replaceAll("(?m)//.*$", "");
         assertTrue(decision.contains("DigestingInputStream.isRewindable("),
@@ -607,9 +608,9 @@ class E1LeavesNoSilentGapTest {
         // The W-table is the enumeration the plan says E1's scope IS. Scoped to the table, not
         // the file: the W ids appear in the prose around it too.
         int start = text.indexOf("| # | bytes を書くサービス API");
-        assertTrue(start >= 0, "the inventory's write-path table is not where this lock looks");
+        HarnessBroken.unless(start >= 0, "the inventory's write-path table is not where this lock looks");
         int end = text.indexOf("\n\n", start);
-        assertTrue(end > start, "the write-path table does not end where this lock looks");
+        HarnessBroken.unless(end > start, "the write-path table does not end where this lock looks");
 
         SortedSet<String> enumerated = new TreeSet<>();
         Matcher rows = Pattern.compile("(?m)^\\|\\s*\\*{0,2}(W\\d+)\\*{0,2}\\s*\\|")

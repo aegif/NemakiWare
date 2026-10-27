@@ -138,7 +138,7 @@ class ReleaseReadinessIsMeasuredTest {
      * the wrong reason" rather than as this lock doing its job.
      */
     private static String read(Path path) throws IOException {
-        assertTrue(Files.exists(path),
+        HarnessBroken.unless(Files.exists(path),
                 "this lock reads " + path + ", which is not there — it would fail as a missing "
                         + "file rather than as a disagreement about the numbers");
         return Files.readString(path, StandardCharsets.UTF_8);
@@ -153,9 +153,9 @@ class ReleaseReadinessIsMeasuredTest {
      */
     private static String slice(String text, String from, String to, String what) {
         int start = text.indexOf(from);
-        assertTrue(start >= 0, what + " does not start where this lock looks (\"" + from + "\")");
+        HarnessBroken.unless(start >= 0, what + " does not start where this lock looks (\"" + from + "\")");
         int end = text.indexOf(to, start + from.length());
-        assertTrue(end > start, what + " does not end where this lock looks (\"" + to + "\")");
+        HarnessBroken.unless(end > start, what + " does not end where this lock looks (\"" + to + "\")");
         return text.substring(start, end);
     }
 
@@ -336,7 +336,7 @@ class ReleaseReadinessIsMeasuredTest {
         // The groups surefire is told to skip, from the build itself.
         Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
                 .matcher(Files.readString(Path.of("pom.xml"), StandardCharsets.UTF_8));
-        assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so "
+        HarnessBroken.unless(excluded.find(), "core/pom.xml no longer declares the excluded groups, so "
                 + "this test cannot mirror what the suite skips");
         List<String> excludedGroups = java.util.Arrays.stream(excluded.group(1).split(","))
                 .map(String::trim).filter(group -> !group.isEmpty()).toList();
@@ -528,7 +528,7 @@ class ReleaseReadinessIsMeasuredTest {
         // fence anchor was scored «the harness broke» instead of «the guard fired» (round 35,
         // measured with control JM5).
         GateReading real = readNewestGate(read(BATCH_PLAN));
-        assertEquals(real.claimed(), real.read(),
+        HarnessBroken.unlessEqual(real.claimed(), real.read(),
                 real.claimed() + " gate paragraphs claim a 全ユニット figure and this reader could "
                         + "read " + real.read() + ". A paragraph whose figure it cannot read is not "
                         + "a round without a run");
@@ -1983,7 +1983,7 @@ class ReleaseReadinessIsMeasuredTest {
                         + "withdrawal line with one; counted rather than taken in order, so "
                         + "reordering the list changes nothing. Every count, position and answer "
                         + "arm passes a line that is the reinstatement line REVERSED");
-        assertEquals(0, edgesNotSeparated,
+        HarnessBroken.unlessEqual(0, edgesNotSeparated,
                 edgesNotSeparated + " code points are not swept at three SEPARATE positions — the "
                         + "first is U+" + (firstWithoutEdges < 0 ? "?"
                                 : String.format("%04X", firstWithoutEdges)) + ". Exactly one of "
@@ -2001,6 +2001,8 @@ class ReleaseReadinessIsMeasuredTest {
                         + "the inside and the tail are three different questions, and collapsing "
                         + "them to one keeps every count right while a rule keyed on WHERE a "
                         + "character sits goes unseen");
+        // An assertion, not a breakage (closing batch 7, R191): what this lock asserts is a property of what it visits,
+        // so the extent it claims IS part of the claim — ON5 narrows the loop and must see this fail.
         assertEquals(Character.MAX_CODE_POINT + 1, codePointsSwept,
                 "the sweep visited " + codePointsSwept + " code points, not all "
                         + (Character.MAX_CODE_POINT + 1) + ". A filter on the loop — undefined, "
@@ -2388,7 +2390,7 @@ class ReleaseReadinessIsMeasuredTest {
                         + "and paragraph separators, controls, formatting characters — WHOLE, "
                         + "plus the variation selectors, which are NON_SPACING_MARK and are taken "
                         + "by BLOCK and not by category. Categories seen: " + categoriesSeen);
-        assertEquals(256, allInTheBlocks,
+        HarnessBroken.unlessEqual(256, allInTheBlocks,
                 "the two variation-selector blocks are no longer 256 code points on this JDK ("
                         + allInTheBlocks + "), so what this reader removes has changed with the "
                         + "JDK rather than with this tree. Re-measure which of them leave no ink "
@@ -3246,17 +3248,17 @@ class ReleaseReadinessIsMeasuredTest {
         while (closer.find()) {
             closers++;
         }
-        assertEquals(declared, closers,
+        HarnessBroken.unlessEqual(declared, closers,
                 "this reader found " + closers + " dict closers and " + declared + " ids. Three "
                         + "counts have to agree — opener, id and closer — because all three are "
                         + "read from raw lines, and a crafted sabotage string could fake one of "
                         + "them (round-25 review, Codex P2)");
-        assertEquals(declared, dicts,
+        HarnessBroken.unlessEqual(declared, dicts,
                 "this reader found " + dicts + " control dicts and the runner declares " + declared
                         + " ids. It reads raw lines, so a dict opener written another way (`dict (`)"
                         + " or a `test=` line sitting inside a sabotage string moves the two apart —"
                         + " and then this count is of something else (round-24 review, Codex P2)");
-        assertFalse(naming.isEmpty(),
+        HarnessBroken.unless(!(naming.isEmpty()),
                 "no control names the sweep at all, so this reader is measuring nothing");
 
         Matcher stated = Pattern.compile(
@@ -3339,7 +3341,7 @@ class ReleaseReadinessIsMeasuredTest {
             }
         }
 
-        assertTrue(statesACount, "the canon no longer states a gap count");
+        HarnessBroken.unless(statesACount, "the canon no longer states a gap count");
         assertEquals(gaps, Integer.parseInt(stated.group(1)),
                 "the canon says " + stated.group(1) + " gaps between " + last + " and " + newest
                         + " and the runner leaves " + gaps + ". A retired or resurrected "
@@ -3391,7 +3393,7 @@ class ReleaseReadinessIsMeasuredTest {
         Matcher row = Pattern.compile("(?m)^\\| R59 \\|.*$").matcher(canon);
         assertTrue(row.find(), "the canon has no R59 row");
         Matcher counts = Pattern.compile("錠 (\\d+) 本中 R59 の (\\d+) 本（(.*?)）、control").matcher(row.group());
-        assertTrue(counts.find(), "the R59 row no longer states its lock counts in the expected shape");
+        HarnessBroken.unless(counts.find(), "the R59 row no longer states its lock counts in the expected shape");
         int totalStated = Integer.parseInt(counts.group(1));
         int r59Stated = Integer.parseInt(counts.group(2));
         String listed = counts.group(3);
@@ -3488,7 +3490,7 @@ class ReleaseReadinessIsMeasuredTest {
         if (excludedSetting == null) {
             Matcher excluded = Pattern.compile("<surefire\\.excludedGroups>([^<]*)</")
                     .matcher(readPomForExcludedGroups());
-            assertTrue(excluded.find(), "core/pom.xml no longer declares the excluded groups, so this "
+            HarnessBroken.unless(excluded.find(), "core/pom.xml no longer declares the excluded groups, so this "
                     + "count cannot mirror what the suite skips");
             excludedSetting = excluded.group(1);
         }
@@ -4007,7 +4009,7 @@ class ReleaseReadinessIsMeasuredTest {
                 "no lock appears to open a file outside core. Either the tests moved or this "
                         + "check's pattern no longer matches how they name a path, and it would "
                         + "pass by finding nothing");
-        assertTrue(read.contains("RELEASE_NOTES.md") && read.contains("docs"),
+        HarnessBroken.unless(read.contains("RELEASE_NOTES.md") && read.contains("docs"),
                 "the locks that read the release notes and docs/ as a root are not seen here, so "
                         + "this check no longer sees files outside docs/ or directory roots: " + read);
 
@@ -4110,7 +4112,7 @@ class ReleaseReadinessIsMeasuredTest {
                                     + m.group().trim() + "」");
                 }
             }
-            assertTrue(sites >= 1, "the " + doc.getKey() + " no longer states the "
+            HarnessBroken.unless(sites >= 1, "the " + doc.getKey() + " no longer states the "
                     + "added-since-sweep count anywhere, so nothing here can be checked");
         }
     }

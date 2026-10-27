@@ -660,6 +660,16 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     }
 
     @Test
+    @DisplayName("a CONTAINS phrase that ends in an escaped backslash is still a phrase (closing batch 6 review)")
+    void aPhraseEndingInAnEscapedBackslashIsAPhrase() {
+        // The expression "a b\\" — a phrase whose last character is a backslash — was read as the words "a and b\"
+        // (subagent P3-4): the check asked only whether it ended in \" .
+        String q = assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE CONTAINS('\"a b\\\\\\\\\"')");
+        assertFalse(q.contains("+("), "a phrase was split into words: " + q);
+        assertTrue(q.startsWith("text:\"a b\\\\"), "the phrase is not the text a b\\ : " + q);
+    }
+
+    @Test
     @DisplayName("a failure that is not a syntax error is the server's 500, even without the unreadable mark (closing batch 5 review)")
     void aFailureThatIsNotASyntaxErrorIsTheServers() {
         // A RuntimeException from the type manager while the statement is processed — its lazy init failing — left no

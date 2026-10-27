@@ -511,7 +511,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 closure.detail());
 
         Outcome.Check fixity = checkNamed(checks, "payload fixity");
-        assertTrue(fixity.detail().contains("carries no PREMIS"),
+        HarnessBroken.unless(fixity.detail().contains("carries no PREMIS"),
                 "the other half of the disagreement changed shape, so this lock no longer "
                         + "measures the two checks reading one name the same way: "
                         + fixity.detail());
@@ -2691,7 +2691,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         Path zip = raw.writeTo(tmp.resolve("ghost.zip"));
         try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
             java.util.zip.ZipEntry ghost = file.getEntry(ROOT + "metadata/other/ghost.xml");
-            assertTrue(ghost != null && java.util.Arrays.equals(premisBytes,
+            HarnessBroken.unless(ghost != null && java.util.Arrays.equals(premisBytes,
                             file.getInputStream(ghost).readAllBytes()),
                     "ZipFile did not hand out the ghost, so the premise of this test is gone");
         }

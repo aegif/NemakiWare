@@ -815,7 +815,7 @@ public class SolrPredicateWalker{
 		text = text.trim();
 
 		// Inner double quotes indicate phrase search: CONTAINS('"exact phrase"')
-		if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"") && !text.endsWith("\\\"")) {
+		if (text.length() >= 2 && text.startsWith("\"") && closesWithUnescapedQuote(text)) {
 			String phrase = text.substring(1, text.length() - 1);
 			return buildDualFieldQuery(unescapeTextSearch(phrase));
 		}
@@ -832,6 +832,22 @@ public class SolrPredicateWalker{
 		}
 
 		return buildDualFieldQuery(unescapeTextSearch(text));
+	}
+
+	/**
+	 * Whether the expression ends with a double quote that no backslash escapes — an even number of backslashes before
+	 * it. Asking only whether it ends in {@code \"} read a phrase ending in an escaped backslash, {@code "a b\\"}, as
+	 * two words (closing batch 6 review, subagent P3-4).
+	 */
+	private static boolean closesWithUnescapedQuote(String text) {
+		if (!text.endsWith("\"")) {
+			return false;
+		}
+		int backslashes = 0;
+		for (int i = text.length() - 2; i >= 0 && text.charAt(i) == '\\'; i--) {
+			backslashes++;
+		}
+		return backslashes % 2 == 0;
 	}
 
 	/** A text search expression's own escapes undone: \\, \', \" and \- are the characters themselves. */

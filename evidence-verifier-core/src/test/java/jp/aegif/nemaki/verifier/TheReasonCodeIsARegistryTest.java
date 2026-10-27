@@ -174,7 +174,7 @@ class TheReasonCodeIsARegistryTest {
                 org.junit.jupiter.api.Assertions.assertEquals(size, Integer.parseInt(m.group(1)),
                         doc + " states the registry as " + m.group(1) + " values and it has " + size);
             }
-            assertTrue(stated >= 1, doc + " no longer states the registry's size in the form "
+            HarnessBroken.unless(stated >= 1, doc + " no longer states the registry's size in the form "
                     + "「REASON_CODES（N 値）」, so its number has drifted out of this check's reach");
         }
     }

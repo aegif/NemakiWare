@@ -29,6 +29,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * An incomplete group membership must be distinguishable from a complete one.
@@ -81,7 +82,7 @@ class TruncatedGroupResolutionTest {
                 Path.of("src/main/java/jp/aegif/nemaki/dao/impl/cached/ContentDaoServiceImpl.java"),
                 StandardCharsets.UTF_8);
         int start = src.indexOf("public List<String> getJoinedGroupByUserId");
-        assertTrue(start > 0, "getJoinedGroupByUserId not found — this test needs updating");
+        HarnessBroken.unless(start > 0, "getJoinedGroupByUserId not found — this test needs updating");
         String method = src.substring(start, src.indexOf("\n\t}", start));
 
         int guard = method.indexOf("TruncatedGroupResolution.isTruncated");

@@ -105,18 +105,53 @@ def strip_annotations(text):
     return "".join(out)
 
 
+def enclosing_classes(code):
+    """For each offset, the names of the classes whose bodies contain it, outermost first (a list per brace level).
+
+    Returns a function offset -> tuple of class names. A class, interface, enum or record declaration names the body
+    its next brace opens; any other brace (a method, a lambda, an array initializer) is only depth."""
+    opens = []  # (offset of the body's opening brace, offset of its closing brace, name)
+    stack = []
+    pending = None
+    depth = 0
+    for m in re.finditer(r"\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}]", code):
+        token = m.group(0)
+        if token == "{":
+            depth += 1
+            if pending is not None:
+                stack.append((m.start(), depth, pending))
+                pending = None
+        elif token == "}":
+            if stack and stack[-1][1] == depth:
+                start, _, name = stack.pop()
+                opens.append((start, m.start(), name))
+            depth -= 1
+        else:
+            pending = m.group(1)
+
+    def at(offset):
+        return tuple(name for start, end, name in sorted(opens) if start < offset < end)
+    return at
+
+
 def declared_tests(path):
+    """The test methods the source declares, as (nested-class suffix, method name): ("", "a") for the lock's own
+    method, ("$Inner", "b") for one in its nested class Inner. Surefire reports each test case with the class that
+    declares it (classname), so a method of the same name in another class of the lock cannot stand in for it
+    (closing batch 6 review, both reviewers)."""
     code = without_comments_and_strings(open(path, encoding="utf-8").read())
+    classes_at = enclosing_classes(code)
     names = set()
     for m in TEST_ANNOTATION.finditer(code):
-        # Annotations stripped BEFORE the head is cut at the first { or ; — an annotation's own arguments can hold a
+        # Annotations stripped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
         # brace (@ValueSource(strings = { ... })), and cutting there first lost the method that followed. The "@T"
         # stands for the test annotation itself, so arguments of its own (@RepeatedTest(5)) go with it.
         head = strip_annotations("@T" + code[m.end():m.end() + 4000])
         end = min([k for k in (head.find("{"), head.find(";")) if k >= 0] or [len(head)])
         name = re.search(r"([A-Za-z_$][\w$]*)\s*\(", head[:end])
         if name:
-            names.add(name.group(1))
+            chain = classes_at(m.start())
+            names.add(("".join("$" + c for c in chain[1:]), name.group(1)))
     return names
 
 
@@ -152,8 +187,8 @@ for lock in locks:
             break
         tests += int(t.group(1))
         skipped += int(s.group(1))
-        for case in re.finditer(r'<testcase\s+name="([^"]*)"', text):
-            ran.add(re.split(r"[(\[]", case.group(1), 1)[0].strip())
+        for case in re.finditer(r'<testcase\s+name="([^"]*)"\s+classname="([^"]*)"', text):
+            ran.add((case.group(2), re.split(r"[(\[]", case.group(1), 1)[0].strip()))
     if unreadable:
         print("::error::%s: %s does not state how many tests ran and were skipped, so it cannot show the lock "
               "ran" % (lock, unreadable))
@@ -168,7 +203,8 @@ for lock in locks:
         status = 1
         continue
     declared = declared_tests(source)
-    missing = sorted(declared - ran)
+    missing = sorted((lock.rsplit(".", 1)[-1] + suffix).replace("$", ".") + "." + method
+                     for suffix, method in declared if (lock + suffix, method) not in ran)
     if not declared:
         print("::error::%s: no test method could be read from %s, so the report cannot be checked against it"
               % (lock, source))

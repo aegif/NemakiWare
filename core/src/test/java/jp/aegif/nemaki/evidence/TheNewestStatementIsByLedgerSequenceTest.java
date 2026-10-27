@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -216,7 +217,7 @@ class TheNewestStatementIsByLedgerSequenceTest {
         // statements view emits only rows that carry versionObjectId, so a close that left the
         // key out stored the statement where statementFor never finds it — and the export fell
         // back to the legacy layout for every newly created document (2026-09-28).
-        assertTrue(CouchContentWriteJournal.MAP_STATEMENTS.contains("doc.versionObjectId"),
+        HarnessBroken.unless(CouchContentWriteJournal.MAP_STATEMENTS.contains("doc.versionObjectId"),
                 "the view no longer keys on the row's version; this lock no longer measures the join");
         Map<String, Object> open = new LinkedHashMap<>();
         open.put("intentId", "i-9");

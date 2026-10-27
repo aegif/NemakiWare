@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * {@code searchInFolder} must scope BOTH halves of the weighted search, each on its own field.
@@ -117,7 +118,7 @@ class RagFolderFilterTest {
         // the same one goes to both halves, or if they are swapped. The argument ORDER at the
         // call site is the property, because executeWeightedKnnSearch takes (chunk, document).
         int call = body.indexOf("executeWeightedKnnSearch(");
-        assertTrue(call > 0, "the weighted search call is gone — this test needs updating");
+        HarnessBroken.unless(call > 0, "the weighted search call is gone — this test needs updating");
         String args = body.substring(call, body.indexOf(";", call));
         int chunkArg = args.indexOf("chunkFolderFilter");
         int docArg = args.indexOf("documentFolderFilter");
@@ -140,7 +141,7 @@ class RagFolderFilterTest {
                 JavaSource.read("src/main/java/jp/aegif/nemaki/api/v1/resource/RAGSearchResource.java"),
                 "public Response search("));
         int folderCall = body.indexOf("vectorSearchService.searchInFolder(");
-        assertTrue(folderCall > 0, "the folder-scoped call is gone — this test needs updating");
+        HarnessBroken.unless(folderCall > 0, "the folder-scoped call is gone — this test needs updating");
         String call = body.substring(folderCall, body.indexOf(";", folderCall));
         assertTrue(call.contains("request.getPropertyBoost()")
                         && call.contains("request.getContentBoost()"),

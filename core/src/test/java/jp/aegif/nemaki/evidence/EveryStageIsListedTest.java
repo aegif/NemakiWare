@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -81,7 +82,7 @@ class EveryStageIsListedTest {
                             + "applicable', and that is the reading this guarantee exists to "
                             + "prevent: " + names);
         }
-        assertEquals(SECTIONS.size(), names.size(),
+        HarnessBroken.unlessEqual(SECTIONS.size(), names.size(),
                 "the assembler produced " + names.size() + " sections and this lock knows about "
                         + SECTIONS.size() + ": " + names + ". A section added without being "
                         + "named here is one nothing checks is always emitted");

@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -112,9 +113,9 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
 
     /** The source as the compiler reads it. */
     private static CompilationUnitTree parse(Path file) throws IOException {
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         JavaCompiler javac = ToolProvider.getSystemJavaCompiler();
-        assertNotNull(javac, "this lock reads the source with the JDK's own parser, and this runtime has none");
+        HarnessBroken.unless((javac) != null, "this lock reads the source with the JDK's own parser, and this runtime has none");
         StandardJavaFileManager files = javac.getStandardFileManager(null, null, StandardCharsets.UTF_8);
         List<String> problems = new ArrayList<>();
         JavacTask task = (JavacTask) javac.getTask(null, files, problem -> problems.add(String.valueOf(problem)),
@@ -134,7 +135,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 return super.visitMethod(method, unused);
             }
         }.scan(root, null);
-        assertFalse(found.isEmpty(), "this lock no longer finds " + name);
+        HarnessBroken.unless(!(found.isEmpty()), "this lock no longer finds " + name);
         return found;
     }
 
@@ -468,7 +469,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 return null; // nor an inner class's
             }
         }.scan(method.getBody(), null);
-        assertTrue(returns[0] > 0, method.getName() + " returns nothing this lock can read");
+        HarnessBroken.unless(returns[0] > 0, method.getName() + " returns nothing this lock can read");
     }
 
     private static void madeBy(ExpressionTree value, Set<String> makers, String where) {
@@ -576,7 +577,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 }
             }
         }
-        assertTrue(refusals > 0 && links > 0, "this lock found " + refusals + " refusals and " + links + " links in " + IMPORT);
+        HarnessBroken.unless(refusals > 0 && links > 0, "this lock found " + refusals + " refusals and " + links + " links in " + IMPORT);
         for (Tree write : writesOfWords(unit, "unansweredCheck")) {
             ExpressionTree note = wordsWritten(write, "a link's note");
             String words = leadingWords(note);
@@ -703,7 +704,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                         + label + "…\", is about its evidence and is read as a missing part");
             }
         }
-        assertTrue(literals >= MISSING.size() + EVIDENCE.size() && passedOn >= PASSED_ON.size() && lists >= 1 && children > 0,
+        HarnessBroken.unless(literals >= MISSING.size() + EVIDENCE.size() && passedOn >= PASSED_ON.size() && lists >= 1 && children > 0,
                 "this lock found " + literals + " written, " + passedOn + " passed-on, " + lists + " listed and " + children
                         + " merged warnings in the mail import");
 
@@ -737,7 +738,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                         "mergeChildWarnings changes its " + parameter.getName() + " before it adds a child's warning under it");
             }
         }
-        assertTrue(merged > 0, "this lock found no warning mergeChildWarnings adds");
+        HarnessBroken.unless(merged > 0, "this lock found no warning mergeChildWarnings adds");
 
         // emitReimportEvent: its list is used only to add evidence about a re-import.
         int reimport = 0;
@@ -755,7 +756,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 reimport++;
             }
         }
-        assertTrue(reimport > 0, "this lock found no warning in emitReimportEvent");
+        HarnessBroken.unless(reimport > 0, "this lock found no warning in emitReimportEvent");
 
         // The public entry: what it does to the internal result is part of what the connectors read.
         Set<String> entryCalls = new TreeSet<>();
@@ -806,7 +807,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 returned++;
                 carriesItsOwnWarnings(value);
             }
-            assertTrue(returned > 0, "withCaptureOutcome returns nothing this lock can read");
+            HarnessBroken.unless(returned > 0, "withCaptureOutcome returns nothing this lock can read");
         }
     }
 
@@ -896,7 +897,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 assertFalse(MailImportWarnings.saysAPartIsMissing(words + "x"), "the capture's warning \"" + words + "…\" is read as a missing part");
             }
         }
-        assertTrue(warned > 0, "this lock found no warning of the capture");
+        HarnessBroken.unless(warned > 0, "this lock found no warning of the capture");
         madeOnlyByItsFactories(capture, "CaptureResult", Set.of("notEstablished", "capturedWithGap"), "warning");
         // What the mail's list takes is outcome.warning(); outcome is what complete returns, and
         // complete — through chain — returns only what these factories make.
@@ -924,7 +925,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 assertFalse(MailImportWarnings.saysAPartIsMissing(words + "x"), "the capture's reason \"" + words + "…\" is read as a missing part");
             }
         }
-        assertTrue(reasons > 0, "this lock found no undetermined reason in the capture");
+        HarnessBroken.unless(reasons > 0, "this lock found no undetermined reason in the capture");
 
         CompilationUnitTree ledger = parse(LEDGER);
         int gaps = 0;
@@ -939,7 +940,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
                 assertFalse(MailImportWarnings.saysAPartIsMissing(words + "x"), "the ledger's warning \"" + words + "…\" is read as a missing part");
             }
         }
-        assertTrue(gaps > 0, "this lock found no gap the evidence ledger reports");
+        HarnessBroken.unless(gaps > 0, "this lock found no gap the evidence ledger reports");
         madeOnlyByItsFactories(ledger, "Recorded", Set.of("gap"), "warning");
         for (MethodTree recorded : methods(ledger, "recordCaptureCompleted")) returnsOnlyWhatIsMadeBy(recorded, Set.of("chained", "gap"));
     }

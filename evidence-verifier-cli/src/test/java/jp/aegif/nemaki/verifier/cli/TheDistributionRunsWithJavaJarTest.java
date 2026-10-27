@@ -43,7 +43,7 @@ class TheDistributionRunsWithJavaJarTest {
 
     private static String read(String path) throws IOException {
         Path file = Path.of(path);
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 

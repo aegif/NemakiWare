@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.model.WebAuthnCredential;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A passkey belongs to the account DOCUMENT it was registered for (R170, 3.4.1 batch 19).
@@ -50,7 +51,7 @@ class APasskeyEndsWithItsAccountTest {
             Path.of("src/main/java/jp/aegif/nemaki/rest/WebAuthnResource.java");
 
     private static String code() throws IOException {
-        assertTrue(Files.exists(RESOURCE), "this lock looks for " + RESOURCE + " and it is not there");
+        HarnessBroken.unless(Files.exists(RESOURCE), "this lock looks for " + RESOURCE + " and it is not there");
         return JavaSource.withoutLiteralText(
                 Files.readString(RESOURCE, StandardCharsets.UTF_8));
     }
@@ -73,7 +74,7 @@ class APasskeyEndsWithItsAccountTest {
     void registrationWritesTheBinding() throws IOException {
         String code = code();
         int registration = code.indexOf("createWebAuthnCredential(repositoryId, credential)");
-        assertTrue(registration > 0,
+        HarnessBroken.unless(registration > 0,
                 "the registration no longer stores a credential here — this lock reads that path");
         String before = code.substring(0, registration);
 

@@ -56,4 +56,39 @@ public class HarnessBroken extends RuntimeException {
     public HarnessBroken(Throwable cause) {
         super(String.valueOf(cause), cause);
     }
+
+    /**
+     * The one way to say "this lock could not look" as a check: throws unless {@code looked} holds.
+     *
+     * <p>Added for residual R191 (3.4.1, closing batch 7). A lock that said its breakage with {@code assertTrue(found,
+     * "… is gone — this lock no longer reads it")} failed with the same type as a lock catching the product, so the
+     * control runner recorded "the guard worked" when the sabotage had only moved what the lock reads. Those checks now
+     * come here, and an {@code assertTrue} in a lock means the product broke its promise.
+     */
+    public static void unless(boolean looked, String message) {
+        if (!looked) {
+            throw new HarnessBroken(message);
+        }
+    }
+
+    /** {@link #unless(boolean, String)} with a message built only when it is needed. */
+    public static void unless(boolean looked, java.util.function.Supplier<String> message) {
+        if (!looked) {
+            throw new HarnessBroken(message.get());
+        }
+    }
+
+    /** {@link #unless(boolean, String)} for a count or a shape the lock needs to be what it expects. */
+    public static void unlessEqual(Object expected, Object actual, String message) {
+        if (!java.util.Objects.equals(expected, actual)) {
+            throw new HarnessBroken(message + " ==> expected: <" + expected + "> but was: <" + actual + ">");
+        }
+    }
+
+    /** {@link #unlessEqual(Object, Object, String)} for whole numbers, compared by value whatever their width. */
+    public static void unlessEqual(long expected, long actual, String message) {
+        if (expected != actual) {
+            throw new HarnessBroken(message + " ==> expected: <" + expected + "> but was: <" + actual + ">");
+        }
+    }
 }

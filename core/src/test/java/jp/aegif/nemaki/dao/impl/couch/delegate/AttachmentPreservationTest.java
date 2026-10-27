@@ -30,6 +30,7 @@ import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Every metadata write on an attachment document must carry its binary forward.
@@ -85,7 +86,7 @@ class AttachmentPreservationTest {
     void theCompensatingRollbackPreservesTheBinary() throws Exception {
         String src = Files.readString(DELEGATE, StandardCharsets.UTF_8);
         int at = src.indexOf("Rollback successful");
-        assertTrue(at > 0, "the rollback branch moved — this test needs updating");
+        HarnessBroken.unless(at > 0, "the rollback branch moved — this test needs updating");
         String around = src.substring(Math.max(0, at - 900), at);
         assertTrue(around.contains("updatePreservingAttachments"),
                 "a rollback that deletes the previous binary is not a rollback");
@@ -96,7 +97,7 @@ class AttachmentPreservationTest {
     void theMetadataOnlyBranchPreservesTheBinary() throws Exception {
         String src = Files.readString(DELEGATE, StandardCharsets.UTF_8);
         int at = src.indexOf("Metadata-only update");
-        assertTrue(at > 0, "the metadata-only branch moved — this test needs updating");
+        HarnessBroken.unless(at > 0, "the metadata-only branch moved — this test needs updating");
         String branch = src.substring(at, src.indexOf("\n\t\t\t}", at));
         assertTrue(branch.contains("updatePreservingAttachments"),
                 "the branch that exists BECAUSE the binary is unchanged must not delete it");

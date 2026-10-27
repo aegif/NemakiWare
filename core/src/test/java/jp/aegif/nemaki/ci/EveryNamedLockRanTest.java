@@ -93,10 +93,12 @@ class EveryNamedLockRanTest {
                 + "class " + lock.substring(dot + 1) + " {\n" + body + "}\n", StandardCharsets.UTF_8);
     }
 
-    private void report(String fileName, String testsuiteAttributes, String... cases) throws IOException {
+    /** A report naming each case with the class that declares it, as surefire writes them (measured: classname). */
+    private void report(String fileName, String testsuiteAttributes, String classname, String... cases) throws IOException {
         StringBuilder testcases = new StringBuilder();
         for (String c : cases) {
-            testcases.append("  <testcase name=\"").append(c).append("\" classname=\"x\" time=\"0\"/>\n");
+            testcases.append("  <testcase name=\"").append(c).append("\" classname=\"").append(classname)
+                    .append("\" time=\"0\"/>\n");
         }
         Files.writeString(reports.resolve(fileName), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<testsuite xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " + testsuiteAttributes + ">\n"
@@ -106,7 +108,7 @@ class EveryNamedLockRanTest {
     /** A report for {@code lock} counting {@code skipped} of its cases skipped. */
     private void ran(String lock, int skipped, String... cases) throws IOException {
         report("TEST-" + lock + ".xml", "name=\"" + lock + "\" time=\"0.1\" tests=\"" + cases.length
-                + "\" errors=\"0\" skipped=\"" + skipped + "\" failures=\"0\"", cases);
+                + "\" errors=\"0\" skipped=\"" + skipped + "\" failures=\"0\"", lock, cases);
     }
 
     private void assertRefused(Outcome outcome, String lock, String why) {
@@ -140,7 +142,7 @@ class EveryNamedLockRanTest {
     void aLockThatRanNoTestsFails() throws Exception {
         // The report names the declared method, so «no tests» is the one reason left to refuse it.
         source(FOO, "a");
-        report("TEST-" + FOO + ".xml", "name=\"" + FOO + "\" tests=\"0\" skipped=\"0\" errors=\"0\" failures=\"0\"", "a");
+        report("TEST-" + FOO + ".xml", "name=\"" + FOO + "\" tests=\"0\" skipped=\"0\" errors=\"0\" failures=\"0\"", FOO, "a");
         assertRefused(run(FOO), FOO, "FooTest's report counts no tests");
     }
 
@@ -162,7 +164,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "a", "b");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "FooTest's method c did not run");
-        assertTrue(outcome.output().contains(": c "), "the refusal does not name the method that did not run: "
+        assertTrue(outcome.output().contains(": FooTest.c "), "the refusal does not name the method that did not run: "
                 + outcome.output());
     }
 
@@ -176,7 +178,23 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "plain");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "FooTest's parameterized method did not run");
-        assertTrue(outcome.output().contains(": each "), "the refusal does not name the parameterized method: "
+        assertTrue(outcome.output().contains(": FooTest.each "), "the refusal does not name the parameterized method: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a method of the same name in another class of the lock does not stand in for it")
+    void aSameNamedMethodElsewhereInTheLockIsNotIt() throws Exception {
+        // Both sides were sets of method names, so the outer guard() that ran answered for Inner's guard() that was
+        // taken out at discovery (closing batch 6 review, both reviewers). Surefire reports each case with the class
+        // that declares it, all of them in the report of the innermost class (measured).
+        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    class Inner {\n        @Test\n"
+                + "        void guard() { }\n    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "only the outer guard() ran");
+        assertTrue(outcome.output().contains(": FooTest.Inner.guard "), "the refusal does not name the nested method: "
                 + outcome.output());
     }
 
@@ -186,21 +204,26 @@ class EveryNamedLockRanTest {
         sourceText(FOO, "    @Nested\n    class Inner {\n        @Test\n        void a() { }\n"
                 + "        @Test\n        void b() { }\n    }\n");
         report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"2\" skipped=\"0\" errors=\"0\" "
-                + "failures=\"0\"", "a", "b");
+                + "failures=\"0\"", FOO + "$Inner", "a", "b");
         Outcome onlyNested = run(FOO);
         assertEquals(0, onlyNested.exit(), "a lock whose tests are all in a nested class was refused: "
                 + onlyNested.output());
         report("TEST-" + FOO + "$Other.xml", "name=\"" + FOO + "$Other\" tests=\"2\" skipped=\"2\" errors=\"0\" "
-                + "failures=\"0\"", "a", "b");
+                + "failures=\"0\"", FOO + "$Other", "a", "b");
         assertRefused(run(FOO), FOO, "a nested class of FooTest skipped its tests");
     }
 
     @Test
     @DisplayName("a report for a longer class name is not the lock's")
     void aReportForALongerNameIsNotTheLocks() throws Exception {
+        // The cases inside name the LOCK, so it is the report's file name alone that must keep them out: the class in
+        // each case is checked separately (aSameNamedMethodElsewhereInTheLockIsNotIt), and a control on the choice of
+        // files has to see this lock fail on its own (closing batch 7, RT5).
         source(FOO, "a");
-        ran("jp.aegif.nemaki.x.FooTestExtra", 0, "a");
-        ran("jp.aegif.nemaki.x.PreFooTest", 0, "a");
+        report("TEST-jp.aegif.nemaki.x.FooTestExtra.xml", "name=\"jp.aegif.nemaki.x.FooTestExtra\" tests=\"1\" skipped=\"0\" "
+                + "errors=\"0\" failures=\"0\"", FOO, "a");
+        report("TEST-jp.aegif.nemaki.x.PreFooTest.xml", "name=\"jp.aegif.nemaki.x.PreFooTest\" tests=\"1\" skipped=\"0\" "
+                + "errors=\"0\" failures=\"0\"", FOO, "a");
         assertRefused(run(FOO), FOO, "only FooTestExtra and PreFooTest ran, not FooTest");
     }
 
@@ -208,8 +231,10 @@ class EveryNamedLockRanTest {
     @DisplayName("a class of the same simple name in another package does not stand in for the lock")
     void aClassOfTheSameNameElsewhereIsNotTheLock() throws Exception {
         // Chosen by the simple name, TEST-<other.pkg>.FooTest.xml was the lock's (closing batch 5 review, Codex P1).
+        // As above, the cases name the lock, so the file name alone has to keep the decoy's report out (closing batch 7, TJ5).
         source(FOO, "a");
-        ran("jp.aegif.nemaki.decoy.FooTest", 0, "a");
+        report("TEST-jp.aegif.nemaki.decoy.FooTest.xml", "name=\"jp.aegif.nemaki.decoy.FooTest\" tests=\"1\" skipped=\"0\" "
+                + "errors=\"0\" failures=\"0\"", FOO, "a");
         assertRefused(run(FOO), FOO, "only a decoy FooTest in another package ran");
     }
 
@@ -247,8 +272,10 @@ class EveryNamedLockRanTest {
         sourceText(FOO, "    // @Test\n    void helperOne() { }\n    /* @Test */ void helperTwo() { }\n"
                 + "    String s = \"@Test void helperThree()\";\n"
                 + "    @ParameterizedTest\n    @ValueSource(strings = { \"x\", \"y\" })\n    void each(String v) { }\n"
-                + "    @Test\n    @DisplayName(\"with (parentheses)\")\n    void plain() { }\n");
-        ran(FOO, 0, "each(String)[1]", "each(String)[2]", "plain");
+                + "    @Test\n    @DisplayName(\"with (parentheses)\")\n    void plain() { }\n"
+                + "    @TestFactory\n    Stream<DynamicTest> locks() { return Stream.empty(); }\n");
+        // A dynamic test is reported as factory()[n] — measured with surefire 3.5.2 (closing batch 6 review, Codex P3).
+        ran(FOO, 0, "each(String)[1]", "each(String)[2]", "plain", "locks()[1]");
         Outcome outcome = run(FOO);
         assertEquals(0, outcome.exit(), "a lock that ran every declared method was refused: " + outcome.output());
     }
@@ -258,7 +285,7 @@ class EveryNamedLockRanTest {
     void anUnreadableReportFails() throws Exception {
         source(FOO, "a", "b", "c");
         ran(FOO, 0, "a", "b", "c");
-        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" errors=\"0\"");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" errors=\"0\"", FOO + "$Inner");
         assertRefused(run(FOO), FOO, "one of FooTest's reports states no counts");
     }
 

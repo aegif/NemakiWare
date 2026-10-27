@@ -32,6 +32,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.cmis.aspect.type.impl.TypeManagerImpl;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * {@code getTypeDefinition} runs once per object in every response — it must not serialise.
@@ -154,7 +155,7 @@ class TypeManagerHotPathTest {
     /** The text between a method's opening brace and its matching close. */
     private static String bodyOf(String source, String signature) {
         int start = source.indexOf(signature);
-        assertTrue(start >= 0, "method not found — the test needs updating: " + signature);
+        HarnessBroken.unless(start >= 0, "method not found — the test needs updating: " + signature);
         int i = source.indexOf('{', start);
         int depth = 0;
         for (int j = i; j < source.length(); j++) {

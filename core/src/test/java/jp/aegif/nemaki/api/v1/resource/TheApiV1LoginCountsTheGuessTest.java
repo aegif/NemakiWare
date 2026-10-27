@@ -196,6 +196,8 @@ class TheApiV1LoginCountsTheGuessTest {
         // missing service, and the resource's catch-all turns that NullPointerException into an
         // ApiException with no token minted — so "it threw and minted nothing" is satisfied by the
         // accident as well as by the check (measured: control HH5 did not fire without this).
+        // An assertion, not a breakage (closing batch 7, R191): which refusal it is IS the check — HH5 drops the guard and
+        // must see this fail.
         assertTrue(refused.getMessage() != null
                         && refused.getMessage().contains("Authentication service not available"),
                 "the door failed for some other reason than the missing counter, so this lock does"

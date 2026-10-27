@@ -168,7 +168,7 @@ class DeleteTreeDfsKeepsFoldersOverInvisibleChildrenTest {
                 jp.aegif.nemaki.util.test.JavaSource.read(
                         "src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java"));
         int solrDelete = source.indexOf("solrUtil.deleteDocument(repositoryId, folder.getId())");
-        assertTrue(solrDelete >= 0,
+        HarnessBroken.unless(solrDelete >= 0,
                 "fixture check: the postlude moved; update this lock with it");
         String guard = source.substring(Math.max(0, solrDelete - 200), solrDelete);
         assertTrue(guard.contains("!failedIds.contains(folder.getId())"),

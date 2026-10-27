@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentExcep
 import jp.aegif.nemaki.util.test.JavaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Every production that turns a CMIS property name into a Solr field name escapes it exactly once,
@@ -74,7 +75,7 @@ class EveryFieldNameIsEscapedOnceTest {
             Path.of("src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrQueryProcessor.java");
 
     private static String read(Path path) throws IOException {
-        assertTrue(Files.exists(path), "this lock looks for " + path + " and it is not there");
+        HarnessBroken.unless(Files.exists(path), "this lock looks for " + path + " and it is not there");
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
@@ -245,7 +246,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // Both reviewers found this in round 8. The refusal has to leave before that fallback.
         String processor = withoutLiteralText(read(PROCESSOR));
         int walkCall = processor.indexOf("solrPredicateWalker.walkPredicate(whereTree)");
-        assertTrue(walkCall > 0,
+        HarnessBroken.unless(walkCall > 0,
                 "the walker call is gone — this lock no longer reads that path. It reads the"
                         + " production's text, so renaming that call, the caught variable or the"
                         + " catch-all clause turns this red without any defect in the production"
@@ -257,7 +258,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // the line above had already required (round-11 review, P2).
         // This lock's own pattern must not read the caught variable's NAME: that is what made the
         // round-10 form turn red for a rename, with a message naming a defect that was not there.
-        assertTrue(Pattern.compile(REFUSAL_CLAUSE)
+        HarnessBroken.unless(Pattern.compile(REFUSAL_CLAUSE)
                         .matcher("} catch (final org.x.CmisInvalidArgumentException somethingElse) {")
                         .find(),
                 "this lock reads the refusal clause by a pattern that does not match a clause"
@@ -275,7 +276,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // clause in another method (round-12 review, P3); bounding by "the next catch" then broke
         // on a NESTED one (round-13 review, P2).
         int afterRefusal = endOfBlock(processor, refusalCatch);
-        assertTrue(afterRefusal > refusalCatch,
+        HarnessBroken.unless(afterRefusal > refusalCatch,
                 "the refusal clause has no body this lock can delimit, so nothing below measures"
                         + " what it does");
         int fallback = processor.indexOf("parseSecondaryTypeWhereClause", refusalCatch);
@@ -296,7 +297,7 @@ class EveryFieldNameIsEscapedOnceTest {
                         + " back as a query for whatever other predicate something else recognises");
         assertFalse(refusalBody.contains("parseSecondaryTypeWhereClause"),
                 "the refusal's own catch calls the manual parser");
-        assertTrue(fallback > refusalCatch,
+        HarnessBroken.unless(fallback > refusalCatch,
                 "the manual-parser fallback moved; this lock measures that the refusal leaves first");
     }
 
@@ -310,7 +311,7 @@ class EveryFieldNameIsEscapedOnceTest {
         // that is driven end to end by AnUntranslatedWhereIsRefusedNotDroppedTest.
         String processor = withoutLiteralText(read(PROCESSOR));
         int manual = processor.indexOf("private String parseSecondaryTypeWhereClause");
-        assertTrue(manual > 0, "the manual parser is gone — this lock no longer reads it");
+        HarnessBroken.unless(manual > 0, "the manual parser is gone — this lock no longer reads it");
         String body = processor.substring(manual);
 
         // By the type here too (round-11 review, P2): the exact strings turned this red for a
@@ -319,7 +320,7 @@ class EveryFieldNameIsEscapedOnceTest {
         assertTrue(rethrown.find(), "the manual parser does not catch a refusal at all, so a"
                 + " refused predicate becomes null and the caller answers every document");
         int endOfRethrow = endOfBlock(body, rethrown.start());
-        assertTrue(endOfRethrow > rethrown.start(),
+        HarnessBroken.unless(endOfRethrow > rethrown.start(),
                 "the refusal clause in the manual parser has no body this lock can delimit");
         assertTrue(body.substring(rethrown.start(), endOfRethrow)
                         .contains("throw " + rethrown.group(1)),

@@ -72,7 +72,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
     private static final Path COMPOSE_DIR = Path.of("../docker");
 
     private static String read(Path path) throws IOException {
-        assertTrue(Files.exists(path), "this lock looks for " + path + " and it is not there");
+        HarnessBroken.unless(Files.exists(path), "this lock looks for " + path + " and it is not there");
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
@@ -329,7 +329,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // ([[a-sibling-arm-of-the-same-check-satisfies-the-lock]]). Measured over the two doors in
         // TheNemakiConfDoorCountsTheGuessTest; this is the reason written down.
         int confDoor = auth.indexOf("public boolean loginForNemakiConfDb");
-        assertTrue(confDoor > 0,
+        HarnessBroken.unless(confDoor > 0,
                 "loginForNemakiConfDb is gone — this lock no longer reads the nemaki_conf door");
         String confBody = auth.substring(confDoor, auth.indexOf("\n\t}", confDoor));
         assertTrue(confBody.contains("throttleKey(suId, username,"),
@@ -343,7 +343,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
     void theMcpPasswordLoginIsThrottled() throws IOException {
         String mcp = read(MCP_AUTH);
         int validate = mcp.indexOf("private McpAuthResult validateCredentials");
-        assertTrue(validate > 0, "validateCredentials is gone — this lock no longer reads the MCP password login");
+        HarnessBroken.unless(validate > 0, "validateCredentials is gone — this lock no longer reads the MCP password login");
         String body = mcp.substring(validate, mcp.indexOf("\n    }", validate));
 
         assertTrue(body.contains("loginThrottle.isBlocked("),
@@ -362,7 +362,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         try (var files = Files.walk(COMPOSE_DIR)) {
             serverXmls.addAll(files.filter(f -> f.getFileName().toString().equals("server.xml")).toList());
         }
-        assertFalse(serverXmls.isEmpty(), "no server.xml under " + COMPOSE_DIR + " — this lock measures nothing");
+        HarnessBroken.unless(!(serverXmls.isEmpty()), "no server.xml under " + COMPOSE_DIR + " — this lock measures nothing");
 
         for (Path serverXml : serverXmls) {
             Matcher listener = Pattern
@@ -466,7 +466,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
                     "these compose files pass a password as a JVM argument " + passing
                             + ", and the version listener is not silenced, so the passwords are printed at startup");
         }
-        assertFalse(passing.isEmpty(),
+        HarnessBroken.unless(!(passing.isEmpty()),
                 "no compose file passes a password with -D any more — this lock is measuring nothing and the "
                         + "residual about command-line secrets can be closed");
     }

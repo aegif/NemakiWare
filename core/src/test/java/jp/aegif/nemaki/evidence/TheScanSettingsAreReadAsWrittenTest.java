@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,7 +51,7 @@ class TheScanSettingsAreReadAsWrittenTest {
     private static final String TRIVY_EXPIRY_KEY = "expired_at";
 
     private static String only(Matcher m, String what) {
-        assertTrue(m.find(), what + " was not found");
+        HarnessBroken.unless(m.find(), what + " was not found");
         String found = m.group(1);
         assertFalse(m.find(), what + " was found twice");
         return found;
@@ -89,9 +90,9 @@ class TheScanSettingsAreReadAsWrittenTest {
     void theOsvStepKeepsTheScannersExitCode() throws Exception {
         String workflow = Files.readString(SCAN, StandardCharsets.UTF_8);
         int pipe = workflow.indexOf("| tee osv-report.txt");
-        assertTrue(pipe > 0, "the OSV step no longer pipes into tee, so this lock reads nothing");
+        HarnessBroken.unless(pipe > 0, "the OSV step no longer pipes into tee, so this lock reads nothing");
         int block = workflow.lastIndexOf("run: |", pipe);
-        assertTrue(block > 0, "the OSV step's run block was not found");
+        HarnessBroken.unless(block > 0, "the OSV step's run block was not found");
         String script = workflow.substring(block, pipe);
         assertTrue(Pattern.compile("(?m)^\\s*set\\s+-[a-z]*o\\s+pipefail\\s*$").matcher(script).find(),
                 "the OSV step pipes the scanner into tee without pipefail, so a finding's exit code "

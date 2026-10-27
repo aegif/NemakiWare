@@ -58,6 +58,7 @@ import jp.aegif.nemaki.rag.config.RAGConfig;
 import jp.aegif.nemaki.rag.config.SolrClientProvider;
 import jp.aegif.nemaki.rag.embedding.EmbeddingService;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A MIME type that could not be READ is a retryable failure, not "this type is not supported"
@@ -283,7 +284,7 @@ public class AMimeTypeThatCouldNotBeReadIsRetryableTest {
         while (tested.find()) {
             skipSubstrings.add(tested.group(1));
         }
-        assertTrue(skipSubstrings.size() >= 2,
+        HarnessBroken.unless(skipSubstrings.size() >= 2,
                 "processBatch no longer tests the exception's message for the skip classification, "
                         + "so this lock is not reading the decision it is about: " + skipSubstrings);
 

@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,7 +47,7 @@ class TheReleaseNotesSayBothHalvesTest {
             Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md");
 
     private static String read(Path file) throws IOException {
-        assertTrue(Files.exists(file), "this lock reads " + file + ", which is not there");
+        HarnessBroken.unless(Files.exists(file), "this lock reads " + file + ", which is not there");
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
@@ -79,7 +80,7 @@ class TheReleaseNotesSayBothHalvesTest {
 
         String claimable = quoteAfter(plan, "名乗れる文（要求した profile の必須検査が全部通った package についてのみ）:");
         String caveat = quoteAfter(plan, "必ず併記:");
-        assertTrue(claimable.length() > 80 && caveat.length() > 80,
+        HarnessBroken.unless(claimable.length() > 80 && caveat.length() > 80,
                 "the plan's paragraphs parsed as " + claimable.length() + " and "
                         + caveat.length() + " characters, so this lock is comparing fragments");
 

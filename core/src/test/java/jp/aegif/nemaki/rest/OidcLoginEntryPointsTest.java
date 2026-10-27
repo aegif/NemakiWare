@@ -572,6 +572,51 @@ public class OidcLoginEntryPointsTest {
     }
 
     @Test
+    @DisplayName("an account changed between the rule and the read-back is judged as it was read back, at both doors (closing batch 6 review)")
+    void anAccountChangedBeforeTheReadBackIsJudgedAsReadBack() throws Exception {
+        // The rule judged the copy before the link was written, and the read-back compared only the binding — so the
+        // login went on with the copy judged before, and an account disabled in between was entered (closing batch 6
+        // review, Codex P1). Found at first, linked by this login, disabled by the time it is read back.
+        UserItem ninaBefore = account("nina", "cloud", null);
+        UserItem ninaReadBack = account("nina", "cloud,disabled", issuer + " sub-nina");
+        when(contentService.getUserItemById("bedroom", "nina")).thenReturn(ninaBefore);
+        when(contentService.getUserItemByIdFromStore("bedroom", "nina")).thenReturn(ninaReadBack);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("nina", "sub-nina") + "\"}");
+
+        assertEquals("failure", rest.get("status"), "an account disabled before its link was read back was entered "
+                + "on the copy judged before the link: " + rest.toJSONString());
+
+        UserItem oscarBefore = account("oscar", "cloud", null);
+        UserItem oscarReadBack = account("oscar", "cloud,disabled", issuer + " sub-oscar");
+        when(contentService.getUserItemById("bedroom", "oscar")).thenReturn(oscarBefore);
+        when(contentService.getUserItemByIdFromStore("bedroom", "oscar")).thenReturn(oscarReadBack);
+
+        assertTrue(apiV1(Map.of("id_token", idTokenFor("oscar", "sub-oscar"))).startsWith("refused: "),
+                "api/v1 entered an account disabled before its link was read back");
+        verify(tokenService, never()).setToken(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("api/v1 reads a created account back from the store only, not through the lookup whose failure read as «not created» (closing batch 6 review)")
+    void aCreatedAccountIsReadBackFromTheStoreOnly() throws Exception {
+        // The creator read the account again through the ordinary lookup and turned its failure into null, which the
+        // door reported as «Failed to create or find user» — a read that could not be made, read as nothing there
+        // (closing batch 6 review, Codex P2). The third lookup fails the way an undeployed view does in the window.
+        UserItem created = account("pia", "cloud", issuer + " sub-pia", SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "pia")).thenReturn(null, (UserItem) null)
+                .thenThrow(new IllegalStateException("the userItemsById view is not deployed yet"));
+        jp.aegif.nemaki.model.Folder users = new jp.aegif.nemaki.model.Folder();
+        users.setId("users");
+        when(contentService.getOrCreateSystemSubFolder("bedroom", "users")).thenReturn(users);
+        when(contentService.createUserItem(any(), eq("bedroom"), any(UserItem.class))).thenReturn(created);
+        when(contentService.getUserItemByIdFromStore("bedroom", "pia")).thenReturn(created);
+
+        assertEquals("logged in: pia", apiV1(Map.of("id_token", idTokenFor("pia", "sub-pia"))),
+                "api/v1 read the account it had just created again through the lookup, and its failure refused the login");
+    }
+
+    @Test
     @DisplayName("REST: the first login links an account SSO is allowed for to the token's subject, and the link is kept (batch 16 review round 1)")
     void theFirstLoginLinksTheAccount() throws Exception {
         assertEquals("success", rest("{\"id_token\":\"" + idToken(CLIENT) + "\"}").get("status"));

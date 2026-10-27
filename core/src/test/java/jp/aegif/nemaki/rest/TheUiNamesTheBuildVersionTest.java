@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -56,7 +57,7 @@ class TheUiNamesTheBuildVersionTest {
 
     private static String onlyMatch(String text, Pattern pattern, String what) {
         Matcher m = pattern.matcher(text);
-        assertTrue(m.find(), what + " was not found");
+        HarnessBroken.unless(m.find(), what + " was not found");
         String found = m.group(1);
         assertFalse(m.find(), what + " was found twice");
         return found;

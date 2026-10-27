@@ -49,6 +49,7 @@ import jp.aegif.nemaki.util.AuthenticationUtil.GenerationSave;
 import jp.aegif.nemaki.util.cache.model.NemakiCache;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Saving a user cannot take their credential generation backwards (R170, 3.4.1 batch 19).
@@ -119,7 +120,7 @@ class SavingAUserCannotLowerTheCredentialGenerationTest {
         String code = JavaSource.withoutComments(
                 Files.readString(COUCH_DAO, StandardCharsets.UTF_8));
         int update = code.indexOf("public UserItem update(String repositoryId, UserItem userItem)");
-        assertTrue(update > 0, "the user update is gone — this lock reads that method");
+        HarnessBroken.unless(update > 0, "the user update is gone — this lock reads that method");
         String body = code.substring(update, JavaSource.matchingClose(code, code.indexOf('{', update)));
 
         int guard = body.indexOf("refuseALowerCredentialGeneration(");

@@ -23,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * The export refusals reach the client instead of being logged over.
@@ -162,7 +163,7 @@ class ExportRefusalReachesTheClientTest {
         // in the file, and the declaration comes before any streaming body — so searching
         // forwards found it and the lookup for an enclosing body failed.
         int markerAt = source.lastIndexOf(marker);
-        assertTrue(markerAt > 0, "the streamer identified by " + marker + " is gone — this "
+        HarnessBroken.unless(markerAt > 0, "the streamer identified by " + marker + " is gone — this "
                 + "test no longer looks at what it names");
         int bodyStart = source.lastIndexOf("public void write(OutputStream output)", markerAt);
         assertTrue(bodyStart > 0, "no streaming body before " + marker);

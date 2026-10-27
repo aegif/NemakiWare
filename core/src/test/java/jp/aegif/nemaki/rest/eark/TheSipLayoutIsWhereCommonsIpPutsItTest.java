@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -252,7 +253,7 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
             }
         }
 
-        assertTrue(references > 0,
+        HarnessBroken.unless(references > 0,
                 "no local xlink:href was found in any METS, so this lock measured nothing. "
                         + "commons-ip2 changed how it writes references: " + metsPaths);
         assertEquals(List.of(), unresolved,
@@ -319,7 +320,7 @@ class TheSipLayoutIsWhereCommonsIpPutsItTest {
 
         // The asymmetry is REAL, and decoding is what closes it. Both halves are asserted, so
         // the lock cannot pass by the library having changed under it.
-        assertFalse(hrefs.contains(payload),
+        HarnessBroken.unless(!(hrefs.contains(payload)),
                 "commons-ip2 no longer encodes the href, so the decoding the verifier does is "
                         + "no longer load-bearing and this lock measures nothing: " + hrefs);
         for (String href : hrefs) {

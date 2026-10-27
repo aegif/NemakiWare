@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -64,7 +65,7 @@ class TheStatementViewIsInTheOnePutTest {
         String text = Files.readString(source, StandardCharsets.UTF_8)
                 .replaceAll("(?m)//.*$", "");
         int at = text.indexOf("public Map<String, Object> statementFor(");
-        assertTrue(at >= 0, "statementFor has moved, so this lock reads a decision that is gone "
+        HarnessBroken.unless(at >= 0, "statementFor has moved, so this lock reads a decision that is gone "
                 + "rather than one that is wrong");
         String body = text.substring(at, text.indexOf("\n    }", at));
         assertTrue(body.contains("latestRecorded(repositoryId, versionObjectId)"),
@@ -75,7 +76,7 @@ class TheStatementViewIsInTheOnePutTest {
                         + "the last row is not the newest statement");
 
         int latest = text.indexOf("public Recorded latestRecorded(");
-        assertTrue(latest >= 0, "latestRecorded has moved");
+        HarnessBroken.unless(latest >= 0, "latestRecorded has moved");
         String decision = text.substring(latest, text.indexOf("\n    }", latest));
         assertTrue(decision.contains("at > newest.entrySequence()"),
                 "latestRecorded no longer picks the HIGHEST ledger sequence. The ledger sequence "

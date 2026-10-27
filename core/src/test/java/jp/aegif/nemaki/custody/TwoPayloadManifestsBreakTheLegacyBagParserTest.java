@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -92,7 +93,7 @@ class TwoPayloadManifestsBreakTheLegacyBagParserTest {
         int withOne = payloadFilesSeenByLegacyParser(
                 oneManifestBag(tmp.resolve("one"), sip), tmp.resolve("p2"));
 
-        assertEquals(1, withOne,
+        HarnessBroken.unlessEqual(1, withOne,
                 "one payload manifest no longer yields one file; the control for the "
                         + "comparison below is gone, so its count means nothing");
         assertEquals(2, shippedShape,

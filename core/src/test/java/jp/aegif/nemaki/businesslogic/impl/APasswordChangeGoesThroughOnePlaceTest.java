@@ -36,6 +36,7 @@ import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
 import jp.aegif.nemaki.util.AuthenticationUtil;
 import jp.aegif.nemaki.util.test.JavaSource;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A password change raises the credential generation, and it happens in one place (R170, 3.4.1).
@@ -183,7 +184,7 @@ class APasswordChangeGoesThroughOnePlaceTest {
                         + " may write the hash directly (the generation is absent, which reads as 0);"
                         + " an API key hash is neither. Classify the new one and update this list: "
                         + found);
-        assertTrue(found.containsKey("ContentServiceImpl.java"),
+        HarnessBroken.unless(found.containsKey("ContentServiceImpl.java"),
                 "hashPassword is gone from the service, so this inventory is measuring something"
                         + " else now");
     }

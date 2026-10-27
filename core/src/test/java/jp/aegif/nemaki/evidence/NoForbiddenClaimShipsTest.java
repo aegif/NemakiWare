@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -232,7 +233,7 @@ class NoForbiddenClaimShipsTest {
     void noForbiddenClaimShipsInEnglish() throws IOException {
         List<String> offences = new ArrayList<>();
         for (Path file : SHIPPED_EN) {
-            assertTrue(Files.exists(file),
+            HarnessBroken.unless(Files.exists(file),
                     "this lint reads " + file + ", which is not there — it would pass by "
                             + "finding nothing rather than by the text being clean");
             // Java string concatenation removed first, for the same reason the limits check
@@ -348,6 +349,8 @@ class NoForbiddenClaimShipsTest {
             String squeezed = Files.readString(home.getKey(), StandardCharsets.UTF_8)
                     .replaceAll(HTML_COMMENT, "").replaceAll(INVISIBLE, "");
             for (String passage : home.getValue()) {
+                // An assertion, not a breakage (closing batch 7, R191): the rule stated exactly once, where the lint allows
+                // it, is what this lock protects — KQ4, KJ4 and KT4 move or hide it and must see this fail.
                 assertEquals(1, count(squeezed, passage), home.getKey() + " no longer states the "
                         + "rule in the passage this lint allows (or states it twice): 「" + passage
                         + "」. The statement of the rule changed; review the change before this table");
@@ -357,7 +360,7 @@ class NoForbiddenClaimShipsTest {
         // enforcing a list nobody wrote down.
         String plan = Files.readString(Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md"),
                 StandardCharsets.UTF_8).replaceAll("\\s+", "");
-        assertTrue(FORBIDDEN.keySet().stream().anyMatch(plan::contains),
+        HarnessBroken.unless(FORBIDDEN.keySet().stream().anyMatch(plan::contains),
                 "the plan no longer states the forbidden claims, so either they moved or this "
                         + "lint's list has drifted from the rule it enforces");
     }
@@ -380,7 +383,7 @@ class NoForbiddenClaimShipsTest {
         // row from the table changed nothing (control KF3 did not fire). Sixth time this batch
         // has had to narrow a grep from "the document" to "the thing".
         int start = text.indexOf("## 2. 責任の分界");
-        assertTrue(start >= 0, "the responsibility table has moved, so this lock reads a "
+        HarnessBroken.unless(start >= 0, "the responsibility table has moved, so this lock reads a "
                 + "section that is gone rather than one that is wrong");
         // The NEXT level-2 heading, not a literal "## 3.". The literal outlived the document:
         // §2.5 was added between them, so the slice swallowed the whole requirement matrix and
@@ -390,7 +393,7 @@ class NoForbiddenClaimShipsTest {
         // (pre-sweep review, P1).
         java.util.regex.Matcher nextSection =
                 java.util.regex.Pattern.compile("(?m)^## ").matcher(text);
-        assertTrue(nextSection.find(start + 3),
+        HarnessBroken.unless(nextSection.find(start + 3),
                 "the responsibility section is the last one in the document, so this lock "
                         + "cannot tell where it ends");
         String table = text.substring(start, nextSection.start());
