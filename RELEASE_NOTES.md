@@ -94,7 +94,13 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   `cmis:isVersionSeriesCheckedOut`・`cmis:versionSeriesCheckedOutId`・`cmis:versionSeriesCheckedOutBy`・
   `cmis:allowedChildObjectTypeIds` — への問い合わせは 400 です（以前は `=` が 0 件、`IS NULL` が全件でした）。同梱 UI の
   全文検索はファイル名を条件に入れなくなりました（一度も当たっていませんでした）。
-- 同梱 UI と OData は、値の `\` と `'` を CMIS の escape で書きます（以前は `\` が消え、`'` で文が壊れました）。
+- relationship の `cmis:sourceId`・`cmis:targetId` と `cmis:changeToken` を問えるようになりました（以前は何も索引されて
+  いない所を探していました — `cmis:sourceId = '<実在の id>'` は 0 件、`IS NULL` は全件、`cmis:changeToken IS NOT NULL` は
+  0 件）。`cmis:isImmutable`・`cmis:isLatestMajorVersion`・`cmis:policyText` は検索の索引に入っていないので 400 です（以前は
+  `cmis:isLatestMajorVersion IS NULL` が全件でした）。この 3 つと上の 6 つは、型の定義でも queryable でなくなりました。
+- 同梱 UI と OData は、値の `\` と `'` を CMIS の escape で書きます（以前は `\` が消え、`'` で文が壊れました）。全文検索
+  （`CONTAINS`）の値は、全文検索の式の escape をしてから CMIS の escape をします — 式の中の裸の `'` は OpenCMIS が拒むので、
+  1 段だけの escape では 400 でした（`CONTAINS('it\\\'s')` が `it's` を探します）。
 - `ANY <複数値のプロパティ> IN (…)` は訳します — 型が定義する性質は query parser が（訳す規則はあったのに、分岐が字句の
   種類を取り違えて届かず、400 になっていました）、secondary type が定義する性質は補助のパーサが答えます。
 - 同梱 UI の詳細検索は、オブジェクトタイプを選んだとき `FROM` にその型の問い合わせ名を書きます（`FROM` が base type だと
@@ -109,10 +115,14 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 - **これまで 200 を返していた文の一部が 400 になります** — `cmis:rm_*` の条件、接頭辞の無い問い合わせ名、どの型も
   定義しない名前、補助のパーサが 1 つの述語しか訳せない複合 WHERE、複数値の性質への `=`・`LIKE`（`ANY … IN` に書き換えて
   ください）、`FROM` の型が持たない subtype の性質（`FROM` にその subtype を書いてください）、`FROM` に無い型、
-  `ANY … NOT IN`、検索の索引に入っていない 6 つの性質（上）、解析できない文。
+  `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文。
 - query parser の `<>`・`NOT LIKE`・`NOT IN` と、`NOT (…)` で包んだ比較は、その性質を持たない文書を返さなくなります。
   **どれも条件を無視した答えでした**。400 を受けたら、条件を訳せる形（型を `FROM` か `JOIN` に書く、
   プロパティの問い合わせ名を接頭辞付きで書く）に直してください。
+- 型の定義で queryable が false に変わる性質が 9 つあります（上）— `cmis:contentStreamFileName`・
+  `cmis:contentStreamMimeType`・`cmis:isVersionSeriesCheckedOut`・`cmis:versionSeriesCheckedOutId`・
+  `cmis:versionSeriesCheckedOutBy`・`cmis:allowedChildObjectTypeIds`・`cmis:isImmutable`・`cmis:isLatestMajorVersion`・
+  `cmis:policyText`。どれも問い合わせると 400 です。
 
 ### 主張しないこと
 
@@ -235,15 +245,16 @@ API v1 の認証の資源（`/api/v1/cmis/auth/...`）は、**要求が名乗っ
   別の要求が同じ名前で作っていた場合、作成の呼び出しは**見つけたアカウント**を返します。それは
   既存のアカウントなので、上の規則を**保存済みの文書に対して**当ててから入ります（以前はこの経路だけ
   規則を通らず、方式が未設定のアカウントにも入れました）。
-  **ただしこの経路は、自分が見つけただけのアカウントには結びを書きません**（自分が作った
-  アカウントには書きます）。そのため、規則が「入ってよい」と答えた未結合の `cloud` アカウントでも、
-  直後の読み直しで結びが見つからずログインが拒否されることがあります（残件）。
+  見つけたアカウントにも、最初から在ったアカウントと同じ手順（規則・未結合なら結びを書く・読み直す）を
+  当てます（3.4.1 の作業中は結びを比べるだけで、規則が「入ってよい」と答えた未結合の `cloud` アカウントでも
+  拒否していました — 残件 R210、3.4.1 で処置）。作成の直後に店から読み直したアカウントが無いときは、
+  その理由で拒否します。
   **結びを管理画面や API から設定する手段は、確かめた範囲（画面・`/api/v1` の利用者更新・
   旧 `/rest` の利用者更新・一括プリンシパル・CMIS の `updateProperties`）にはありません** —
   前の 4 つは決まったキーだけを書き換え、CMIS はその型に**宣言されたプロパティ定義**しか
   受け付けないため、`nemaki:oidcSubject` ほかの経路ごとの欄はどれも通りません。
 
-  回避するなら、**残されたアカウントを削除**してください。次のログインが結び付きで作り直します。
+  結びを付け直すには、**アカウントを削除**してください。次のログインが結び付きで作り直します。
 
   ```bash
   curl -u admin:PASSWORD -X DELETE -H "X-Requested-With: XMLHttpRequest" \
