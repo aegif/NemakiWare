@@ -218,15 +218,21 @@ class EveryNamedLockRanTest {
     @DisplayName("@Nested is read past an annotation whose arguments hold braces (R216)")
     void aNestedMarkBehindABracedAnnotationIsRead() throws Exception {
         // The words before `class` are read back to the previous ; { or } — but not one inside an annotation's
-        // parentheses, or @SuppressWarnings({"a"}) would hide the @Nested before it.
-        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    @SuppressWarnings({\"a\"})\n    class Inner {\n"
-                + "        @Test\n        void guard() { }\n    }\n");
-        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"1\" skipped=\"0\" errors=\"0\" "
-                + "failures=\"0\"", FOO, "guard");
+        // parentheses, or @SuppressWarnings({"a"}) would hide the @Nested before it. Where @Nested decides the answer:
+        // a @Nested base runs its own test, so it is required there; read as a plain base it would be required under
+        // the class that extends it instead (closing batch 9: once a plain member nothing extends is required where it
+        // is written, an unextended class no longer tells the two readings apart).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    @SuppressWarnings({\"a\"})\n    class Base {\n"
+                + "        @Test\n        void guard() { }\n    }\n    @Nested\n    class Impl extends Base {\n"
+                + "        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"3\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Base.xml", "name=\"" + FOO + "$Base\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Base", "guard");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
-        assertRefused(outcome, FOO, "only the outer guard() ran");
-        assertTrue(outcome.output().contains(": FooTest.Inner.guard "), "the refusal does not name the nested method: "
-                + outcome.output());
+        assertEquals(0, outcome.exit(), "the @Nested base's own run was not taken for its test: " + outcome.output());
     }
 
     @Test
@@ -260,6 +266,131 @@ class EveryNamedLockRanTest {
         assertRefused(outcome, FOO, "the base's method did not run under the class that extends it");
         assertTrue(outcome.output().contains(": FooTest.Impl.inherited "), "the refusal does not name the base's method "
                 + "under its subclass: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an interface's default test method is required under the @Nested class that implements it")
+    void anInterfaceDefaultTestIsRequiredUnderItsImplementer() throws Exception {
+        // Only `extends` was read, so a @Tag on an interface's default @Test took it out unseen (closing batch 8 review,
+        // both reviewers).
+        sourceText(FOO, "    @Test\n    void own() { }\n    interface Contract {\n        @Test\n        default void guard() { }\n"
+                + "    }\n    @Nested\n    class Impl implements Contract {\n        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the interface's default test did not run under its implementer");
+        assertTrue(outcome.output().contains(": FooTest.Impl.guard "), "the refusal does not name the default method "
+                + "under its implementer: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a nested class that lost its @Nested is still the lock's, so its silent tests are refused")
+    void aNestedClassWithoutItsMarkIsStillRequired() throws Exception {
+        // Not requiring a member class without @Nested let a lock be silenced by deleting the mark (closing batch 8
+        // review, subagent P3-9): nothing extends it, so its tests run nowhere and are required where they are written.
+        sourceText(FOO, "    @Test\n    void own() { }\n    class Inner {\n        @Test\n        void guard() { }\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "only own() ran");
+        assertTrue(outcome.output().contains(": FooTest.Inner.guard "), "the refusal does not name the silenced "
+                + "method: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a base class held in a plain holder is required under the @Nested class that extends Holder.Base")
+    void aBaseInAPlainHolderIsRequiredUnderItsHeir() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    static class Holder {\n        abstract static class Base {\n"
+                + "            @Test\n            void inherited() { }\n        }\n    }\n    @Nested\n"
+                + "    class Impl extends Holder.Base {\n        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the held base's test did not run under the class that extends it");
+        assertTrue(outcome.output().contains(": FooTest.Impl.inherited "), "the refusal does not name the base's "
+                + "method under its heir: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a type parameter's bound is not a superclass, so its tests are not required there")
+    void aTypeParameterBoundIsNotASuperclass() throws Exception {
+        // `class Impl<T extends Base> implements Marker` matched `extends Base` and required Base's test under Impl, where
+        // it never runs (closing batch 8 review, subagent P3-9).
+        sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        @Test\n        void inherited() { }\n"
+                + "    }\n    interface Marker { }\n    @Nested\n    class Real extends Base { }\n    @Nested\n"
+                + "    class Impl<T extends Base> implements Marker {\n        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Real.xml", "name=\"" + FOO + "$Real\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Real2.xml", "name=\"" + FOO + "$Real\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Real", "inherited");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a lock whose tests all ran was refused for a type parameter's bound: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a base two classes up is required under the @Nested class that inherits it through the middle one")
+    void aBaseTwoStepsUpIsRequiredUnderItsHeir() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        @Test\n        void inherited() { }\n"
+                + "    }\n    abstract static class Middle extends Base { }\n    @Nested\n    class Impl extends Middle {\n"
+                + "        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the base's test did not run under the class that inherits it through Middle");
+        assertTrue(outcome.output().contains(": FooTest.Impl.inherited "), "the refusal does not name the base's "
+                + "method under its heir: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an @Test inside a local class is not one of the lock's")
+    void aLocalClassIsNotTheLocks() throws Exception {
+        sourceText(FOO, "    @Test\n    void a() {\n        class Local {\n            @Test\n            void notRun() { }\n"
+                + "        }\n    }\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of a local class was required of the lock: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an anonymous class with a long type before its arguments is still an anonymous class")
+    void aLongAnonymousTypeIsStillAnonymous() throws Exception {
+        String longType = "java.util.function.Supplier<java.util.Map<java.lang.String, java.util.List<java.util.Map<"
+                + "java.lang.String, java.util.Set<java.util.Map.Entry<java.lang.String, java.lang.Integer>>>>>>";
+        String type = longType + " ".repeat(Math.max(0, 320 - longType.length()));
+        sourceText(FOO, "    @Test\n    void a() {\n        Object r = new " + type + "() {\n            @Test\n"
+                + "            public void notRun() { }\n            public Object get() { return null; }\n        };\n    }\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of an anonymous class with a long type was required of the lock: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test method of another top-level class in the lock's file is not the lock's")
+    void anotherTopLevelClassIsNotTheLocks() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n}\nclass Neighbour {\n    @Test\n    void notTheLocks() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of another top-level class was required of the lock: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an escaped triple quote does not end a text block, so what follows it is still text")
+    void anEscapedTripleQuoteDoesNotEndATextBlock() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() {\n        String s = \"\"\"\n            a \\\"\"\" inside\n"
+                + "            @Test void ghost() { }\n            \"\"\";\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "text inside a text block was read as a test method: " + outcome.output());
     }
 
     @Test

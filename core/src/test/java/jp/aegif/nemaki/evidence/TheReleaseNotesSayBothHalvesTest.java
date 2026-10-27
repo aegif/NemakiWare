@@ -60,13 +60,23 @@ class TheReleaseNotesSayBothHalvesTest {
     private static String planQuoteAfter(String plan, String heading) {
         HarnessBroken.unless(plan.contains(heading), "the plan does not say 「" + heading + "」, which this lock reads "
                 + "the words from");
-        return quoteAfter(plan, heading);
+        String quote = blockQuoteAfter(plan, heading);
+        HarnessBroken.unless(quote != null, "no block quote follows 「" + heading + "」 in the plan, which this lock "
+                + "reads the words from");
+        return quote;
     }
 
-    /** The block quote that follows {@code heading}, as one line with its markers stripped. */
+    /** The release notes' block quote after {@code heading}: a heading or a quote missing there is the notes' defect. */
     private static String quoteAfter(String text, String heading) {
+        assertTrue(text.contains(heading), "the document does not say 「" + heading + "」");
+        String quote = blockQuoteAfter(text, heading);
+        assertTrue(quote != null, "no block quote follows 「" + heading + "」");
+        return quote;
+    }
+
+    /** The block quote that follows {@code heading}, as one line with its markers stripped; null when none does. */
+    private static String blockQuoteAfter(String text, String heading) {
         int at = text.indexOf(heading);
-        assertTrue(at >= 0, "the document does not say 「" + heading + "」");
         StringBuilder out = new StringBuilder();
         boolean started = false;
         for (String line : text.substring(at + heading.length()).lines().toList()) {
@@ -80,7 +90,9 @@ class TheReleaseNotesSayBothHalvesTest {
                 break;
             }
         }
-        assertTrue(started, "no block quote follows 「" + heading + "」");
+        if (!started) {
+            return null;
+        }
         return out.toString().replaceAll("\\s+", " ").strip();
     }
 

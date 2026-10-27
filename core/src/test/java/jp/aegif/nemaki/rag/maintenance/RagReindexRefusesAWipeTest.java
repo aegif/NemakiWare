@@ -384,8 +384,12 @@ class RagReindexRefusesAWipeTest {
         String declared = JavaSource.read(
                 "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java");
         int method = declared.indexOf("public Response reindexDocumentRAG");
+        // The method not found is this lock not looking; the method found with no @ApiResponses before it is the
+        // contract missing (closing batch 8 review, subagent P3-3: one condition said both).
+        HarnessBroken.unless(method > 0, "SearchEngineResource no longer declares reindexDocumentRAG, which this lock "
+                + "reads the contract of");
         int declaration = declared.lastIndexOf("@ApiResponses", method);
-        HarnessBroken.unless(declaration > 0, "the endpoint declares no responses at all");
+        assertTrue(declaration > 0, "the endpoint declares no responses at all");
         assertTrue(declared.substring(declaration, method).contains("\"503\""),
                 "the endpoint's declared responses do not include 503, so the generated client knows "
                         + "only about the 200 — the answer and the contract disagree");

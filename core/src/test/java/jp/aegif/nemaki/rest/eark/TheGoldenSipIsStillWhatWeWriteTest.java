@@ -129,10 +129,10 @@ class TheGoldenSipIsStillWhatWeWriteTest {
         // resolves against is not (Codex, thirteenth review, P1). If a future exporter made the
         // two name the same things, the per-METS comparison would stop being load-bearing and
         // this assertion says so rather than letting it go quiet.
-        HarnessBroken.unless(checkedInReferences.size() > 1,
+        assertTrue(checkedInReferences.size() > 1,
                 goldenName + " carries one METS, so there is nothing for a per-METS comparison "
                         + "to see: " + checkedInReferences.keySet());
-        HarnessBroken.unlessEqual(checkedInReferences.size(),
+        assertEquals(checkedInReferences.size(),
                 new LinkedHashSet<>(checkedInReferences.values()).size(),
                 goldenName + "'s METS files name the SAME things, so a reference moving between "
                         + "them would be invisible: " + checkedInReferences);

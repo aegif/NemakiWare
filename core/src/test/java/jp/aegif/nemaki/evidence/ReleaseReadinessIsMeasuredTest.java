@@ -213,7 +213,7 @@ class ReleaseReadinessIsMeasuredTest {
         //     in the same class, and nothing else does (batch-39 review, subagent P3-5).
         Matcher row = Pattern.compile("(?m)^\\| " + Pattern.quote(id) + " \\| (.*)$")
                 .matcher(canon);
-        HarnessBroken.unless(row.find(), "the canon has no row for " + id + ", so this reader cannot say "
+        assertTrue(row.find(), "the canon has no row for " + id + ", so this reader cannot say "
                 + "whether it is closed. If the id came from another document, the two disagree");
         return row.group(1).startsWith("~~");
     }
@@ -3404,7 +3404,13 @@ class ReleaseReadinessIsMeasuredTest {
         String listed = counts.group(3);
 
         String notionClass = "jp.aegif.nemaki.rest.ingest.note.NotionPartialReadsAreNotCompleteTest";
-        int totalTests = testMethodsOf(notionClass).size();
+        java.util.Set<String> notionTests = testMethodsOf(notionClass);
+        // Empty is this reader finding nothing in the class it names itself. For a class the R59 row names, empty is
+        // the row naming no test — the assertion below says so (closing batch 8 review, subagent P3-1: one check in the
+        // shared helper said both).
+        HarnessBroken.unless(!notionTests.isEmpty(), "JUnit discovered no test in " + notionClass
+                + ", so this counted nothing");
+        int totalTests = notionTests.size();
         assertEquals(totalTests, totalStated, "the R59 row says NotionPartialReadsAreNotCompleteTest has "
                 + totalStated + " locks and the class declares " + totalTests);
 
@@ -3550,7 +3556,6 @@ class ReleaseReadinessIsMeasuredTest {
                                 + source.getClassName() + "#" + method.getName());
             }
         }
-        HarnessBroken.unless(!(names.isEmpty()), "JUnit discovered no test in " + className + ", so this counted nothing");
         return names;
     }
 

@@ -71,7 +71,7 @@ class CmisProductVersionIsTheBuildVersionTest {
         RepositoryInfoMap map = load("repository-info");
         for (String id : new String[] {"bedroom", "canopy"}) {
             RepositoryInfo info = map.get(id);
-            HarnessBroken.unless((info) != null, id + " was not loaded from the fixture");
+            assertNotNull(info, id + " was not loaded from the fixture");
             assertEquals(built, info.getProductVersion(),
                     id + " reports productVersion '" + info.getProductVersion() + "' but this build is "
                             + built);

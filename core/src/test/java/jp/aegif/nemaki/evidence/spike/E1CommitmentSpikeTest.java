@@ -26,7 +26,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -497,9 +496,9 @@ class E1CommitmentSpikeTest {
                 // Content landed; the statement did not.
             }
             // No recover() call: this is the moment after the crash, before anything ran.
-            HarnessBroken.unlessEqual("att-1", store.doc("doc-1").get("attachmentId"),
+            assertEquals("att-1", store.doc("doc-1").get("attachmentId"),
                     strategy.name() + ": the fixture did not actually land the content");
-            HarnessBroken.unless(store.statementsFor("doc-1").isEmpty(),
+            assertTrue(store.statementsFor("doc-1").isEmpty(),
                     strategy.name() + ": the fixture recorded a statement it should not have");
             assertFalse(strategy.openGaps(store).isEmpty(),
                     strategy.name() + ": the content is there, no statement is, and NOTHING in "
@@ -637,7 +636,7 @@ class E1CommitmentSpikeTest {
         } catch (Crash expected) {
             // Content landed; the statement did not.
         }
-        HarnessBroken.unless(!(a.openGaps(storeA).isEmpty()), "the fixture did not leave a gap");
+        assertFalse(a.openGaps(storeA).isEmpty(), "the fixture did not leave a gap");
         a.writeUnrelated(storeA, "doc-1");
         a.recover(storeA);
 
