@@ -580,16 +580,16 @@ public class SolrPredicateWalker{
 			return null;
 		}
 		String queryName = colRef.getPropertyQueryName();
-		PropertyDefinition<?> byKey = td.getPropertyDefinitions().get(queryName);
-		if (byKey != null) {
-			return byKey;
-		}
+		// By QUERY name first — that is what the column names, and how QueryObject resolved it. The map is keyed by
+		// id, and looking the name up as a key first took another property whose id happens to be this query name
+		// (closing batch 5 review, subagent P3-3: id `title` / query name `doc_title` beside id `acme:title` / query
+		// name `title` — `WHERE title = 'x'` built the first one's field and checked the literal against its type).
 		for (PropertyDefinition<?> pd : td.getPropertyDefinitions().values()) {
 			if (queryName != null && queryName.equals(pd.getQueryName())) {
 				return pd;
 			}
 		}
-		return null;
+		return td.getPropertyDefinitions().get(queryName);
 	}
 
 	/** The id of the property a column names — what the index is written under (see {@link #definitionOf}). */
@@ -805,12 +805,19 @@ public class SolrPredicateWalker{
 		if (text.length() >= 2 && text.charAt(0) == '\'' && text.charAt(text.length() - 1) == '\'') {
 			text = text.substring(1, text.length() - 1);
 		}
+		// Two levels of CMIS escape, undone in order (closing batch 5 review, subagent P3-1). The argument is a CMIS
+		// string literal, whose \' and \\ are undone first, as walkString does for every other literal. What that
+		// leaves is a text search expression, which escapes its own \, ', " and - with a backslash — OpenCMIS's text
+		// search lexer refuses a bare quote there — so `it's` is written CONTAINS('it\\\'s'). The phrase quotes are
+		// read between the two levels, and each word or phrase is unescaped on its own. Undoing only the literal level
+		// sent the expression's escape to Solr as a backslash.
+		text = text.replaceAll("\\\\(.)", "$1");
 		text = text.trim();
 
 		// Inner double quotes indicate phrase search: CONTAINS('"exact phrase"')
-		if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+		if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"") && !text.endsWith("\\\"")) {
 			String phrase = text.substring(1, text.length() - 1);
-			return buildDualFieldQuery(phrase);
+			return buildDualFieldQuery(unescapeTextSearch(phrase));
 		}
 
 		// Split on whitespace: CONTAINS('word1 word2') → word1 AND word2
@@ -819,12 +826,17 @@ public class SolrPredicateWalker{
 			BooleanQuery.Builder andBuilder = new BooleanQuery.Builder();
 			for (String word : words) {
 				if (word.isEmpty()) continue;
-				andBuilder.add(buildDualFieldQuery(word), Occur.MUST);
+				andBuilder.add(buildDualFieldQuery(unescapeTextSearch(word)), Occur.MUST);
 			}
 			return andBuilder.build();
 		}
 
-		return buildDualFieldQuery(text);
+		return buildDualFieldQuery(unescapeTextSearch(text));
+	}
+
+	/** A text search expression's own escapes undone: \\, \', \" and \- are the characters themselves. */
+	private static String unescapeTextSearch(String expression) {
+		return expression.replaceAll("\\\\(.)", "$1");
 	}
 
 	private Query walkTextAnd(CmisTree node) {

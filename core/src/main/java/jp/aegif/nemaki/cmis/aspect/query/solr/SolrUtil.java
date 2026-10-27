@@ -155,6 +155,19 @@ public class SolrUtil implements ApplicationContextAware {
 		map.put(PropertyIds.PATH, "path");
 		map.put(PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, "allowed_child_object_type_ids");
 
+		// Every queryable property a BASE type defines has an entry (closing batch 5 review, both reviewers). One
+		// that has none falls to the custom-property arm below and is queried as dynamic.property.cmis\:<name>, which
+		// nothing writes: `cmis:sourceId = '<a real id>'` answered 0 and `IS NULL` every relationship (measured on
+		// bedroom). cmis:changeToken (queryable in TypeManagerImpl) is written as change_token, the relationship ends as
+		// dynamic.source_id / dynamic.target_id; the other three are written nowhere, so they get a name here only to
+		// be refused through NOT_INDEXED.
+		map.put(PropertyIds.CHANGE_TOKEN, "change_token");
+		map.put(PropertyIds.SOURCE_ID, "dynamic.source_id");
+		map.put(PropertyIds.TARGET_ID, "dynamic.target_id");
+		map.put(PropertyIds.IS_IMMUTABLE, "is_immutable");
+		map.put(PropertyIds.IS_LATEST_MAJOR_VERSION, "is_latest_major_version");
+		map.put(PropertyIds.POLICY_TEXT, "policy_text");
+
 		// Initialize async executor in constructor for Mockito compatibility
 		java.util.concurrent.ThreadPoolExecutor tpe = new java.util.concurrent.ThreadPoolExecutor(
 			2, 4, 60L, java.util.concurrent.TimeUnit.SECONDS,
@@ -326,7 +339,8 @@ public class SolrUtil implements ApplicationContextAware {
 	 * write none of them). Measured on bedroom: `IS NOT NULL` on each property that maps here answers 0.
 	 */
 	static final java.util.Set<String> NOT_INDEXED = java.util.Set.of("content_name", "content_mimetype", "is_checkedout",
-			"checkedout_id", "checkedout_by", "allowed_child_object_type_ids");
+			"checkedout_id", "checkedout_by", "allowed_child_object_type_ids", "is_immutable", "is_latest_major_version",
+			"policy_text");
 
 	public static String queryableFieldName(String fromPropertyMap) {
 		if (fromPropertyMap == null) {

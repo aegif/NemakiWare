@@ -132,6 +132,16 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 PropertyType.STRING, Cardinality.MULTI);
         tagsById.setQueryName("tagsq");
         properties.put("nemaki:tagsId", tagsById);
+        // One property's ID is another's QUERY name (closing batch 5 review, subagent P3-3): the column names the
+        // second, and a lookup by key first took the first.
+        PropertyStringDefinitionImpl clashById = define(new PropertyStringDefinitionImpl(), "clash",
+                PropertyType.STRING, Cardinality.SINGLE);
+        clashById.setQueryName("clashq");
+        properties.put("clash", clashById);
+        PropertyStringDefinitionImpl clashByQueryName = define(new PropertyStringDefinitionImpl(), "nemaki:clashB",
+                PropertyType.STRING, Cardinality.SINGLE);
+        clashByQueryName.setQueryName("clash");
+        properties.put("nemaki:clashB", clashByQueryName);
         document.setPropertyDefinitions(properties);
 
         // A type that does not declare cmis:secondaryObjectTypeIds: a statement about the secondary types FROM it fails
@@ -571,11 +581,17 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN (1, -2)"));
         assertEquals("nemaki_flags:(\"true\")",
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:flags IN (TRUE)"));
+        // Read as the walker reads a number, not compared as written (closing batch 5 review, subagent P3-4).
+        assertEquals("nemaki_ratings:(\"1\" OR \"1\")",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN (+1, 01)"));
         // Not a literal of the property's type, and not DATETIME (R187): refused.
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN ('1')");
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN (1.5)");
         assertRefusedWithoutAQuery(
                 "SELECT * FROM cmis:document WHERE ANY nemaki:dates IN (TIMESTAMP '2026-01-01T00:00:00.000Z')");
+        // A DATETIME is refused for its TYPE, not because its literal does not read as a number: a bare number for
+        // it would read as one (closing batch 6 — SJ5 stayed green once numbers were read back).
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:dates IN (20260101)");
     }
 
     @Test
@@ -623,5 +639,35 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         // A qualified column in a comparison resolves the same way (the joined text named d.noteq).
         assertEquals("nemaki_noteId:x",
                 assertAnsweredWithOneQuery("SELECT * FROM cmis:document d WHERE d.noteq = 'x'"));
+    }
+
+    @Test
+    @DisplayName("a column is resolved by its query name before any property whose id is that text (closing batch 5 review)")
+    void aQueryNameIsResolvedBeforeAnIdOfTheSameText() {
+        assertEquals("nemaki_clashB:x", assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE clash = 'x'"));
+        assertEquals("+*:* -nemaki_clashB:[* TO *]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE clash IS NULL"));
+    }
+
+    @Test
+    @DisplayName("CONTAINS reads its literal's CMIS escapes, as every other literal is read (closing batch 5 review)")
+    void containsReadsTheLiteralsEscapes() {
+        // it's, escaped as a text search expression and then as a CMIS literal: `CONTAINS('it\\\'s')` — what the
+        // bundled UI and OData's $search write. Undoing only the literal's level left `it\'s` for Solr.
+        String q = assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE CONTAINS('it\\\\\\'s')");
+        assertTrue(q.contains("it's"), "the quote the literal escapes is not in the search: " + q);
+        assertFalse(q.contains("\\'"), "the escape reached the search as a backslash: " + q);
+    }
+
+    @Test
+    @DisplayName("a failure that is not a syntax error is the server's 500, even without the unreadable mark (closing batch 5 review)")
+    void aFailureThatIsNotASyntaxErrorIsTheServers() {
+        // A RuntimeException from the type manager while the statement is processed — its lazy init failing — left no
+        // FROM, and was answered as «the statement could not be parsed» (closing batch 5 review, subagent P3-2).
+        when(types.getTypeByQueryName(REPO, "nemaki:failing")).thenThrow(new IllegalStateException("init failed"));
+        sent.clear();
+        assertThrows(CmisRuntimeException.class, () -> run("SELECT * FROM nemaki:failing"),
+                "a failure of the server's own was answered as the client's malformed statement");
+        assertEquals(List.of(), sent, "a statement whose FROM could not be read was sent anyway");
     }
 }

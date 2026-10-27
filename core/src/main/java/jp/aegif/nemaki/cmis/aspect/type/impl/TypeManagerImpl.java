@@ -1368,10 +1368,12 @@ public class TypeManagerImpl implements TypeManager {
 		defaults.add(BaseTypeId.CMIS_DOCUMENT.value());
 		// CRITICAL TCK FIX: CMIS 1.1 spec defines cmis:allowedChildObjectTypeIds Required: FALSE
 		// Changed from !REQUIRED (true) to REQUIRED (false) per CMIS specification
+		// Not queryable: the search index does not hold it, and a query naming it is refused (3.4.1, closing batch 5
+		// review, subagent P3-7).
 		type.addPropertyDefinition(createDefaultPropDef(
 				repositoryId, PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS,
 				PropertyType.ID, Cardinality.MULTI, Updatability.READONLY,
-				REQUIRED, QUERYABLE, !ORDERABLE, defaults));
+				REQUIRED, !QUERYABLE, !ORDERABLE, defaults));
 	}
 
 	private void addDocumentPropertyDefinitions(String repositoryId, DocumentTypeDefinitionImpl type, boolean isInherited) {

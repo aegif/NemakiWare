@@ -59,12 +59,31 @@ public class UserGroupDaoDelegate {
 	}
 
 	public UserItem getUserItemById(String repositoryId, String userId) {
+		return userItemById(repositoryId, userId, false);
+	}
+
+	/**
+	 * As {@link #getUserItemById}, but an undeployed {@code userItemsById} view is refused even during provisioning
+	 * (R211).
+	 *
+	 * <p>The keyed view query answers null for a view that is not there yet while the provisioning window is open —
+	 * provisioning runs against design documents that may not exist — and null here means "no such user". The SSO
+	 * doors read an account they have just created back through this, so in that window a creation that succeeded
+	 * read back as "not there", and the REST door's rule then refused the login as «not linked, and SSO not allowed».
+	 * A read that could not be made is not a finding that the user is absent.
+	 */
+	public UserItem getUserItemByIdStrict(String repositoryId, String userId) {
+		return userItemById(repositoryId, userId, true);
+	}
+
+	private UserItem userItemById(String repositoryId, String userId, boolean strict) {
 		try {
 			log.info("=== getUserItemById for userId: " + userId + " in repository: " + repositoryId + " ===");
 
 			// Use CloudantClientWrapper from connectorPool
 			CloudantClientWrapper client = connectorPool.getClient(repositoryId);
-			ViewResult result = client.queryView("_repo", "userItemsById", userId);
+			ViewResult result = strict ? client.queryViewStrict("_repo", "userItemsById", userId)
+					: client.queryView("_repo", "userItemsById", userId);
 
 			// null is "the view answered, and no row carries this userId" — GENUINE ABSENCE.
 			//

@@ -472,86 +472,60 @@ public class AuthResource {
             String binding = jp.aegif.nemaki.rest.OidcLogin.binding(outcome);
             UserItem user = contentService.getUserItemById(repositoryId, username);
             if (user == null) {
-                user = getOrCreateUser(repositoryId, username, binding);
+                UserItem created = getOrCreateUser(repositoryId, username, binding);
+                if (created == null) {
+                    throw ApiException.internalError("Failed to create or find user");
+                }
                 // THE SAME RULE, asked of the account AS THE STORE HAS IT. getOrCreateUser answers
                 // with the account it FOUND when one appeared between this method's read and its own,
                 // and that is an EXISTING account — without this ask it was entered with no rule
-                // applied and 「unset ⇒ allowed」 decided alone (R209).
+                // applied and 「unset ⇒ allowed」 decided alone (R209). The STORE'S copy, not the
+                // instance the creation handed back: an authorisation decision read from a copy that is
+                // not the store's lets in an account the store has disabled (batch-26 review: Codex P1,
+                // subagent P2-4).
                 //
-                // The STORE'S copy, not the instance the creation handed back: an authorisation
-                // decision read from a copy that is not the store's lets in an account the store has
-                // disabled. NOT because the rule would be vacuous for that instance — the first
-                // version of this comment said it always carries 「cloud」 and the 「oidc」 mark, which
-                // holds only when the creation actually happened; in the race getOrCreateUser returns
-                // what it FOUND, unmodified (batch-27 review: both reviewers). It was asked of
-                // `user` for one batch (batch-26 review:
-                // Codex P1, subagent P2-4). Refusing a null answer is fail-closed, and it is the only
-                // check that covers a login carrying no subject — the read-back is guarded on the
-                // binding being present. The provisioning window is residual R211 and is not caused
-                // by this ask (getOrCreateUser itself re-reads through the view before returning).
-                if (user != null) {
-                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
-                    String refusedNew = jp.aegif.nemaki.rest.SsoLogin.refusal(stored,
-                            jp.aegif.nemaki.rest.SsoLogin.OIDC, binding);
-                    if (refusedNew != null) {
-                        logger.info("API v1: OIDC login refused for the account the creation answered"
-                                + " with: " + refusedNew);
-                        throw ApiException.permissionDenied(refusedNew);
-                    }
-                    // And the binding has to be IN THE STORE — the same check the REST twin makes.
-                    // Without it, a conversion that drops the subject leaves an account with 「cloud」
-                    // and no binding (batch-22..24 review: both reviewers, P1). The leftover is NOT
-                    // always this route's own shape: in the race it can be an account made before
-                    // 3.4.1, with cloud and no mark, adoptable from all four routes (batch-25 review,
-                    // subagent P2-4). What bounds the damage is the rule asked of the STORE'S copy
-                    // above, not the shape. It is NOT 「an adopting login must store a binding and read
-                    // it back」: this path does not write one onto an account it only FOUND
-                    // either — when the creation HAPPENED the creator writes it — so R210 applies
-                    // to BOTH doors,
-                    // and that sentence was stronger than the code. It had been withdrawn in the REST
-                    // twin only (batch-27 review, subagent P2-3). A login carrying NO subject is
-                    // residual R208.
-                    if (binding != null && !binding.isBlank()
-                            && !binding.equals(jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
-                                    jp.aegif.nemaki.rest.SsoLogin.OIDC))) {
-                        logger.warning("API v1: OIDC login refused — the account created for "
-                                + username + " does not carry the binding");
-                        throw ApiException.permissionDenied(
-                                "The account's link to this identity could not be stored");
-                    }
+                // From here the account EXISTS — this login created it, or found it in the race — and it
+                // takes THE SAME STEPS as one found at first (R210): the rule, then the binding written if
+                // it is missing, and read back. The created arm used to only COMPARE the binding, so a race
+                // that found an unbound 「cloud」 account made before 3.4.1 — which the rule allows to be
+                // adopted — was refused although nothing stopped this login from linking it.
+                UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
+                if (stored == null) {
+                    // Refused here with its own reason: the rule answers null with 「not linked, and SSO not
+                    // allowed」, which is not what happened (R211).
+                    logger.warning("API v1: OIDC login refused — the account the creation answered with for "
+                            + username + " is not in the store");
+                    throw ApiException.internalError("The account could not be found in the store after it was created");
                 }
-            } else {
-                String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);
-                if (refused != null) {
-                    logger.info("API v1: OIDC login refused for an existing account: " + refused);
-                    throw ApiException.permissionDenied(refused);
-                }
-                if (jp.aegif.nemaki.rest.SsoLogin.unlinked(user, jp.aegif.nemaki.rest.SsoLogin.OIDC)) {
-                    user.setSubTypeProperties(jp.aegif.nemaki.rest.SsoLogin.with(user,
-                            jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY, binding));
-                    contentService.applyUserUpdate(repositoryId, user, username);
-                    // READ IT BACK (R175 + R168, constraint (d)): a save that returns without storing the
-                    // binding would leave this login acting as an account it only believes it linked. What
-                    // this does NOT undo is residual R196 — a refusal that THROWS does not reach here, and
-                    // the cached instance keeps the binding until it is evicted.
-                    // FROM THE STORE, not through the cache (R207).
-                    UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
-                    String storedBinding = stored == null ? null
-                            : jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
-                                    jp.aegif.nemaki.rest.SsoLogin.OIDC);
-                    // Not 「binding == null」: OidcLogin.binding concatenates the issuer and a
-                    // subject the claims verifier requires, so it cannot be null here (batch-22
-                    // review, subagent P3-3). The comparison is the whole check.
-                    if (!binding.equals(storedBinding)) {
-                        logger.warning("API v1: OIDC login refused — the binding of " + username
-                                + " was not stored");
-                        throw ApiException.permissionDenied(
-                                "The account's link to this identity could not be stored");
-                    }
-                }
+                user = stored;
             }
-            if (user == null) {
-                throw ApiException.internalError("Failed to create or find user");
+            String refused = jp.aegif.nemaki.rest.OidcLogin.refusal(user, outcome);
+            if (refused != null) {
+                logger.info("API v1: OIDC login refused for an existing account: " + refused);
+                throw ApiException.permissionDenied(refused);
+            }
+            if (jp.aegif.nemaki.rest.SsoLogin.unlinked(user, jp.aegif.nemaki.rest.SsoLogin.OIDC)) {
+                user.setSubTypeProperties(jp.aegif.nemaki.rest.SsoLogin.with(user,
+                        jp.aegif.nemaki.rest.OidcLogin.SUBJECT_KEY, binding));
+                contentService.applyUserUpdate(repositoryId, user, username);
+                // READ IT BACK (R175 + R168, constraint (d)): a save that returns without storing the
+                // binding would leave this login acting as an account it only believes it linked. What
+                // this does NOT undo is residual R196 — a refusal that THROWS does not reach here, and
+                // the cached instance keeps the binding until it is evicted.
+                // FROM THE STORE, not through the cache (R207).
+                UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, username);
+                String storedBinding = stored == null ? null
+                        : jp.aegif.nemaki.rest.SsoLogin.boundSubject(stored,
+                                jp.aegif.nemaki.rest.SsoLogin.OIDC);
+                // Not 「binding == null」: OidcLogin.binding concatenates the issuer and a
+                // subject the claims verifier requires, so it cannot be null here (batch-22
+                // review, subagent P3-3). The comparison is the whole check.
+                if (!binding.equals(storedBinding)) {
+                    logger.warning("API v1: OIDC login refused — the binding of " + username
+                            + " was not stored");
+                    throw ApiException.permissionDenied(
+                            "The account's link to this identity could not be stored");
+                }
             }
 
             // Whether SSO is allowed for the account, read from the account itself (no service lookup to fall through).

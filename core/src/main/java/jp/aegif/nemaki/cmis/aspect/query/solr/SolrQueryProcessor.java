@@ -398,7 +398,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.error("Exception in getMainFromName() during FROM query", e);
 			// NOT an empty result (closing batch 3 review, subagent P3-7). A statement that did not parse has no FROM
 			// to resolve, and that is the client's 400; anything else is a FROM this server could not read.
-			if (parseFailure != null && !jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
+			// «Did not parse» is told POSITIVELY: the parser reports a syntax error as CmisInvalidArgumentException.
+			// Taking every failure that lacks the unreadable mark for one made a server failure the client's 400 — a
+			// RuntimeException from the type manager's lazy init during processStatement (closing batch 5 review,
+			// subagent P3-2).
+			if (parseFailure instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException
+					&& !jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
 				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
 						"The statement could not be parsed: " + parseFailure.getMessage());
 			}
@@ -1212,8 +1217,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (!literal.matcher(value).matches()) {
 				return null;
 			}
-			values.add(type == org.apache.chemistry.opencmis.commons.enums.PropertyType.BOOLEAN
-					? value.toLowerCase(java.util.Locale.ROOT) : value);
+			if (type == org.apache.chemistry.opencmis.commons.enums.PropertyType.BOOLEAN) {
+				values.add(value.toLowerCase(java.util.Locale.ROOT));
+				continue;
+			}
+			// A number is read the way the walker reads it (walkNumber: Double when it has a point or an exponent,
+			// Long otherwise) and written back from that value. Compared as written, `IN (+1)`, `IN (01)` and a
+			// DECIMAL's `IN (2.50)` answered 0 here while the walker matched the same value (closing batch 5 review,
+			// subagent P3-4).
+			try {
+				values.add(value.contains(".") || value.contains("e") || value.contains("E")
+						? Double.valueOf(value).toString() : Long.valueOf(value).toString());
+			} catch (NumberFormatException outOfRange) {
+				return null;
+			}
 		}
 		return values;
 	}

@@ -29,29 +29,36 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The unit job fails unless each lock it names RAN — a report, with tests, none skipped (R181).
+ * The unit job fails unless each lock it names RAN, whole — a report, with tests, none skipped, every declared test
+ * method among them (R181).
  *
  * <p>Drives {@code tools/ci/named-locks-ran.sh}, the script the job runs after the suite, with surefire report
- * directories written here: the shape a silenced lock leaves (no report — an {@code @Tag} in the excluded group, a
- * pattern, {@code -Dtest}, a rename), a report with no tests, a report with a skipped test. Before R181 the job
- * read the selection instead, one way of silencing at a time, and a lock tagged {@code atlas-integration} passed
- * every check while not running (measured 2026-10-27: {@code mvn test} exits 0 with the tag on, and this script
- * exits 1). Then it reads the workflow, because a script nothing calls checks nothing.
+ * directories and lock sources written here: the shape a silenced lock leaves (no report — an {@code @Tag} in the
+ * excluded group, a pattern, {@code -Dtest}, a rename), a report with no tests, a report with a skipped test, a
+ * report missing a method the source declares (a method-level {@code @Tag} takes it out at discovery and leaves no
+ * skipped count), and a report for a class of the same simple name in another package. Before R181 the job read the
+ * selection instead, one way of silencing at a time, and a lock tagged {@code atlas-integration} passed every check
+ * while not running (measured 2026-10-27: {@code mvn test} exits 0 with the tag on, and this script exits 1). Then it
+ * reads the workflow, because a script nothing calls checks nothing.
  */
 class EveryNamedLockRanTest {
 
     private static final Path SCRIPT = Path.of("../tools/ci/named-locks-ran.sh");
     private static final Path WORKFLOW = Path.of("../.github/workflows/integration-tests.yml");
+    private static final String FOO = "jp.aegif.nemaki.x.FooTest";
+    private static final String BAR = "jp.aegif.nemaki.x.BarTest";
 
     @TempDir
     Path reports;
+
+    @TempDir
+    Path sources;
 
     private record Outcome(int exit, String output) { }
 
@@ -60,7 +67,8 @@ class EveryNamedLockRanTest {
     }
 
     private Outcome runOn(Path directory, String... locks) throws IOException, InterruptedException {
-        List<String> command = new ArrayList<>(List.of("bash", SCRIPT.toString(), directory.toString()));
+        List<String> command = new ArrayList<>(
+                List.of("bash", SCRIPT.toString(), directory.toString(), sources.toString()));
         command.addAll(List.of(locks));
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -68,15 +76,37 @@ class EveryNamedLockRanTest {
         return new Outcome(process.exitValue(), output);
     }
 
-    private void report(String fileName, String testsuiteAttributes) throws IOException {
-        Files.writeString(reports.resolve(fileName), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                + "<testsuite xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " + testsuiteAttributes + ">\n"
-                + "</testsuite>\n", StandardCharsets.UTF_8);
+    /** A lock's source declaring the given test methods (each a plain {@code @Test void name()}). */
+    private void source(String lock, String... methods) throws IOException {
+        StringBuilder body = new StringBuilder();
+        for (String method : methods) {
+            body.append("    @Test\n    void ").append(method).append("() { }\n");
+        }
+        sourceText(lock, body.toString());
     }
 
-    private void ran(String lock, int tests, int skipped) throws IOException {
-        report("TEST-jp.aegif.nemaki.x." + lock + ".xml", "name=\"jp.aegif.nemaki.x." + lock + "\" time=\"0.1\" tests=\""
-                + tests + "\" errors=\"0\" skipped=\"" + skipped + "\" failures=\"0\"");
+    private void sourceText(String lock, String body) throws IOException {
+        int dot = lock.lastIndexOf('.');
+        Path file = sources.resolve(lock.substring(0, dot).replace('.', '/')).resolve(lock.substring(dot + 1) + ".java");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "package " + lock.substring(0, dot) + ";\n\nimport org.junit.jupiter.api.Test;\n\n"
+                + "class " + lock.substring(dot + 1) + " {\n" + body + "}\n", StandardCharsets.UTF_8);
+    }
+
+    private void report(String fileName, String testsuiteAttributes, String... cases) throws IOException {
+        StringBuilder testcases = new StringBuilder();
+        for (String c : cases) {
+            testcases.append("  <testcase name=\"").append(c).append("\" classname=\"x\" time=\"0\"/>\n");
+        }
+        Files.writeString(reports.resolve(fileName), "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<testsuite xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" " + testsuiteAttributes + ">\n"
+                + testcases + "</testsuite>\n", StandardCharsets.UTF_8);
+    }
+
+    /** A report for {@code lock} counting {@code skipped} of its cases skipped. */
+    private void ran(String lock, int skipped, String... cases) throws IOException {
+        report("TEST-" + lock + ".xml", "name=\"" + lock + "\" time=\"0.1\" tests=\"" + cases.length
+                + "\" errors=\"0\" skipped=\"" + skipped + "\" failures=\"0\"", cases);
     }
 
     private void assertRefused(Outcome outcome, String lock, String why) {
@@ -86,68 +116,157 @@ class EveryNamedLockRanTest {
     }
 
     @Test
-    @DisplayName("every named lock with a report, tests and none skipped passes")
+    @DisplayName("every named lock with a report, tests, none skipped and every declared method passes")
     void locksThatRanPass() throws Exception {
-        ran("FooTest", 3, 0);
-        ran("BarTest", 1, 0);
-        Outcome outcome = run("FooTest", "BarTest");
+        source(FOO, "a", "b", "c");
+        source(BAR, "d");
+        ran(FOO, 0, "a", "b", "c");
+        ran(BAR, 0, "d");
+        Outcome outcome = run(FOO, BAR);
         assertEquals(0, outcome.exit(), "two locks that ran were refused: " + outcome.output());
     }
 
     @Test
     @DisplayName("a lock with no report — tagged into the excluded group, excluded by a pattern, renamed — fails the job")
     void aLockWithNoReportFails() throws Exception {
-        ran("FooTest", 3, 0);
-        assertRefused(run("FooTest", "BarTest"), "BarTest", "BarTest has no report, so it did not run");
+        source(FOO, "a");
+        source(BAR, "d");
+        ran(FOO, 0, "a");
+        assertRefused(run(FOO, BAR), BAR, "BarTest has no report, so it did not run");
     }
 
     @Test
     @DisplayName("a lock whose report counted no tests fails the job")
     void aLockThatRanNoTestsFails() throws Exception {
-        ran("FooTest", 0, 0);
-        assertRefused(run("FooTest"), "FooTest", "FooTest's report counts no tests");
+        // The report names the declared method, so «no tests» is the one reason left to refuse it.
+        source(FOO, "a");
+        report("TEST-" + FOO + ".xml", "name=\"" + FOO + "\" tests=\"0\" skipped=\"0\" errors=\"0\" failures=\"0\"", "a");
+        assertRefused(run(FOO), FOO, "FooTest's report counts no tests");
     }
 
     @Test
     @DisplayName("a lock with a skipped test fails the job — @Disabled on a method, an assumption that did not hold")
     void aLockWithASkippedTestFails() throws Exception {
-        ran("FooTest", 5, 1);
-        assertRefused(run("FooTest"), "FooTest", "FooTest skipped one of its tests");
+        source(FOO, "a", "b", "c", "d", "e");
+        ran(FOO, 1, "a", "b", "c", "d", "e");
+        assertRefused(run(FOO), FOO, "FooTest skipped one of its tests");
+    }
+
+    @Test
+    @DisplayName("a method the source declares and the report does not name fails the job — a method-level @Tag")
+    void aMethodTakenOutAtDiscoveryFails() throws Exception {
+        // Measured 2026-10-27 on IsNullNamesTheSolrFieldTest: one method tagged atlas-integration, and the report
+        // said tests=4 skipped=0 — the method gone, nothing skipped, and the old three questions passed it
+        // (closing batch 5 review, subagent P2-2).
+        source(FOO, "a", "b", "c");
+        ran(FOO, 0, "a", "b");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "FooTest's method c did not run");
+        assertTrue(outcome.output().contains(": c "), "the refusal does not name the method that did not run: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a parameterized method whose annotation holds a brace is still a declared test, and its absence fails the job")
+    void aParameterizedMethodTakenOutFails() throws Exception {
+        // The head of a method was cut at the first brace before its annotations were stripped, so the brace inside
+        // @ValueSource(strings = { ... }) hid the method: a tag on it went unseen (closing batch 6, found by TN5 not firing).
+        sourceText(FOO, "    @ParameterizedTest\n    @ValueSource(strings = { \"x\", \"y\" })\n    void each(String v) { }\n"
+                + "    @Test\n    void plain() { }\n");
+        ran(FOO, 0, "plain");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "FooTest's parameterized method did not run");
+        assertTrue(outcome.output().contains(": each "), "the refusal does not name the parameterized method: "
+                + outcome.output());
     }
 
     @Test
     @DisplayName("a nested class's report counts for its lock, skipped tests included")
     void aNestedClassCountsForItsLock() throws Exception {
-        report("TEST-jp.aegif.nemaki.x.FooTest$Inner.xml", "name=\"jp.aegif.nemaki.x.FooTest$Inner\" tests=\"2\" "
-                + "skipped=\"0\" errors=\"0\" failures=\"0\"");
-        Outcome onlyNested = run("FooTest");
+        sourceText(FOO, "    @Nested\n    class Inner {\n        @Test\n        void a() { }\n"
+                + "        @Test\n        void b() { }\n    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", "a", "b");
+        Outcome onlyNested = run(FOO);
         assertEquals(0, onlyNested.exit(), "a lock whose tests are all in a nested class was refused: "
                 + onlyNested.output());
-        report("TEST-jp.aegif.nemaki.x.FooTest$Other.xml", "name=\"jp.aegif.nemaki.x.FooTest$Other\" tests=\"2\" "
-                + "skipped=\"2\" errors=\"0\" failures=\"0\"");
-        assertRefused(run("FooTest"), "FooTest", "a nested class of FooTest skipped its tests");
+        report("TEST-" + FOO + "$Other.xml", "name=\"" + FOO + "$Other\" tests=\"2\" skipped=\"2\" errors=\"0\" "
+                + "failures=\"0\"", "a", "b");
+        assertRefused(run(FOO), FOO, "a nested class of FooTest skipped its tests");
     }
 
     @Test
     @DisplayName("a report for a longer class name is not the lock's")
     void aReportForALongerNameIsNotTheLocks() throws Exception {
-        ran("FooTestExtra", 4, 0);
-        ran("PreFooTest", 4, 0);
-        assertRefused(run("FooTest"), "FooTest", "only FooTestExtra and PreFooTest ran, not FooTest");
+        source(FOO, "a");
+        ran("jp.aegif.nemaki.x.FooTestExtra", 0, "a");
+        ran("jp.aegif.nemaki.x.PreFooTest", 0, "a");
+        assertRefused(run(FOO), FOO, "only FooTestExtra and PreFooTest ran, not FooTest");
+    }
+
+    @Test
+    @DisplayName("a class of the same simple name in another package does not stand in for the lock")
+    void aClassOfTheSameNameElsewhereIsNotTheLock() throws Exception {
+        // Chosen by the simple name, TEST-<other.pkg>.FooTest.xml was the lock's (closing batch 5 review, Codex P1).
+        source(FOO, "a");
+        ran("jp.aegif.nemaki.decoy.FooTest", 0, "a");
+        assertRefused(run(FOO), FOO, "only a decoy FooTest in another package ran");
+    }
+
+    @Test
+    @DisplayName("a lock named by its simple name is refused, since that name cannot pick out its report")
+    void aSimpleNameIsRefused() throws Exception {
+        source(FOO, "a");
+        ran(FOO, 0, "a");
+        Outcome outcome = run("FooTest");
+        assertRefused(outcome, "FooTest", "a simple name was taken as a lock");
+        assertTrue(outcome.output().contains("not a fully qualified class name"),
+                "a simple name was refused for another reason, so nothing refuses it as a name: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a lock with no source cannot be checked against what it declares, and fails the job")
+    void aLockWithNoSourceFails() throws Exception {
+        ran(FOO, 0, "a");
+        assertRefused(run(FOO), FOO, "FooTest has a report and no source");
+    }
+
+    @Test
+    @DisplayName("a source from which no test method can be read fails the job rather than passing everything")
+    void aSourceWithNoReadableTestFails() throws Exception {
+        sourceText(FOO, "    void notATest() { }\n");
+        ran(FOO, 0, "notATest");
+        assertRefused(run(FOO), FOO, "nothing could be read from FooTest's source, and the check passed");
+    }
+
+    @Test
+    @DisplayName("@Test in a comment or a string is not a declared test, and a parameterized case counts for its method")
+    void onlyDeclaredTestMethodsAreRequired() throws Exception {
+        // Over-refusal is the other direction: a source that MENTIONS @Test must not require a method it never
+        // declared, and a case reported as name(args)[n] is that method.
+        sourceText(FOO, "    // @Test\n    void helperOne() { }\n    /* @Test */ void helperTwo() { }\n"
+                + "    String s = \"@Test void helperThree()\";\n"
+                + "    @ParameterizedTest\n    @ValueSource(strings = { \"x\", \"y\" })\n    void each(String v) { }\n"
+                + "    @Test\n    @DisplayName(\"with (parentheses)\")\n    void plain() { }\n");
+        ran(FOO, 0, "each(String)[1]", "each(String)[2]", "plain");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a lock that ran every declared method was refused: " + outcome.output());
     }
 
     @Test
     @DisplayName("a report that does not state tests and skipped cannot show the lock ran")
     void anUnreadableReportFails() throws Exception {
-        ran("FooTest", 3, 0);
-        report("TEST-jp.aegif.nemaki.x.FooTest$Inner.xml", "name=\"jp.aegif.nemaki.x.FooTest$Inner\" errors=\"0\"");
-        assertRefused(run("FooTest"), "FooTest", "one of FooTest's reports states no counts");
+        source(FOO, "a", "b", "c");
+        ran(FOO, 0, "a", "b", "c");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" errors=\"0\"");
+        assertRefused(run(FOO), FOO, "one of FooTest's reports states no counts");
     }
 
     @Test
     @DisplayName("no report directory at all fails the job")
     void noReportDirectoryFails() throws Exception {
-        Outcome outcome = runOn(reports.resolve("not-there"), "FooTest");
+        source(FOO, "a");
+        Outcome outcome = runOn(reports.resolve("not-there"), FOO);
         assertEquals(1, outcome.exit(), "no surefire reports at all, and the check passed: " + outcome.output());
     }
 
@@ -168,10 +287,9 @@ class EveryNamedLockRanTest {
         }
         assertTrue(named.size() >= 10, "the unit job names " + named.size() + " locks: " + named);
         for (String lock : named) {
-            try (Stream<Path> found = Files.walk(Path.of("src/test/java"))) {
-                assertTrue(found.anyMatch(p -> p.getFileName().toString().equals(lock + ".java")),
-                        "the unit job names " + lock + ", which is not a test class here");
-            }
+            assertTrue(lock.contains("."), "the unit job names " + lock + " by its simple name");
+            assertTrue(Files.isRegularFile(Path.of("src/test/java", lock.replace('.', '/') + ".java")),
+                    "the unit job names " + lock + ", which is not a test class here");
         }
         assertTrue(job.contains("\n          LOCKS=\"$NAMED_LOCKS\"\n"),
                 "the check before the run does not read the locks from NAMED_LOCKS, so the two checks can name "
@@ -180,7 +298,7 @@ class EveryNamedLockRanTest {
         assertTrue(ranStep >= 0, "the unit job has no step after the run that reads what ran");
         int stepEnd = job.indexOf("\n      - ", ranStep + 1);
         String step = stepEnd > 0 ? job.substring(ranStep, stepEnd) : job.substring(ranStep);
-        assertTrue(step.contains("\n          bash tools/ci/named-locks-ran.sh \"$REPORTS\" $NAMED_LOCKS\n"),
+        assertTrue(step.contains("\n          bash tools/ci/named-locks-ran.sh \"$REPORTS\" core/src/test/java $NAMED_LOCKS\n"),
                 "the step after the run does not check that each named lock ran");
         assertFalse(step.contains("|| true"), "the step after the run lets a failure through");
     }

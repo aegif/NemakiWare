@@ -1104,51 +1104,29 @@ public class AuthTokenResource extends ResourceBase{
 			// password (batch-27 review: both reviewers). Reading that sentence as the reason is how
 			// 「asking the rule about created is the same thing」 comes back.
 			//
-			// Refusing a null answer is the fail-closed direction, and it is the ONLY check that
-			// covers a login carrying no subject at all — the read-back below is guarded on the
-			// binding being present, so for such a login THIS ask is the whole of it. During the
-			// provisioning window (R211) it is therefore this ask that refuses.
-			UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);
-			String refusedNew = SsoLogin.refusal(stored, route, binding);
-			if (refusedNew != null) {
-				logger.info("{} login refused for the account the creation answered with: {}",
-						SsoLogin.label(route), refusedNew);
-				addErrMsg(errMsg, route, refusedNew);
-				return null;
-			}
-			// And the binding has to be IN THE STORE. Read past the cache, which holds the instance
-			// the creation produced (R207), so a conversion that drops the field is caught here
-			// (batch-22 review, Codex P1-2: the first version checked only the update path).
+			// A null answer is refused right here, with its own message: the creation answered with an
+			// account and the store does not have it. It used to reach the rule, which answers null with
+			// 「not linked, and SSO not allowed」 — a reason that is not the one (R211).
 			//
-			// What this does NOT do is remove the account. The shape left behind depends on what
-			// getOrCreateUser answered with, and it is NOT always 「cloud plus this route's mark」:
-			// in the race it can be an account made before 3.4.1, which carries cloud and NO mark and
-			// is therefore adoptable from all four routes (batch-25 review, subagent P2-4 — the first
-			// version of this comment characterised the leftover as this route's own). How to check
-			// what a deployment has: the inventory query in RELEASE_NOTES 3.4.1 for cloud accounts
-			// with no nemaki:authRoute. What bounds the damage is not the shape but the rule asked
-			// of the STORE'S copy above. It is NOT 「an adopting login carrying a subject must store
-			// a binding and read it back」 — this path does not write one onto an account it only
-			// FOUND; only the existing-account arm below does. The qualifier matters: when the
-			// creation actually HAPPENED the creator writes the binding, and a version of this
-			// sentence without 「it only found」 was false the other way (batch-28 review, subagent
-			// P2-1). So a race that finds an unbound 「cloud」 account refuses a login the
-			// rule allows (residual R210), and that sentence, which stood here for a round, was
-			// stronger than the code (batch-27 review: both reviewers). A login carrying NO subject
-			// is residual R208.
-			if (binding != null && !binding.isBlank()
-					&& !binding.equals(SsoLogin.boundSubject(stored, route))) {
-				logger.warn("{} login refused: the account created for {} does not carry the binding",
+			// From here the account EXISTS — this login created it, or found it in the race — and it takes
+			// THE SAME STEPS as one found at first (R210): the rule, then the binding written if it is
+			// missing, and read back. The created arm used to only COMPARE the binding, so a race that
+			// found an unbound 「cloud」 account — one made before 3.4.1, which the rule allows to be adopted
+			// — was refused although nothing stopped this login from linking it. What still differs is
+			// WHICH COPY is judged: here the store's, because the instance the creation handed back is not.
+			UserItem stored = contentService.getUserItemByIdFromStore(repositoryId, userName);
+			if (stored == null) {
+				logger.warn("{} login refused: the account the creation answered with for {} is not in the store",
 						SsoLogin.label(route), userName);
-				addErrMsg(errMsg, route, "the account's link to this identity could not be stored");
+				addErrMsg(errMsg, route, "the account could not be found in the store after it was created");
 				return null;
 			}
-			return created;
+			account = stored;
 		}
 
 		String refused = SsoLogin.refusal(account, route, binding);
 		if (refused != null) {
-			logger.info("{} login refused for an existing account: {}", SsoLogin.label(route), refused);
+			logger.info("{} login refused for the account: {}", SsoLogin.label(route), refused);
 			addErrMsg(errMsg, route, refused);
 			return null;
 		}

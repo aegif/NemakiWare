@@ -79,7 +79,7 @@ describe('buildMetadataSearchQuery', () => {
 
   it('builds the full-text query without the file name, which the index does not hold (closing batch 4 review)', () => {
     expect(buildFullTextQuery("it's", false)).toBe(
-      "SELECT * FROM cmis:document WHERE CONTAINS('it\\'s') OR cmis:name LIKE '%it\\'s%' OR cmis:description LIKE '%it\\'s%' OR cmis:checkinComment LIKE '%it\\'s%'",
+      "SELECT * FROM cmis:document WHERE CONTAINS('it\\\\\\'s') OR cmis:name LIKE '%it\\'s%' OR cmis:description LIKE '%it\\'s%' OR cmis:checkinComment LIKE '%it\\'s%'",
     );
     expect(buildFullTextQuery('x', false, 'cmis:folder')).toBe(
       "SELECT * FROM cmis:folder WHERE CONTAINS('x') OR cmis:name LIKE '%x%' OR cmis:description LIKE '%x%'",

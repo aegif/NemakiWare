@@ -315,106 +315,15 @@ public class EverySsoRouteAsksTheSameRuleTest {
                             + "produced — the comparison is then the written value against itself");
         }
 
-        // THE CREATE PATH as well, IN BOTH ENTRY POINTS: an account created without the binding this
-        // login gave it is adoptable by the next token of the same name, and the span above only reads
-        // the update (batch-22 review, Codex P1-2). The api/v1 twin had no check at all until the
-        // batch-22..24 review found it — 「both entry points」 was the claim, REST was the code (both
-        // reviewers, P1).
-        for (String[] where : new String[][] {
-                { REST, "private UserItem accountForSsoLogin", "getOrCreateUser(", "return created;" },
-                { API_V1, "public Response oidcAuth", "getOrCreateUser(", "} else {" } }) {
-            String body = JavaSource.methodBody(
-                    JavaSource.withoutLiteralText(JavaSource.read(where[0])), where[1]);
-            int created = body.indexOf(where[2]);
-            int until = body.indexOf(where[3], created);
-            assertTrue(created > 0 && until > created, where[0] + "'s " + where[1] + " no longer creates "
-                    + "an account in the span this lock reads: created=" + created + " until=" + until);
-            String createPath = body.substring(created, until);
-
-            // THE SAME RULE, asked of THE STORE'S COPY. getOrCreateUser answers with an account it
-            // FOUND when one appeared between the caller's read and its own, and that is an EXISTING
-            // account — entering it with no rule applied left 「unset ⇒ allowed」 deciding alone
-            // (R209). The ARGUMENT is read, not just the call, and the expected argument is DERIVED
-            // from the store read rather than named: the name is what changed when one batch asked
-            // the rule about the instance the creation handed back, and the property that matters is
-            // 「the copy the store has」 (batch-26 review: Codex P1, subagent P2-4).
-            Matcher readsTheStore = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*getUserItemByIdFromStore\\(")
-                    .matcher(createPath);
-            assertTrue(readsTheStore.find(), where[0] + "'s create path never reads the account from "
-                    + "the store, so every check it makes is about an instance held in memory: "
-                    + createPath);
-            String fromStore = readsTheStore.group(1);
-            // ASSIGNED ONCE. 「the store read went into X」 says nothing if X is written again:
-            // adding the single line 「stored = created;」 left every assertion below green, in both
-            // doors (batch-27 review, subagent P3-3, measured by simulation).
-            //
-            // TWO FORMS GET PAST THIS, both measured (batch-28 review, subagent P3-2): a unicode
-            // escape in the identifier (javac resolves 「st\u006fred」 to the same variable and this
-            // pattern does not match it), and mutating the object instead of the reference
-            // (「stored.setSubTypeProperties(created.getSubTypeProperties())」). Neither is an open
-            // hole: the DRIVEN lock — OidcLoginEntryPointsTest#anAccountThatAppearedDuringTheCreate
-            // IsJudgedByTheRule — fails on both, which is why they are recorded here rather than
-            // chased with more arms.
-            assertEquals(1, Pattern.compile("(?<![\\w.])" + fromStore + "\\s*=(?!=)")
-                            .matcher(createPath).results().count(),
-                    where[0] + " assigns " + fromStore + " more than once in the create path, so what "
-                            + "the checks below read is not necessarily what the store answered: "
-                            + createPath);
-            Matcher asksTheRule = Pattern.compile("(\\w+)\\s*=\\s*[\\w.]*refusal\\((\\w+)")
-                    .matcher(createPath);
-            assertTrue(asksTheRule.find(), where[0] + "'s create path does not ask the rule every other "
-                    + "route asks, so an account it did not create is entered on the strength of its "
-                    + "own allowedAuthMethods: " + createPath);
-            String answer = asksTheRule.group(1);
-            assertEquals(fromStore, asksTheRule.group(2), where[0] + " asks the rule about "
-                    + asksTheRule.group(2) + ", not about " + fromStore + " — the copy the STORE has. "
-                    + "An authorisation decision read from an instance in memory lets in an account "
-                    + "the store has disabled: " + createPath);
-            int asked = createPath.indexOf(answer + " != null");
-            assertTrue(asked > 0, where[0] + " asks the rule and does not look at the answer (" + answer
-                    + " is assigned and never compared), so every refusal it names is ignored: "
-                    + createPath);
-            assertTrue(refuses(createPath, asked), where[0] + " looks at the rule's answer and lets the "
-                    + "login proceed anyway: " + createPath);
-
-            // AND the binding, with the comparison and the refusal UNDER THE SAME CONDITION. 「the
-            // names appear」 was not enough: reading the stored value and not comparing it, or
-            // comparing it and not refusing, both left this green (batch-22..24 review, Codex P2-2).
-            //
-            // The comparison reads THE SAME store copy, and what it receives is measured by running
-            // it, in OidcLoginEntryPointsTest#aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin.
-            int compare = createPath.indexOf("boundSubject");
-            assertTrue(compare > 0, where[0] + " returns the account it just created without checking "
-                    + "that it carries the binding this login gave it");
-            // The FIRST ARGUMENT, not 「the name appears somewhere after it」: the second alternative
-            // this line used to carry added nothing (the first holds in both files today) and was
-            // satisfiable by any unrelated mention of the variable (batch-27 review, subagent P3-3).
-            assertTrue(createPath.substring(compare).startsWith("boundSubject(" + fromStore),
-                    where[0] + " compares the binding against something other than the store's copy "
-                            + fromStore + ": " + createPath);
-            int condition = createPath.lastIndexOf("if (", compare);
-            assertTrue(condition >= 0 && createPath.substring(condition, compare).contains("!binding.equals("),
-                    where[0] + " reads the stored binding and does not compare it with the one this "
-                            + "login carries: " + createPath);
-            assertTrue(refuses(createPath, compare), where[0] + " compares the stored binding and does "
-                    + "not refuse the login when it differs: " + createPath);
-        }
-    }
-
-    /**
-     * Does the block of the {@code if} whose condition contains {@code inCondition} refuse the login?
-     *
-     * <p>Reading the enclosing BLOCK, not 「a refusal appears later in the method」: a refusal that
-     * belongs to the next check satisfies the loose form, which is how 「compares and refuses」 was
-     * green for a span that only compared.
-     */
-    private static boolean refuses(String code, int inCondition) {
-        int closes = code.indexOf(") {", inCondition);
-        if (closes < 0) {
-            throw new jp.aegif.nemaki.util.test.HarnessBroken(
-                    "no condition closes after offset " + inCondition + ", so nothing was read: " + code);
-        }
-        String block = code.substring(closes, JavaSource.matchingClose(code, closes));
-        return block.contains("return null") || block.contains("throw ");
+        // THE CREATE PATH is no longer a separate span (R210, 3.4.1 closing batch 5): an account this login
+        // created — or found in the race — is read back from the store and then takes the SAME steps as one found
+        // at first, the rule and the binding written and read back. What this half of the lock read by shape is
+        // DRIVEN now, in both doors, by OidcLoginEntryPointsTest: the rule asked of the store's copy
+        // (anAccountThatAppearedDuringTheCreateIsJudgedByTheRule, R209), the binding read from the store
+        // (aCreatedAccountWhoseBindingIsNotStoredRefusesTheLogin, R207), the race's unbound account linked
+        // (anUnboundAccountFoundInTheRaceIsLinked, R210) and the absent store copy refused for that reason
+        // (aCreatedAccountTheStoreDoesNotHaveIsRefusedForThatReason, R211). Two forms got past the shape reading
+        // (a unicode escape in an identifier, mutating the object instead of the reference) and none gets past
+        // a run.
     }
 }

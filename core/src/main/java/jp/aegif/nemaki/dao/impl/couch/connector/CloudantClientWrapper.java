@@ -1494,6 +1494,21 @@ public class CloudantClientWrapper {
 	 * {@code existContent} was taught to check {@code secondaryIds} as well.)
 	 */
 	public ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate) {
+		return queryView(designDoc, viewName, key, forceUpdate, true);
+	}
+
+	/**
+	 * The keyed view query with the index brought up to date, refusing an undeployed view even while the provisioning
+	 * window is open (R211). The overload above answers null for it in that window — provisioning runs against design
+	 * documents that may not exist yet — and its callers read null as "no row carries this key". A caller that must not
+	 * read "could not ask" as "absent" outside provisioning's own needs uses this.
+	 */
+	public ViewResult queryViewStrict(String designDoc, String viewName, String key) {
+		return queryView(designDoc, viewName, key, true, false);
+	}
+
+	private ViewResult queryView(String designDoc, String viewName, String key, boolean forceUpdate,
+			boolean nullWhileProvisioning) {
 		try {
 			// CRITICAL FIX (2025-10-13): CouchDB view update parameter
 			// update=true forces view index update BEFORE query (stale=false)
@@ -1529,7 +1544,7 @@ public class CloudantClientWrapper {
 			// property is not defined", which is the duplicate-core route the whole property
 			// definition work exists to close. During provisioning the view legitimately
 			// does not exist yet, so that case keeps its null.
-			if (isStartupPhase()) {
+			if (nullWhileProvisioning && isStartupPhase()) {
 				log.warn("Design document '" + designDoc + "' or view '" + viewName + "' not found"
 						+ " during startup - returning null. This is normal before design"
 						+ " documents are created.");

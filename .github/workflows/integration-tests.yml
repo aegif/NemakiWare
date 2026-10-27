@@ -165,17 +165,19 @@ jobs:
       COUCHDB_PASSWORD: password
       # The locks this job names, once: the step before the run checks that each exists and is not
       # @Disabled, and the step after it checks that each RAN (R181). Two copies of the list could drift.
+      # Fully qualified: a report chosen by a simple name can be another package's class of that name, which
+      # then stands in for a lock that did not run (closing batch 5 review, Codex P1).
       NAMED_LOCKS: >-
-        EverySupportedCouchDbIsMeasuredTest
-        CanonicalImportServiceTest
-        ReleaseReadinessIsMeasuredTest
-        NoForbiddenClaimShipsTest
-        CredentialsEndWithTheAccountTest
-        TheAssertedNameIsNotTheAuthenticatedOneTest
-        OidcLoginTest
-        OidcLoginEntryPointsTest
-        IsNullNamesTheSolrFieldTest
-        SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest
+        jp.aegif.nemaki.dao.impl.couch.EverySupportedCouchDbIsMeasuredTest
+        jp.aegif.nemaki.rest.ingest.CanonicalImportServiceTest
+        jp.aegif.nemaki.evidence.ReleaseReadinessIsMeasuredTest
+        jp.aegif.nemaki.evidence.NoForbiddenClaimShipsTest
+        jp.aegif.nemaki.cmis.factory.auth.impl.CredentialsEndWithTheAccountTest
+        jp.aegif.nemaki.api.v1.resource.TheAssertedNameIsNotTheAuthenticatedOneTest
+        jp.aegif.nemaki.rest.OidcLoginTest
+        jp.aegif.nemaki.rest.OidcLoginEntryPointsTest
+        jp.aegif.nemaki.cmis.aspect.query.solr.IsNullNamesTheSolrFieldTest
+        jp.aegif.nemaki.rest.SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
@@ -261,8 +263,8 @@ jobs:
           # lock is in the suite; @Disabled on it is exactly how it stops running — round-3 review, P2).
           LOCKS="$NAMED_LOCKS"
           for lock in $LOCKS; do
-            FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
-            if [ -z "$FILE" ]; then
+            FILE="core/src/test/java/$(printf '%s' "$lock" | tr . /).java"
+            if [ ! -f "$FILE" ]; then
               echo "::error::$lock does not exist — renamed or deleted, so nothing in it runs here"
               exit 1
             fi
@@ -360,7 +362,7 @@ jobs:
           # surefire.excludedGroups property, or a -Dsurefire.excludedGroups= on the mvn line passed them all,
           # with the floor 1,150 tests away. This reads what surefire RAN: a report for the lock, with tests,
           # none skipped. One question that all of those ways answer the same.
-          bash tools/ci/named-locks-ran.sh "$REPORTS" $NAMED_LOCKS
+          bash tools/ci/named-locks-ran.sh "$REPORTS" core/src/test/java $NAMED_LOCKS
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a
       # green build that never ran it would be asserting exactly nothing about that claim.

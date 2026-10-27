@@ -117,6 +117,27 @@ class CloudantViewFailuresAreNotEmptyAnswersTest {
         }
     }
 
+    @Test
+    @DisplayName("the STRICT keyed view refuses an undeployed design document even DURING provisioning (R211)")
+    void aStrictKeyedReadRefusesAnUndeployedViewDuringStartup() {
+        CloudantClientWrapper wrapper = wrapperWhoseViewIsNotDeployed();
+        jp.aegif.nemaki.init.StartupPhase.begin();
+        try {
+            CmisRuntimeException refused = assertThrows(CmisRuntimeException.class,
+                    () -> wrapper.queryViewStrict("_repo", "userItemsById", "nana"),
+                    "the strict query answered null inside the provisioning window, which its caller reads as "
+                            + "«no such user» — a creation that succeeded then reads back as absent");
+            assertTrue(refused.getMessage().contains("not deployed"),
+                    "refused for some other reason: " + refused.getMessage());
+            // The lenient overload keeps provisioning's null: provisioning runs against design documents that
+            // may not exist yet.
+            assertNull(org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                    () -> wrapper.queryView("_repo", "userItemsById", "nana")));
+        } finally {
+            jp.aegif.nemaki.init.StartupPhase.end();
+        }
+    }
+
     /** A wrapper whose postView SUCCEEDS but hands back the given result. */
     @SuppressWarnings("unchecked")
     private CloudantClientWrapper wrapperAnswering(ViewResult result) {

@@ -432,10 +432,11 @@ public class OidcLoginEntryPointsTest {
         // (measured: it did not fire).
         UserItem createdWithBinding = account("heidi", "cloud", issuer + " sub-heidi",
                 jp.aegif.nemaki.rest.SsoLogin.OIDC);
-        UserItem storeHasNoBinding = account("heidi", "cloud", null,
-                jp.aegif.nemaki.rest.SsoLogin.OIDC);
         when(contentService.getUserItemById("bedroom", "heidi")).thenReturn(null, createdWithBinding);
-        when(contentService.getUserItemByIdFromStore("bedroom", "heidi")).thenReturn(storeHasNoBinding);
+        // A FRESH copy on every read, as a store read is: since R210 the procedure writes the binding onto the copy
+        // it judged, and a fixture that hands back the same instance would show that write as stored.
+        when(contentService.getUserItemByIdFromStore("bedroom", "heidi")).thenAnswer(read -> account("heidi", "cloud",
+                null, jp.aegif.nemaki.rest.SsoLogin.OIDC));
 
         JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("heidi", "sub-heidi") + "\"}");
 
@@ -447,9 +448,9 @@ public class OidcLoginEntryPointsTest {
         // BOTH ENTRY POINTS, each with its own name (the stubbing above is consumed by the REST call).
         UserItem ivanCreated = account("ivan", "cloud", issuer + " sub-ivan",
                 jp.aegif.nemaki.rest.SsoLogin.OIDC);
-        UserItem ivanStore = account("ivan", "cloud", null, jp.aegif.nemaki.rest.SsoLogin.OIDC);
         when(contentService.getUserItemById("bedroom", "ivan")).thenReturn(null, ivanCreated);
-        when(contentService.getUserItemByIdFromStore("bedroom", "ivan")).thenReturn(ivanStore);
+        when(contentService.getUserItemByIdFromStore("bedroom", "ivan")).thenAnswer(read -> account("ivan", "cloud",
+                null, jp.aegif.nemaki.rest.SsoLogin.OIDC));
 
         String apiV1 = apiV1(Map.of("id_token", idTokenFor("ivan", "sub-ivan")));
 
@@ -511,6 +512,63 @@ public class OidcLoginEntryPointsTest {
         assertTrue(apiV1.startsWith("refused: "), "api/v1 asked the rule about a copy that is not the "
                 + "store's, so an account the store has disabled was entered: " + apiV1);
         verify(tokenService, never()).setToken(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("an unbound 「cloud」 account found in the race is linked like any other account, not refused (R210)")
+    void anUnboundAccountFoundInTheRaceIsLinked() throws Exception {
+        // THE RACE, the other way round from R209: the door reads 「no such account」, getOrCreateUser's own read
+        // finds one — made before 3.4.1: cloud listed, no route mark, linked to nobody. The rule allows adopting
+        // it, as it does for the same account found at first. The created arm only COMPARED the binding, so this
+        // login was refused although nothing stopped it from linking the account; now it takes the same steps:
+        // the binding written, and read back.
+        UserItem foundUnbound = account("judy", "cloud", null);
+        UserItem storeBefore = account("judy", "cloud", null);
+        UserItem storeAfterTheLink = account("judy", "cloud", issuer + " sub-judy");
+        when(contentService.getUserItemById("bedroom", "judy")).thenReturn(null, foundUnbound);
+        when(contentService.getUserItemByIdFromStore("bedroom", "judy")).thenReturn(storeBefore, storeAfterTheLink);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("judy", "sub-judy") + "\"}");
+
+        assertEquals("success", rest.get("status"), "an account the rule allows this login to adopt was refused "
+                + "because the race found it rather than the first read: " + rest.toJSONString());
+        verify(contentService).applyUserUpdate(eq("bedroom"), any(UserItem.class), eq("judy"));
+
+        // BOTH ENTRY POINTS, each with its own name (the stubbing above is consumed by the REST call).
+        UserItem kateFound = account("kate", "cloud", null);
+        UserItem kateBefore = account("kate", "cloud", null);
+        UserItem kateAfter = account("kate", "cloud", issuer + " sub-kate");
+        when(contentService.getUserItemById("bedroom", "kate")).thenReturn(null, kateFound);
+        when(contentService.getUserItemByIdFromStore("bedroom", "kate")).thenReturn(kateBefore, kateAfter);
+
+        assertEquals("logged in: kate", apiV1(Map.of("id_token", idTokenFor("kate", "sub-kate"))),
+                "api/v1 refused an account the rule allows this login to adopt, because the race found it");
+    }
+
+    @Test
+    @DisplayName("an account the creation answered with that the store does not have is refused for THAT reason (R211)")
+    void aCreatedAccountTheStoreDoesNotHaveIsRefusedForThatReason() throws Exception {
+        // The store read answered null after the creation answered with an account. The rule answers null with
+        // 「not linked, and SSO not allowed」 — a reason that is not what happened, and the refusal an operator would
+        // chase. Both doors now refuse it on its own: REST with that message, api/v1 as a server error.
+        UserItem created = account("liam", "cloud", issuer + " sub-liam", SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "liam")).thenReturn(null, created);
+        when(contentService.getUserItemByIdFromStore("bedroom", "liam")).thenReturn(null);
+
+        JSONObject rest = rest("{\"id_token\":\"" + idTokenFor("liam", "sub-liam") + "\"}");
+
+        assertEquals("failure", rest.get("status"), rest.toJSONString());
+        assertTrue(rest.toJSONString().contains("could not be found in the store"), "the refusal does not say the "
+                + "account was not in the store: " + rest.toJSONString());
+        verify(tokenService, never()).setToken(any(), any(), any());
+
+        UserItem miaCreated = account("mia", "cloud", issuer + " sub-mia", SsoLogin.OIDC);
+        when(contentService.getUserItemById("bedroom", "mia")).thenReturn(null, miaCreated);
+        when(contentService.getUserItemByIdFromStore("bedroom", "mia")).thenReturn(null);
+
+        assertEquals("refused: 500", apiV1(Map.of("id_token", idTokenFor("mia", "sub-mia"))),
+                "api/v1 answered a store that does not have the created account with the rule's refusal, as if SSO "
+                        + "were not allowed for it");
     }
 
     @Test

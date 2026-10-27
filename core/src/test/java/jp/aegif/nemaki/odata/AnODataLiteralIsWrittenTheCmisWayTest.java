@@ -82,12 +82,15 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         assertEquals("cmis:name LIKE '100\\%\\_x%'", convert.invoke(processor, startsWith));
     }
     @Test
-    @DisplayName("a $search term's quote is escaped the CMIS way, not doubled")
+    @DisplayName("a $search term's quote and backslash are escaped twice — the text search expression's, then the literal's")
     void aSearchTermsQuoteIsEscapedTheCmisWay() throws Exception {
+        // Escaped once, CONTAINS('it\'s') was refused by OpenCMIS's text search lexer — a 400; escaped twice it is
+        // answered (closing batch 5 review, subagent P3-1, measured on bedroom). Through the conversion $search uses.
         CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
                 null);
-        Method escape = CmisEntityCollectionProcessor.class.getDeclaredMethod("escapeSearchTerm", String.class);
-        escape.setAccessible(true);
-        assertEquals("it\\'s", escape.invoke(processor, "it's"));
+        Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertSearchToContains", String.class);
+        convert.setAccessible(true);
+        assertEquals("CONTAINS('it\\\\\\'s')", convert.invoke(processor, "it's"));
+        assertEquals("CONTAINS('a\\\\\\\\b')", convert.invoke(processor, "a\\b"));
     }
 }

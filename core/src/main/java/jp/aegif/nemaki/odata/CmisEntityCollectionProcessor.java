@@ -462,14 +462,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     
     /**
      * Escape special characters in search term for CMIS CONTAINS() function.
-     * 
-     * CMIS full-text search has specific syntax requirements:
-     * - Single quotes must be doubled (' -> '')
-     * - Backslashes must be escaped (\ -> \\)
-     * - Colons, asterisks, and question marks are escaped
-     * 
-     * Note: Double quotes are preserved for phrase matching.
-     * 
+     *
+     * CONTAINS takes a text search expression, written inside a CMIS string literal, and both escape a backslash and a
+     * single quote with a backslash — so each is escaped twice, the expression's level first (closing batch 5 review,
+     * subagent P3-1: escaped once, {@code CONTAINS('it\'s')} is refused by OpenCMIS's text search lexer — a 400 —
+     * and {@code CONTAINS('it\\\'s')} is answered, measured on bedroom). Colons, asterisks and question marks are
+     * escaped as before. Double quotes are preserved for phrase matching.
+     *
      * @param searchTerm The raw search term from OData $search
      * @return The escaped search term safe for CMIS CONTAINS()
      */
@@ -477,13 +476,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         if (searchTerm == null) {
             return null;
         }
-        
-        // Escape backslashes first (must be done before other escapes)
-        String escaped = searchTerm.replace("\\", "\\\\");
-        
-        // Escape single quotes (CMIS string delimiter) the CMIS way, with a backslash. Doubling it is SQL's escape,
-        // which CMIS does not have: the literal ended at the second quote (closing batch 4 review, subagent P3-3).
-        escaped = escaped.replace("'", "\\'");
+
+        // The text search expression's own escapes: its backslash, then its quote.
+        String escaped = searchTerm.replace("\\", "\\\\").replace("'", "\\'");
+
+        // And the CMIS string literal's, over that: every backslash again, then the quote. Doubling the quote is SQL's
+        // escape, which CMIS does not have: the literal ended at the second quote (closing batch 4 review, P3-3).
+        escaped = escaped.replace("\\", "\\\\").replace("'", "\\'");
         
         // Remove or escape characters that could be interpreted as CMIS query operators
         // Colons can be problematic in some full-text search implementations

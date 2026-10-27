@@ -146,6 +146,38 @@ class IdentityAndPolicyLookupsRefuseFailuresTest {
     }
 
     @Test
+    @DisplayName("the STORE read of a user refuses an undeployed view even while provisioning — it is not «no such user» (R211)")
+    void theStoreReadRefusesAnUndeployedViewWhileProvisioning() {
+        // While the provisioning window is open the keyed view query answers null for a view that is not there
+        // yet, and the ordinary read then says «no such user». The SSO doors read an account they have just
+        // created back through getUserItemByIdFromStore, so in that window a creation that succeeded read back
+        // as absent. The wrapper is stubbed the way it behaves in the window: the lenient query answers null,
+        // the strict one refuses.
+        CloudantClientWrapper client = mock(CloudantClientWrapper.class);
+        when(client.queryView(eq("_repo"), eq("userItemsById"), eq("nana"))).thenReturn(null);
+        when(client.queryViewStrict(eq("_repo"), eq("userItemsById"), eq("nana"))).thenThrow(
+                new jp.aegif.nemaki.dao.impl.couch.connector.ViewNotDeployedException(
+                        "View _repo/userItemsById is not deployed", null));
+        ContentDaoServiceImpl couch = couchWith(client);
+        // Both setters, as Spring injects them: the user delegate is built only once the map is there too.
+        couch.setRepositoryInfoMap(mock(jp.aegif.nemaki.cmis.factory.info.RepositoryInfoMap.class));
+
+        RuntimeException refused = org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> couch.getUserItemByIdFromStore(REPO, "nana"),
+                "the store read answered with the lenient query's null, so a user it could not read is reported "
+                        + "absent");
+        boolean becauseTheViewIsNotThere = false;
+        for (Throwable cause = refused; cause != null; cause = cause.getCause()) {
+            becauseTheViewIsNotThere |= cause instanceof jp.aegif.nemaki.dao.impl.couch.connector.ViewNotDeployedException;
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(becauseTheViewIsNotThere,
+                "refused for some other reason: " + refused);
+        // The ordinary read keeps provisioning's null — the kept arm, which provisioning itself needs.
+        org.junit.jupiter.api.Assertions.assertNull(org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> couch.getUserItemById(REPO, "nana")));
+    }
+
+    @Test
     @DisplayName("a user row with an unreadable shape refuses instead of being skipped")
     void anUnreadableUserRowRefuses() {
         CloudantClientWrapper client = mock(CloudantClientWrapper.class);

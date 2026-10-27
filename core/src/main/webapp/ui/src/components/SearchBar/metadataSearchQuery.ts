@@ -15,6 +15,17 @@ export function cmisLikeLiteral(value: unknown): string {
 }
 
 /**
+ * A value for CONTAINS: escaped twice (closing batch 5 review, subagent P3-1). CONTAINS takes a text search
+ * expression, which escapes its own backslash and quote — OpenCMIS refuses a bare quote there — and that expression is
+ * written inside a CMIS string literal, which escapes them again. Measured on bedroom: CONTAINS('it\'s') is a 400,
+ * CONTAINS('it\\\'s') is answered. A double quote and a minus keep their meaning in the expression (a phrase, an
+ * exclusion), as typed.
+ */
+export function cmisFullTextLiteral(value: unknown): string {
+  return cmisString(String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
+/**
  * The CMIS query the full-text search sends. Not cmis:contentStreamFileName: the search index does not hold the file
  * name, the server refuses a query on it, and the condition never matched anything (closing batch 4 review, subagent
  * P3-4).
@@ -22,11 +33,11 @@ export function cmisLikeLiteral(value: unknown): string {
 export function buildFullTextQuery(keyword: string, excludeMetadata: boolean, baseType?: string): string {
   const fromType = baseType || 'cmis:document';
   if (excludeMetadata) {
-    return `SELECT * FROM ${fromType} WHERE CONTAINS('${cmisString(keyword)}')`;
+    return `SELECT * FROM ${fromType} WHERE CONTAINS('${cmisFullTextLiteral(keyword)}')`;
   }
   const like = cmisLikeLiteral(keyword);
   const conditions = [
-    `CONTAINS('${cmisString(keyword)}')`,
+    `CONTAINS('${cmisFullTextLiteral(keyword)}')`,
     `cmis:name LIKE '%${like}%'`,
     `cmis:description LIKE '%${like}%'`,
   ];

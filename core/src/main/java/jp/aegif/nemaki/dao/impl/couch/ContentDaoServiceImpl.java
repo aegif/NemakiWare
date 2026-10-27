@@ -1887,8 +1887,9 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 
 	@Override
 	public UserItem getUserItemByIdFromStore(String repositoryId, String userId) {
-		// Nothing caches below this layer, so the store read IS the read.
-		return getUserItemById(repositoryId, userId);
+		// Nothing caches below this layer, so the store read IS the read — and it is the STRICT one: an
+		// undeployed view is refused even while provisioning, instead of answering "no such user" (R211).
+		return userGroupDao.getUserItemByIdStrict(repositoryId, userId);
 	}
 
 	@Override
