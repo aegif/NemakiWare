@@ -234,7 +234,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { buildMetadataSearchQuery } from './metadataSearchQuery';
+import { buildFullTextQuery, buildMetadataSearchQuery } from './metadataSearchQuery';
 import {
   Card,
   Input,
@@ -438,29 +438,8 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
     let query = '';
 
     if (values.query) {
-      // Full-text search mode
-      const keyword = values.query;
-      const excludeMetadata = values.excludeMetadata;
-      const fullTextBaseType = values.baseType || 'cmis:document';
-
-      if (excludeMetadata) {
-        // When checkbox is checked: search only full-text content
-        query = `SELECT * FROM ${fullTextBaseType} WHERE CONTAINS('${keyword}')`;
-      } else {
-        // Default behavior: search both full-text AND standard metadata properties
-        // Combine CONTAINS with LIKE conditions using OR for broader search
-        const searchConditions = [
-          `CONTAINS('${keyword}')`,
-          `cmis:name LIKE '%${keyword}%'`,
-          `cmis:description LIKE '%${keyword}%'`,
-        ];
-        // cmis:contentStreamFileName and cmis:checkinComment are document-only properties
-        if (fullTextBaseType === 'cmis:document') {
-          searchConditions.push(`cmis:contentStreamFileName LIKE '%${keyword}%'`);
-          searchConditions.push(`cmis:checkinComment LIKE '%${keyword}%'`);
-        }
-        query = `SELECT * FROM ${fullTextBaseType} WHERE ${searchConditions.join(' OR ')}`;
-      }
+      // Full-text search mode: the full text, and the standard metadata unless that is excluded
+      query = buildFullTextQuery(values.query, !!values.excludeMetadata, values.baseType);
     } else {
       query = buildMetadataSearchQuery(values, selectedTypeProperties, selectedSecondaryTypeProperties,
         selectedTypeQueryName);

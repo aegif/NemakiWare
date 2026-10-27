@@ -251,6 +251,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		
 		// Get where caluse as CmisTree
 		CmisTree whereTree = null;
+		// Why the statement could not be processed, when it could not: a statement that does not parse is the
+		// client's (closing batch 4 review, subagent P3-5 — `SELECT * FORM cmis:document` became a 500 once the
+		// FROM lookup below stopped answering an empty list).
+		Exception parseFailure = null;
 		try {
 			if (logger.isDebugEnabled()) {
 				logger.debug("About to call util.processStatement()");
@@ -269,6 +273,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 				logger.debug("Exception in processStatement: " + e.getMessage());
 			}
 			logger.error("Exception in processStatement", e);
+			if (jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
+				// The type definitions could not be read: not a statement that does not parse (closing batch 4
+				// review, subagent P2-1 (c) — a repository whose type system did not load answered WHERE cmis:name =
+				// 'a' with the client's 400).
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"The type definitions could not be read, so the query was not run: " + e.getMessage(), e);
+			}
+			parseFailure = e;
 		}
 		
 		// Check queryObject after processStatement
@@ -348,6 +360,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				throw refusal;
 			} catch (Exception e) {
 				logger.error("Error in SolrPredicateWalker.walkPredicate: " + e.getMessage(), e);
+				if (jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
+					// A definition the walker needed could not be read: the server's failure, not an untranslatable
+					// WHERE clause (closing batch 4 review, subagent P2-1 (b)).
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"The type definitions could not be read, so the query was not run: " + e.getMessage(), e);
+				}
 				// CRITICAL FIX (2025-12-18): Try manual parsing before throwing exception
 				whereQueryString = wholeWhereOrRefuse(repositoryId, statement,
 						"Invalid CMIS SQL statement: " + e.getMessage());
@@ -378,8 +396,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 				logger.debug("Exception in getMainFromName() during FROM query: " + e.getMessage());
 			}
 			logger.error("Exception in getMainFromName() during FROM query", e);
-			// NOT an empty result (closing batch 3 review, subagent P3-7): the type in FROM could not be read, which is
-			// not a finding that nothing matches.
+			// NOT an empty result (closing batch 3 review, subagent P3-7). A statement that did not parse has no FROM
+			// to resolve, and that is the client's 400; anything else is a FROM this server could not read.
+			if (parseFailure != null && !jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+						"The statement could not be parsed: " + parseFailure.getMessage());
+			}
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
 					"The type in FROM could not be resolved, so the query was not run: " + e.getMessage(), e);
 		}
@@ -1169,6 +1191,33 @@ public class SolrQueryProcessor implements QueryProcessor {
 				|| type == org.apache.chemistry.opencmis.commons.enums.PropertyType.URI;
 	}
 
+	/**
+	 * The values of an IN list of bare INTEGER, DECIMAL or BOOLEAN literals — {@code 1, -2} or {@code TRUE} — each in the
+	 * form CMIS writes it for that type; null when the list is anything else, or the type is none of the three.
+	 */
+	static List<String> plainListValues(String list, org.apache.chemistry.opencmis.commons.enums.PropertyType type) {
+		Pattern literal;
+		if (type == org.apache.chemistry.opencmis.commons.enums.PropertyType.INTEGER) {
+			literal = Pattern.compile("[+-]?[0-9]+");
+		} else if (type == org.apache.chemistry.opencmis.commons.enums.PropertyType.DECIMAL) {
+			literal = Pattern.compile("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?");
+		} else if (type == org.apache.chemistry.opencmis.commons.enums.PropertyType.BOOLEAN) {
+			literal = Pattern.compile("(?i)TRUE|FALSE");
+		} else {
+			return null;
+		}
+		List<String> values = new ArrayList<>();
+		for (String part : list.split(",", -1)) {
+			String value = part.trim();
+			if (!literal.matcher(value).matches()) {
+				return null;
+			}
+			values.add(type == org.apache.chemistry.opencmis.commons.enums.PropertyType.BOOLEAN
+					? value.toLowerCase(java.util.Locale.ROOT) : value);
+		}
+		return values;
+	}
+
 	/** The Solr field a property is indexed under, escaped once — the rule the walker uses. */
 	private String fieldFor(String repositoryId, String propertyQueryName) {
 		return SolrUtil.queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, propertyQueryName));
@@ -1282,11 +1331,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 					Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(whereClause);
 			if (anyInProperty.matches()) {
 				PropertyDefinition<?> definition = definitions.get(anyInProperty.group(1));
-				if (definition.getCardinality() != org.apache.chemistry.opencmis.commons.enums.Cardinality.MULTI
-						|| !textual(definition)) {
+				if (definition.getCardinality() != org.apache.chemistry.opencmis.commons.enums.Cardinality.MULTI) {
 					return null;
 				}
-				List<String> values = inListValues(anyInProperty.group(2));
+				// Quoted literals for a text property, bare numbers or booleans for a numeric or boolean one — the
+				// literal CMIS writes for each (closing batch 4 review, Codex P2: only quoted text was read, so
+				// `ANY acme:ratings IN (1, 2)` was refused). DATETIME is not translated here: R187.
+				List<String> values = textual(definition) ? inListValues(anyInProperty.group(2))
+						: plainListValues(anyInProperty.group(2), definition.getPropertyType());
 				if (values == null || values.isEmpty()) {
 					return null;
 				}
@@ -1356,6 +1408,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// reach the client (round-7 review).
 			throw refusal;
 		} catch (Exception e) {
+			if (jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
+				// The field of a property could not be read (closing batch 4 review, subagent P2-1 (a)).
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"The type definitions could not be read, so the query was not run: " + e.getMessage(), e);
+			}
 			logger.warn("Error parsing secondary type WHERE clause: " + e.getMessage());
 			return null;
 		}

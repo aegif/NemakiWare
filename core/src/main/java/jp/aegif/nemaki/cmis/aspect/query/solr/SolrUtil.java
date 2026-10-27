@@ -278,7 +278,15 @@ public class SolrUtil implements ApplicationContextAware {
 		// look up the property definition to determine the field type
 		NemakiPropertyDefinitionCore pd = null;
 		if (typeService != null) {
-			pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
+			try {
+				pd = typeService.getPropertyDefinitionCoreByPropertyId(repositoryId, cmisColName);
+			} catch (IllegalStateException unreadable) {
+				// The definition could not be READ — the DAO says so, and says it is not a finding that the property is
+				// undefined. Marked, so a query answers it as the server's failure and not as an untranslatable WHERE
+				// clause (closing batch 4 review, subagent P2-1).
+				throw new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException(
+						"the definition of '" + cmisColName + "' could not be read", unreadable);
+			}
 		} else {
 			log.warn("TypeService is null, cannot determine property type for: " + cmisColName);
 		}
@@ -313,9 +321,25 @@ public class SolrUtil implements ApplicationContextAware {
 	 * cannot be told apart from an escape, and {@link #getPropertyNameInSolr} already collapses
 	 * that case itself. Such an id is outside what this map handles.
 	 */
+	/**
+	 * Fields the property map names that NO write path puts in the index (the indexer's addField calls in this class
+	 * write none of them). Measured on bedroom: `IS NOT NULL` on each property that maps here answers 0.
+	 */
+	static final java.util.Set<String> NOT_INDEXED = java.util.Set.of("content_name", "content_mimetype", "is_checkedout",
+			"checkedout_id", "checkedout_by", "allowed_child_object_type_ids");
+
 	public static String queryableFieldName(String fromPropertyMap) {
 		if (fromPropertyMap == null) {
 			return null;
+		}
+		if (NOT_INDEXED.contains(fromPropertyMap)) {
+			// REFUSED, like the DATETIME field below and for the same reason: the map names a field the indexer does
+			// not write, so a query over it answered «no documents» for = and LIKE and EVERY document for IS NULL —
+			// `cmis:contentStreamMimeType = 'text/plain'` was 0 and `IS NULL` all 2,456 (closing batch 4 review,
+			// subagent P3-4, measured on bedroom).
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+					"This property cannot be used in a query: the search index does not hold the field it maps to ("
+							+ fromPropertyMap + ").");
 		}
 		if (fromPropertyMap.startsWith(DATETIME_FIELD_PREFIX)) {
 			// REFUSED, not escaped and not passed through. NOTHING is indexed under this name: every

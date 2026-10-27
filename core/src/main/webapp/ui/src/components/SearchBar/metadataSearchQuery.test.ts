@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PropertyDefinition } from '../../types/cmis';
-import { buildMetadataSearchQuery } from './metadataSearchQuery';
+import { buildFullTextQuery, buildMetadataSearchQuery, cmisLikeLiteral, cmisString } from './metadataSearchQuery';
 
 const contractNo = { id: 'nemaki:contractNo', propertyType: 'string', cardinality: 'single' } as PropertyDefinition;
 const reviewNote = { id: 'nemaki:reviewNote', propertyType: 'string', cardinality: 'single' } as PropertyDefinition;
@@ -62,5 +62,28 @@ describe('buildMetadataSearchQuery', () => {
         [comment],
       ),
     ).toBe("SELECT * FROM cmis:document WHERE ANY nemaki:comment IN ('ok')");
+  });
+  it('names a secondary type property by its prefixed query name, and by its id when the query name is a bare word (closing batch 4 review)', () => {
+    const review = { id: 'acme:review-id', queryName: 'acme:review', propertyType: 'string', cardinality: 'single' } as PropertyDefinition;
+    expect(
+      buildMetadataSearchQuery({ secondaryType: 'acme:reviewed', 'secondaryProp_acme:review-id': 'ok' }, [], [review]),
+    ).toBe("SELECT * FROM cmis:document WHERE acme:review LIKE '%ok%'");
+  });
+  it("writes a value the CMIS way: a backslash and a quote escaped with a backslash, and a LIKE value's % and _ as characters (closing batch 4 review)", () => {
+    expect(cmisString("a'b\\c")).toBe("a\\'b\\\\c");
+    expect(cmisLikeLiteral("100%_x")).toBe('100\\%\\_x');
+    expect(buildMetadataSearchQuery({ name: "O'Neil\\%" }, [], [])).toBe(
+      "SELECT * FROM cmis:document WHERE cmis:name LIKE '%O\\'Neil\\\\\\%%'",
+    );
+  });
+
+  it('builds the full-text query without the file name, which the index does not hold (closing batch 4 review)', () => {
+    expect(buildFullTextQuery("it's", false)).toBe(
+      "SELECT * FROM cmis:document WHERE CONTAINS('it\\'s') OR cmis:name LIKE '%it\\'s%' OR cmis:description LIKE '%it\\'s%' OR cmis:checkinComment LIKE '%it\\'s%'",
+    );
+    expect(buildFullTextQuery('x', false, 'cmis:folder')).toBe(
+      "SELECT * FROM cmis:folder WHERE CONTAINS('x') OR cmis:name LIKE '%x%' OR cmis:description LIKE '%x%'",
+    );
+    expect(buildFullTextQuery('x', true)).toBe("SELECT * FROM cmis:document WHERE CONTAINS('x')");
   });
 });

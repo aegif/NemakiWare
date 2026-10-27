@@ -44,6 +44,8 @@ import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyBooleanDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIntegerDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.SecondaryTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
@@ -114,6 +116,22 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 Cardinality.MULTI));
         properties.put("cmis:secondaryObjectTypeIds", define(new PropertyIdDefinitionImpl(),
                 "cmis:secondaryObjectTypeIds", PropertyType.ID, Cardinality.MULTI));
+        // A property the map sends to a field the indexer never writes (closing batch 4 review, subagent P3-4).
+        properties.put("cmis:contentStreamMimeType", define(new PropertyStringDefinitionImpl(),
+                "cmis:contentStreamMimeType", PropertyType.STRING, Cardinality.SINGLE));
+        // A property whose definition cannot be READ when its field is looked up (closing batch 4 review, P2-1).
+        properties.put("nemaki:unreadableField", define(new PropertyStringDefinitionImpl(), "nemaki:unreadableField",
+                PropertyType.STRING, Cardinality.SINGLE));
+        // Properties whose QUERY name is not their id — nemaki:tag is queried as tag on bedroom (closing batch 4 review,
+        // subagent P2-2). The index is written under the id.
+        PropertyStringDefinitionImpl noteById = define(new PropertyStringDefinitionImpl(), "nemaki:noteId",
+                PropertyType.STRING, Cardinality.SINGLE);
+        noteById.setQueryName("noteq");
+        properties.put("nemaki:noteId", noteById);
+        PropertyStringDefinitionImpl tagsById = define(new PropertyStringDefinitionImpl(), "nemaki:tagsId",
+                PropertyType.STRING, Cardinality.MULTI);
+        tagsById.setQueryName("tagsq");
+        properties.put("nemaki:tagsId", tagsById);
         document.setPropertyDefinitions(properties);
 
         // A type that does not declare cmis:secondaryObjectTypeIds: a statement about the secondary types FROM it fails
@@ -135,10 +153,17 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         types = mock(TypeManager.class);
         when(types.getTypeByQueryName(REPO, "cmis:document")).thenReturn(document);
         when(types.getTypeByQueryName(REPO, "nemaki:plain")).thenReturn(plain);
+        // As TypeManagerImpl answers: the property found by its query name, and its QUERY name returned (not its id).
         when(types.getPropertyIdForQueryName(eq(REPO), any(TypeDefinition.class), anyString()))
                 .thenAnswer(call -> {
                     String queryName = call.getArgument(2);
-                    return properties.containsKey(queryName) ? queryName : null;
+                    TypeDefinition type = call.getArgument(1);
+                    for (PropertyDefinition<?> definition : type.getPropertyDefinitions().values()) {
+                        if (queryName.equals(definition.getQueryName())) {
+                            return definition.getQueryName();
+                        }
+                    }
+                    return null;
                 });
         when(types.getTypesDescendants(eq(REPO), anyString(), any(BigInteger.class), anyBoolean()))
                 .thenReturn(Collections.emptyList());
@@ -169,9 +194,21 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 PropertyType.STRING, Cardinality.SINGLE);
         renamed.setQueryName("nemaki:renamed");
         aspectProperties.put("nemaki:renamedId", renamed);
+        // Multi-valued numbers, booleans and dates, and a name with a hyphen (closing batch 4 review).
+        aspectProperties.put("nemaki:ratings", define(new PropertyIntegerDefinitionImpl(), "nemaki:ratings",
+                PropertyType.INTEGER, Cardinality.MULTI));
+        aspectProperties.put("nemaki:flags", define(new PropertyBooleanDefinitionImpl(), "nemaki:flags",
+                PropertyType.BOOLEAN, Cardinality.MULTI));
+        aspectProperties.put("nemaki:dates", define(new PropertyDateTimeDefinitionImpl(), "nemaki:dates",
+                PropertyType.DATETIME, Cardinality.MULTI));
+        aspectProperties.put("nemaki:review-id", define(new PropertyStringDefinitionImpl(), "nemaki:review-id",
+                PropertyType.STRING, Cardinality.SINGLE));
+        aspectProperties.put("nemaki:unreadableAspect", define(new PropertyStringDefinitionImpl(),
+                "nemaki:unreadableAspect", PropertyType.STRING, Cardinality.SINGLE));
         aspect.setPropertyDefinitions(aspectProperties);
         for (String defined : List.of("nemaki:tag", "nemaki:due", "nemaki:other", "nemaki:note", "nemaki:hidden",
-                "nemaki:aspectMulti", "nemaki:count", "nemaki:renamed")) {
+                "nemaki:aspectMulti", "nemaki:count", "nemaki:renamed", "nemaki:ratings", "nemaki:flags",
+                "nemaki:dates", "nemaki:review-id", "nemaki:unreadableAspect")) {
             when(types.findSecondaryTypeByPropertyQueryName(REPO, defined)).thenReturn(aspect);
         }
         // A lookup that FAILS: the type system could not be searched (closing batch 3 review, subagent P3-2).
@@ -192,6 +229,11 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(solrUtil.getSolrClient()).thenReturn(client);
         when(solrUtil.getPropertyNameInSolr(eq(REPO), anyString()))
                 .thenAnswer(call -> ((String) call.getArgument(1)).replace(':', '_'));
+        when(solrUtil.getPropertyNameInSolr(REPO, "cmis:contentStreamMimeType")).thenReturn("content_mimetype");
+        when(solrUtil.getPropertyNameInSolr(REPO, "nemaki:unreadableAspect")).thenThrow(
+                new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("the definition could not be read"));
+        when(solrUtil.getPropertyNameInSolr(REPO, "nemaki:unreadableField")).thenThrow(
+                new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("the definition could not be read"));
         // SolrUtil.convertToString itself: the column node's children joined with a dot.
         when(solrUtil.convertToString(any())).thenAnswer(call -> {
             CmisTree node = call.getArgument(0);
@@ -309,9 +351,12 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         // One statement per pattern, each where THAT pattern — and only it — recognises a predicate
         // and the rest of the clause is something nothing translates. Each pattern used find(), so
         // each of these was answered with that one predicate.
+        // The inequality is written <>, not !=: `!` is not CMIS, the strict lexer stops at it, FROM is never read, and
+        // such a statement is refused as one that does not parse — whatever the fallback answered. With != this line
+        // was satisfied by that refusal, and the not-equals pattern's find() went unseen (closing batch 5, QH5).
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:tag LIKE 'a%' AND notAProperty = 'b'");
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:tag = 'x' AND notAProperty IS NULL");
-        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:tag != 'x' AND notAProperty = 'b'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:tag <> 'x' AND notAProperty = 'b'");
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:due IS NULL AND notAProperty = 'b'");
         assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE nemaki:due IS NOT NULL AND notAProperty = 'b'");
         assertRefusedWithoutAQuery(
@@ -477,5 +522,106 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         other.setContentService(mock(ContentService.class));
         other.setExceptionService(new ExceptionServiceImpl());
         return other;
+    }
+
+    @Test
+    @DisplayName("NOT around a comparison is the opposite comparison: a document without the property matches neither (closing batch 4 review)")
+    void aNotAroundAComparisonIsTheOppositeComparison() {
+        // OData's not(description ne 'x') builds the first one; the whole negation of `+p:[* TO *] -p:x` returned every
+        // document without p besides the ones with p = 'x'.
+        assertEquals("cmis_name:x",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name <> 'x')"));
+        assertEquals("nemaki_known:a*",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (nemaki:known NOT LIKE 'a%')"));
+        assertEquals("nemaki_known:a nemaki_known:b",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (nemaki:known NOT IN ('a', 'b'))"));
+        assertEquals("+cmis_name:[* TO *] -cmis_name:x",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name = 'x')"));
+        assertEquals("+nemaki_known:[* TO *] -nemaki_known:a*",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (nemaki:known LIKE 'a%')"));
+        assertEquals("+nemaki_known:[* TO *] -(nemaki_known:a)",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (nemaki:known IN ('a'))"));
+    }
+
+    @Test
+    @DisplayName("NOT around an ordering is the opposite ordering, not every document without the property (closing batch 5)")
+    void aNotAroundAnOrderingIsTheOppositeOrdering() {
+        // NOT (p < 'm') is p >= 'm' under three-valued logic. The whole negation, -p:{* TO m}, also matched every
+        // document that has no p at all.
+        assertEquals("cmis_name:[m TO *}",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name < 'm')"));
+        assertEquals("cmis_name:{m TO *}",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name <= 'm')"));
+        assertEquals("cmis_name:{* TO m]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name > 'm')"));
+        assertEquals("cmis_name:{* TO m}",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE NOT (cmis:name >= 'm')"));
+    }
+
+    @Test
+    @DisplayName("ANY ... NOT IN is refused: one query on a multi-valued field cannot ask whether SOME value is outside the list (closing batch 4 review)")
+    void anyNotInIsRefused() {
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:labels NOT IN ('a')");
+    }
+
+    @Test
+    @DisplayName("the fallback's ANY ... IN reads the literal each type is written with: numbers and booleans bare, text quoted (closing batch 4 review)")
+    void anyInReadsNumbersAndBooleans() {
+        assertEquals("nemaki_ratings:(\"1\" OR \"\\-2\")",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN (1, -2)"));
+        assertEquals("nemaki_flags:(\"true\")",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY nemaki:flags IN (TRUE)"));
+        // Not a literal of the property's type, and not DATETIME (R187): refused.
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN ('1')");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE ANY nemaki:ratings IN (1.5)");
+        assertRefusedWithoutAQuery(
+                "SELECT * FROM cmis:document WHERE ANY nemaki:dates IN (TIMESTAMP '2026-01-01T00:00:00.000Z')");
+    }
+
+    @Test
+    @DisplayName("a property the index does not hold is refused, not answered as nothing or as everything (closing batch 4 review)")
+    void aPropertyTheIndexDoesNotHoldIsRefused() {
+        // Measured on bedroom: `= 'text/plain'` answered 0 and `IS NULL` all 2,456 documents.
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE cmis:contentStreamMimeType = 'text/plain'");
+        assertRefusedWithoutAQuery("SELECT * FROM cmis:document WHERE cmis:contentStreamMimeType IS NULL");
+    }
+
+    @Test
+    @DisplayName("a definition that cannot be read is the server's failure in the walker as in the fallback, and a statement that does not parse is the client's (closing batch 4 review)")
+    void anUnreadableDefinitionIsAFailureAndAMalformedStatementARefusal() {
+        sent.clear();
+        assertThrows(CmisRuntimeException.class,
+                () -> run("SELECT * FROM cmis:document WHERE nemaki:unreadableField = 'x'"),
+                "a property definition the walker could not read was answered as an untranslatable WHERE clause");
+        assertEquals(List.of(), sent, "a statement whose field could not be read was sent anyway");
+        assertThrows(CmisRuntimeException.class,
+                () -> run("SELECT * FROM cmis:document WHERE nemaki:unreadableAspect IS NULL"),
+                "a property definition the manual fallback could not read was answered as an untranslatable WHERE clause");
+        when(types.getTypeByQueryName(REPO, "nemaki:broken")).thenThrow(
+                new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("No types are loaded"));
+        assertThrows(CmisRuntimeException.class, () -> run("SELECT * FROM nemaki:broken WHERE cmis:name = 'a'"),
+                "a type system that could not be read was answered as the client's mistake");
+        // The client's statement does not parse: a 400, not the server's 500.
+        assertRefusedWithoutAQuery("SELECT * FORM cmis:document");
+    }
+
+    @Test
+    @DisplayName("a property whose query name is not its id is queried under its id, in every production of the walker (closing batch 4 review)")
+    void aPropertyIsQueriedUnderItsId() {
+        // Measured on bedroom before this: one nemaki:document tagged 'r215xtag' — `tag IS NOT NULL` answered 0 and
+        // `tag IS NULL` 1, because the field was built from the query name.
+        assertEquals("+*:* -nemaki_noteId:[* TO *]",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE noteq IS NULL"));
+        assertEquals("nemaki_noteId:x", assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE noteq = 'x'"));
+        assertEquals("+nemaki_noteId:[* TO *] -nemaki_noteId:x",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE noteq <> 'x'"));
+        assertEquals("nemaki_noteId:a*", assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE noteq LIKE 'a%'"));
+        assertEquals("nemaki_noteId:a nemaki_noteId:b",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE noteq IN ('a', 'b')"));
+        String any = assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE ANY tagsq IN ('a')");
+        assertTrue(any.contains("nemaki_tagsId") && !any.contains("tagsq"), "ANY ... IN went out under the query name: " + any);
+        // A qualified column in a comparison resolves the same way (the joined text named d.noteq).
+        assertEquals("nemaki_noteId:x",
+                assertAnsweredWithOneQuery("SELECT * FROM cmis:document d WHERE d.noteq = 'x'"));
     }
 }

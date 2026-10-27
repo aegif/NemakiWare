@@ -21,6 +21,9 @@ on:
       # Without these, retiring a control or editing that number does not start this
       # workflow, so the check exists and never gates (Codex review, P2).
       - 'tools/negative-controls/**'
+      # The unit job's ran-check script, which EveryNamedLockRanTest drives: a change to it alone has to
+      # start this workflow on a push too (R181, closing batch 5 — measured red by everyDocumentALockReadsStartsTheWorkflow).
+      - 'tools/ci/**'
       - 'docs/design/fail-closed-reads.md'
       # The evidence profile spec and the vectors both languages read. A change to
       # either is a change to what every external verifier must do.
@@ -90,6 +93,9 @@ on:
       # Without these, retiring a control or editing that number does not start this
       # workflow, so the check exists and never gates (Codex review, P2).
       - 'tools/negative-controls/**'
+      # The unit job's ran-check script, which EveryNamedLockRanTest drives: a change to it alone has to
+      # start this workflow on a pull request too (R181, closing batch 5 — measured red by everyDocumentALockReadsStartsTheWorkflow).
+      - 'tools/ci/**'
       - 'docs/design/fail-closed-reads.md'
       # The evidence profile spec and the vectors both languages read. A change to
       # either is a change to what every external verifier must do.
@@ -157,6 +163,19 @@ jobs:
       # so the Cleanup step (compose down) needs them too.
       COUCHDB_USER: admin
       COUCHDB_PASSWORD: password
+      # The locks this job names, once: the step before the run checks that each exists and is not
+      # @Disabled, and the step after it checks that each RAN (R181). Two copies of the list could drift.
+      NAMED_LOCKS: >-
+        EverySupportedCouchDbIsMeasuredTest
+        CanonicalImportServiceTest
+        ReleaseReadinessIsMeasuredTest
+        NoForbiddenClaimShipsTest
+        CredentialsEndWithTheAccountTest
+        TheAssertedNameIsNotTheAuthenticatedOneTest
+        OidcLoginTest
+        OidcLoginEntryPointsTest
+        IsNullNamesTheSolrFieldTest
+        SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5
@@ -240,16 +259,7 @@ jobs:
           # under an exclusion list: a class runs without being named, but a RENAME or a @Disabled takes
           # it out silently and neither the exact-list check above nor a Java lock can see it (the Java
           # lock is in the suite; @Disabled on it is exactly how it stops running — round-3 review, P2).
-          LOCKS="EverySupportedCouchDbIsMeasuredTest
-                 CanonicalImportServiceTest
-                 ReleaseReadinessIsMeasuredTest
-                 NoForbiddenClaimShipsTest
-                 CredentialsEndWithTheAccountTest
-                 TheAssertedNameIsNotTheAuthenticatedOneTest
-                 OidcLoginTest
-                 OidcLoginEntryPointsTest
-                 IsNullNamesTheSolrFieldTest
-                 SelfServiceCannotGrantOrResetWithoutTheOldPasswordTest"
+          LOCKS="$NAMED_LOCKS"
           for lock in $LOCKS; do
             FILE=$(find core/src/test/java -name "$lock.java" -print -quit)
             if [ -z "$FILE" ]; then
@@ -343,6 +353,14 @@ jobs:
             exit 1
           fi
           echo "unit tests that ran: $RAN ($COUNTED counted - $SKIPPED skipped; floor $FLOOR)"
+
+          # EACH named lock ran (R181). Everything above reads the selection — the -Dtest list, the pom's
+          # <excludes> and <excludedGroups> as strings, the class's existence, a class-level @Disabled — and
+          # each is one way to silence a lock; an @Tag("atlas-integration") on the lock, a word added to the
+          # surefire.excludedGroups property, or a -Dsurefire.excludedGroups= on the mvn line passed them all,
+          # with the floor 1,150 tests away. This reads what surefire RAN: a report for the lock, with tests,
+          # none skipped. One question that all of those ways answer the same.
+          bash tools/ci/named-locks-ran.sh "$REPORTS" $NAMED_LOCKS
       # The independent verifier is a SEPARATE module and would not run under -f core/pom.xml.
       # It carries the claim that a third party can check a package without the product, so a
       # green build that never ran it would be asserting exactly nothing about that claim.

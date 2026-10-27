@@ -193,9 +193,11 @@ class OneRepositoryDoesNotTakeDownTheRegistryTest {
                         Boolean.FALSE),
                 "getTypesDescendants answered from the base-only map left behind by a failed "
                         + "type load");
-        assertThrows(IllegalStateException.class,
+        // MARKED as a read that failed (closing batch 4 review, subagent P2-1): the query path tells it apart from a
+        // statement that names no type, and answers it as its own failure rather than the client's 400.
+        assertThrows(DefinitionsUnreadableException.class,
                 () -> tm.getTypeByQueryName("unprovisioned", "cmis:document"),
-                "getTypeByQueryName answered from the base-only map");
+                "getTypeByQueryName answered from the base-only map, or refused without saying it could not read");
         assertThrows(IllegalStateException.class,
                 () -> tm.findSecondaryTypeByPropertyQueryName("unprovisioned", "nemaki:tag"),
                 "findSecondaryTypeByPropertyQueryName answered from the base-only map");

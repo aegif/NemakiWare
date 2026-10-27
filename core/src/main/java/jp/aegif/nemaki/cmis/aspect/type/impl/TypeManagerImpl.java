@@ -1675,9 +1675,9 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	private void assertRepositoryTypesLoaded(String repositoryId) {
 		String reason = typeLoadFailures.get(repositoryId);
 		if (reason != null) {
-			throw new IllegalStateException("the type system of '" + repositoryId + "' is not"
-					+ " loaded (" + reason + "); answering type questions for it would report"
-					+ " a base-only type system");
+			throw new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("the type system of '"
+					+ repositoryId + "' is not loaded (" + reason + "); answering type questions for it would"
+					+ " report a base-only type system");
 		}
 	}
 	
@@ -2989,7 +2989,11 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		Map<String, TypeDefinitionContainer> types = TYPES.get(repositoryId);
 		if (types == null) {
 			log.error("CRITICAL: TYPES map is null for repository: " + repositoryId + " in getTypeByQueryName()");
-			return null;
+			// NOT «no such type»: the type map could not be read. FROM such a type answered as the client's
+			// mistake while its sibling lookup threw (closing batch 4 review, subagent P3-5).
+			throw new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException(
+					"No types are loaded for repository " + repositoryId + ", so whether '" + typeQueryName
+							+ "' is a type cannot be answered");
 		}
 
 		for (Entry<String, TypeDefinitionContainer> entry : types.entrySet()) {
@@ -4758,7 +4762,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				// No type map at all is the type system not being readable, not 「no secondary type defines this」
 				// (closing batch 3 review, subagent P3-2): the query fallback's gate would refuse the statement as the
 				// client's mistake.
-				throw new IllegalStateException("No types are loaded for repository " + repositoryId
+				throw new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("No types are loaded for repository " + repositoryId
 						+ ", so whether a secondary type defines '" + propertyQueryName + "' cannot be answered");
 			}
 			Collection<TypeDefinitionContainer> allTypes = types.values();
@@ -4839,7 +4843,7 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			throw unreadable;
 		} catch (Exception e) {
 			// A search that failed is not a search that found nothing (closing batch 3 review, subagent P3-2).
-			throw new IllegalStateException("Could not search the secondary types for property '" + propertyQueryName
+			throw new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("Could not search the secondary types for property '" + propertyQueryName
 					+ "': " + e.getMessage(), e);
 		}
 

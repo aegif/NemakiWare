@@ -162,7 +162,38 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of Boolean walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private BooleanQuery walkNot(CmisTree node) {
+	private Query walkNot(CmisTree node) {
+		// NOT of a comparison is the OPPOSITE comparison under SQL's three-valued logic: for a document without the
+		// property both are UNKNOWN, and neither matches. Negating the whole query instead returned those documents —
+		// and once <>, NOT LIKE and NOT IN required the property (closing batch 4), `NOT (p <> 'x')` returned every
+		// document without p besides the ones with p = 'x' (closing batch 4 review, Codex P1; OData's not(… ne …)
+		// builds exactly this). The orderings are comparisons too: `NOT (n < 5)` is `n >= 5`, and the whole negation
+		// returned every document without n as well (found re-reading closing batch 5 before its record). A NOT
+		// around anything else is negated as a whole, as before.
+		switch (node.getType()) {
+		case CmisQlStrictLexer.GT:
+			return walkLessOrEquals(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.GTEQ:
+			return walkLessThan(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.LT:
+			return walkGreaterOrEquals(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.LTEQ:
+			return walkGreaterThan(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.EQ:
+			return walkNotEquals(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.NEQ:
+			return walkEquals(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.LIKE:
+			return walkNotLike(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.NOT_LIKE:
+			return walkLike(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.IN:
+			return walkNotIn(node.getChild(0), node.getChild(1));
+		case CmisQlStrictLexer.NOT_IN:
+			return walkIn(node.getChild(0), node.getChild(1));
+		default:
+			break;
+		}
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 			builder.add(walkPredicate(node), Occur.MUST_NOT);
 		return builder.build();
@@ -212,7 +243,7 @@ public class SolrPredicateWalker{
 	/** The Solr field a column is indexed under, escaped once — what walkLike and walkIn query. */
 	private String fieldOf(CmisTree colNode) {
 		return queryableFieldName(
-				solrUtil.getPropertyNameInSolr(repositoryId, getColumnReference(colNode).getPropertyQueryName()));
+				solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(getColumnReference(colNode))));
 	}
 
 	private Query walkGreaterThan(CmisTree leftNode, CmisTree rightNode) {
@@ -259,8 +290,6 @@ public class SolrPredicateWalker{
 			CmisTree rightNode) {
 		HashMap<String, String> map = new HashMap<String, String>();
 
-		String left = solrUtil.convertToString(leftNode);
-		
 		// Validate literal type compatibility with property type
 		validateLiteralType(leftNode, rightNode);
 		
@@ -271,7 +300,12 @@ public class SolrPredicateWalker{
 		// property named a field nothing is indexed under and matched nothing. What is NOT changed
 		// here is how the column is read: "left" is still the node's children joined with a dot, so
 		// a qualified column resolves to a field no document carries (R178's remaining shape).
-		map.put(FLD, queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, left)));
+		// The column through the query object's ColumnReference and the property's ID, like every other production
+		// here (closing batch 4 review, subagent P2-2): the joined text named the property by its QUERY name, and a
+		// property whose query name is not its id (nemaki:tag is queried as tag) got a field nothing is indexed under.
+		// The same reading also resolves a qualified column, which the joined text did not (R178's remaining shape).
+		map.put(FLD, queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId,
+				propertyIdOf(getColumnReference(leftNode)))));
 		map.put(CND, right);
 		return map;
 	}
@@ -299,9 +333,7 @@ public class SolrPredicateWalker{
 		try {
 			ColumnReference colRef = getColumnReference(columnNode);
 			String colRefName = colRef.getName();
-			TypeDefinition td = colRef.getTypeDefinition();
-			Map<String, PropertyDefinition<?>> pds = td.getPropertyDefinitions();
-			PropertyDefinition<?> pd = pds.get(colRefName);
+			PropertyDefinition<?> pd = definitionOf(colRef);
 			
 			if (pd != null) {
 				PropertyType propType = pd.getPropertyType();
@@ -331,9 +363,7 @@ public class SolrPredicateWalker{
 		
 		try {
 			String colRefName = colRef.getName();
-			TypeDefinition td = colRef.getTypeDefinition();
-			Map<String, PropertyDefinition<?>> pds = td.getPropertyDefinitions();
-			PropertyDefinition<?> pd = pds.get(colRefName);
+			PropertyDefinition<?> pd = definitionOf(colRef);
 			
 			if (pd == null) {
 				return;
@@ -371,10 +401,10 @@ public class SolrPredicateWalker{
 					"LIKE operator requires String literal on right hand side.");
 		}
 		ColumnReference colRef = getColumnReference(colNode);
-		String colRefName = colRef.getName();
-		TypeDefinition td = colRef.getTypeDefinition();
-		Map<String, PropertyDefinition<?>> pds = td.getPropertyDefinitions();
-		PropertyDefinition<?> pd = pds.get(colRefName);
+		PropertyDefinition<?> pd = definitionOf(colRef);
+		if (pd == null) {
+			throw new IllegalStateException("No definition for the column " + colRef.getPropertyQueryName());
+		}
 		PropertyType propType = pd.getPropertyType();
 		if (propType != PropertyType.STRING && propType != PropertyType.HTML
 				&& propType != PropertyType.ID && propType != PropertyType.URI) {
@@ -391,7 +421,7 @@ public class SolrPredicateWalker{
 		// "d.nemaki:tag", which is in no property map, so the field became a custom one no document
 		// carries and LIKE matched nothing (round-5 review). Escaped once, as everywhere else.
 		String field = queryableFieldName(
-				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));
+				solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(colRef)));
 		// The RAW literal, read with CMIS's escapes: \% and \_ are a percent sign and an underscore, \' and \\ a quote
 		// and a backslash. walkString had already escaped the backslash for Solr, so an escaped % went out as a
 		// backslash and a percent sign (closing batch 3 review, both reviewers). The manual fallback reads LIKE
@@ -425,7 +455,7 @@ public class SolrPredicateWalker{
 		// returns a RAW colon, and an IN over a custom DATETIME property was rejected with 400
 		// (round-5 review).
 		String field = queryableFieldName(
-				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString()));
+				solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(colRef)));
 		List<?> list = (List<?>) walkExpr(listNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -443,7 +473,13 @@ public class SolrPredicateWalker{
 	private Query walkInAny(CmisTree leftNode, CmisTree rightNode) {
 		// Check for CMIS SQL specification
 		ColumnReference colRef = getColumnReference(leftNode);
-		PropertyDefinition<?> pd = colRef.getPropertyDefinition();
+		// By the column's QUERY name (definitionOf): the reference's own definition is looked up by the id the type
+		// manager answered, which is the query name, and is null for a property whose query name is not its id —
+		// `ANY tag IN (...)` was refused on bedroom for that reason (closing batch 4 review, subagent P2-2).
+		PropertyDefinition<?> pd = definitionOf(colRef);
+		if (pd == null) {
+			throw new IllegalStateException("No definition for the column " + colRef.getPropertyQueryName());
+		}
 		if (pd.getCardinality() != Cardinality.MULTI) {
 			throw new IllegalStateException(
 					"Operator ANY...IN only is allowed on multi-value properties ");
@@ -457,7 +493,7 @@ public class SolrPredicateWalker{
 		// Now we iterate over the list values similar to walkIn() method
 		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		String field = queryableFieldName(
-				solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName().toString()));
+				solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(colRef)));
 		List<?> list = (List<?>) walkExpr(rightNode);
 		for (Object elm : list) {
 			Term t = new Term(field, elm.toString());
@@ -468,10 +504,13 @@ public class SolrPredicateWalker{
 	}
 
 	private Query walkNotInAny(CmisTree leftNode, CmisTree rightNode) {
-		// CRITICAL FIX (2025-12-19): Build proper NOT query for multi-valued NOT IN clause
-		BooleanQuery.Builder builder = new BooleanQuery.Builder();
-		builder.add(walkInAny(leftNode, rightNode), Occur.MUST_NOT);
-		return builder.build();
+		// REFUSED, not answered (closing batch 4 review, Codex P1). `ANY p NOT IN (...)` asks for a document with a
+		// value of p outside the list; the negation of `ANY p IN (...)` it was built as answers «no value of p is in
+		// the list», which drops a document holding one value inside and one outside and adds every document with no
+		// value at all. One term query on a multi-valued field cannot ask «some value is not one of these», so the
+		// statement is refused like any WHERE clause this server cannot translate (R188).
+		throw new IllegalStateException("ANY ... NOT IN is not translated: a query on one field cannot ask whether "
+				+ "SOME value of a multi-valued property is outside the list");
 	}
 
 	private Query walkIsNull(CmisTree colNode) {
@@ -528,9 +567,40 @@ public class SolrPredicateWalker{
 	 * NULL}) resolves to the property, where joining the node's children with a dot gave
 	 * {@code t.cmis:name} — in no property map, and so the same match-everything break.
 	 */
+	/**
+	 * The definition of the property a column names, found by its QUERY name in the column's type. The column's own id
+	 * is no help: {@code TypeManagerImpl.getPropertyIdForQueryName} answers the query name, so a property whose query name
+	 * is not its id — {@code nemaki:tag} is queried as {@code tag}, and 65 properties on bedroom are like it — was looked
+	 * up by the query name. Its Solr field was one nothing is indexed under: with one tagged nemaki:document on bedroom,
+	 * {@code WHERE tag IS NOT NULL} answered 0 and {@code IS NULL} 1 (closing batch 4 review, subagent P2-2, measured).
+	 */
+	private static PropertyDefinition<?> definitionOf(ColumnReference colRef) {
+		TypeDefinition td = colRef.getTypeDefinition();
+		if (td == null || td.getPropertyDefinitions() == null) {
+			return null;
+		}
+		String queryName = colRef.getPropertyQueryName();
+		PropertyDefinition<?> byKey = td.getPropertyDefinitions().get(queryName);
+		if (byKey != null) {
+			return byKey;
+		}
+		for (PropertyDefinition<?> pd : td.getPropertyDefinitions().values()) {
+			if (queryName != null && queryName.equals(pd.getQueryName())) {
+				return pd;
+			}
+		}
+		return null;
+	}
+
+	/** The id of the property a column names — what the index is written under (see {@link #definitionOf}). */
+	private static String propertyIdOf(ColumnReference colRef) {
+		PropertyDefinition<?> pd = definitionOf(colRef);
+		return pd != null ? pd.getId() : colRef.getPropertyQueryName();
+	}
+
 	private String solrFieldOfColumn(CmisTree colNode) {
 		ColumnReference colRef = getColumnReference(colNode);
-		return queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, colRef.getPropertyQueryName()));
+		return queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(colRef)));
 	}
 
 	/**

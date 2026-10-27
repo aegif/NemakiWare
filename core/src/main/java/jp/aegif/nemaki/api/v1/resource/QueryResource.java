@@ -349,6 +349,13 @@ public class QueryResource {
         if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException) {
             return ApiException.invalidArgument(e.getMessage());
         }
+        // The SERVER's failure — a search engine that did not answer, type definitions that could not be read — is a
+        // 500 whatever words its cause carries: "HTTP/1.1 header parser received no bytes" contains "parse" and was
+        // answered as the client's syntax error (closing batch 4 review, subagent P3-6).
+        if (e instanceof org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException) {
+            logger.severe("Error executing query: " + e.getMessage());
+            return ApiException.internalError("Failed to execute query: " + e.getMessage(), e);
+        }
         logger.severe("Error executing query: " + e.getMessage());
         if (e.getMessage() != null && (e.getMessage().contains("parse") || e.getMessage().contains("syntax"))) {
             return ApiException.invalidArgument("Invalid query syntax: " + e.getMessage());

@@ -481,8 +481,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Escape backslashes first (must be done before other escapes)
         String escaped = searchTerm.replace("\\", "\\\\");
         
-        // Escape single quotes (CMIS string delimiter)
-        escaped = escaped.replace("'", "''");
+        // Escape single quotes (CMIS string delimiter) the CMIS way, with a backslash. Doubling it is SQL's escape,
+        // which CMIS does not have: the literal ended at the second quote (closing batch 4 review, subagent P3-3).
+        escaped = escaped.replace("'", "\\'");
         
         // Remove or escape characters that could be interpreted as CMIS query operators
         // Colons can be problematic in some full-text search implementations
@@ -602,11 +603,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     unquotedValue = value.substring(1, value.length() - 1);
                 }
                 
+                // The value's own % and _ are characters, not wildcards: only the one this method adds is.
+                String likeValue = unquotedValue.replace("%", "\\%").replace("_", "\\_");
                 switch (methodKind) {
                     case STARTSWITH:
-                        return property + " LIKE '" + unquotedValue + "%'";
+                        return property + " LIKE '" + likeValue + "%'";
                     case ENDSWITH:
-                        return property + " LIKE '%" + unquotedValue + "'";
+                        return property + " LIKE '%" + likeValue + "'";
                     case CONTAINS:
                         return "CONTAINS(" + property + ", '" + unquotedValue + "')";
                     default:
@@ -631,7 +634,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         if (expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Literal) {
             org.apache.olingo.server.api.uri.queryoption.expression.Literal literal = 
                     (org.apache.olingo.server.api.uri.queryoption.expression.Literal) expression;
-            return literal.getText();
+            return cmisLiteral(literal.getText());
         }
         
         // Handle unary expressions (e.g., not)
@@ -651,6 +654,21 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         return exprStr;
     }
     
+    /**
+     * An OData string literal's text as a CMIS string literal. OData writes a quote inside a string by doubling it
+     * ({@code 'O''Neil'}); CMIS escapes a quote and a backslash with a backslash ({@code 'O\'Neil'}). The text went into
+     * the CMIS statement as OData wrote it, so a doubled quote ended the CMIS literal and a backslash escaped the
+     * character after it — {@code 'a\b'} was searched as {@code ab} (closing batch 4 review, subagent P3-3).
+     * Anything not quoted — a number, a boolean, a date — is returned as it is.
+     */
+    static String cmisLiteral(String odataText) {
+        if (odataText == null || odataText.length() < 2 || !odataText.startsWith("'") || !odataText.endsWith("'")) {
+            return odataText;
+        }
+        String value = odataText.substring(1, odataText.length() - 1).replace("''", "'");
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'";
+    }
+
     /**
      * Convert OData orderby option to CMIS ORDER BY clause.
      */

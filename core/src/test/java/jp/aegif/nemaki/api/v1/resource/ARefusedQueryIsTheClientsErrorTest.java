@@ -31,6 +31,7 @@ import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -94,5 +95,20 @@ class ARefusedQueryIsTheClientsErrorTest {
                 "SELECT * FROM cmis:document WHERE 'a' = ANY nemaki:labels", false, false, 10, 0));
         assertEquals(400, refused.getStatus(), "the repository refused the statement and the client was told the "
                 + "server failed: " + refused.getMessage());
+    }
+    @Test
+    @DisplayName("the server's failure is a 500 whatever words its cause carries (closing batch 4 review)")
+    void theServersFailureIsA500WhateverItsMessageSays() throws Exception {
+        // An IOException of the HTTP client says "header parser", and the words "parse" or "syntax" made it the
+        // client's 400 here.
+        DiscoveryService failing = mock(DiscoveryService.class);
+        when(failing.query(any(), eq("bedroom"), anyString(), anyBoolean(), anyBoolean(), any(), any(), any(), any(),
+                any())).thenThrow(new CmisRuntimeException("The search engine did not answer, so the query was not run: "
+                        + "HTTP/1.1 header parser received no bytes"));
+        set("discoveryService", failing);
+        ApiException failed = assertThrows(ApiException.class, () -> resource.queryGet("bedroom",
+                "SELECT * FROM cmis:document", false, false, 10, 0));
+        assertEquals(500, failed.getStatus(), "the server failed and the client was told its syntax was wrong: "
+                + failed.getMessage());
     }
 }

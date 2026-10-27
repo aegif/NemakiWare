@@ -274,23 +274,12 @@ import {
   CloudImportResult
 } from '../../services/cloud-drive';
 import { formatServerDate } from '../../utils/dateUtils';
+import { cmisLikeLiteral } from '../SearchBar/metadataSearchQuery';
 
 interface DocumentListProps {
   repositoryId: string;
 }
 
-/**
- * Escape special characters in CMIS SQL LIKE clause to prevent SQL injection.
- * CMIS SQL uses single quotes for strings and % for wildcards.
- */
-const escapeForCmisSql = (input: string): string => {
-  // Escape single quotes by doubling them (CMIS SQL standard)
-  // Escape % and _ which are LIKE wildcards
-  return input
-    .replace(/'/g, "''")
-    .replace(/%/g, '\\%')
-    .replace(/_/g, '\\_');
-};
 
 export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const { t } = useTranslation();
@@ -1317,7 +1306,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
 
     try {
       // SECURITY FIX: Escape user input to prevent SQL injection
-      const escapedQuery = escapeForCmisSql(searchQuery);
+      // CMIS's escapes, the way the advanced search writes them: a quote and a backslash with a backslash (doubling
+      // the quote is SQL's, which CMIS does not have), and % and _ as characters (closing batch 4 review, subagent P3-3).
+      const escapedQuery = cmisLikeLiteral(searchQuery);
       const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${escapedQuery}%'`;
       const searchResult = await cmisService.search(repositoryId, query);
       setObjects(searchResult.objects);
