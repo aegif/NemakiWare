@@ -94,6 +94,14 @@ class EveryNamedLockRanTest {
                 + "class " + lock.substring(dot + 1) + " {\n" + body + "}\n", StandardCharsets.UTF_8);
     }
 
+    /** A lock's source written whole, for shapes the one-class wrapper cannot hold (a second top-level class it extends). */
+    private void rawSource(String lock, String text) throws IOException {
+        int dot = lock.lastIndexOf('.');
+        Path file = sources.resolve(lock.substring(0, dot).replace('.', '/')).resolve(lock.substring(dot + 1) + ".java");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "package " + lock.substring(0, dot) + ";\n\n" + text, StandardCharsets.UTF_8);
+    }
+
     /** A report naming each case with the class that declares it, as surefire writes them (measured: classname). */
     private void report(String fileName, String testsuiteAttributes, String classname, String... cases) throws IOException {
         StringBuilder testcases = new StringBuilder();
@@ -219,20 +227,20 @@ class EveryNamedLockRanTest {
     void aNestedMarkBehindABracedAnnotationIsRead() throws Exception {
         // The words before `class` are read back to the previous ; { or } — but not one inside an annotation's
         // parentheses, or @SuppressWarnings({"a"}) would hide the @Nested before it. Where @Nested decides the answer:
-        // a @Nested base runs its own test, so it is required there; read as a plain base it would be required under
-        // the class that extends it instead (closing batch 9: once a plain member nothing extends is required where it
-        // is written, an unextended class no longer tells the two readings apart).
+        // a @Nested base runs its own test, so it is required there AND under the @Nested class that extends it; read
+        // as a plain base it would be required under the heir only. So a report with the heir's run and without the
+        // base's own is refused only when the mark is read (closing batch 9 review, subagent P2-2).
         sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    @SuppressWarnings({\"a\"})\n    class Base {\n"
                 + "        @Test\n        void guard() { }\n    }\n    @Nested\n    class Impl extends Base {\n"
                 + "        @Test\n        void mine() { }\n    }\n");
         report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"3\" skipped=\"0\" errors=\"0\" "
                 + "failures=\"0\"", FOO, "own");
-        report("TEST-" + FOO + "$Base.xml", "name=\"" + FOO + "$Base\" tests=\"0\" skipped=\"0\" errors=\"0\" "
-                + "failures=\"0\"", FOO + "$Base", "guard");
         report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
-                + "failures=\"0\"", FOO + "$Impl", "mine");
+                + "failures=\"0\"", FOO + "$Impl", "mine", "guard");
         Outcome outcome = run(FOO);
-        assertEquals(0, outcome.exit(), "the @Nested base's own run was not taken for its test: " + outcome.output());
+        assertRefused(outcome, FOO, "the @Nested base's own run is missing");
+        assertTrue(outcome.output().contains(": FooTest.Base.guard "), "the refusal does not name the base's own run: "
+                + outcome.output());
     }
 
     @Test
@@ -370,6 +378,75 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "a");
         Outcome outcome = run(FOO);
         assertEquals(0, outcome.exit(), "a method of an anonymous class with a long type was required of the lock: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a @Nested base's test is required under the @Nested class that extends it too")
+    void aRunningBaseIsRequiredUnderItsHeirToo() throws Exception {
+        // The declaring class running ended the search, so a @Nested heir that overrides a hook and was tagged out
+        // whole went unseen (closing batch 9 review, subagent P2-2).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    class Default {\n        @Test\n        void guard() { }\n"
+                + "    }\n    @Nested\n    class Hardened extends Default { }\n");
+        report("TEST-" + FOO + "$Default.xml", "name=\"" + FOO + "$Default\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Default2.xml", "name=\"" + FOO + "$Default\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Default", "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the heir that runs the base's test did not run");
+        assertTrue(outcome.output().contains(": FooTest.Hardened.guard "), "the refusal does not name the heir's run: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a second top-level class the lock extends is the lock's, so its tests are required under the lock")
+    void aSecondTopLevelBaseOfTheLockIsRequiredUnderTheLock() throws Exception {
+        // Another top-level class was skipped whole, so a contract the lock inherits could be tagged out unseen
+        // (closing batch 9 review, subagent P2-1: a regression of closing batch 9).
+        rawSource(FOO, "import org.junit.jupiter.api.Test;\n\nabstract class FooContract {\n    @Test\n    void guard() { }\n"
+                + "    @Test\n    void second() { }\n}\n\nclass FooTest extends FooContract {\n    @Test\n    void own() { }\n}\n");
+        ran(FOO, 0, "own", "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the inherited second() did not run");
+        assertTrue(outcome.output().contains(": FooTest.second "), "the refusal does not name the inherited method "
+                + "under the lock: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an heir with an empty body {} is still an heir")
+    void anEmptyHeirBodyIsStillAnHeir() throws Exception {
+        // `{}` has no offset strictly inside it, so the class dropped out of its own chain and its base's test was
+        // required where it is written (closing batch 9 review, subagent P2-3).
+        sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        @Test\n        void inherited() { }\n"
+                + "    }\n    @Nested\n    class Impl extends Base {}\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "inherited");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a lock whose tests all ran was refused for an heir with an empty body: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an anonymous class with a type-use annotation is still an anonymous class")
+    void anAnnotatedAnonymousClassIsNotTheLocks() throws Exception {
+        sourceText(FOO, "    @Test\n    void a() {\n        Runnable r = new @Deprecated(since = \"1\") Runnable() {\n"
+                + "            @Test\n            public void ghost() { }\n            public void run() { }\n        };\n    }\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of an annotated anonymous class was required of the lock: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an enum constant's body is an anonymous class, so its @Test is not the lock's")
+    void anEnumConstantBodyIsNotTheLocks() throws Exception {
+        sourceText(FOO, "    @Test\n    void a() { }\n    enum Helper {\n        ONE {\n            @Test\n"
+                + "            void ghost() { }\n        };\n    }\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of an enum constant's body was required of the lock: "
                 + outcome.output());
     }
 

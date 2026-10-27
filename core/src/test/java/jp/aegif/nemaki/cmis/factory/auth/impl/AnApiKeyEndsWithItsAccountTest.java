@@ -41,7 +41,6 @@ import jp.aegif.nemaki.dao.ContentDaoService;
 import jp.aegif.nemaki.model.ApiKey;
 import jp.aegif.nemaki.model.Property;
 import jp.aegif.nemaki.model.UserItem;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * An API key belongs to the account DOCUMENT it was issued for, not to a user name (3.4.1, R170).
@@ -228,6 +227,6 @@ class AnApiKeyEndsWithItsAccountTest {
                 "a key of a deleted user was left in the store; looking them up by accountId is"
                         + " what would leave exactly the pre-3.4.1 ones behind");
         assertNull(service.validateApiKey(REPO, bound.getPlainTextKey()));
-        HarnessBroken.unless((old.getApiKey().getKeyHash()) != null, "the test's own fixture lost its key");
+        assertNotNull(old.getApiKey().getKeyHash(), "the test's own fixture lost its key");
     }
 }
