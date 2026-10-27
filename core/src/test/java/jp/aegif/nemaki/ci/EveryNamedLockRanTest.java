@@ -33,6 +33,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * The unit job fails unless each lock it names RAN, whole — a report, with tests, none skipped, every declared test
@@ -199,6 +200,79 @@ class EveryNamedLockRanTest {
     }
 
     @Test
+    @DisplayName("a brace in a nested class's header is not its body, so its method is still its own (R216)")
+    void aBraceInANestedClassHeaderIsNotItsBody() throws Exception {
+        // The first brace after `class Inner` was taken as Inner's body; an annotation's arguments in the header hold
+        // one, so Inner ended there and its guard() was read as the outer one's (closing batch 7 review, Codex P1).
+        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    class Inner implements @A(values = {1}) Marker {\n"
+                + "        @Test\n        void guard() { }\n    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "only the outer guard() ran");
+        assertTrue(outcome.output().contains(": FooTest.Inner.guard "), "the refusal does not name the nested method: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("@Nested is read past an annotation whose arguments hold braces (R216)")
+    void aNestedMarkBehindABracedAnnotationIsRead() throws Exception {
+        // The words before `class` are read back to the previous ; { or } — but not one inside an annotation's
+        // parentheses, or @SuppressWarnings({"a"}) would hide the @Nested before it.
+        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    @SuppressWarnings({\"a\"})\n    class Inner {\n"
+                + "        @Test\n        void guard() { }\n    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "only the outer guard() ran");
+        assertTrue(outcome.output().contains(": FooTest.Inner.guard "), "the refusal does not name the nested method: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test method of a nested class JUnit does not run as written is not required there (R216)")
+    void aMethodOfANestedBaseClassIsNotRequiredThere() throws Exception {
+        // A nested base class without @Nested runs nothing itself; its @Test runs in the @Nested class that extends it
+        // and is reported under that class. Requiring it under the base refused a lock whose tests all ran (closing
+        // batch 7 review, subagent P3-4).
+        sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        @Test\n        void inherited() { }\n"
+                + "    }\n    @Nested\n    class Impl extends Base {\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "inherited");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a lock whose tests all ran was refused for its base class: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test method of a nested base class is required under the @Nested class that extends it (R216)")
+    void aNestedBaseClassMethodIsRequiredUnderItsSubclass() throws Exception {
+        // Not requiring the base's method at all let a @Tag on it take it out at discovery unseen. It runs, and is
+        // reported, under the @Nested class that extends the base, so that is where it is required.
+        sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        @Test\n        void inherited() { }\n"
+                + "    }\n    @Nested\n    class Impl extends Base {\n        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "the base's method did not run under the class that extends it");
+        assertTrue(outcome.output().contains(": FooTest.Impl.inherited "), "the refusal does not name the base's method "
+                + "under its subclass: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an @Test inside an anonymous class is not one of the lock's (R216)")
+    void anAnonymousClassIsNotTheLocks() throws Exception {
+        sourceText(FOO, "    @Test\n    void a() {\n        Runnable r = new Runnable() {\n            @Test\n"
+                + "            public void notRun() { }\n            public void run() { }\n        };\n    }\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method of an anonymous class was required of the lock: " + outcome.output());
+    }
+
+    @Test
     @DisplayName("a nested class's report counts for its lock, skipped tests included")
     void aNestedClassCountsForItsLock() throws Exception {
         sourceText(FOO, "    @Nested\n    class Inner {\n        @Test\n        void a() { }\n"
@@ -302,7 +376,7 @@ class EveryNamedLockRanTest {
     void theUnitJobChecksTheLocksItNames() throws IOException {
         String workflow = Files.readString(WORKFLOW, StandardCharsets.UTF_8);
         int start = workflow.indexOf("\n  unit-tests:\n");
-        assertTrue(start >= 0, "the workflow has no unit-tests job");
+        HarnessBroken.unless(start >= 0, "the workflow has no unit-tests job");
         Matcher next = Pattern.compile("(?m)^  [a-z][a-z0-9_-]*:\\n").matcher(workflow);
         String job = next.find(start + 5) ? workflow.substring(start, next.start()) : workflow.substring(start);
 

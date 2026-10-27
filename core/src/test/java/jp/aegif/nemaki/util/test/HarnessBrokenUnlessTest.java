@@ -29,8 +29,9 @@ import org.junit.jupiter.api.Test;
  *
  * <p>The control runner scores an {@code AssertionError} from a lock as "the guard worked". A lock that said its own
  * breakage with {@code assertTrue(found, "… is gone")} therefore recorded a firing when the sabotage had only moved what
- * the lock reads. 161 such checks were moved to {@link HarnessBroken#unless} and {@link HarnessBroken#unlessEqual}; if
- * those helpers answered with an assertion, every one of them would score as a firing again.
+ * the lock reads. Such checks were moved to {@link HarnessBroken#unless} and {@link HarnessBroken#unlessEqual} (which
+ * ones, and by what reading, is R191's row in docs/design/fail-closed-reads.md); if those helpers answered with an
+ * assertion, every one of them would score as a firing again.
  */
 class HarnessBrokenUnlessTest {
 

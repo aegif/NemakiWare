@@ -36,6 +36,7 @@ import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * The extracted stores depend on narrow collaborators, not on the class they came out of.
@@ -241,7 +242,7 @@ public class LineageStoreCollaboratorTest {
 
     private static String sourceOf(String simpleName) throws IOException {
         Path path = Path.of(PACKAGE_DIR + simpleName + ".java");
-        assertTrue(Files.isRegularFile(path), path + " must exist; the delegate list is stale");
+        HarnessBroken.unless(Files.isRegularFile(path), path + " must exist; the delegate list is stale");
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 

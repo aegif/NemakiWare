@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A computation that began before an ACL change must not be able to publish itself after it.
@@ -148,7 +149,7 @@ class AclCacheGenerationTest {
                 Path.of("src/main/java/jp/aegif/nemaki/cmis/service/impl/AclServiceImpl.java"),
                 StandardCharsets.UTF_8);
         int method = src.indexOf("private int clearCachesRecursively");
-        assertTrue(method > 0, "clearCachesRecursively not found");
+        HarnessBroken.unless(method > 0, "clearCachesRecursively not found");
         String body = src.substring(method, src.indexOf("\n\t}", method));
         int advance = body.indexOf("AclCacheGeneration.advance");
         int firstEvict = body.indexOf("removeCmisAndContentCache");

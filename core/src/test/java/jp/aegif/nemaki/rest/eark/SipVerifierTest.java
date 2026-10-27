@@ -535,7 +535,7 @@ class SipVerifierTest {
         String tampered = proof.get("json").replaceFirst(
                 "\"siblingHash\" : \"[0-9a-f]{64}\"",
                 "\"siblingHash\" : \"" + "0".repeat(64) + "\"");
-        assertFalse(tampered.equals(proof.get("json")), "the fixture was not actually tampered");
+        HarnessBroken.unless(!(tampered.equals(proof.get("json"))), "the fixture was not actually tampered");
 
         String payload = "the minutes";
         Path sip = zip(tmp, "brokenpath.zip", Map.of(
@@ -588,7 +588,7 @@ class SipVerifierTest {
         // settles it in one look at its span; this verifier cannot, and says so.
         List<String> oneLeaf = List.of("e0hash");
         String root = MerkleTree.root(oneLeaf);
-        HarnessBroken.unlessEqual(SipVerifier.leaf("e0hash"), root,
+        assertEquals(SipVerifier.leaf("e0hash"), root,
                 "the premise of this test is gone: a one-leaf root is no longer the leaf's hash");
         String payload = "the minutes";
         String evidence = "{ \"status\" : \"success\", \"inclusionProof\" : { \"leafHash\" : "
@@ -646,7 +646,7 @@ class SipVerifierTest {
         String payload = "the minutes";
         String evidence = proof.get("json").replaceFirst(
                 "\"leafHash\" : \"[^\"]+\"", "\"leafHash\" : 42");
-        assertFalse(evidence.equals(proof.get("json")), "the fixture was not actually altered");
+        HarnessBroken.unless(!(evidence.equals(proof.get("json"))), "the fixture was not actually altered");
         Path sip = zip(tmp, "numericleaf.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
                 "sip/metadata/preservation/premis.xml",
@@ -668,7 +668,7 @@ class SipVerifierTest {
         // genuine package that had merely been through `jq`.
         Map<String, String> proof = realProofFor(2);
         String reformatted = proof.get("json").replace("\" : ", "\": ");
-        assertFalse(reformatted.equals(proof.get("json")), "the fixture was not reformatted");
+        HarnessBroken.unless(!(reformatted.equals(proof.get("json"))), "the fixture was not reformatted");
         String payload = "the minutes";
         Path sip = zip(tmp, "reformatted.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
@@ -777,7 +777,7 @@ class SipVerifierTest {
         Map<String, String> real = realProofFor(2);
         String withNull = real.get("json").replace(
                 "\"auditPath\" : [ ", "\"auditPath\" : [ null, ");
-        assertFalse(withNull.equals(real.get("json")), "the fixture was not altered");
+        HarnessBroken.unless(!(withNull.equals(real.get("json"))), "the fixture was not altered");
         String payload = "the minutes";
         Path sip = zip(tmp, "nullstep.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
@@ -920,7 +920,7 @@ class SipVerifierTest {
         Map<String, String> proof = realProofFor(1);
         String doubled = proof.get("json").replace("\"siblingHash\" : \"",
                 "\"siblingHash\" : null, \"siblingHash\" : \"");
-        assertFalse(doubled.equals(proof.get("json")), "the fixture was not altered");
+        HarnessBroken.unless(!(doubled.equals(proof.get("json"))), "the fixture was not altered");
         String payload = "the minutes";
         Path sip = zip(tmp, "duplicatekey.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,
@@ -1289,7 +1289,7 @@ class SipVerifierTest {
             Map<String, String> proof = realProofFor(3);
             String broken = proof.get("json").replaceFirst(
                     "\"siblingIsLeft\" : (true|false)", "\"siblingIsLeft\" : " + garbage);
-            assertFalse(broken.equals(proof.get("json")), "the fixture was not altered");
+            HarnessBroken.unless(!(broken.equals(proof.get("json"))), "the fixture was not altered");
             Path sip = zip(tmp, "garbage-" + garbage.indexOf(' ') + ".zip", Map.of(
                     "sip/representations/rep1/data/minutes.txt", payload,
                     "sip/metadata/preservation/premis.xml",
@@ -1309,7 +1309,7 @@ class SipVerifierTest {
     void aStepWithNoSideIsUnavailable(@TempDir Path tmp) throws Exception {
         Map<String, String> proof = realProofFor(0);
         String stripped = proof.get("json").replaceAll(",\\s*\"siblingIsLeft\" : (true|false)", "");
-        assertFalse(stripped.equals(proof.get("json")), "the fixture still has its flags");
+        HarnessBroken.unless(!(stripped.equals(proof.get("json"))), "the fixture still has its flags");
         String payload = "the minutes";
         Path sip = zip(tmp, "noside.zip", Map.of(
                 "sip/representations/rep1/data/minutes.txt", payload,

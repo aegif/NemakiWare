@@ -108,7 +108,7 @@ class AttachmentPreservationTest {
     void thePreservingPathNeverFallsBackToTheDestructiveUpdate() throws Exception {
         String src = Files.readString(WRAPPER, StandardCharsets.UTF_8);
         int at = src.indexOf("public void updatePreservingAttachments");
-        assertTrue(at > 0, "updatePreservingAttachments not found");
+        HarnessBroken.unless(at > 0, "updatePreservingAttachments not found");
         String method = src.substring(at, src.indexOf("\n\tpublic ", at + 10));
         int catchAt = method.indexOf("} catch (Exception e) {");
         assertTrue(catchAt > 0, "expected a catch block guarding the stub construction");

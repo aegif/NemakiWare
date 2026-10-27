@@ -21,6 +21,7 @@ import ch.qos.logback.core.read.ListAppender;
 import jp.aegif.nemaki.rest.TheBuildVersion;
 import jp.aegif.nemaki.util.SpringPropertyManager;
 import jp.aegif.nemaki.util.constant.PropertyKey;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * CMIS {@code productVersion} is the version this build was made from, not a literal in a
@@ -70,7 +71,7 @@ class CmisProductVersionIsTheBuildVersionTest {
         RepositoryInfoMap map = load("repository-info");
         for (String id : new String[] {"bedroom", "canopy"}) {
             RepositoryInfo info = map.get(id);
-            assertNotNull(info, id + " was not loaded from the fixture");
+            HarnessBroken.unless((info) != null, id + " was not loaded from the fixture");
             assertEquals(built, info.getProductVersion(),
                     id + " reports productVersion '" + info.getProductVersion() + "' but this build is "
                             + built);
@@ -87,9 +88,9 @@ class CmisProductVersionIsTheBuildVersionTest {
         // test would stop telling the conditions apart.
         try (InputStream fixture = getClass().getClassLoader()
                 .getResourceAsStream("repository-info-built/repositories-default.yml")) {
-            assertNotNull(fixture, "the fixture is not on the test classpath");
+            HarnessBroken.unless((fixture) != null, "the fixture is not on the test classpath");
             String text = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(text.contains("\n  product.version: " + built + "\n"),
+            HarnessBroken.unless(text.contains("\n  product.version: " + built + "\n"),
                     "the fixture's default block does not carry the build's version " + built
                             + " — testResources filtering did not run:\n" + text);
         }

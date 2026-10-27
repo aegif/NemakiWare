@@ -48,7 +48,7 @@ class ThreeImplementationsAgreeTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> vectors() throws Exception {
-        assertTrue(Files.exists(VECTORS), "the shared vectors are not at " + VECTORS
+        HarnessBroken.unless(Files.exists(VECTORS), "the shared vectors are not at " + VECTORS
                 + ". This module must be held to the SAME file as the product and the Python "
                 + "reference; a copy of its own would let the two drift and still agree");
         return (Map<String, Object>) Json.parse(

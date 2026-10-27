@@ -121,7 +121,7 @@ class MailImportWarningsNameTheImportsOwnWordingTest {
         JavacTask task = (JavacTask) javac.getTask(null, files, problem -> problems.add(String.valueOf(problem)),
                 List.of("-proc:none"), null, files.getJavaFileObjects(file.toFile()));
         Iterator<? extends CompilationUnitTree> units = task.parse().iterator();
-        assertTrue(problems.isEmpty(), "the parser could not read " + file + ": " + problems);
+        HarnessBroken.unless(problems.isEmpty(), "the parser could not read " + file + ": " + problems);
         return units.next();
     }
 

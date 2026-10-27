@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -107,7 +108,7 @@ class EarkSipExportControllerTest {
         // for the one reason that is not a defect — and the fix for a failing count is to bump
         // the number, which is how a guard quietly stops guarding. What matters is that there
         // ARE endpoints and that every one of them refuses; the loop below is the rule.
-        assertFalse(endpoints.isEmpty(),
+        HarnessBroken.unless(!(endpoints.isEmpty()),
                 "no mapped endpoint was found, so the loop below asserts nothing — the "
                         + "reflection that finds them has probably stopped matching");
 

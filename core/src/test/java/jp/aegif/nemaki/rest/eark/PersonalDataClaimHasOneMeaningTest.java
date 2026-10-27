@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -147,7 +148,7 @@ class PersonalDataClaimHasOneMeaningTest {
         }
         // The fixture check: a rename empties the loop and the test would pass by looking at
         // nothing, which is the failure mode JavaSource's javadoc catalogues three versions of.
-        assertTrue(checked >= 3,
+        HarnessBroken.unless(checked >= 3,
                 "only " + checked + " prose mentions found, so this test is no longer looking at "
                         + "the claim it exists to pin");
         if (!silent.isEmpty()) {

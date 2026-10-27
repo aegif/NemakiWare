@@ -303,7 +303,7 @@ class OneTokenGetsOneAnswerTest {
         assertEquals(Outcome.FAILED, answer.outcome(),
                 "a token naming an algorithm its own certificate's key cannot be used with was "
                         + "excused as something this build could not compute: " + answer);
-        HarnessBroken.unless(answer.detail().contains("cannot be used with it"),
+        assertTrue(answer.detail().contains("cannot be used with it"),
                 "the answer came from some OTHER arm, so this lock is reading a sibling again: "
                         + answer.detail());
     }

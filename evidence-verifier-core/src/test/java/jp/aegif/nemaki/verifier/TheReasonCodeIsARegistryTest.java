@@ -79,7 +79,7 @@ class TheReasonCodeIsARegistryTest {
         // lacked (measured). A lock has to sit where the thing it reads can be changed under it.
         java.nio.file.Path schema =
                 java.nio.file.Path.of("../docs/evidence-profile/v1/verifier-result.schema.json");
-        assertTrue(java.nio.file.Files.exists(schema), "the result schema is not at " + schema);
+        HarnessBroken.unless(java.nio.file.Files.exists(schema), "the result schema is not at " + schema);
         @SuppressWarnings("unchecked")
         java.util.Map<String, Object> root = (java.util.Map<String, Object>) Json.parse(
                 java.nio.file.Files.readString(schema, java.nio.charset.StandardCharsets.UTF_8));
@@ -141,7 +141,7 @@ class TheReasonCodeIsARegistryTest {
                 }
             }
         }
-        assertTrue(literals.size() >= 10, "the literal scan found only " + literals
+        HarnessBroken.unless(literals.size() >= 10, "the literal scan found only " + literals
                 + "; the pattern no longer matches how unavailable(...) is written and this "
                 + "would pass by finding nothing");
         java.util.SortedSet<String> unregistered = new java.util.TreeSet<>(literals);

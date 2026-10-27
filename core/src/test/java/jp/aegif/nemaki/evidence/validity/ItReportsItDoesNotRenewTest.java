@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,7 +44,7 @@ class ItReportsItDoesNotRenewTest {
     @Test
     @DisplayName("the assessment service mints no timestamp and writes no evidence record")
     void theServiceDoesNotRenew() throws java.io.IOException {
-        assertTrue(Files.exists(SERVICE), "the service is not at " + SERVICE);
+        HarnessBroken.unless(Files.exists(SERVICE), "the service is not at " + SERVICE);
         // Comments stripped: the file EXPLAINS that it does not renew, in prose that names the
         // very calls being looked for. A grep a comment can satisfy has been the defect in this
         // batch six times.
@@ -81,7 +82,7 @@ class ItReportsItDoesNotRenewTest {
     @DisplayName("the runbook records that explicit renewal is not implemented")
     void theRunbookSaysRenewalIsNotImplemented() throws java.io.IOException {
         Path runbook = Path.of("../docs/operations/evidence-verifier-release.md");
-        assertTrue(Files.exists(runbook), "the runbook is not at " + runbook);
+        HarnessBroken.unless(Files.exists(runbook), "the runbook is not at " + runbook);
         String text = Files.readString(runbook, StandardCharsets.UTF_8);
 
         // Scoped to the renewal section: the words appear elsewhere in the document, and a

@@ -72,7 +72,7 @@ class EverySupportedCouchDbIsMeasuredTest {
     private static final String JOB = "store-behaviour-facts:";
 
     private static String workflow() throws IOException {
-        assertTrue(Files.exists(WORKFLOW),
+        HarnessBroken.unless(Files.exists(WORKFLOW),
                 "the integration-tests workflow is not where this test looks: "
                         + WORKFLOW.toAbsolutePath());
         return Files.readString(WORKFLOW, StandardCharsets.UTF_8);
@@ -188,7 +188,7 @@ class EverySupportedCouchDbIsMeasuredTest {
 
         String canon = Files.readString(canonFile, StandardCharsets.UTF_8);
         Matcher recorded = Pattern.compile("コントロール \\*\\*(\\d+)\\*\\*").matcher(canon);
-        assertTrue(recorded.find(), "the canon does not state a control count");
+        HarnessBroken.unless(recorded.find(), "the canon does not state a control count");
         assertEquals(declared, Integer.parseInt(recorded.group(1)),
                 "the canon says " + recorded.group(1) + " controls and the runner declares "
                         + declared + ". A count nobody checks is how a retired or a missing "
@@ -222,7 +222,7 @@ class EverySupportedCouchDbIsMeasuredTest {
                 sweptThen = Integer.parseInt(sweeps.group(2));
             }
         }
-        assertTrue(latestRound > 0, "the canon records no completed sweep");
+        HarnessBroken.unless(latestRound > 0, "the canon records no completed sweep");
         java.util.Map<Integer, Integer> sweptInRound = jp.aegif.nemaki.evidence.LedgerText.sweptInRound(canon);
         assertEquals(List.of(), jp.aegif.nemaki.evidence.LedgerText.conflictingSweeps(canon),
                 "the canon records a sweep round twice with different numbers");
@@ -347,7 +347,7 @@ class EverySupportedCouchDbIsMeasuredTest {
         // No total floor for the form: the per-document floors above sum to it, so a total floor
         // was satisfied whenever they were and hid whether they were there at all (subagent
         // review, eighth round — KS4 fired through the total with the per-document floors gone).
-        assertTrue(sweptSeen > 0, "no sweep figure is stated in the form in any document");
+        HarnessBroken.unless(sweptSeen > 0, "no sweep figure is stated in the form in any document");
         // FIVE since batch 20: the canon stated the count a second time as 「9 回目以後に足した
         // 522 本（QK4〜…」 — the same claim with 「control は」 left out, which this form could not
         // read, and it sat at 522 while the rest said 532 (batch-20 review, Codex P2-1). Rewritten
@@ -367,7 +367,7 @@ class EverySupportedCouchDbIsMeasuredTest {
                     + "canon does not enumerate them starting at " + unswept.first()
                     + ". Unlisted, they read as already swept: " + unswept);
             int listEnd = canon.indexOf("）は", listStart);
-            assertTrue(listEnd > listStart, "the ledger's enumeration does not end where this looks");
+            HarnessBroken.unless(listEnd > listStart, "the ledger's enumeration does not end where this looks");
             String ledger = canon.substring(listStart, listEnd);
             java.util.Set<String> named = new java.util.LinkedHashSet<>();
             Matcher single = Pattern.compile("\\b([A-Z]{2}[3-9])\\b").matcher(ledger);
@@ -448,7 +448,7 @@ class EverySupportedCouchDbIsMeasuredTest {
     @DisplayName("the declared lines start exactly at the product's floor")
     void theLowestDeclaredLineIsTheFloor() {
         List<Line> lines = StoreBehaviourFacts.SUPPORTED_LINES;
-        assertFalse(lines.isEmpty(), "no CouchDB line is declared at all");
+        HarnessBroken.unless(!(lines.isEmpty()), "no CouchDB line is declared at all");
 
         for (Line line : lines) {
             assertTrue(CouchDbVersionRequirement.isSatisfiedBy(line.ciImageTag()),

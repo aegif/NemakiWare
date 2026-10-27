@@ -213,7 +213,7 @@ class ReleaseReadinessIsMeasuredTest {
         //     in the same class, and nothing else does (batch-39 review, subagent P3-5).
         Matcher row = Pattern.compile("(?m)^\\| " + Pattern.quote(id) + " \\| (.*)$")
                 .matcher(canon);
-        assertTrue(row.find(), "the canon has no row for " + id + ", so this reader cannot say "
+        HarnessBroken.unless(row.find(), "the canon has no row for " + id + ", so this reader cannot say "
                 + "whether it is closed. If the id came from another document, the two disagree");
         return row.group(1).startsWith("~~");
     }
@@ -233,7 +233,7 @@ class ReleaseReadinessIsMeasuredTest {
         String here = slice(readiness, "## 0. 現在地", "## 1.", "the readiness document's §0");
         Matcher stated = Pattern.compile("残件表 (\\d+) 行のうち \\*\\*処置済み (\\d+) / 開いている (\\d+)\\*\\*")
                 .matcher(here);
-        assertTrue(stated.find(), "the readiness document's §0 does not state the residual counts");
+        HarnessBroken.unless(stated.find(), "the readiness document's §0 does not state the residual counts");
 
         assertEquals(ids.size(), Integer.parseInt(stated.group(1)),
                 "the readiness document says the canon has " + stated.group(1) + " residual rows "
@@ -261,7 +261,7 @@ class ReleaseReadinessIsMeasuredTest {
 
         String here = slice(readiness, "## 0. 現在地", "## 1.", "the readiness document's §0");
         Matcher stated = Pattern.compile("負のコントロール \\*\\*(\\d+) 本\\*\\*").matcher(here);
-        assertTrue(stated.find(), "the readiness document's §0 does not state a control count");
+        HarnessBroken.unless(stated.find(), "the readiness document's §0 does not state a control count");
         assertEquals(declared.size(), Integer.parseInt(stated.group(1)),
                 "the readiness document says " + stated.group(1) + " controls and the runner "
                         + "declares " + declared.size());
@@ -282,7 +282,7 @@ class ReleaseReadinessIsMeasuredTest {
         // break before 「以後」); a form whose token carries its round cannot be misattributed, and
         // a figure written any other way is the total.
         java.util.Map<Integer, Integer> sweptInRound = LedgerText.sweptInRound(read(CANON));
-        assertFalse(sweptInRound.isEmpty(), "the canon records no completed sweep");
+        HarnessBroken.unless(!(sweptInRound.isEmpty()), "the canon records no completed sweep");
         assertEquals(List.of(), LedgerText.conflictingSweeps(read(CANON)),
                 "the canon records a sweep round twice with different numbers, so which one a "
                         + "figure is checked against depends on the order they are written in");
@@ -340,7 +340,7 @@ class ReleaseReadinessIsMeasuredTest {
                 + "this test cannot mirror what the suite skips");
         List<String> excludedGroups = java.util.Arrays.stream(excluded.group(1).split(","))
                 .map(String::trim).filter(group -> !group.isEmpty()).toList();
-        assertFalse(excludedGroups.isEmpty(), "the build excludes no group, so the skip below "
+        HarnessBroken.unless(!(excludedGroups.isEmpty()), "the build excludes no group, so the skip below "
                 + "is checking nothing");
 
         int declared = 0;
@@ -411,12 +411,17 @@ class ReleaseReadinessIsMeasuredTest {
         while (stated.find()) {
             totals.add(stated.group(1));
         }
+        // Zero is this bound finding nothing to read, two is the document stating two figures: the
+        // first is the harness, the second a document defect, and one assertion said both (R191,
+        // closing batch 8).
+        HarnessBroken.unless(!totals.isEmpty(),
+                "the readiness document states no latest unit total this bound can read — the form it "
+                        + "states it in changed (「全ユニットの最新の実測は **N 本 green**（20…）)");
         assertEquals(1, totals.size(),
                 "the readiness document calls " + totals.size() + " figures its latest unit total "
-                        + totals + "; this bound reads one, so there has to be exactly one — zero "
-                        + "means the form it states it in changed (「全ユニットの最新の実測は "
-                        + "**N 本 green**（20…）), and two means a stale line was left beside the "
-                        + "new one (round-26 review, subagent P3-6; round-27 review, Codex P2)");
+                        + totals + "; this bound reads one, so there has to be exactly one — two "
+                        + "means a stale line was left beside the new one (round-26 review, subagent "
+                        + "P3-6; round-27 review, Codex P2)");
         // WHICH TREE it measured, not only how many tests. This line said "round 28" in the same
         // commit that recorded a round-29 run, and the same slip happened in rounds 20, 21 and 29:
         // the bound above reads the NUMBER, which does not move when a round adds no test, so
@@ -1983,7 +1988,7 @@ class ReleaseReadinessIsMeasuredTest {
                         + "withdrawal line with one; counted rather than taken in order, so "
                         + "reordering the list changes nothing. Every count, position and answer "
                         + "arm passes a line that is the reinstatement line REVERSED");
-        HarnessBroken.unlessEqual(0, edgesNotSeparated,
+        assertEquals(0, edgesNotSeparated,
                 edgesNotSeparated + " code points are not swept at three SEPARATE positions — the "
                         + "first is U+" + (firstWithoutEdges < 0 ? "?"
                                 : String.format("%04X", firstWithoutEdges)) + ". Exactly one of "
@@ -3086,7 +3091,7 @@ class ReleaseReadinessIsMeasuredTest {
                 classified++;
             }
         }
-        assertTrue(classified > 0, "the RC gate's table carries no residual ids: " + gate);
+        HarnessBroken.unless(classified > 0, "the RC gate's table carries no residual ids: " + gate);
 
         // ANCHORED to the heading and to the sentence under it, and each required to be the
         // ONLY one in the section — an unanchored find() would take a figure from anywhere in
@@ -3102,7 +3107,7 @@ class ReleaseReadinessIsMeasuredTest {
                 + intro);
         Matcher says = Pattern.compile("(?m)^### RC 条件 11[^\n]*?(\\d+) 件を分類した")
                 .matcher(intro);
-        assertTrue(says.find(), "the RC gate's heading no longer says how many it classified");
+        HarnessBroken.unless(says.find(), "the RC gate's heading no longer says how many it classified");
         assertEquals(classified, Integer.parseInt(says.group(1)),
                 "the RC gate's heading says it classified " + says.group(1) + " residuals and "
                         + "its table carries " + classified);
@@ -3112,7 +3117,7 @@ class ReleaseReadinessIsMeasuredTest {
         // the part of that sentence that changes when the condition is met.
         Matcher under = Pattern.compile("開いている (\\d+) 件を\\s*1 つずつ読んで分類した")
                 .matcher(intro);
-        assertTrue(under.find(), "the RC gate's prose no longer says how many are open");
+        HarnessBroken.unless(under.find(), "the RC gate's prose no longer says how many are open");
         assertEquals(classified, Integer.parseInt(under.group(1)),
                 "the RC gate's prose says " + under.group(1) + " open residuals and its table "
                         + "carries " + classified);
@@ -3163,7 +3168,7 @@ class ReleaseReadinessIsMeasuredTest {
                 blocking.add(cells[1].trim() + " —" + classification);
             }
         }
-        assertTrue(rows > 0, "the RC gate's table carries no rows: " + gate);
+        HarnessBroken.unless(rows > 0, "the RC gate's table carries no rows: " + gate);
 
         boolean introDeclares = Pattern.compile("条件 11 は 20\\d\\d-\\d\\d-\\d\\d に満たした")
                 .matcher(intro).find();
@@ -3304,7 +3309,7 @@ class ReleaseReadinessIsMeasuredTest {
         // The boundary the canon names — the highest id when the last full sweep ran. It was
         // "境界 LM3" written into this lock, which the sixth sweep (to JP4) left behind.
         Matcher boundary = Pattern.compile("境界 ([A-Z]{2}[3-9])").matcher(canon);
-        assertTrue(boundary.find(), "the canon no longer names the sweep boundary");
+        HarnessBroken.unless(boundary.find(), "the canon no longer names the sweep boundary");
         String last = boundary.group(1);
 
         // The three-letter sequence the ids run through, from the boundary to the newest: the
@@ -3375,7 +3380,7 @@ class ReleaseReadinessIsMeasuredTest {
         assertTrue(tests > 100, "only " + tests + " tests were found, so this counted nothing");
 
         Matcher stated = Pattern.compile("verifier-core (\\d+) / cli").matcher(read(READINESS));
-        assertTrue(stated.find(), "the readiness document does not state a verifier-core count");
+        HarnessBroken.unless(stated.find(), "the readiness document does not state a verifier-core count");
         assertEquals(tests, Integer.parseInt(stated.group(1)),
                 "the readiness document says verifier-core runs " + stated.group(1)
                         + " tests and its sources declare " + tests);
@@ -3391,7 +3396,7 @@ class ReleaseReadinessIsMeasuredTest {
     void theR59RowsLocksExistAndItsCountsAreTheSources() throws IOException {
         String canon = read(CANON);
         Matcher row = Pattern.compile("(?m)^\\| R59 \\|.*$").matcher(canon);
-        assertTrue(row.find(), "the canon has no R59 row");
+        HarnessBroken.unless(row.find(), "the canon has no R59 row");
         Matcher counts = Pattern.compile("錠 (\\d+) 本中 R59 の (\\d+) 本（(.*?)）、control").matcher(row.group());
         HarnessBroken.unless(counts.find(), "the R59 row no longer states its lock counts in the expected shape");
         int totalStated = Integer.parseInt(counts.group(1));
@@ -3545,7 +3550,7 @@ class ReleaseReadinessIsMeasuredTest {
                                 + source.getClassName() + "#" + method.getName());
             }
         }
-        assertFalse(names.isEmpty(), "JUnit discovered no test in " + className + ", so this counted nothing");
+        HarnessBroken.unless(!(names.isEmpty()), "JUnit discovered no test in " + className + ", so this counted nothing");
         return names;
     }
 
@@ -3584,7 +3589,7 @@ class ReleaseReadinessIsMeasuredTest {
         // NOTE: none of these refinements is measured by a control — UN3 fires on any anchor,
         // because the span always contains the same three labels.
         Matcher inline = Pattern.compile("（うち[\\s\\S]*?）。").matcher(readiness);
-        assertTrue(inline.find(), "the readiness document's summary line no longer repeats the "
+        HarnessBroken.unless(inline.find(), "the readiness document's summary line no longer repeats the "
                 + "breakdown, so this check has nothing to compare");
         String summary = inline.group();
         assertFalse(inline.find(), "the readiness document states more than one 「（うち…）」 "
@@ -3674,7 +3679,7 @@ class ReleaseReadinessIsMeasuredTest {
 
         for (String id : new TreeSet<>(FROZEN)) {
             Matcher row = Pattern.compile("(?m)^\\| " + id + " \\| (.*)$").matcher(canon);
-            assertTrue(row.find(), "the canon has no row for " + id);
+            HarnessBroken.unless(row.find(), "the canon has no row for " + id);
             assertTrue(row.group(1).contains(FREEZE_MARK),
                     id + " is frozen by instruction and its canon row does not say so. The row is "
                             + "where the next batch looks before opening an area");
@@ -3798,7 +3803,7 @@ class ReleaseReadinessIsMeasuredTest {
                 "the plan's phase table");
         for (int phase = 0; phase <= 9; phase++) {
             Matcher row = Pattern.compile("(?m)^\\| " + phase + " \\| (.*)$").matcher(phases);
-            assertTrue(row.find(), "the plan has no row for Phase " + phase);
+            HarnessBroken.unless(row.find(), "the plan has no row for Phase " + phase);
             String text = row.group(1);
             // A DATE, not a vocabulary. The first version looked for 着手 / 途中経過 / 達成 and
             // missed Phase 1, which says 完了, and would have missed the next word someone
@@ -3838,7 +3843,7 @@ class ReleaseReadinessIsMeasuredTest {
     void theLeftoversListAgreesWithWhatExists() throws IOException {
         String readiness = read(READINESS);
         Path release = Path.of("../docs/operations/evidence-verifier-release.md");
-        assertTrue(Files.exists(release), "the verifier release runbook is not at " + release);
+        HarnessBroken.unless(Files.exists(release), "the verifier release runbook is not at " + release);
         String runbook = read(release);
 
         // EVERY sentence that says what is left, not the one in §1.5. The document states this
@@ -4005,7 +4010,7 @@ class ReleaseReadinessIsMeasuredTest {
                 }
             }
         }
-        assertFalse(read.isEmpty(),
+        HarnessBroken.unless(!(read.isEmpty()),
                 "no lock appears to open a file outside core. Either the tests moved or this "
                         + "check's pattern no longer matches how they name a path, and it would "
                         + "pass by finding nothing");
@@ -4068,7 +4073,7 @@ class ReleaseReadinessIsMeasuredTest {
                 sweptThen = Integer.parseInt(sweeps.group(2));
             }
         }
-        assertTrue(latestRound > 0, "the canon records no completed sweep");
+        HarnessBroken.unless(latestRound > 0, "the canon records no completed sweep");
         assertTrue(sweptThen <= declared,
                 "the canon says the last sweep ran " + sweptThen + " controls and the runner "
                         + "declares only " + declared + ". A sweep cannot have run controls that "

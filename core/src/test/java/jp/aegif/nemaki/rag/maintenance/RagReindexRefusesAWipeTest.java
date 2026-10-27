@@ -29,6 +29,7 @@ import jp.aegif.nemaki.util.test.JavaSource;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -81,7 +82,7 @@ class RagReindexRefusesAWipeTest {
                         + "documents that are gone — then reports the run completed: " + code);
 
         assertTrue(guard >= 0, "the enumeration guard is gone, so a wipe is unguarded again");
-        assertTrue(clear >= 0, "fixture check: the clear is no longer in this method");
+        HarnessBroken.unless(clear >= 0, "fixture check: the clear is no longer in this method");
         assertTrue(guard < clear,
                 "the index is cleared before the walk is checked against it, so the guard "
                         + "reports the wipe instead of preventing it");
@@ -384,7 +385,7 @@ class RagReindexRefusesAWipeTest {
                 "src/main/java/jp/aegif/nemaki/api/v1/resource/SearchEngineResource.java");
         int method = declared.indexOf("public Response reindexDocumentRAG");
         int declaration = declared.lastIndexOf("@ApiResponses", method);
-        assertTrue(declaration > 0, "the endpoint declares no responses at all");
+        HarnessBroken.unless(declaration > 0, "the endpoint declares no responses at all");
         assertTrue(declared.substring(declaration, method).contains("\"503\""),
                 "the endpoint's declared responses do not include 503, so the generated client knows "
                         + "only about the 200 — the answer and the contract disagree");

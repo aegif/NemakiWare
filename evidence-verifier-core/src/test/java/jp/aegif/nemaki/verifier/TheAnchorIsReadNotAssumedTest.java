@@ -383,7 +383,7 @@ class TheAnchorIsReadNotAssumedTest {
         Map<String, Object> hashless = new LinkedHashMap<>(cp);
         hashless.remove("checkpointHash");
         entries.put(DIR + "anchor-target-checkpoint.json", bytes(json(hashless)));
-        assertTrue(!new String(entries.get(DIR + "anchor-target-checkpoint.json"),
+        HarnessBroken.unless(!new String(entries.get(DIR + "anchor-target-checkpoint.json"),
                         StandardCharsets.UTF_8).contains("checkpointHash"),
                 "this fixture still ships checkpointHash, so it takes the same arm as every "
                         + "other one and measures nothing");

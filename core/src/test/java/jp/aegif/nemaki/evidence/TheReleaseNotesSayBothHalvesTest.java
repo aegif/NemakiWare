@@ -51,6 +51,18 @@ class TheReleaseNotesSayBothHalvesTest {
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
+    /**
+     * The plan's block quote after {@code heading}. The plan is where this lock reads the words from, so a heading it
+     * cannot find there is the lock not looking; a heading missing from the RELEASE NOTES is the notes dropping a half,
+     * which is what the lock is for (R191, closing batch 8: one check said both, so a control that renamed the notes'
+     * caveat heading was scored as the harness breaking).
+     */
+    private static String planQuoteAfter(String plan, String heading) {
+        HarnessBroken.unless(plan.contains(heading), "the plan does not say 「" + heading + "」, which this lock reads "
+                + "the words from");
+        return quoteAfter(plan, heading);
+    }
+
     /** The block quote that follows {@code heading}, as one line with its markers stripped. */
     private static String quoteAfter(String text, String heading) {
         int at = text.indexOf(heading);
@@ -78,8 +90,8 @@ class TheReleaseNotesSayBothHalvesTest {
         String notes = read(NOTES);
         String plan = read(PLAN);
 
-        String claimable = quoteAfter(plan, "名乗れる文（要求した profile の必須検査が全部通った package についてのみ）:");
-        String caveat = quoteAfter(plan, "必ず併記:");
+        String claimable = planQuoteAfter(plan, "名乗れる文（要求した profile の必須検査が全部通った package についてのみ）:");
+        String caveat = planQuoteAfter(plan, "必ず併記:");
         HarnessBroken.unless(claimable.length() > 80 && caveat.length() > 80,
                 "the plan's paragraphs parsed as " + claimable.length() + " and "
                         + caveat.length() + " characters, so this lock is comparing fragments");

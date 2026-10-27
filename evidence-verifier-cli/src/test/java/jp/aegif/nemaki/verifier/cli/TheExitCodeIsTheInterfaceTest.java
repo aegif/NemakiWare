@@ -558,7 +558,7 @@ class TheExitCodeIsTheInterfaceTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> schema() throws Exception {
-        assertTrue(Files.exists(SCHEMA), "the result schema is not at " + SCHEMA);
+        HarnessBroken.unless(Files.exists(SCHEMA), "the result schema is not at " + SCHEMA);
         Object parsed = jp.aegif.nemaki.verifier.Json.parse(
                 Files.readString(SCHEMA, StandardCharsets.UTF_8));
         assertTrue(parsed instanceof Map, "the schema is not a JSON object");

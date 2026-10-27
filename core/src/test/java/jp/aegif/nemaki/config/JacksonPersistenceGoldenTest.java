@@ -42,6 +42,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * What NemakiWare's mappers persist, pinned before the Jackson 3 migration.
@@ -287,7 +288,7 @@ class JacksonPersistenceGoldenTest {
         try (InputStream in = JacksonPersistenceGoldenTest.class
                 .getResourceAsStream(RESOURCE_DIR + name + ".golden.json")) {
             if (in == null) {
-                fail("golden '" + name + "' is missing — generate deliberately with"
+                throw new HarnessBroken("golden '" + name + "' is missing — generate deliberately with"
                         + " -Djackson.golden.write=true and commit the files");
             }
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);

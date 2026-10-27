@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -80,7 +81,7 @@ class TypeDependencyQueriesAreIndexedTest {
                 selected.add(m.group(1));
                 any = true;
             }
-            assertTrue(any, "no selector field was found in " + method + ", so this test is no "
+            HarnessBroken.unless(any, "no selector field was found in " + method + ", so this test is no "
                     + "longer reading the queries it exists to cover");
         }
 

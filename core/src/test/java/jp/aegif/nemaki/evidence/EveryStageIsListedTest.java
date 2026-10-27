@@ -82,7 +82,7 @@ class EveryStageIsListedTest {
                             + "applicable', and that is the reading this guarantee exists to "
                             + "prevent: " + names);
         }
-        HarnessBroken.unlessEqual(SECTIONS.size(), names.size(),
+        assertEquals(SECTIONS.size(), names.size(),
                 "the assembler produced " + names.size() + " sections and this lock knows about "
                         + SECTIONS.size() + ": " + names + ". A section added without being "
                         + "named here is one nothing checks is always emitted");
@@ -199,7 +199,7 @@ class EveryStageIsListedTest {
     void theRunbookExplainsTheNewRows() throws java.io.IOException {
         java.nio.file.Path runbook =
                 java.nio.file.Path.of("../docs/operations/v3.4.0-upgrade-runbook.md");
-        assertTrue(java.nio.file.Files.exists(runbook),
+        HarnessBroken.unless(java.nio.file.Files.exists(runbook),
                 "the 3.4.0 upgrade runbook is not at " + runbook);
         String text = java.nio.file.Files.readString(runbook,
                 java.nio.charset.StandardCharsets.UTF_8);
@@ -210,7 +210,7 @@ class EveryStageIsListedTest {
                 + "operator's to change, and a runbook silent on them hands those decisions to "
                 + "nobody");
         int end = text.indexOf("## O6.", start);
-        assertTrue(end > start, "the evidence section does not end where this looks");
+        HarnessBroken.unless(end > start, "the evidence section does not end where this looks");
         String section = text.substring(start, end);
 
         // The two values are checked as TABLE ROWS carrying their operator action, not as

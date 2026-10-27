@@ -33,6 +33,7 @@ import java.util.stream.Stream;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Every REST resource is behind the authentication filter but the ones that answer before anyone has logged in (3.4.1,
@@ -66,7 +67,7 @@ class RestResourcesAreBehindTheFilterTest {
         while (mapping.find()) {
             patterns.add(mapping.group(1).trim());
         }
-        assertTrue(patterns.size() > 10, "the filter's mappings were not read: " + patterns);
+        HarnessBroken.unless(patterns.size() > 10, "the filter's mappings were not read: " + patterns);
 
         Set<String> resources = new TreeSet<>();
         Set<String> outside = new TreeSet<>();
@@ -84,7 +85,7 @@ class RestResourcesAreBehindTheFilterTest {
                 }
             }
         }
-        assertTrue(resources.size() > 20, "the REST resources were not read: " + resources);
+        HarnessBroken.unless(resources.size() > 20, "the REST resources were not read: " + resources);
         assertEquals(OUTSIDE, outside, "REST resources outside the authentication filter — a resource here gets no "
                 + "CallContext, refuses administrators, and is reached by anyone's request");
     }

@@ -155,7 +155,7 @@ class TheV1LayoutIsCheckedTest {
         String manifest = new String(entries.get(SECTION + "bundle-manifest.json"),
                 StandardCharsets.UTF_8);
 
-        assertFalse(manifest.contains("bundle-manifest.json"),
+        HarnessBroken.unless(!(manifest.contains("bundle-manifest.json")),
                 "this fixture stopped reproducing the writer: the writer builds the manifest last "
                         + "and does not list it, because a manifest naming its own digest would "
                         + "have to be hashed before it was finished. A fixture that lists it "
@@ -297,7 +297,7 @@ class TheV1LayoutIsCheckedTest {
         String stripped = manifest.replaceFirst(
                 "\\{\"path\":\"ledger-entry\\.json\",\"sha256\":\"[0-9a-f]{64}\"\\}",
                 "{\"path\":\"ledger-entry.json\"}");
-        assertFalse(stripped.equals(manifest),
+        HarnessBroken.unless(!(stripped.equals(manifest)),
                 "this fixture edited nothing, so what follows would measure the unedited package");
         entries.put(SECTION + "bundle-manifest.json", bytes(stripped));
 
@@ -349,7 +349,7 @@ class TheV1LayoutIsCheckedTest {
         // Move one document to another root. No name is duplicated, and the manifest still
         // names every relative path — which is exactly why this used to pass.
         byte[] moved = entries.remove(SECTION + "ledger-entry.json");
-        assertTrue(moved != null, "this fixture moved nothing, so it measures nothing");
+        HarnessBroken.unless(moved != null, "this fixture moved nothing, so it measures nothing");
         entries.put("other-root/metadata/other/nemaki-evidence/ledger-entry.json", moved);
 
         Outcome.Check layout = layoutOf(entries);

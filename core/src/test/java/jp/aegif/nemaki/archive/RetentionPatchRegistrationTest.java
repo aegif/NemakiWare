@@ -15,6 +15,7 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -223,7 +224,7 @@ public class RetentionPatchRegistrationTest {
         }
 
         if (!Files.exists(path)) {
-            fail("File not found: " + relativePath + " (searched from " + System.getProperty("user.dir") + ")");
+            throw new HarnessBroken("File not found: " + relativePath + " (searched from " + System.getProperty("user.dir") + ")");
         }
 
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);

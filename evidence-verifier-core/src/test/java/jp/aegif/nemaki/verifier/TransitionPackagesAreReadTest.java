@@ -518,8 +518,8 @@ class TransitionPackagesAreReadTest {
         // REMOVED, not nulled: the key is gone, which is the arm §5 answers NOT_PRESENT.
         fixture.transition.remove("repositoryId");
         Map<String, byte[]> entries = fixture.entries();
-        assertFalse(new String(entries.get(DIR + "record-content-statement.json"),
-                        java.nio.charset.StandardCharsets.UTF_8).contains("repositoryId"),
+        HarnessBroken.unless(!(new String(entries.get(DIR + "record-content-statement.json"),
+                        java.nio.charset.StandardCharsets.UTF_8).contains("repositoryId")),
                 "this fixture still ships repositoryId, so it takes a different arm and "
                         + "measures nothing below");
 

@@ -38,6 +38,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -267,7 +268,7 @@ class EvidenceRecordServiceTest {
         TimeStampResponse response = new TimeStampResponseGenerator(tokenGenerator,
                 java.util.Set.of(SHA256_OID, oid))
                 .generate(request, BigInteger.ONE, new java.util.Date());
-        assertNotNull(response.getTimeStampToken(),
+        HarnessBroken.unless((response.getTimeStampToken()) != null,
                 "the test TSA refused to issue a token under " + oid + ", so this fixture does "
                         + "not produce the mismatch it is for: " + response.getStatusString());
         return response.getTimeStampToken().getEncoded();

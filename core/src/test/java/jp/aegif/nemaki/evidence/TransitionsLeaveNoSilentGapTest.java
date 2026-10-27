@@ -33,7 +33,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -313,7 +312,7 @@ class TransitionsLeaveNoSilentGapTest {
                     "Transition." + transition + " is closed with BytesNow." + call.group(1)
                             + " and the design says " + designed.get(transition) + ". For W14 "
                             + "that is the difference between 'not checked' and a claim");
-            HarnessBroken.unless(!(call.find()), "Transition." + transition + " is closed at two call sites; "
+            assertFalse(call.find(), "Transition." + transition + " is closed at two call sites; "
                     + "this lock reads one and would miss the other");
         }
     }

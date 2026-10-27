@@ -31,6 +31,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -87,7 +88,7 @@ class WhichProfilesCanPassIsMeasuredTest {
 
     private static String source(String className) throws IOException {
         Path file = VERIFIER.resolve(className + ".java");
-        assertTrue(Files.exists(file), "the verifier class is not at " + file);
+        HarnessBroken.unless(Files.exists(file), "the verifier class is not at " + file);
         return Files.readString(file, StandardCharsets.UTF_8);
     }
 
@@ -95,19 +96,19 @@ class WhichProfilesCanPassIsMeasuredTest {
     private static List<String> required(String className) throws IOException {
         String text = source(className);
         int start = text.indexOf("REQUIRED");
-        assertTrue(start >= 0, className + " declares no REQUIRED list, so nothing here knows "
+        HarnessBroken.unless(start >= 0, className + " declares no REQUIRED list, so nothing here knows "
                 + "what its profile demands");
         int open = text.indexOf("List.of(", start);
         assertTrue(open > start, className + "'s REQUIRED is not a List.of(...)");
         int close = text.indexOf(");", open);
-        assertTrue(close > open, className + "'s REQUIRED list does not end where this looks");
+        HarnessBroken.unless(close > open, className + "'s REQUIRED list does not end where this looks");
 
         List<String> names = new ArrayList<>();
         Matcher each = Pattern.compile("\"([^\"]+)\"").matcher(text.substring(open, close));
         while (each.find()) {
             names.add(each.group(1));
         }
-        assertFalse(names.isEmpty(), className + "'s REQUIRED list parsed as empty, which would "
+        HarnessBroken.unless(!(names.isEmpty()), className + "'s REQUIRED list parsed as empty, which would "
                 + "make every profile look reachable");
         return names;
     }
@@ -189,7 +190,7 @@ class WhichProfilesCanPassIsMeasuredTest {
                 + "VERIFIED. An operator who requires P3 would tune a trust profile forever, "
                 + "or fold exit 3 into success in a script");
         int end = text.indexOf("\n## ", start);
-        assertTrue(end > start, "the section does not end where this looks");
+        HarnessBroken.unless(end > start, "the section does not end where this looks");
         String section = text.substring(start, end);
 
         for (String profile : COMPOSITION.keySet()) {

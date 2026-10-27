@@ -29,6 +29,7 @@ import com.ibm.cloud.sdk.core.security.BasicAuthenticator;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientPool;
 import jp.aegif.nemaki.dao.impl.couch.connector.CloudantClientWrapper;
 import jp.aegif.nemaki.config.ObjectMapperFactory;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * DETERMINISTIC integration test for the 5T principal tri-state, against a REAL CouchDB.
@@ -215,7 +216,7 @@ public class PrincipalLookupTriStateIT {
                 .uri(URI.create(baseUrl + "/" + db + "/" + DDOC)).GET());
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"_rev\"\\s*:\\s*\"([^\"]+)\"")
                 .matcher(head.body());
-        assertTrue(m.find(), "could not read the design document _rev from: " + head.body());
+        HarnessBroken.unless(m.find(), "could not read the design document _rev from: " + head.body());
         String rev = m.group(1);
         HttpResponse<String> del = send(HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/" + db + "/" + DDOC + "?rev=" + rev)).DELETE());

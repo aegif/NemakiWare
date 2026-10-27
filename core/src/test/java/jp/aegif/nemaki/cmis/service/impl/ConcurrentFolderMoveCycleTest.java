@@ -30,6 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.util.lock.impl.ThreadLockServiceImpl;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * Two folder moves running at once must not be able to build a parent/child cycle.
@@ -186,7 +187,7 @@ class ConcurrentFolderMoveCycleTest {
                 java.nio.file.Path.of("src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java"),
                 java.nio.charset.StandardCharsets.UTF_8);
         int at = src.indexOf("public void moveObject(");
-        assertTrue(at > 0, "moveObject not found");
+        HarnessBroken.unless(at > 0, "moveObject not found");
         String body = src.substring(at, src.indexOf("\n\t@Override", at));
         // The named-lock enum, not a string id: an id-keyed hierarchy lock was reachable from
         // client-supplied object ids, which let a request acquire the repository-wide lock in the

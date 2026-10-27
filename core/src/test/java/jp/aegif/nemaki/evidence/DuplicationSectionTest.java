@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -236,7 +235,7 @@ class DuplicationSectionTest {
                         + "rendition.pdfa.validate.flavour requests one: " + disclosure);
         // And it must still say what an ABSENT verdict means, or a reader takes the empty key
         // for a failure.
-        HarnessBroken.unless(disclosure.contains("NOTHING WAS CHECKED"), disclosure);
+        assertTrue(disclosure.contains("NOTHING WAS CHECKED"), disclosure);
     }
 
     @Test

@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,7 +42,7 @@ public final class TheBuildVersion {
     public static String expected() {
         try (InputStream in = TheBuildVersion.class.getClassLoader()
                 .getResourceAsStream("build-version/expected-version.txt")) {
-            assertNotNull(in, "build-version/expected-version.txt is not on the test classpath");
+            HarnessBroken.unless((in) != null, "build-version/expected-version.txt is not on the test classpath");
             String version = new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
             assertTrue(version.matches("\\d+\\.\\d+\\.\\d+.*"),
                     "build-version/expected-version.txt was not filtered (it says '" + version

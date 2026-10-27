@@ -59,7 +59,7 @@ class EvidenceProfileV1VectorsTest {
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> vectors() throws Exception {
-        assertTrue(Files.exists(VECTORS), "the shared vectors are not at " + VECTORS);
+        HarnessBroken.unless(Files.exists(VECTORS), "the shared vectors are not at " + VECTORS);
         return (Map<String, Object>) jp.aegif.nemaki.config.ObjectMapperFactory
                 .createDefaultObjectMapper()
                 .readValue(Files.readString(VECTORS, StandardCharsets.UTF_8), Map.class);
@@ -266,7 +266,7 @@ class EvidenceProfileV1VectorsTest {
         // what R52's three mappers were. A claim about where a rule LIVES has to be measured
         // where it lives.
         Path source = Path.of("src/main/java/jp/aegif/nemaki/rest/eark/SipVerifier.java");
-        assertTrue(Files.exists(source), "SipVerifier is not at " + source);
+        HarnessBroken.unless(Files.exists(source), "SipVerifier is not at " + source);
         String text = Files.readString(source, StandardCharsets.UTF_8);
 
         int start = text.indexOf("public Verdict verdict() {");
@@ -289,7 +289,7 @@ class EvidenceProfileV1VectorsTest {
     @Test
     @DisplayName("an implementation written from the spec alone gets the same values")
     void theSpecIsEnoughToReimplement() throws Exception {
-        assertTrue(Files.exists(REFERENCE), "the reference implementation is not at " + REFERENCE);
+        HarnessBroken.unless(Files.exists(REFERENCE), "the reference implementation is not at " + REFERENCE);
 
         ProcessBuilder python = new ProcessBuilder("python3", REFERENCE.toString());
         python.redirectErrorStream(true);

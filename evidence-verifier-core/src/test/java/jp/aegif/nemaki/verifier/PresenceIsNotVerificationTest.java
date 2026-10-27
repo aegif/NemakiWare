@@ -296,7 +296,7 @@ class PresenceIsNotVerificationTest {
                 withoutTag.add(ats.getObjectAt(i));
             }
         }
-        assertEquals(ats.size() - 1, withoutTag.size(),
+        HarnessBroken.unlessEqual(ats.size() - 1, withoutTag.size(),
                 "this fixture removed no tagged field, so it is the same record as the golden "
                         + "and measures nothing");
         byte[] der = GoldenErs.withElement(2,

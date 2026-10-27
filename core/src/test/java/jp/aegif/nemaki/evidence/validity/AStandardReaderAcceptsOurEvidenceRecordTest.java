@@ -39,6 +39,7 @@ import java.util.Date;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -130,7 +131,7 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
                 requests.generate(new ASN1ObjectIdentifier(SHA256_OID), imprint);
         TimeStampResponse response = new TimeStampResponseGenerator(tokenGenerator,
                 Set.of(SHA256_OID)).generate(request, BigInteger.ONE, new Date());
-        assertNotNull(response.getTimeStampToken(),
+        HarnessBroken.unless((response.getTimeStampToken()) != null,
                 "the test TSA refused: " + response.getStatusString());
         return response.getTimeStampToken().getEncoded();
     }
@@ -356,7 +357,7 @@ class AStandardReaderAcceptsOurEvidenceRecordTest {
         byte[] doubled = MessageDigest.getInstance("SHA-256")
                 .digest(MERKLE_ROOT.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         // The two readings must not coincide, or what follows would hold under either.
-        assertFalse(java.util.Arrays.equals(doubled, dataObjectHash()),
+        HarnessBroken.unless(!(java.util.Arrays.equals(doubled, dataObjectHash())),
                 "hashing the hex TEXT produced the same bytes as decoding it, so this fixture "
                         + "cannot tell the correct reading from the withdrawn one");
         byte[] der = ErsRecord.first(doubled, tokenOver(ErsRecord.imprintForFirst(doubled))).der();

@@ -76,7 +76,7 @@ class TheAnchoredDigestIsTheRootTest {
                         + "anchor, so no verifier can compare a token with a checkpoint");
         // The operation the verifier must NOT perform, computed so the difference is a
         // measured fact rather than an assumption.
-        assertFalse(doubleHashed().equals(ROOT),
+        HarnessBroken.unless(!(doubleHashed().equals(ROOT)),
                 "fixture check: hashing the hex string a second time must give a different "
                         + "value, or this test cannot tell the two readings apart");
     }

@@ -167,7 +167,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         // Any identifier for the context, not the two names in the tree today: renaming a local
         // must not turn this lock red (round-10 review, P3).
         Matcher login = Pattern.compile("\\w+\\.login\\(\\s*\\w+\\s*\\)").matcher(body);
-        assertTrue(login.find(), door + " no longer calls login() with a context it built, so this"
+        HarnessBroken.unless(login.find(), door + " no longer calls login() with a context it built, so this"
                 + " lock cannot tell which method the throttle's address has to be put in");
         Matcher signature = Pattern
                 // The signature may span lines — AuthTokenResource's login() does, and requiring
@@ -368,7 +368,7 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
             Matcher listener = Pattern
                     .compile("<Listener[^>]*VersionLoggerListener[^>]*>")
                     .matcher(read(serverXml));
-            assertTrue(listener.find(), "the version listener is not in " + serverXml);
+            HarnessBroken.unless(listener.find(), "the version listener is not in " + serverXml);
             assertTrue(listener.group().contains("logArgs=\"false\""),
                     serverXml + "'s version listener logs the JVM arguments, and those carry the"
                             + " passwords the compose files pass with -D: " + listener.group());

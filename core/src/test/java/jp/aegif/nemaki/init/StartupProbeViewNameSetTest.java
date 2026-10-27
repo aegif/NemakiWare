@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,7 +30,7 @@ class StartupProbeViewNameSetTest {
     void expectedMainViewNames_returnsActualDumpContents() {
         Set<String> names = StartupProbeService.expectedMainViewNames();
         assertNotNull(names, "expected name set must never be null");
-        assertFalse(names.isEmpty(),
+        HarnessBroken.unless(!(names.isEmpty()),
                 "bedroom_init.dump should ship on the classpath; if you intentionally stripped "
                         + "it, the loader will fall back to the legacy threshold and this test "
                         + "must be updated to reflect that decision");

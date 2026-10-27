@@ -511,7 +511,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 closure.detail());
 
         Outcome.Check fixity = checkNamed(checks, "payload fixity");
-        HarnessBroken.unless(fixity.detail().contains("carries no PREMIS"),
+        assertTrue(fixity.detail().contains("carries no PREMIS"),
                 "the other half of the disagreement changed shape, so this lock no longer "
                         + "measures the two checks reading one name the same way: "
                         + fixity.detail());
@@ -2438,7 +2438,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
                 System.arraycopy(to, 0, raw, i, to.length);
             }
         }
-        assertEquals(2, seen, "the fixture expects the name once in each table");
+        HarnessBroken.unlessEqual(2, seen, "the fixture expects the name once in each table");
         Files.write(file, raw);
         return file;
     }
@@ -2654,7 +2654,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         // The premise, measured: a reader built on the central directory — ZipFile here, and
         // Python's zipfile, RODA, Archivematica, unzip — never sees the file.
         try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
-            assertTrue(file.getEntry(premis) == null,
+            HarnessBroken.unless(file.getEntry(premis) == null,
                     "ZipFile found the unlisted entry, so the two tables did not disagree and "
                             + "this test measures nothing");
         }
@@ -2734,7 +2734,7 @@ class PackageIntegrityIsCheckedNotAssumedTest {
         raw.list(premis, forged, padOffset + RawZip.localHeader(pad, hidden).length);
         Path zip = raw.writeTo(tmp.resolve("two-bytes.zip"));
         try (java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile())) {
-            assertTrue(java.util.Arrays.equals(forged,
+            HarnessBroken.unless(java.util.Arrays.equals(forged,
                             file.getInputStream(file.getEntry(premis)).readAllBytes()),
                     "ZipFile did not read the forged bytes, so the two readers agree here and "
                             + "this test measures nothing");

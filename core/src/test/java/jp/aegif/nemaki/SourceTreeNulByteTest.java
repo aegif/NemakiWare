@@ -31,6 +31,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * No source file may contain a literal NUL byte.
@@ -81,7 +82,7 @@ class SourceTreeNulByteTest {
     @DisplayName("ソースツリーに NUL バイトが 1 つも無い (git が binary 扱いして diff が消える)")
     void noSourceFileContainsANulByte() throws IOException {
         Path root = projectRoot();
-        assertTrue(root != null && Files.isDirectory(root),
+        HarnessBroken.unless(root != null && Files.isDirectory(root),
                 "could not locate the project root (a directory with pom.xml and core/) — this test"
                         + " needs it to scan the tree");
 

@@ -72,7 +72,7 @@ class TheDistributionRunsWithJavaJarTest {
         String pom = read("pom.xml");
         Matcher version = Pattern.compile("<parent>.*?<version>([^<]+)</version>", Pattern.DOTALL)
                 .matcher(pom);
-        assertTrue(version.find(), "the pom has no parent version to build the artefact name from");
+        HarnessBroken.unless(version.find(), "the pom has no parent version to build the artefact name from");
         String jar = "evidence-verifier-cli-" + version.group(1) + ".jar";
 
         String notes = read("../RELEASE_NOTES.md");

@@ -124,10 +124,10 @@ class TheGuardComesBeforeTheToggleTest {
     }
 
     private static String o52() throws IOException {
-        assertTrue(Files.exists(RUNBOOK), "the runbook is not at " + RUNBOOK);
+        HarnessBroken.unless(Files.exists(RUNBOOK), "the runbook is not at " + RUNBOOK);
         String text = Files.readString(RUNBOOK, StandardCharsets.UTF_8);
         int start = text.indexOf("### O5-2.");
-        assertTrue(start >= 0, "the runbook no longer has §O5-2 on revocation collection");
+        HarnessBroken.unless(start >= 0, "the runbook no longer has §O5-2 on revocation collection");
         int end = text.indexOf("### O5-3.", start);
         HarnessBroken.unless(end > start, "§O5-2 does not end where this lock looks");
         return text.substring(start, end);
@@ -181,7 +181,7 @@ class TheGuardComesBeforeTheToggleTest {
             composes = files.filter(f -> f.getFileName().toString().startsWith("docker-compose")
                     && f.getFileName().toString().endsWith(".yml")).sorted().toList();
         }
-        assertTrue(composes.size() >= 4, "fixture: only " + composes.size() + " compose files found");
+        HarnessBroken.unless(composes.size() >= 4, "fixture: only " + composes.size() + " compose files found");
         int checked = 0;
         for (Path compose : composes) {
             String text = Files.readString(compose, StandardCharsets.UTF_8);
@@ -197,7 +197,7 @@ class TheGuardComesBeforeTheToggleTest {
                             + "carry it; this one would answer UNAVAILABLE on every http:// "
                             + "distribution point");
         }
-        assertTrue(checked >= 1, "fixture: no compose overrides JAVA_OPTS for core, so this "
+        HarnessBroken.unless(checked >= 1, "fixture: no compose overrides JAVA_OPTS for core, so this "
                 + "lock measured nothing");
     }
 

@@ -33,6 +33,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -123,10 +124,10 @@ class ReindexTerminalWordsHaveConsumersTest {
     void everyTerminalWordIsKnownToEveryPoller() throws Exception {
         Set<String> solrWords = terminalWordsIn(SOLR_IMPL);
         Set<String> ragWords = terminalWordsIn(RAG_IMPL);
-        assertTrue(solrWords.contains("completed_with_errors") && solrWords.contains("completed"),
+        HarnessBroken.unless(solrWords.contains("completed_with_errors") && solrWords.contains("completed"),
                 "fixture check: the CMIS reindex's own words were not found, so this test is "
                         + "not reading the implementation it exists to cover. Found: " + solrWords);
-        assertTrue(ragWords.contains("completed_with_errors"),
+        HarnessBroken.unless(ragWords.contains("completed_with_errors"),
                 "fixture check: the RAG reindex's words were not found. Found: " + ragWords);
 
         List<String> deaf = new ArrayList<>();
@@ -180,7 +181,7 @@ class ReindexTerminalWordsHaveConsumersTest {
             }
         }
 
-        assertTrue(checked >= 4,
+        HarnessBroken.unless(checked >= 4,
                 "only " + checked + " polling scripts were found, so this test is no longer "
                         + "looking at the consumers it exists to cover — did tools/acl-probe "
                         + "move?");
@@ -198,7 +199,7 @@ class ReindexTerminalWordsHaveConsumersTest {
         // Without this, a regex that matched nothing would make the test above pass by
         // requiring nothing of anybody, and it would keep passing for ever.
         Set<String> solrWords = terminalWordsIn(SOLR_IMPL);
-        assertFalse(solrWords.isEmpty(), "no status literal was extracted at all");
+        HarnessBroken.unless(!(solrWords.isEmpty()), "no status literal was extracted at all");
         assertFalse(solrWords.contains("running"),
                 "'running' was taken for an ending, so a poller could satisfy this test by "
                         + "naming the state it is waiting to LEAVE: " + solrWords);

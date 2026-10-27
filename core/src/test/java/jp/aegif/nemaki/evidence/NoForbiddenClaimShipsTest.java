@@ -18,6 +18,7 @@ package jp.aegif.nemaki.evidence;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,7 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -170,7 +172,7 @@ class NoForbiddenClaimShipsTest {
                         .forEach(files::add);
             }
         }
-        assertFalse(files.isEmpty(), "this lint reads " + shipped.root() + " and found no "
+        HarnessBroken.unless(!(files.isEmpty()), "this lint reads " + shipped.root() + " and found no "
                 + "reader-facing text there — missing, moved, or filtered to nothing. It would "
                 + "pass by reading none of it rather than by the text being clean");
         return files;
@@ -203,6 +205,18 @@ class NoForbiddenClaimShipsTest {
             Path.of("src/main/java/jp/aegif/nemaki/evidence/AuthenticityReportAssembler.java"),
             Path.of("../evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/cli/"
                     + "Verify.java"));
+
+    @Test
+    @DisplayName("a root that yields no reader-facing text is the lint not looking, not a clean root")
+    void aRootThatYieldsNothingIsTheLintNotLooking(@TempDir Path scratch) throws IOException {
+        // The guard JS4 measured by moving a real root. Since R191 the lint says it as HarnessBroken, which the control
+        // runner scores as the harness breaking, so the guard itself is driven here (closing batch 8).
+        assertThrows(HarnessBroken.class, () -> readerText(new Shipped(scratch.resolve("moved"), List.of(".md"))),
+                "a root that is not there was read as a root with nothing to object to");
+        Files.writeString(scratch.resolve("notes.txt"), "no markdown here", StandardCharsets.UTF_8);
+        assertThrows(HarnessBroken.class, () -> readerText(new Shipped(scratch, List.of(".md"))),
+                "a root whose files are all filtered out was read as a root with nothing to object to");
+    }
 
     @Test
     @DisplayName("no forbidden claim appears in anything that ships to a reader")
@@ -372,7 +386,7 @@ class NoForbiddenClaimShipsTest {
         // omission: a reader takes the absence of a limit for its absence. Plan §14 wants the
         // responsibility split, so the document has to carry the other side too.
         Path scope = Path.of("../docs/compliance/jp-electronic-records-scope.md");
-        assertTrue(Files.exists(scope),
+        HarnessBroken.unless(Files.exists(scope),
                 "the compliance scope document is not at " + scope + ". Plan §14 names it as "
                         + "the deliverable, and a matrix nobody wrote is not a scope anyone can "
                         + "act on");
@@ -421,7 +435,7 @@ class NoForbiddenClaimShipsTest {
         // things §4.2 forbids claiming.
         Path cli = Path.of("../evidence-verifier-cli/src/main/java/jp/aegif/nemaki/verifier/"
                 + "cli/Verify.java");
-        assertTrue(Files.exists(cli), "the CLI is not at " + cli);
+        HarnessBroken.unless(Files.exists(cli), "the CLI is not at " + cli);
         // Java string concatenation is removed first: the sentence is written across several
         // literals, so "was true " + "when captured" is not contiguous in the FILE even though
         // it is in the output. A matcher that missed that would report a limits sentence as

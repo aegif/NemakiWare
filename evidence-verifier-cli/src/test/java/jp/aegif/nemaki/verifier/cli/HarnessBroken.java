@@ -54,7 +54,8 @@ public class HarnessBroken extends RuntimeException {
      * <p>Added for residual R191 (3.4.1, closing batch 7). A lock that said its breakage with {@code assertTrue(found,
      * "… is gone — this lock no longer reads it")} failed with the same type as a lock catching the product, so the
      * control runner recorded "the guard worked" when the sabotage had only moved what the lock reads. Those checks now
-     * come here, and an {@code assertTrue} in a lock means the product broke its promise.
+     * come here, so that an assertion in a lock says only that the product broke its promise. Which checks were swept,
+     * and by what reading, is R191's row in docs/design/fail-closed-reads.md (closing batches 7 and 8).
      */
     public static void unless(boolean looked, String message) {
         if (!looked) {

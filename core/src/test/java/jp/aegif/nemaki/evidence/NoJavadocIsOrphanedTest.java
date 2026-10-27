@@ -418,7 +418,7 @@ class NoJavadocIsOrphanedTest {
         }
         // The fixture check: a moved package would empty the walk and this would pass by
         // reading nothing.
-        assertTrue(filesRead >= 500,
+        HarnessBroken.unless(filesRead >= 500,
                 "only " + filesRead + " files were read, so this test is no longer looking at "
                         + "the packages it covers");
         if (!orphans.isEmpty()) {

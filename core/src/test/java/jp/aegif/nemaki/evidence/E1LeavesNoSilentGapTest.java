@@ -421,7 +421,7 @@ class E1LeavesNoSilentGapTest {
         // plain instanceof check changed nothing it could see. The call site is the thing.
         Path source = Path.of("src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/"
                 + "AttachmentDaoDelegate.java");
-        assertTrue(Files.exists(source), "the attachment delegate is not at " + source);
+        HarnessBroken.unless(Files.exists(source), "the attachment delegate is not at " + source);
         String text = Files.readString(source, StandardCharsets.UTF_8);
         int at = text.indexOf("boolean canRetryStream");
         HarnessBroken.unless(at >= 0, "the attachment writer no longer decides retryability here, so this "
@@ -469,7 +469,7 @@ class E1LeavesNoSilentGapTest {
         // first capture would say the bytes had always been that version's.
         Path source = Path.of(
                 "src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java");
-        assertTrue(Files.exists(source), "ContentServiceImpl is not at " + source);
+        HarnessBroken.unless(Files.exists(source), "ContentServiceImpl is not at " + source);
         String text = Files.readString(source, StandardCharsets.UTF_8)
                 .replaceAll("(?m)//.*$", "")
                 .replaceAll("(?s)/\\*.*?\\*/", "");
@@ -544,7 +544,7 @@ class E1LeavesNoSilentGapTest {
 
         // And the plan says the same thing, in the row a reader consults for progress.
         Path plan = Path.of("../docs/design/v3.4.0-evidence-and-residuals-plan.md");
-        assertTrue(Files.exists(plan), "the plan is not at " + plan);
+        HarnessBroken.unless(Files.exists(plan), "the plan is not at " + plan);
         String planText = Files.readString(plan, StandardCharsets.UTF_8);
         assertTrue(planText.contains("配線済みは " + wired.size() + " 本"),
                 "the plan does not record that " + wired.size() + " of the "
@@ -588,7 +588,7 @@ class E1LeavesNoSilentGapTest {
     @DisplayName("the workflow starts for the inventory this lock reads")
     void theGateRunsForTheInventoryThisLockReads() throws java.io.IOException {
         Path workflow = Path.of("../.github/workflows/integration-tests.yml");
-        assertTrue(Files.exists(workflow), "the workflow is not at " + workflow);
+        HarnessBroken.unless(Files.exists(workflow), "the workflow is not at " + workflow);
         String yaml = Files.readString(workflow, StandardCharsets.UTF_8);
         String needed = "docs/design/evidence-phase0-inventory.md";
         int occurrences = yaml.split(Pattern.quote("'" + needed + "'"), -1).length - 1;
@@ -602,7 +602,7 @@ class E1LeavesNoSilentGapTest {
     @DisplayName("every write path the Phase 0 inventory enumerated has a WriteKind")
     void everyEnumeratedWritePathIsCovered() throws java.io.IOException {
         Path inventory = Path.of("../docs/design/evidence-phase0-inventory.md");
-        assertTrue(Files.exists(inventory), "the Phase 0 inventory is not at " + inventory);
+        HarnessBroken.unless(Files.exists(inventory), "the Phase 0 inventory is not at " + inventory);
         String text = Files.readString(inventory, StandardCharsets.UTF_8);
 
         // The W-table is the enumeration the plan says E1's scope IS. Scoped to the table, not

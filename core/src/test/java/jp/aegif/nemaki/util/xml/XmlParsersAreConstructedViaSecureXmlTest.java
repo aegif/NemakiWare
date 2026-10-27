@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,7 +60,7 @@ class XmlParsersAreConstructedViaSecureXmlTest {
         List<String> hits = new ArrayList<>();
         int filesRead = 0;
         for (Path root : ROOTS) {
-            assertTrue(Files.isDirectory(root), "the gate's root " + root.toAbsolutePath()
+            HarnessBroken.unless(Files.isDirectory(root), "the gate's root " + root.toAbsolutePath()
                     + " is not a directory here, so nothing below is measured");
             try (Stream<Path> files = Files.walk(root)) {
                 for (Path file : (Iterable<Path>) files::iterator) {

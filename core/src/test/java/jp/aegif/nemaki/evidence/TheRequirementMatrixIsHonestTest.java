@@ -30,6 +30,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,7 +56,7 @@ class TheRequirementMatrixIsHonestTest {
     private static final Path SCOPE = Path.of("../docs/compliance/jp-electronic-records-scope.md");
 
     private static String scope() throws IOException {
-        assertTrue(Files.exists(SCOPE), "the compliance scope document is not at " + SCOPE);
+        HarnessBroken.unless(Files.exists(SCOPE), "the compliance scope document is not at " + SCOPE);
         return Files.readString(SCOPE, StandardCharsets.UTF_8);
     }
 
@@ -67,7 +68,7 @@ class TheRequirementMatrixIsHonestTest {
                 "the requirement matrix is gone. Plan §14 names it as the Phase 7 deliverable, "
                         + "and a scope document with only prose is one nobody can act on");
         Matcher next = Pattern.compile("(?m)^## 3\\.").matcher(text);
-        assertTrue(next.find(start), "the matrix section does not end where this looks");
+        HarnessBroken.unless(next.find(start), "the matrix section does not end where this looks");
         return text.substring(start, next.start());
     }
 

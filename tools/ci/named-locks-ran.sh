@@ -20,7 +20,9 @@
 #   - JUnit's tag filter takes a tagged METHOD out at discovery, so the report counts fewer tests and none
 #     skipped. Every method the lock's source declares with @Test, @ParameterizedTest, @RepeatedTest,
 #     @TestFactory or @TestTemplate has to be among the report's test cases. (A test method inherited from a
-#     superclass, or declared with an annotation of the project's own, is not seen here.)
+#     superclass outside the lock's file, or declared with an annotation of the project's own, is not seen here. One
+#     written in a nested class JUnit does not run as written - no @Nested - is required under each @Nested class of
+#     the file that extends it, where it runs and is reported; one in a local or an anonymous class is not required.)
 set -u
 
 if [ "$#" -lt 3 ]; then
@@ -105,33 +107,87 @@ def strip_annotations(text):
     return "".join(out)
 
 
-def enclosing_classes(code):
-    """For each offset, the names of the classes whose bodies contain it, outermost first (a list per brace level).
+def declaration_prefix(code, start):
+    """The modifiers and annotations written before the keyword at start, back to the previous ; { or } that is not
+    inside an annotation's parentheses (@SuppressWarnings({"a"}) holds braces of its own)."""
+    i, depth = start - 1, 0
+    while i >= 0:
+        c = code[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            depth -= 1
+        elif depth == 0 and c in ";{}":
+            break
+        i -= 1
+    return code[i + 1:start]
 
-    Returns a function offset -> tuple of class names. A class, interface, enum or record declaration names the body
-    its next brace opens; any other brace (a method, a lambda, an array initializer) is only depth."""
-    opens = []  # (offset of the body's opening brace, offset of its closing brace, name)
+
+def opens_an_anonymous_class(code, brace):
+    """Whether the brace at this offset opens the body of an anonymous class: new X(...) { ."""
+    i = brace - 1
+    while i >= 0 and code[i].isspace():
+        i -= 1
+    if i < 0 or code[i] != ")":
+        return False
+    depth = 0
+    while i >= 0:
+        if code[i] == ")":
+            depth += 1
+        elif code[i] == "(":
+            depth -= 1
+            if depth == 0:
+                break
+        i -= 1
+    before = code[max(0, i - 300):i]
+    return re.search(r"\bnew\s+[\w$.<>?,\s]+$", before) is not None
+
+
+def enclosing_classes(code):
+    """For each offset, the classes whose bodies contain it, outermost first, each as (name, runs).
+
+    A class, interface, enum or record declaration names the body its next brace opens - the next brace OUTSIDE
+    parentheses: an annotation's arguments and a record's components can hold braces of their own
+    (implements @A(values = {1}) Marker {), and taking the first brace made the class end there, so its methods were
+    read as the outer class's (closing batch 7 review, Codex P1 / subagent P3). 'runs' says whether JUnit runs the
+    tests written in that class itself: the lock's own class, and a nested class marked @Nested. A nested class without
+    it (a base class others extend), a local class and an anonymous class do not run their own @Test methods, and
+    requiring them refused locks whose tests all ran (closing batch 7 review, subagent P3-4).
+
+    Returns (at, classes): at(offset) -> the chain of (name, runs); classes -> (body offset, name, runs, header) for
+    every class, the header being what is written between its name and its body (extends, implements)."""
+    opens = []  # (offset of the body's opening brace, offset of its closing brace, name, runs, header)
     stack = []
     pending = None
     depth = 0
-    for m in re.finditer(r"\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}]", code):
+    parens = 0
+    for m in re.finditer(r"\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
         token = m.group(0)
-        if token == "{":
+        if token == "(":
+            parens += 1
+        elif token == ")":
+            parens -= 1
+        elif token == "{":
             depth += 1
-            if pending is not None:
-                stack.append((m.start(), depth, pending))
+            if pending is not None and parens == 0:
+                name, nested, header_at = pending
+                stack.append((m.start(), depth, name, not stack or nested, code[header_at:m.start()]))
                 pending = None
+            elif pending is None and opens_an_anonymous_class(code, m.start()):
+                stack.append((m.start(), depth, "<anonymous>", False, ""))
         elif token == "}":
             if stack and stack[-1][1] == depth:
-                start, _, name = stack.pop()
-                opens.append((start, m.start(), name))
+                start, _, name, runs, header = stack.pop()
+                opens.append((start, m.start(), name, runs, header))
             depth -= 1
         else:
-            pending = m.group(1)
+            prefix = declaration_prefix(code, m.start())
+            pending = (m.group(1), re.search(r"@(?:org\.junit\.jupiter\.api\.)?Nested\b", prefix) is not None,
+                       m.end())
 
     def at(offset):
-        return tuple(name for start, end, name in sorted(opens) if start < offset < end)
-    return at
+        return tuple((name, runs) for start, end, name, runs, _ in sorted(opens) if start < offset < end)
+    return at, [(start, name, runs, header) for start, _, name, runs, header in sorted(opens)]
 
 
 def declared_tests(path):
@@ -140,7 +196,7 @@ def declared_tests(path):
     declares it (classname), so a method of the same name in another class of the lock cannot stand in for it
     (closing batch 6 review, both reviewers)."""
     code = without_comments_and_strings(open(path, encoding="utf-8").read())
-    classes_at = enclosing_classes(code)
+    classes_at, classes = enclosing_classes(code)
     names = set()
     for m in TEST_ANNOTATION.finditer(code):
         # Annotations stripped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
@@ -151,7 +207,20 @@ def declared_tests(path):
         name = re.search(r"([A-Za-z_$][\w$]*)\s*\(", head[:end])
         if name:
             chain = classes_at(m.start())
-            names.add(("".join("$" + c for c in chain[1:]), name.group(1)))
+            if all(runs for _, runs in chain[1:]):
+                names.add(("".join("$" + c for c, _ in chain[1:]), name.group(1)))
+                continue
+            # Declared where JUnit does not run it as written. A nested base class's test runs in each @Nested class
+            # that extends it, and surefire reports it under that class: required there, by the subclass's name, so a
+            # base method silenced at discovery is still seen. A local or an anonymous class's runs nowhere.
+            base = chain[-1][0]
+            if base == "<anonymous>" or not all(runs for _, runs in chain[1:-1]):
+                continue
+            for start, sub, runs, header in classes:
+                if runs and re.search(r"\bextends\s+(?:[\w$]+\.)*" + re.escape(base) + r"\b", header):
+                    under = classes_at(start + 1)
+                    if all(r for _, r in under[1:]):
+                        names.add(("".join("$" + c for c, _ in under[1:]), name.group(1)))
     return names
 
 

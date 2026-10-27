@@ -29,7 +29,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -876,7 +875,7 @@ class AnchorControllerTest {
 
         @SuppressWarnings("unchecked")
         List<java.util.Map<String, Object>> rows = (List<java.util.Map<String, Object>>) body.get("receipts");
-        HarnessBroken.unlessEqual(1, rows.size(), "the row itself is gone, so this measures nothing: " + body);
+        assertEquals(1, rows.size(), "the row itself is gone, so this measures nothing: " + body);
         org.junit.jupiter.api.Assertions.assertFalse(String.valueOf(body).contains("s3%cr3t"),
                 "/status repeats a stored reason that holds a password: " + body);
         assertNull(rows.get(0).get("notAsked"), "a failure was marked as never asked: " + body);

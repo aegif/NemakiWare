@@ -82,7 +82,7 @@ class OsvCheckDoesNotReadSilenceAsCleanTest {
     }
 
     private static Run run(Path dir, String answers, Path sbom) throws Exception {
-        assertTrue(Files.exists(SCRIPT), "the script is not at " + SCRIPT);
+        HarnessBroken.unless(Files.exists(SCRIPT), "the script is not at " + SCRIPT);
         Path harness = dir.resolve("harness.py");
         Files.writeString(harness, HARNESS, StandardCharsets.UTF_8);
         Path answerFile = dir.resolve("answers-" + System.nanoTime() + ".json");

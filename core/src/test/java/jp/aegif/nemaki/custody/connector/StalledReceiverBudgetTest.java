@@ -27,6 +27,7 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -102,7 +103,7 @@ class StalledReceiverBudgetTest {
                     // drain, exactly as hashOf and bodyOf do
                 }
             }, "the stalled read was never interrupted, so the calling thread is parked");
-            assertTrue(blocked.await(2, TimeUnit.SECONDS), "the stream never blocked, so this "
+            HarnessBroken.unless(blocked.await(2, TimeUnit.SECONDS), "the stream never blocked, so this "
                     + "test is not exercising the case it exists for");
             assertTrue(budget.fired(),
                     "the read failed but the budget says it did not fire, so the failure would "
@@ -138,7 +139,7 @@ class StalledReceiverBudgetTest {
                 "src/main/java/jp/aegif/nemaki/custody/connector/SubmittedDigestRecovery.java"));
         int opened = source.split("BodyHandlers\\.ofInputStream", -1).length - 1;
         int bounded = source.split("new BodyBudget\\(", -1).length - 1;
-        assertTrue(opened >= 2, "fixture check: only " + opened + " streaming read(s) were found");
+        HarnessBroken.unless(opened >= 2, "fixture check: only " + opened + " streaming read(s) were found");
         assertTrue(bounded >= opened,
                 opened + " streamed response(s) are opened but only " + bounded + " are under a "
                         + "body budget, so at least one can be stalled indefinitely");

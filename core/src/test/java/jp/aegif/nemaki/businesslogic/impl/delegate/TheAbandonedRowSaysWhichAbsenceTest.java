@@ -27,7 +27,6 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
-import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,7 +61,7 @@ class TheAbandonedRowSaysWhichAbsenceTest {
     /** The one reason {@code recordRestored} hands to the recorder for {@code absence}. */
     private static String reasonFor(ContentAbsence absence) throws Exception {
         List<String> recorded = recordedFor(absence);
-        HarnessBroken.unlessEqual(1, recorded.size(),
+        assertEquals(1, recorded.size(),
                 "the row was not abandoned exactly once, so this lock is reading nothing: "
                         + recorded);
         return recorded.get(0);

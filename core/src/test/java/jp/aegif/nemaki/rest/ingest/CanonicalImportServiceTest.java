@@ -2631,7 +2631,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the confinement did not refuse");
-        HarnessBroken.unless(result.errors().get(0).contains("not the repository this caller authenticated"),
+        assertTrue(result.errors().get(0).contains("not the repository this caller authenticated"),
                 "a different refusal fired, so this lock is not measuring the confinement: "
                         + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2657,7 +2657,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the cmis:all re-check did not refuse");
-        HarnessBroken.unless(result.errors().get(0).contains("was not held when this import ran"),
+        assertTrue(result.errors().get(0).contains("was not held when this import ran"),
                 "a different refusal fired, so this lock is not measuring cmis:all: "
                         + result.errors());
         // This one landed on 400 rather than 500, purely because the sentence contains
@@ -2684,7 +2684,7 @@ class CanonicalImportServiceTest {
         assertFalse(result.isSuccess(), "the connector re-check did not refuse");
         // This one is already the LAST arm, so nothing can stand in for it — but say which
         // refusal fired anyway, so the lock keeps meaning this arm if an arm is added after.
-        HarnessBroken.unless(result.errors().get(0).contains("no longer delegated"),
+        assertTrue(result.errors().get(0).contains("no longer delegated"),
                 "a different refusal fired, so this lock is not measuring the connector "
                         + "re-check: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2702,7 +2702,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "an unwired authorization service let the write run");
-        HarnessBroken.unless(result.errors().get(0).contains("the authorization service is not available"),
+        assertTrue(result.errors().get(0).contains("the authorization service is not available"),
                 "a different refusal fired, so this lock is not measuring the unwired arm: "
                         + result.errors());
         assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
@@ -2770,7 +2770,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        HarnessBroken.unless(result.errors().get(0).toLowerCase().contains("permission denied"),
+        assertTrue(result.errors().get(0).toLowerCase().contains("permission denied"),
                 "a different refusal fired, so this lock is not measuring the write's own "
                         + "ACL evaluation: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2795,7 +2795,7 @@ class CanonicalImportServiceTest {
         assertFalse(result.isSuccess(), "a failed profile read was treated as a resolution");
         String said = result.errors().get(0);
         assertTrue(said.contains("retry shortly"), "the retry marker is gone: " + said);
-        HarnessBroken.unless(said.toLowerCase().contains("not found"),
+        assertTrue(said.toLowerCase().contains("not found"),
                 "this lock needs BOTH tokens present to measure the ordering; the cause's "
                         + "wording no longer reaches the caller: " + said);
         assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
@@ -2822,7 +2822,7 @@ class CanonicalImportServiceTest {
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        HarnessBroken.unless(result.errors().get(0).contains("[transient]"),
+        assertTrue(result.errors().get(0).contains("[transient]"),
                 "this lock needs the product to still MIS-mark the denial for the ordering to "
                         + "be what is measured: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -3721,7 +3721,7 @@ class CanonicalImportServiceTest {
                 java.nio.file.Path.of("../.github/workflows/integration-tests.yml");
         // Without this a renamed workflow throws NoSuchFileException, which the control runner
         // scores as "fired for the wrong reason" rather than as a lock doing its job.
-        assertTrue(java.nio.file.Files.exists(workflow),
+        HarnessBroken.unless(java.nio.file.Files.exists(workflow),
                 "the integration-tests workflow is not where this test looks: " + workflow);
         String yaml = java.nio.file.Files.readString(
                 workflow, java.nio.charset.StandardCharsets.UTF_8);
@@ -3737,7 +3737,7 @@ class CanonicalImportServiceTest {
         // unanchored version read "[^" as the job's first entry and failed on its own regex.
         java.util.regex.Matcher unitList = java.util.regex.Pattern
                 .compile("(?m)^\\s+-Dtest='([^']*)'").matcher(job.group(1));
-        assertTrue(unitList.find(), "the unit-tests job runs no -Dtest at all");
+        HarnessBroken.unless(unitList.find(), "the unit-tests job runs no -Dtest at all");
         java.util.List<String> entries = new java.util.ArrayList<>();
         for (String name : unitList.group(1).split(",")) {
             entries.add(name.trim());

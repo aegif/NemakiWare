@@ -31,6 +31,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -120,7 +121,7 @@ class XmlBeanPropertiesResolveTest {
 
         // A count guard: if the paths above ever stop matching, this test would pass by
         // checking nothing, which is the failure mode of every scanning test.
-        assertTrue(checked > 100,
+        HarnessBroken.unless(checked > 100,
                 "only " + checked + " properties were checked. This test scans "
                         + CLASSES.toAbsolutePath() + "; if the layout moved, it is now passing "
                         + "because it looked at nothing.");

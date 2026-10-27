@@ -61,7 +61,7 @@ class TheStatementViewIsInTheOnePutTest {
     void theNewestStatementForAVersionIsTheOneShipped() throws java.io.IOException {
         Path source = Path.of("src/main/java/jp/aegif/nemaki/evidence/"
                 + "CouchContentWriteJournal.java");
-        assertTrue(Files.exists(source), "the journal is not at " + source);
+        HarnessBroken.unless(Files.exists(source), "the journal is not at " + source);
         String text = Files.readString(source, StandardCharsets.UTF_8)
                 .replaceAll("(?m)//.*$", "");
         int at = text.indexOf("public Map<String, Object> statementFor(");

@@ -66,7 +66,7 @@ class TheVerifierStandsAloneTest {
     @Test
     @DisplayName("the pom declares no dependency on the product")
     void thePomDeclaresNoProductDependency() throws IOException {
-        assertTrue(Files.exists(POM), "the module's pom is not at " + POM);
+        HarnessBroken.unless(Files.exists(POM), "the module's pom is not at " + POM);
         String pom = Files.readString(POM, StandardCharsets.UTF_8);
 
         // Comments stripped: this pom EXPLAINS the rule in a comment naming the very things it
@@ -85,7 +85,7 @@ class TheVerifierStandsAloneTest {
     @Test
     @DisplayName("no source in this module imports the product or a framework")
     void noSourceImportsTheProduct() throws IOException {
-        assertTrue(Files.isDirectory(SOURCES), "the module has no sources at " + SOURCES);
+        HarnessBroken.unless(Files.isDirectory(SOURCES), "the module has no sources at " + SOURCES);
         List<String> offences = new ArrayList<>();
         try (Stream<Path> files = Files.walk(SOURCES)) {
             for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
@@ -169,7 +169,7 @@ class TheVerifierStandsAloneTest {
                 "by UTF-8 bytes U+E000 comes before a supplementary character; by UTF-16 code "
                         + "unit it does not, and a verifier using the wrong one digests any "
                         + "document with such a key differently — and only those documents");
-        assertTrue("\uE000".compareTo("😀") > 0,
+        HarnessBroken.unless("\uE000".compareTo("😀") > 0,
                 "this test's premise: String.compareTo really does order them the other way, "
                         + "so the assertion above is measuring a difference and not a tautology");
     }

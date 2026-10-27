@@ -68,7 +68,7 @@ class ExportRefusalReachesTheClientTest {
             checked++;
             at = body.indexOf("} catch (", end);
         }
-        assertTrue(checked >= 3,
+        HarnessBroken.unless(checked >= 3,
                 where + " has fewer catches than the three this test exists for — it was "
                         + "restructured and the check no longer covers what it named (" 
                         + checked + " found)");
@@ -166,7 +166,7 @@ class ExportRefusalReachesTheClientTest {
         HarnessBroken.unless(markerAt > 0, "the streamer identified by " + marker + " is gone — this "
                 + "test no longer looks at what it names");
         int bodyStart = source.lastIndexOf("public void write(OutputStream output)", markerAt);
-        assertTrue(bodyStart > 0, "no streaming body before " + marker);
+        HarnessBroken.unless(bodyStart > 0, "no streaming body before " + marker);
         return source.substring(bodyStart, matchingClose(source, bodyStart));
     }
 }

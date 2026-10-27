@@ -37,6 +37,7 @@ import jp.aegif.nemaki.config.ObjectMapperFactory;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A stored document round-trips into the same document — not into a doubled one.
@@ -80,7 +81,7 @@ class CouchModelSerializationShapeTest {
                     "model class missing for a source file", e);
         }
         models.sort(java.util.Comparator.comparing(Class::getSimpleName));
-        assertTrue(models.size() > 15, "the model package should not have shrunk: " + models);
+        HarnessBroken.unless(models.size() > 15, "the model package should not have shrunk: " + models);
         return models;
     }
 

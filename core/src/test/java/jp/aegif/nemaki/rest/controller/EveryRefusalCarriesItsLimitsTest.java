@@ -31,6 +31,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -93,7 +94,7 @@ class EveryRefusalCarriesItsLimitsTest {
         }
         // The fixture check. A rename of the mapping annotations, or a constructor that starts
         // throwing, would empty this loop and the test would pass by looking at nothing.
-        assertTrue(checked >= 8,
+        HarnessBroken.unless(checked >= 8,
                 "only " + checked + " endpoints were exercised, so this test is no longer "
                         + "looking at the API it exists to cover");
         if (!silent.isEmpty()) {

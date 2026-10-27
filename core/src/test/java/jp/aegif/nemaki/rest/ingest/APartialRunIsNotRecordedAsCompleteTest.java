@@ -31,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -228,9 +229,9 @@ class APartialRunIsNotRecordedAsCompleteTest {
      */
     private static String handlerBody(String source, String handler) {
         int start = source.indexOf("const " + handler + " =");
-        assertTrue(start >= 0, "no handler named " + handler + " in that screen");
+        HarnessBroken.unless(start >= 0, "no handler named " + handler + " in that screen");
         int end = source.indexOf("\n  };", start);
-        assertTrue(end > start, handler + " does not close where this expects; the scope would "
+        HarnessBroken.unless(end > start, handler + " does not close where this expects; the scope would "
                 + "be the rest of the file, which is what made this check answerable by another "
                 + "feature");
         return source.substring(start, end);

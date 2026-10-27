@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -120,7 +121,7 @@ class AnchorServiceTest {
      * instead of substituting.
      */
     private static AnchorReceipt confirmedFor(AnchorKind kind, String hexDigest) {
-        assertEquals(AnchorKind.ATLAS_CATALOG, kind,
+        HarnessBroken.unlessEqual(AnchorKind.ATLAS_CATALOG, kind,
                 "this fixture can only produce a CONFIRMED ATLAS_CATALOG receipt, because it "
                         + "builds one with a real CatalogAnchorTarget; a confirmed receipt for "
                         + "another rung needs a fixture in that rung's own package");

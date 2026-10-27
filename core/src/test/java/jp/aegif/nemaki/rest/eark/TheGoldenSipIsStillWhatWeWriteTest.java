@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -104,7 +105,7 @@ class TheGoldenSipIsStillWhatWeWriteTest {
     private static void sameShape(String goldenName, String payloadName, Path tmp)
             throws Exception {
         Path golden = GOLDEN_DIRECTORY.resolve(goldenName);
-        assertTrue(Files.exists(golden),
+        HarnessBroken.unless(Files.exists(golden),
                 golden + " is missing. Regenerate with SipGoldenWriter — the verifier's only "
                         + "measurement of this product's own packages reads it");
 
@@ -128,10 +129,10 @@ class TheGoldenSipIsStillWhatWeWriteTest {
         // resolves against is not (Codex, thirteenth review, P1). If a future exporter made the
         // two name the same things, the per-METS comparison would stop being load-bearing and
         // this assertion says so rather than letting it go quiet.
-        assertTrue(checkedInReferences.size() > 1,
+        HarnessBroken.unless(checkedInReferences.size() > 1,
                 goldenName + " carries one METS, so there is nothing for a per-METS comparison "
                         + "to see: " + checkedInReferences.keySet());
-        assertEquals(checkedInReferences.size(),
+        HarnessBroken.unlessEqual(checkedInReferences.size(),
                 new LinkedHashSet<>(checkedInReferences.values()).size(),
                 goldenName + "'s METS files name the SAME things, so a reference moving between "
                         + "them would be invisible: " + checkedInReferences);
@@ -147,7 +148,7 @@ class TheGoldenSipIsStillWhatWeWriteTest {
     @DisplayName("the v1-section golden is still the package this product writes")
     void theV1GoldenIsCurrent(@TempDir Path tmp) throws Exception {
         Path golden = GOLDEN_DIRECTORY.resolve(SipGoldenWriter.V1_GOLDEN);
-        assertTrue(Files.exists(golden), golden + " is missing. Regenerate with SipGoldenWriter");
+        HarnessBroken.unless(Files.exists(golden), golden + " is missing. Regenerate with SipGoldenWriter");
 
         Map<String, byte[]> checkedIn = entriesOf(golden);
         // The SAME bundle the golden was written with. Building with the layout test's stub

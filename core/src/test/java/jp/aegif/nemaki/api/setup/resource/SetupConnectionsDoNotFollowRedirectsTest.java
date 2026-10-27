@@ -28,6 +28,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.init.DatabasePreInitializer;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * No {@code HttpURLConnection} the setup code opens follows a redirect.
@@ -326,7 +327,7 @@ class SetupConnectionsDoNotFollowRedirectsTest {
                 }
             }
         }
-        assertTrue(connections >= 9, "found only " + connections
+        HarnessBroken.unless(connections >= 9, "found only " + connections
                 + " connections on the setup path — the scan is not reading the files it names");
         assertEquals(List.of(), mayFollow, "connections on the setup path that may follow a redirect");
         assertEquals(List.of("StartupProbeService.java"), openStreams,

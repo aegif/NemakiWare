@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -474,7 +475,7 @@ class TheAssemblerReadsOncePerPackageTest {
         // assembler dropped the material entirely (control KM3 did not fire).
         java.nio.file.Path source = java.nio.file.Path.of(
                 "src/main/java/jp/aegif/nemaki/evidence/EvidenceBundleAssembler.java");
-        assertTrue(java.nio.file.Files.exists(source), "the assembler is not at " + source);
+        HarnessBroken.unless(java.nio.file.Files.exists(source), "the assembler is not at " + source);
         String text = java.nio.file.Files.readString(source,
                         java.nio.charset.StandardCharsets.UTF_8)
                 .replaceAll("(?m)//.*$", "")
