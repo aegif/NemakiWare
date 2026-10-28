@@ -462,7 +462,11 @@ class GuessingIsCountedPerCallerAndSecretsStayOutOfTheLogTest {
         if (!passing.isEmpty()) {
             String serverXml = read(SERVER_XML);
             Matcher listener = Pattern.compile("<Listener[^>]*VersionLoggerListener[^>]*>").matcher(serverXml);
-            assertTrue(listener.find() && listener.group().contains("logArgs=\"false\""),
+            // The listener not found is this lock not looking (with no listener nothing is printed, so it is not the
+            // leak the message below names); found and not silenced is the leak (closing batch 10 review, subagent
+            // P3-2: one condition said both, and tomcatDoesNotPrintTheJvmArguments already says the first as breakage).
+            HarnessBroken.unless(listener.find(), "the version listener is not in " + SERVER_XML);
+            assertTrue(listener.group().contains("logArgs=\"false\""),
                     "these compose files pass a password as a JVM argument " + passing
                             + ", and the version listener is not silenced, so the passwords are printed at startup");
         }

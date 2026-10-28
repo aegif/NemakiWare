@@ -19,15 +19,14 @@
 #     in for the lock while the lock itself did not run. A simple name is refused.
 #   - JUnit's tag filter takes a tagged METHOD out at discovery, so the report counts fewer tests and none
 #     skipped. Every method the lock's source declares with @Test, @ParameterizedTest, @RepeatedTest,
-#     @TestFactory or @TestTemplate has to be among the report's test cases. (A test method inherited from a
-#     superclass outside the lock's file, or declared with an annotation of the project's own, is not seen here. A
-#     method is required under every class of the lock that runs it: the class that declares it when that class
-#     runs (the lock's class, a chain of @Nested classes), and every running class of the file that extends or
-#     implements it - a base class, an interface's default method, a @Nested class another @Nested class extends, a
-#     second top-level class the lock extends. One of the lock's own that nothing runs is required where it is
-#     written, so the lock is refused. One in a local or an anonymous class (an enum constant's body included), or in
-#     another top-level class nothing of the lock inherits, is not required. A class of the same simple name as
-#     another class of the file is read as both, and a base whose only heirs are in other files is refused.)
+#     @TestFactory or @TestTemplate has to be among the report's test cases. The check JUDGES one shape: test
+#     methods written directly in the lock's class or in a chain of @Nested member classes of it, none of which
+#     extends or implements a class of the same file - each is required under its own class's name. Any other shape
+#     is REFUSED by name rather than guessed at: a test method in a class JUnit does not run as written (a member class
+#     without @Nested, an interface, an enum, another top-level class), one inside a method body (a local or an
+#     anonymous class, an enum constant's body), and a running class that inherits from a class of the file. (A test
+#     method inherited from a class outside the lock's file, or declared with an annotation of the project's own, is
+#     not seen here.)
 set -u
 
 if [ "$#" -lt 3 ]; then
@@ -131,27 +130,6 @@ def declaration_prefix(code, start):
     return code[i + 1:start]
 
 
-def opens_an_anonymous_class(code, brace):
-    """Whether the brace at this offset opens the body of an anonymous class: new X(...) { , type-use annotations
-    included (new @A Runnable() { - closing batch 9 review, Codex P2)."""
-    i = brace - 1
-    while i >= 0 and code[i].isspace():
-        i -= 1
-    if i < 0 or code[i] != ")":
-        return False
-    depth = 0
-    while i >= 0:
-        if code[i] == ")":
-            depth += 1
-        elif code[i] == "(":
-            depth -= 1
-            if depth == 0:
-                break
-        i -= 1
-    before = strip_annotations(code[max(0, i - 2000):i])
-    return re.search(r"\bnew\s+[\w$.<>?,\s]+$", before) is not None
-
-
 def drop_balanced(text, opening, closing):
     """The text without its (possibly nested) opening...closing groups."""
     out, depth = [], 0
@@ -181,22 +159,22 @@ def supertypes(header):
     return names
 
 
-def enclosing_classes(code):
-    """Every class of the source, as dicts (start, end, name, kind, supers), and a function offset -> the chain of
-    those whose bodies contain it, outermost first.
+def class_bodies(code):
+    """Every class, interface, enum and record declaration of the source, as dicts (start, end, depth, name, kind,
+    supers): start and end are the offsets of its body's braces, depth the brace depth directly inside the body.
+    'kind' is "top" for a top-level class, "nested" for a member class marked @Nested, "member" for a member class
+    without it and "local" for a class declared in a method body.
 
-    A class, interface, enum or record declaration names the body its next brace opens - the next brace OUTSIDE
-    parentheses: an annotation's arguments and a record's components can hold braces of their own
-    (implements @A(values = {1}) Marker {), and taking the first brace made the class end there, so its methods were
-    read as the outer class's (closing batch 7 review, Codex P1 / subagent P3). 'kind' is "top" for a top-level class,
-    "nested" for a member class marked @Nested, "member" for a member class without it, "local" for a class declared in
-    a method body and "anonymous" for new X(...) { ... }."""
+    A declaration names the body its next brace opens - the next brace OUTSIDE parentheses: an annotation's arguments
+    and a record's components can hold braces of their own (implements @A(values = {1}) Marker {), and taking the
+    first brace made the class end there (closing batch 7 review, Codex P1 / subagent P3). Any other brace - a method
+    body, an anonymous class, an enum constant's body, an initializer - is depth only."""
     opens = []
     stack = []
     pending = None
     depth = 0
     parens = 0
-    for m in re.finditer(r"\b(class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
+    for m in re.finditer(r"\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
         token = m.group(0)
         if token == "(":
             parens += 1
@@ -205,25 +183,16 @@ def enclosing_classes(code):
         elif token == "{":
             depth += 1
             if pending is not None and parens == 0:
-                name, nested, header_at, keyword = pending
+                name, nested, header_at = pending
                 if not stack:
                     kind = "top"
                 elif depth == stack[-1]["depth"] + 1:
                     kind = "nested" if nested else "member"
                 else:
                     kind = "local"
-                stack.append(dict(start=m.start(), depth=depth, name=name, kind=kind, keyword=keyword,
+                stack.append(dict(start=m.start(), depth=depth, name=name, kind=kind,
                                   supers=supertypes(code[header_at:m.start()])))
                 pending = None
-            elif pending is None and opens_an_anonymous_class(code, m.start()):
-                stack.append(dict(start=m.start(), depth=depth, name="<anonymous>", kind="anonymous", keyword="",
-                                  supers=set()))
-            elif pending is None and stack and stack[-1]["keyword"] == "enum" and depth == stack[-1]["depth"] + 1:
-                # A brace directly in an enum's body opens a constant's body - an anonymous subclass JUnit does not
-                # run (ONE { @Test void ghost() { } }) - or a method's body, whose tests are local or anonymous anyway
-                # (closing batch 9 review, Codex P2).
-                stack.append(dict(start=m.start(), depth=depth, name="<anonymous>", kind="anonymous", keyword="",
-                                  supers=set()))
         elif token == "}":
             if stack and stack[-1]["depth"] == depth:
                 entry = stack.pop()
@@ -232,62 +201,57 @@ def enclosing_classes(code):
             depth -= 1
         else:
             prefix = declaration_prefix(code, m.start())
-            pending = (m.group(2), re.search(r"@(?:org\.junit\.jupiter\.api\.)?Nested\b", prefix) is not None,
-                       m.end(), m.group(1))
+            pending = (m.group(1), re.search(r"@(?:org\.junit\.jupiter\.api\.)?Nested\b", prefix) is not None,
+                       m.end())
     opens.sort(key=lambda e: e["start"])
-
-    def at(offset):
-        return [e for e in opens if e["start"] < offset < e["end"]]
-    return at, opens
+    return opens
 
 
 def declared_tests(path):
-    """The test methods the source declares, as (nested-class suffix, method name): ("", "a") for the lock's own
-    method, ("$Inner", "b") for one in its nested class Inner. Surefire reports each test case with the class that
-    declares it (classname), so a method of the same name in another class of the lock cannot stand in for it
-    (closing batch 6 review, both reviewers).
+    """(names, refusals) for the lock's source. names: the test methods it declares, as (nested-class suffix, method
+    name) - ("", "a") for the lock's own method, ("$Inner", "b") for one in its @Nested class Inner. Surefire reports
+    each test case with the class that declares it (classname), so a method of the same name in another class of the
+    lock cannot stand in for it (closing batch 6 review, both reviewers).
 
-    A method is required under every class of the lock that runs it (closing batch 7, 8 and 9 reviews):
-      - the class that declares it, when that class runs: the lock's own class, or a chain of @Nested member classes;
-      - every running class of the file that extends or implements it, directly or through other classes of the
-        file, qualified names included - surefire reports an inherited test under the class that runs it. This
-        covers a base class, an interface's default @Test, a @Nested class another @Nested class extends, and a
-        second top-level class the lock itself extends;
-      - when no class runs it and it is the lock's own (declared in the lock's class or its members), where it is
-        written: a test of the lock that runs nowhere, which the report cannot show, so the lock is refused;
-      - a method in a local or an anonymous class (an enum constant's body included), or in another top-level class
-        nothing of the lock inherits, is not required."""
+    This check JUDGES one shape: test methods written directly in the lock's class or in a chain of @Nested member
+    classes of it, none of which extends or implements a class of the same file. Any other shape is a REFUSAL naming
+    what it could not judge, not a guess: a test method in a class JUnit does not run as written (a member class without
+    @Nested, an interface, an enum, another top-level class), one inside a method body (a local or an anonymous class,
+    an enum constant's body), and a running class that inherits from a class of the file. Four review rounds each found
+    a new shape that a model of JUnit's inheritance and discovery read wrong in one direction or the other (closing
+    batches 7 to 10), so the check stops at what it can read exactly and says so at the rest."""
     lock_name = os.path.basename(path)[:-len(".java")]
     code = without_comments_and_strings(open(path, encoding="utf-8").read())
-    classes_at, classes = enclosing_classes(code)
+    classes = class_bodies(code)
+    in_file = {e["name"] for e in classes}
 
-    def suffix(chain):
-        return "".join("$" + e["name"] for e in chain[1:])
+    def chain_at(offset):
+        return [e for e in classes if e["start"] < offset < e["end"]]
+
+    def chain_of(entry):
+        return [e for e in classes if e["start"] <= entry["start"] < e["end"]]
 
     def runs(chain):
         return bool(chain) and chain[0]["kind"] == "top" and chain[0]["name"] == lock_name \
             and all(e["kind"] == "nested" for e in chain[1:])
 
-    def chain_of(entry):
-        # Containment, the class itself included: an empty body {} has no offset strictly inside it, so asking
-        # classes_at for one dropped the class from its own chain (closing batch 9 review, subagent P2-3).
-        return [x for x in classes if x["start"] <= entry["start"] < x["end"]]
+    def where(chain):
+        return ".".join(e["name"] for e in chain)
 
-    supers_of = {}
+    def line_of(offset):
+        return code.count("\n", 0, offset) + 1
+
+    def depth_at(offset):
+        return code.count("{", 0, offset) - code.count("}", 0, offset)
+
+    refusals = []
     for e in classes:
-        supers_of.setdefault(e["name"], set()).update(e["supers"])
-
-    def ancestors(name):
-        seen, todo = set(), list(supers_of.get(name, ()))
-        while todo:
-            s = todo.pop()
-            if s not in seen:
-                seen.add(s)
-                todo.extend(supers_of.get(s, ()))
-        return seen
-
-    running = [chain_of(e) for e in classes]
-    running = [chain for chain in running if runs(chain)]
+        chain = chain_of(e)
+        inherited = sorted(s for s in e["supers"] if s in in_file)
+        if runs(chain) and inherited:
+            refusals.append("%s (line %d) extends or implements %s of the same file, so which class runs an inherited "
+                            "test cannot be told from the source" % (where(chain), line_of(e["start"]),
+                                                                     ", ".join(inherited)))
     names = set()
     for m in TEST_ANNOTATION.finditer(code):
         # Annotations stripped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
@@ -298,20 +262,25 @@ def declared_tests(path):
         name = re.search(r"([A-Za-z_$][\w$]*)\s*\(", head[:end])
         if not name:
             continue
-        chain = classes_at(m.start())
+        method, line = name.group(1), line_of(m.start())
+        chain = chain_at(m.start())
         if not chain:
+            refusals.append("%s() at line %d is outside every class" % (method, line))
             continue
-        if any(e["kind"] in ("local", "anonymous") for e in chain[1:]):
-            continue  # runs nowhere
-        declared_in = chain[-1]
-        targets = [chain] if runs(chain) else []
-        heirs = [c for c in running if c[-1] is not declared_in and declared_in["name"] in ancestors(c[-1]["name"])]
-        targets.extend(heirs)
-        if not targets and chain[0]["name"] == lock_name:
-            targets.append(chain)
-        for target in targets:
-            names.add((suffix(target), name.group(1)))
-    return names
+        if depth_at(m.start()) != chain[-1]["depth"]:
+            refusals.append("%s() at line %d is inside a method body or an anonymous class (an enum constant's body "
+                            "included) of %s, which JUnit does not run as the lock's" % (method, line, where(chain)))
+            continue
+        if chain[0]["kind"] != "top" or chain[0]["name"] != lock_name:
+            refusals.append("%s() at line %d is in %s, another top-level class of the file" % (method, line,
+                                                                                               where(chain)))
+            continue
+        if not runs(chain):
+            refusals.append("%s() at line %d is in %s, which JUnit does not run as written (a member class without "
+                            "@Nested, an interface, an enum or a local class)" % (method, line, where(chain)))
+            continue
+        names.add(("".join("$" + e["name"] for e in chain[1:]), method))
+    return names, refusals
 
 
 status = 0
@@ -361,7 +330,12 @@ for lock in locks:
         print("::error::%s skipped %d of its %d tests: a skipped lock asserts nothing" % (lock, skipped, tests))
         status = 1
         continue
-    declared = declared_tests(source)
+    declared, refusals = declared_tests(source)
+    if refusals:
+        print("::error::%s: this check cannot judge %d shape(s) in %s: %s" % (lock, len(refusals), source,
+                                                                             "; ".join(refusals)))
+        status = 1
+        continue
     missing = sorted((lock.rsplit(".", 1)[-1] + suffix).replace("$", ".") + "." + method
                      for suffix, method in declared if (lock + suffix, method) not in ran)
     if not declared:

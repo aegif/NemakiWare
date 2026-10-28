@@ -227,6 +227,7 @@ class AnApiKeyEndsWithItsAccountTest {
                 "a key of a deleted user was left in the store; looking them up by accountId is"
                         + " what would leave exactly the pre-3.4.1 ones behind");
         assertNull(service.validateApiKey(REPO, bound.getPlainTextKey()));
-        assertNotNull(old.getApiKey().getKeyHash(), "the test's own fixture lost its key");
+        assertNotNull(old.getApiKey().getKeyHash(), "createApiKey returned a key with no hash, so the key it issued can "
+                + "never be checked");
     }
 }
