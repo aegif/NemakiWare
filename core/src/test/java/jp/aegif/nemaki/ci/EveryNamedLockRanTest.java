@@ -619,6 +619,58 @@ class EveryNamedLockRanTest {
     }
 
     @Test
+    @DisplayName("a test annotation is read to the end of its name: @Test$Guard is not @Test, @TestFactory is a test")
+    void aTestAnnotationIsReadToTheEndOfItsName() throws Exception {
+        // \b ended the name at $, so an annotation of the lock's own was read as @Test and its method required (closing
+        // batch 13 review, Codex P2). With Test tried first, @TestFactory would not be read at all.
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Test$Guard\n    void helper() { }\n    @TestFactory\n"
+                + "    java.util.List<Object> made() { return null; }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test factory that did not run passed");
+        assertTrue(outcome.output().contains("1 of the 2 test methods it declares did not run: FooTest.made "),
+                "the refusal does not name exactly the test factory: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("@Nested is read to the end of its name, so @Nested$Guard does not make a class one this check judges")
+    void aNestedMarkIsReadToTheEndOfItsName() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested$Guard\n    class Inner {\n        @Test\n        void x() { }\n"
+                + "    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Inner2.xml", "name=\"" + FOO + "$Inner\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Inner", "x");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a class marked by another annotation was judged as @Nested");
+        assertTrue(outcome.output().contains("x() at line 10 is in FooTest.Inner, which this check does not judge"),
+                "the refusal does not name the class without @Nested: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a supplementary letter written as a pair of escapes is one letter, as javac reads it")
+    void aSupplementaryLetterWrittenAsAnEscapePairIsOneLetter() throws Exception {
+        // The fixture holds the two escapes for U+1D49C; the report names the method with the letter itself.
+        sourceText(FOO, "    @Test\n    void \\uD835\\uDC9Cx() { }\n");
+        ran(FOO, 0, "𝒜x");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a pair of escapes was read as two characters: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a character javac ignores in an identifier is dropped from it, so the name read is the name javac reads")
+    void anIgnorableCharacterIsDroppedFromANameAsJavacDropsIt() throws Exception {
+        // javac leaves a soft hyphen or a zero-width space out of an identifier (JLS 3.8): gu<SHY>ard is guard and
+        // @T<ZWSP>est is @Test (closing batch 13 review, subagent P2-1).
+        sourceText(FOO, "    @Test\n    void gu\\u00ADard() { }\n    @T\\u200Best\n    void hidden() { }\n");
+        ran(FOO, 0, "guard");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test annotation with an ignorable character in it went unrequired");
+        assertTrue(outcome.output().contains("1 of the 2 test methods it declares did not run: FooTest.hidden "),
+                "the refusal does not name exactly the hidden test: " + outcome.output());
+    }
+
+    @Test
     @DisplayName("a lambda's parameter named record is not a record declaration, so the body after it is not a class")
     void aLambdaParameterNamedRecordIsNotAClass() throws Exception {
         // What follows class, interface, enum or record is a declaration only when it is a Java identifier: `record ->`

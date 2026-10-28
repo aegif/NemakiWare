@@ -23,7 +23,9 @@
 #     methods written directly in the lock's class or in a chain of @Nested member classes of it - each a class, not
 #     static, private or abstract - none of which extends or implements anything, and no two test methods of one name
 #     in a class; each is required under its own class's name. The source is read as javac reads it: Unicode escapes
-#     translated (JLS 3.3), a carriage return alone ending a line (JLS 3.4), identifiers in any script. Any other shape
+#     translated (JLS 3.3) and a pair of them for one supplementary character joined, a carriage return alone ending a
+#     line (JLS 3.4), identifiers in any script with the characters javac ignores in them dropped (JLS 3.8), an
+#     annotation's name read to its end (@Test$Guard is not @Test). Any other shape
 #     is REFUSED by name rather than guessed at: a test method in a class this check does not judge (a member class
 #     without @Nested, an interface, an enum, a record, a local class, a static, private or abstract @Nested class,
 #     another top-level class), one inside a method body (an anonymous class, an enum constant's body), a running class
@@ -65,8 +67,12 @@ sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
 # `@ /* note */ Test` is a test JUnit runs, and a pattern that wanted the name right after @ did not see it, so a method
 # tagged out at discovery went unrequired (closing batch 11 review, Codex P1).
 QUALIFIER = r"(?:(?:org\s*\.\s*junit\s*\.\s*jupiter\s*\.\s*(?:api|params)\s*\.\s*))?"
-TEST_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b")
-NESTED_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"Nested\b")
+# Longer names first, and a match counts only where the name ends (annotations_named): \b ends a word at $, a currency
+# symbol or a combining mark, all of which can go on in a Java name, so @Test$Guard - an annotation of its own - read as
+# @Test and its method was required (closing batch 13 review, Codex P2). Tried first, Test would also end the regex's
+# search at @TestFactory before the longer name was tried.
+TEST_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"(ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|Test)")
+NESTED_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"Nested")
 
 
 JAVA_KEYWORDS = frozenset(
@@ -84,7 +90,21 @@ def identifier_char(c, first=False):
     category = unicodedata.category(c)
     if category[0] == "L" or category in ("Nl", "Sc", "Pc"):
         return True
-    return not first and category in ("Nd", "Mn", "Mc", "Cf")
+    return not first and category in ("Nd", "Mn", "Mc")
+
+
+def ignorable(c):
+    """Character.isIdentifierIgnorable: the ISO controls that are not white space, and the format characters. javac
+    leaves them out of an identifier (JLS 3.8), so @T<U+200B>est is @Test and gu<U+00AD>ard is guard; kept, the one
+    was not seen and the other was required under a name surefire never reports (closing batch 13 review, subagent
+    P2-1). They are taken out of the code - comments and strings already blanked - before anything is read."""
+    o = ord(c)
+    return o <= 0x08 or 0x0E <= o <= 0x1B or 0x7F <= o <= 0x9F or unicodedata.category(c) == "Cf"
+
+
+def annotations_named(pattern, text):
+    """The matches of an annotation pattern whose name ends where the match does - not followed by more of a name."""
+    return [m for m in pattern.finditer(text) if m.end() == len(text) or not identifier_char(text[m.end()])]
 
 
 def java_identifier(token):
@@ -117,7 +137,9 @@ def translate_unicode_escapes(text):
         backslashes = backslashes + 1 if text[i] == "\\" else 0
         out.append(text[i])
         i += 1
-    return "".join(out), refused
+    # Escapes are UTF-16 units: \uD835\uDC9C is one character, U+1D49C, to javac, and two lone surrogates - no letter -
+    # here until joined (closing batch 13 review, Codex P2). A surrogate without its other half stays as it is.
+    return "".join(out).encode("utf-16-le", "surrogatepass").decode("utf-16-le", "surrogatepass"), refused
 
 
 def without_comments_and_strings(text):
@@ -245,10 +267,13 @@ def drop_balanced(text, opening, closing):
 
 
 def supertypes(header):
-    """The simple names a class's header extends or implements. Annotations and every <...> go first - the class's
-    own type parameters included: class Impl<T extends Base> implements Marker names Marker only, and extends
-    Holder.Base or Outer<T>.Base names Base (closing batch 8 review)."""
+    """(names, inherits): the simple names a class's header extends or implements, and whether it extends or implements
+    anything at all. Annotations and every <...> go first - the class's own type parameters included: class
+    Impl<T extends Base> implements Marker names Marker only, and extends Holder.Base or Outer<T>.Base names Base (closing
+    batch 8 review). A class is refused for inheriting when the keyword is there, named or not: a name this check could
+    not read was "inherits nothing" (closing batch 13 review, subagent P3-1)."""
     h = drop_balanced(strip_annotations(header), "<", ">")
+    inherits = re.search(r"\b(?:extends|implements)\b", h) is not None
     names = set()
     for keyword in ("extends", "implements"):
         m = re.search(r"\b" + keyword + r"\b(.*?)(?=\bimplements\b|\bpermits\b|$)", h, re.S)
@@ -257,7 +282,7 @@ def supertypes(header):
                 names_in_part = re.findall(r"[^\s.]+", part)
                 if names_in_part and java_identifier(names_in_part[-1]):
                     names.add(names_in_part[-1])
-    return names
+    return names, inherits
 
 
 def class_bodies(code):
@@ -291,9 +316,9 @@ def class_bodies(code):
                     kind = "nested" if nested else "member"
                 else:
                     kind = "local"
+                supers, inherits = supertypes(code[header_at:m.start()])
                 stack.append(dict(start=m.start(), depth=depth, name=name, kind=kind, keyword=keyword,
-                                  modifiers=modifiers, declared_at=declared_at,
-                                  supers=supertypes(code[header_at:m.start()])))
+                                  modifiers=modifiers, declared_at=declared_at, supers=supers, inherits=inherits))
                 pending = None
         elif token == "}":
             if stack and stack[-1]["depth"] == depth:
@@ -304,7 +329,7 @@ def class_bodies(code):
         elif java_identifier(m.group(2)):
             prefix = declaration_prefix(code, m.start())
             modifiers = set(re.findall(r"\b(static|private|abstract)\b", strip_annotations(prefix)))
-            pending = (m.group(2), NESTED_ANNOTATION.search(prefix) is not None, m.end(), m.group(1), modifiers,
+            pending = (m.group(2), bool(annotations_named(NESTED_ANNOTATION, prefix)), m.end(), m.group(1), modifiers,
                        m.start())
     opens.sort(key=lambda e: e["start"])
     return opens
@@ -334,7 +359,7 @@ def declared_tests(path):
     if refused:
         return set(), ["a Unicode escape of a backslash or a line terminator (%s) at line %d, which this check does not "
                        "model" % (escape, raw.count("\n", 0, offset) + 1) for offset, escape in refused]
-    code = without_comments_and_strings(text)
+    code = "".join(c for c in without_comments_and_strings(text) if not ignorable(c))
     classes = class_bodies(code)
 
     def chain_at(offset):
@@ -366,12 +391,13 @@ def declared_tests(path):
         chain = chain_of(e)
         # A supertype outside the file too: its tests run under this class's name, and one of the same name stood in
         # for a test declared here that a tag took out (closing batch 12 review, subagent P3-1).
-        if runs(chain) and e["supers"]:
+        if runs(chain) and e["inherits"]:
             refusals.append("%s (line %d) extends or implements %s, so a test it inherits - from this file or from "
                             "outside it, where this check cannot see - runs under its name and can stand in for one "
-                            "declared here" % (where(chain), line_of(e["declared_at"]), ", ".join(sorted(e["supers"]))))
+                            "declared here" % (where(chain), line_of(e["declared_at"]),
+                                               ", ".join(sorted(e["supers"])) or "a type this check cannot name"))
     names = set()
-    for m in TEST_ANNOTATION.finditer(code):
+    for m in annotations_named(TEST_ANNOTATION, code):
         # Annotations dropped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
         # brace (@ValueSource(strings = { ... })), and cutting there first lost the method that followed.
         line = line_of(m.start())
