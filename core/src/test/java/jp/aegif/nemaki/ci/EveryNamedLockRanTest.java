@@ -719,6 +719,33 @@ class EveryNamedLockRanTest {
     }
 
     @Test
+    @DisplayName("a type annotation right after extends or implements does not hide the keyword, nor type arguments the next")
+    void aTypeAnnotationRightAfterAKeywordDoesNotHideIt() throws Exception {
+        // javac reads `extends@A Base<T>implements@A Marker` as extends Base implements Marker (measured with javac 21 and
+        // 27); with the annotation and the <T> dropped without a blank, the header read extendsBase...Baseimplements and
+        // the class was taken to inherit nothing (closing batch 15 review, subagent P3-1).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    class Impl extends@A Base<T>implements@A Marker {\n"
+                + "        @Test\n        void mine() { }\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a class inheriting behind type annotations passed");
+        assertTrue(outcome.output().contains("FooTest.Impl (line 9) extends or implements Base, Marker, so a test it "
+                + "inherits"), "the refusal does not name both supertypes: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a type annotation between two modifiers does not join them, so a private static @Nested class is refused")
+    void aTypeAnnotationBetweenModifiersDoesNotJoinThem() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    private@A static class Holder {\n        @Test\n"
+                + "        void s() { }\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test in a private static @Nested class passed");
+        assertTrue(outcome.output().contains("s() at line 10 is in FooTest.Holder, which this check does not judge"),
+                "the refusal does not say the class is one this check does not judge: " + outcome.output());
+    }
+
+    @Test
     @DisplayName("a lambda's parameter named record is not a record declaration, so the body after it is not a class")
     void aLambdaParameterNamedRecordIsNotAClass() throws Exception {
         // What follows class, interface, enum or record is a declaration only when it is a Java identifier: `record ->`

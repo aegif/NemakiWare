@@ -242,12 +242,15 @@ def past_annotation(text, i):
 
 
 def strip_annotations(text):
-    """Drop annotations, with their (possibly nested) argument lists."""
+    """Drop annotations, with their (possibly nested) argument lists, each leaving a blank where it was: javac reads
+    `extends@A Base` as extends Base, and dropped without one it read extendsBase - no keyword, so the class was taken
+    to inherit nothing (closing batch 15 review, subagent P3-1)."""
     out = []
     i, n = 0, len(text)
     while i < n:
         if text[i] == "@":
             i = past_annotation(text, i)
+            out.append(" ")
         else:
             out.append(text[i])
             i += 1
@@ -286,13 +289,16 @@ def declaration_prefix(code, start):
 
 
 def drop_balanced(text, opening, closing):
-    """The text without its (possibly nested) opening...closing groups."""
+    """The text without its (possibly nested) opening...closing groups, each leaving a blank where it was:
+    Base<T>implements read as Baseimplements (closing batch 15 review, subagent P3-1)."""
     out, depth = [], 0
     for c in text:
         if c == opening:
             depth += 1
         elif c == closing and depth > 0:
             depth -= 1
+            if depth == 0:
+                out.append(" ")
         elif depth == 0:
             out.append(c)
     return "".join(out)

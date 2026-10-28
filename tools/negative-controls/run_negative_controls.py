@@ -26988,7 +26988,7 @@ CONTROLS = [
         find='sys.exit(status)\n',
         replace='sys.exit(0)\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aLockWithNoReportFails', 'aLockThatRanNoTestsFails', 'aLockWithASkippedTestFails', 'aNestedClassCountsForItsLock', 'aReportForALongerNameIsNotTheLocks', 'anUnreadableReportFails', 'aMethodTakenOutAtDiscoveryFails', 'aClassOfTheSameNameElsewhereIsNotTheLock', 'aSimpleNameIsRefused', 'aLockWithNoSourceFails', 'aSourceWithNoReadableTestFails', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aBraceInANestedClassHeaderIsNotItsBody', 'aQualifiedSupertypeIsReadByItsLastName', 'aTestInAClassWithoutNestedIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aTestAnnotationWithACommentAfterItsAtSignIsRequired', 'aCarriageReturnAloneEndsALine', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'aTestAnnotationWrittenWithAUnicodeEscapeIsRequired', 'aTestMethodNamedOutsideAsciiIsRequired', 'aTestWhoseAnnotationsRunPastAnyWindowIsRequired', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aTestAnnotationIsReadToTheEndOfItsName', 'anIgnorableCharacterIsDroppedFromANameAsJavacDropsIt', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['aLockWithNoReportFails', 'aLockThatRanNoTestsFails', 'aLockWithASkippedTestFails', 'aNestedClassCountsForItsLock', 'aReportForALongerNameIsNotTheLocks', 'anUnreadableReportFails', 'aMethodTakenOutAtDiscoveryFails', 'aClassOfTheSameNameElsewhereIsNotTheLock', 'aSimpleNameIsRefused', 'aLockWithNoSourceFails', 'aSourceWithNoReadableTestFails', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aBraceInANestedClassHeaderIsNotItsBody', 'aQualifiedSupertypeIsReadByItsLastName', 'aTestInAClassWithoutNestedIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aTestAnnotationWithACommentAfterItsAtSignIsRequired', 'aCarriageReturnAloneEndsALine', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'aTestAnnotationWrittenWithAUnicodeEscapeIsRequired', 'aTestMethodNamedOutsideAsciiIsRequired', 'aTestWhoseAnnotationsRunPastAnyWindowIsRequired', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aTestAnnotationIsReadToTheEndOfItsName', 'anIgnorableCharacterIsDroppedFromANameAsJavacDropsIt', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='RX5',
@@ -27718,7 +27718,7 @@ CONTROLS = [
         find='            pending = (m.group(2), bool(annotations_named(NESTED_ANNOTATION, prefix)), m.end(), m.group(1), modifiers,\n',
         replace='            pending = (m.group(2), False, m.end(), m.group(1), modifiers,\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aNestedMarkBehindABracedAnnotationIsRead', 'aNestedClassCountsForItsLock', 'aBraceInANestedClassHeaderIsNotItsBody', 'aQualifiedSupertypeIsReadByItsLastName', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aTypeParameterBoundIsNotInheritance', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aDeepNestedChainIsRequiredByItsFullName', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aNestedMarkWithACommentAfterItsAtSignIsRead', 'aNestedClassNamedOutsideAsciiIsJudged', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aPermittedSubclassNamedWithAKeywordIsNotInheritance'],
+        expect_fail=['aNestedMarkBehindABracedAnnotationIsRead', 'aNestedClassCountsForItsLock', 'aBraceInANestedClassHeaderIsNotItsBody', 'aQualifiedSupertypeIsReadByItsLastName', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aTypeParameterBoundIsNotInheritance', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aDeepNestedChainIsRequiredByItsFullName', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aNestedMarkWithACommentAfterItsAtSignIsRead', 'aNestedClassNamedOutsideAsciiIsJudged', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aPermittedSubclassNamedWithAKeywordIsNotInheritance', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='US5',
@@ -27728,7 +27728,7 @@ CONTROLS = [
         find='        if not runs(chain):\n',
         replace='        if False:\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName'],
+        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem'],
     ),
     dict(
         id='UT5',
@@ -27748,7 +27748,7 @@ CONTROLS = [
         find='        if runs(chain) and e["inherits"]:\n',
         replace='        if False:\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='UV5',
@@ -27758,7 +27758,7 @@ CONTROLS = [
         find='    words = whole_words(h, ("extends", "implements", "permits"))\n',
         replace='    words = whole_words(h, ("extends", "permits"))\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['anImplementedInterfaceOfTheFileIsRefusedByName'],
+        expect_fail=['anImplementedInterfaceOfTheFileIsRefusedByName', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='UW5',
@@ -27788,7 +27788,7 @@ CONTROLS = [
         find='    h = drop_balanced(strip_annotations(header), "<", ">")\n',
         replace='    h = strip_annotations(header)\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aSuperclassOutsideTheFileIsRefusedByName', 'aTypeParameterBoundIsNotInheritance'],
+        expect_fail=['aSuperclassOutsideTheFileIsRefusedByName', 'aTypeParameterBoundIsNotInheritance', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='UZ5',
@@ -27828,7 +27828,7 @@ CONTROLS = [
         find='                                                                             "; ".join(refusals)))\n        status = 1\n',
         replace='                                                                             "; ".join(refusals)))\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='VD5',
@@ -27838,7 +27838,7 @@ CONTROLS = [
         find='        if runs(chain) and e["inherits"]:\n',
         replace='        if runs(chain) and e["supers"] & {c["name"] for c in classes}:\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='VE5',
@@ -27848,7 +27848,7 @@ CONTROLS = [
         find='                            "that)" % (method, line, where(chain)))\n',
         replace='                            "that)" % (method, line, "a class"))\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName'],
+        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem'],
     ),
     dict(
         id='VF5',
@@ -27858,7 +27858,7 @@ CONTROLS = [
         find='        return [e for e in classes if e["start"] <= entry["start"] < e["end"]]\n',
         replace='        return [e for e in classes if e["start"] < entry["start"] < e["end"]]\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['inheritanceFromAClassOfTheFileIsRefusedByName', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['inheritanceFromAClassOfTheFileIsRefusedByName', 'aSuperclassOutsideTheFileIsRefusedByName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='VG5',
@@ -27868,7 +27868,7 @@ CONTROLS = [
         find='        return code.count("{", 0, offset) - code.count("}", 0, offset)\n',
         replace='        return code.count("{", 0, offset)\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['locksThatRanPass', 'aBraceInANestedClassHeaderIsNotItsBody', 'aMethodTakenOutAtDiscoveryFails', 'aNestedClassCountsForItsLock', 'aNestedMarkBehindABracedAnnotationIsRead', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTypeParameterBoundIsNotInheritance', 'onlyDeclaredTestMethodsAreRequired', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aNestedMarkWithACommentAfterItsAtSignIsRead', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aTestAnnotationWithACommentAfterItsAtSignIsRequired', 'aCarriageReturnAloneEndsALine', 'aNestedClassNamedOutsideAsciiIsJudged', 'aTestAnnotationWrittenWithAUnicodeEscapeIsRequired', 'aTestMethodNamedOutsideAsciiIsRequired', 'aTestWhoseAnnotationsRunPastAnyWindowIsRequired', 'aNestedMarkIsReadToTheEndOfItsName', 'aTestAnnotationIsReadToTheEndOfItsName', 'anIgnorableCharacterIsDroppedFromANameAsJavacDropsIt', 'aPermittedSubclassNamedWithAKeywordIsNotInheritance'],
+        expect_fail=['locksThatRanPass', 'aBraceInANestedClassHeaderIsNotItsBody', 'aMethodTakenOutAtDiscoveryFails', 'aNestedClassCountsForItsLock', 'aNestedMarkBehindABracedAnnotationIsRead', 'aParameterizedMethodTakenOutFails', 'aSameNamedMethodElsewhereInTheLockIsNotIt', 'aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTypeParameterBoundIsNotInheritance', 'onlyDeclaredTestMethodsAreRequired', 'aDeepNestedChainMethodThatDidNotRunIsRefused', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aNestedMarkWithACommentAfterItsAtSignIsRead', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aTestAnnotationWithACommentAfterItsAtSignIsRequired', 'aCarriageReturnAloneEndsALine', 'aNestedClassNamedOutsideAsciiIsJudged', 'aTestAnnotationWrittenWithAUnicodeEscapeIsRequired', 'aTestMethodNamedOutsideAsciiIsRequired', 'aTestWhoseAnnotationsRunPastAnyWindowIsRequired', 'aNestedMarkIsReadToTheEndOfItsName', 'aTestAnnotationIsReadToTheEndOfItsName', 'anIgnorableCharacterIsDroppedFromANameAsJavacDropsIt', 'aPermittedSubclassNamedWithAKeywordIsNotInheritance', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem'],
     ),
     dict(
         id='VH5',
@@ -27878,7 +27878,7 @@ CONTROLS = [
         find='        return code.count("\\n", 0, offset) + 1\n',
         replace='        return 1\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='VI5',
@@ -27888,7 +27888,7 @@ CONTROLS = [
         find='    if refusals:\n',
         replace='    if refusals and False:\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword'],
+        expect_fail=['aTestInAClassWithoutNestedIsRefusedByName', 'aTestInAnInterfaceIsRefusedByName', 'aTestInALocalClassIsRefusedByName', 'aTestInAnotherTopLevelClassIsRefusedByName', 'aTestInAnAnonymousClassIsRefusedByName', 'aTestInAnEnumConstantBodyIsRefusedByName', 'inheritanceFromAClassOfTheFileIsRefusedByName', 'anImplementedInterfaceOfTheFileIsRefusedByName', 'aQualifiedSupertypeIsReadByItsLastName', 'aLockWithSeveralShapesNamesEach', 'aNestedClassInsideAPlainHolderIsRefusedByName', 'aTestInARecordIsRefusedByName', 'aLockThatIsAnInterfaceIsRefusedByName', 'aNestedEnumIsRefusedByName', 'aRefusalCountsTheLinesOfACommentAndATextBlock', 'aSecondTestOfTheSameNameIsRefusedByName', 'aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aLambdaParameterNamedRecordIsNotAClass', 'aSuperclassOutsideTheFileIsRefusedByName', 'aTestAnnotationOnNoMethodIsRefusedByName', 'anEscapedLineTerminatorOrBackslashIsRefusedByName', 'aNestedMarkIsReadToTheEndOfItsName', 'aKeywordInsideALongerNameIsNotTheKeyword', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem', 'aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
     dict(
         id='VJ5',
@@ -27938,7 +27938,7 @@ CONTROLS = [
         find='        return e["keyword"] == "class" and not (e["kind"] == "nested" and e["modifiers"])\n',
         replace='        return e["keyword"] == "class"\n',
         test='EveryNamedLockRanTest',
-        expect_fail=['aStaticPrivateOrAbstractNestedClassIsRefusedByName'],
+        expect_fail=['aStaticPrivateOrAbstractNestedClassIsRefusedByName', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem'],
     ),
     dict(
         id='VO5',
@@ -28189,6 +28189,26 @@ CONTROLS = [
         replace='        if not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_"):\n',
         test='EveryNamedLockRanTest',
         expect_fail=['aKeywordInsideALongerNameIsNotTheKeyword', 'aPermittedSubclassNamedWithAKeywordIsNotInheritance'],
+    ),
+    dict(
+        id='WN5',
+        what='an annotation is dropped without a blank where it was, so `extends@A Base` reads extendsBase and the class is taken to inherit nothing (closing batch 15 review, subagent P3-1)',
+        module='core',
+        file='tools/ci/named-locks-ran.sh',
+        find='            i = past_annotation(text, i)\n            out.append(" ")\n',
+        replace='            i = past_annotation(text, i)\n',
+        test='EveryNamedLockRanTest',
+        expect_fail=['aTypeAnnotationRightAfterAKeywordDoesNotHideIt', 'aTypeAnnotationBetweenModifiersDoesNotJoinThem'],
+    ),
+    dict(
+        id='WO5',
+        what='type arguments are dropped without a blank where they were, so `Base<T>implements` reads Baseimplements and the refusal does not name Base (closing batch 15 review, subagent P3-1)',
+        module='core',
+        file='tools/ci/named-locks-ran.sh',
+        find='            depth -= 1\n            if depth == 0:\n                out.append(" ")\n',
+        replace='            depth -= 1\n',
+        test='EveryNamedLockRanTest',
+        expect_fail=['aTypeAnnotationRightAfterAKeywordDoesNotHideIt'],
     ),
 ]
 
