@@ -20,13 +20,16 @@
 #   - JUnit's tag filter takes a tagged METHOD out at discovery, so the report counts fewer tests and none
 #     skipped. Every method the lock's source declares with @Test, @ParameterizedTest, @RepeatedTest,
 #     @TestFactory or @TestTemplate has to be among the report's test cases. The check JUDGES one shape: test
-#     methods written directly in the lock's class or in a chain of @Nested member classes of it, none of which
-#     extends or implements a class of the same file - each is required under its own class's name. Any other shape
-#     is REFUSED by name rather than guessed at: a test method in a class JUnit does not run as written (a member class
-#     without @Nested, an interface, an enum, another top-level class), one inside a method body (a local or an
-#     anonymous class, an enum constant's body), and a running class that inherits from a class of the file. (A test
-#     method inherited from a class outside the lock's file, or declared with an annotation of the project's own, is
-#     not seen here.)
+#     methods written directly in the lock's class or in a chain of @Nested member classes of it - each a class, not
+#     static, private or abstract - none of which extends or implements a class of the same file, and no two test
+#     methods of one name in a class; each is required under its own class's name. Any other shape is REFUSED by name
+#     rather than guessed at: a test method in a class JUnit does not run as written (a member class without @Nested,
+#     an interface, an enum, a record, a local class, a static, private or abstract @Nested class, another top-level
+#     class), one inside a method body (an anonymous class, an enum constant's body), a running class that inherits
+#     from a class of the file (or names one: a class outside the file with the same simple name is refused too), and
+#     two same-named test methods of one class (a report names a case without its parameters). (A test method
+#     inherited from a class outside the lock's file, or declared with an annotation of the project's own, is not seen
+#     here.)
 set -u
 
 if [ "$#" -lt 3 ]; then
@@ -53,8 +56,12 @@ import sys
 
 reports, sources, locks = sys.argv[1], sys.argv[2], sys.argv[3:]
 
-TEST_ANNOTATION = re.compile(r"@(?:org\.junit\.jupiter\.api\.|org\.junit\.jupiter\.params\.)?"
-                             r"(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b")
+# Whitespace - and so a comment, blanked to whitespace below - may sit after @ and around a qualified name's dots:
+# `@ /* note */ Test` is a test JUnit runs, and a pattern that wanted the name right after @ did not see it, so a method
+# tagged out at discovery went unrequired (closing batch 11 review, Codex P1).
+QUALIFIER = r"(?:(?:org\s*\.\s*junit\s*\.\s*jupiter\s*\.\s*(?:api|params)\s*\.\s*))?"
+TEST_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b")
+NESTED_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"Nested\b")
 
 
 def without_comments_and_strings(text):
@@ -67,15 +74,19 @@ def without_comments_and_strings(text):
             i = n if j < 0 else j
         elif text.startswith("/*", i):
             j = text.find("*/", i + 2)
-            i = n if j < 0 else j + 2
-            out.append(" ")
+            end = n if j < 0 else j + 2
+            # The newlines inside kept, so a line counted in the blanked text is the file's line (closing batch 11
+            # review, both reviewers: the 16-line licence header put every refusal's line 15 lines early).
+            out.append(" " + "\n" * text.count("\n", i, end))
+            i = end
         elif text.startswith('"""', i):
             # A text block ends at the first """ that is not escaped: \""" inside it is text (closing batch 8 review).
             j = i + 3
             while j < n and not text.startswith('"""', j):
                 j += 2 if text[j] == "\\" else 1
-            i = n if j >= n else j + 3
-            out.append('""')
+            end = n if j >= n else j + 3
+            out.append('""' + "\n" * text.count("\n", i, end))
+            i = end
         elif text[i] in "\"'":
             quote = text[i]
             j = i + 1
@@ -95,7 +106,7 @@ def strip_annotations(text):
     i, n = 0, len(text)
     while i < n:
         if text[i] == "@":
-            m = re.match(r"@[\w.]+\s*", text[i:])
+            m = re.match(r"@\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*", text[i:])
             i += m.end() if m else 1
             if i < n and text[i] == "(":
                 depth = 0
@@ -174,7 +185,7 @@ def class_bodies(code):
     pending = None
     depth = 0
     parens = 0
-    for m in re.finditer(r"\b(?:class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
+    for m in re.finditer(r"\b(class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
         token = m.group(0)
         if token == "(":
             parens += 1
@@ -183,14 +194,15 @@ def class_bodies(code):
         elif token == "{":
             depth += 1
             if pending is not None and parens == 0:
-                name, nested, header_at = pending
+                name, nested, header_at, keyword, modifiers, declared_at = pending
                 if not stack:
                     kind = "top"
                 elif depth == stack[-1]["depth"] + 1:
                     kind = "nested" if nested else "member"
                 else:
                     kind = "local"
-                stack.append(dict(start=m.start(), depth=depth, name=name, kind=kind,
+                stack.append(dict(start=m.start(), depth=depth, name=name, kind=kind, keyword=keyword,
+                                  modifiers=modifiers, declared_at=declared_at,
                                   supers=supertypes(code[header_at:m.start()])))
                 pending = None
         elif token == "}":
@@ -201,8 +213,9 @@ def class_bodies(code):
             depth -= 1
         else:
             prefix = declaration_prefix(code, m.start())
-            pending = (m.group(1), re.search(r"@(?:org\.junit\.jupiter\.api\.)?Nested\b", prefix) is not None,
-                       m.end())
+            modifiers = set(re.findall(r"\b(static|private|abstract)\b", strip_annotations(prefix)))
+            pending = (m.group(2), NESTED_ANNOTATION.search(prefix) is not None, m.end(), m.group(1), modifiers,
+                       m.start())
     opens.sort(key=lambda e: e["start"])
     return opens
 
@@ -214,10 +227,12 @@ def declared_tests(path):
     lock cannot stand in for it (closing batch 6 review, both reviewers).
 
     This check JUDGES one shape: test methods written directly in the lock's class or in a chain of @Nested member
-    classes of it, none of which extends or implements a class of the same file. Any other shape is a REFUSAL naming
-    what it could not judge, not a guess: a test method in a class JUnit does not run as written (a member class without
-    @Nested, an interface, an enum, another top-level class), one inside a method body (a local or an anonymous class,
-    an enum constant's body), and a running class that inherits from a class of the file. Four review rounds each found
+    classes of it - each a class, not static, private or abstract - none of which extends or implements a class of the
+    same file, with no two test methods of one name in a class. Any other shape is a REFUSAL naming what it could not
+    judge, not a guess: a test method in a class JUnit does not run as written (a member class without @Nested, an
+    interface, an enum, a record, a local class, a static, private or abstract @Nested class, another top-level class),
+    one inside a method body (an anonymous class, an enum constant's body), a running class that inherits from a class
+    of the file, and a second test method of the same name in a class. Four review rounds each found
     a new shape that a model of JUnit's inheritance and discovery read wrong in one direction or the other (closing
     batches 7 to 10), so the check stops at what it can read exactly and says so at the rest."""
     lock_name = os.path.basename(path)[:-len(".java")]
@@ -231,9 +246,14 @@ def declared_tests(path):
     def chain_of(entry):
         return [e for e in classes if e["start"] <= entry["start"] < e["end"]]
 
+    def runnable(e):
+        # JUnit runs a class: not an interface, an enum or a record, and not a static, private or abstract @Nested
+        # class (closing batch 11 review: Codex P2, subagent P3-2).
+        return e["keyword"] == "class" and not (e["kind"] == "nested" and e["modifiers"])
+
     def runs(chain):
         return bool(chain) and chain[0]["kind"] == "top" and chain[0]["name"] == lock_name \
-            and all(e["kind"] == "nested" for e in chain[1:])
+            and all(e["kind"] == "nested" for e in chain[1:]) and all(runnable(e) for e in chain)
 
     def where(chain):
         return ".".join(e["name"] for e in chain)
@@ -249,9 +269,9 @@ def declared_tests(path):
         chain = chain_of(e)
         inherited = sorted(s for s in e["supers"] if s in in_file)
         if runs(chain) and inherited:
-            refusals.append("%s (line %d) extends or implements %s of the same file, so which class runs an inherited "
-                            "test cannot be told from the source" % (where(chain), line_of(e["start"]),
-                                                                     ", ".join(inherited)))
+            refusals.append("%s (line %d) extends or implements %s, a name of a class in the same file, so which "
+                            "class runs an inherited test cannot be told from the source" % (
+                                where(chain), line_of(e["declared_at"]), ", ".join(inherited)))
     names = set()
     for m in TEST_ANNOTATION.finditer(code):
         # Annotations stripped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
@@ -277,9 +297,17 @@ def declared_tests(path):
             continue
         if not runs(chain):
             refusals.append("%s() at line %d is in %s, which JUnit does not run as written (a member class without "
-                            "@Nested, an interface, an enum or a local class)" % (method, line, where(chain)))
+                            "@Nested, an interface, an enum, a record, a local class, or a static, private or abstract "
+                            "@Nested class)" % (method, line, where(chain)))
             continue
-        names.add(("".join("$" + e["name"] for e in chain[1:]), method))
+        key = ("".join("$" + e["name"] for e in chain[1:]), method)
+        if key in names:
+            # The report names a test case without its parameters, so one of two same-named methods of a class can be
+            # tagged out and the other's run stands in for it (closing batch 11 review, subagent P2-2).
+            refusals.append("%s() at line %d is the second test method of that name in %s, and a report names a case "
+                            "without its parameters, so one could stand in for the other" % (method, line, where(chain)))
+            continue
+        names.add(key)
     return names, refusals
 
 

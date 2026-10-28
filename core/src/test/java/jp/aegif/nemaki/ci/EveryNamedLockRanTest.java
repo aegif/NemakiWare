@@ -87,11 +87,16 @@ class EveryNamedLockRanTest {
     }
 
     private void sourceText(String lock, String body) throws IOException {
+        rawSource(lock, "import org.junit.jupiter.api.Test;\n\nclass " + lock.substring(lock.lastIndexOf('.') + 1) + " {\n"
+                + body + "}\n");
+    }
+
+    /** A lock's source after its package line, written whole — for a lock that is not declared as a plain class. */
+    private void rawSource(String lock, String text) throws IOException {
         int dot = lock.lastIndexOf('.');
         Path file = sources.resolve(lock.substring(0, dot).replace('.', '/')).resolve(lock.substring(dot + 1) + ".java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, "package " + lock.substring(0, dot) + ";\n\nimport org.junit.jupiter.api.Test;\n\n"
-                + "class " + lock.substring(dot + 1) + " {\n" + body + "}\n", StandardCharsets.UTF_8);
+        Files.writeString(file, "package " + lock.substring(0, dot) + ";\n\n" + text, StandardCharsets.UTF_8);
     }
 
     /** A report naming each case with the class that declares it, as surefire writes them (measured: classname). */
@@ -307,17 +312,19 @@ class EveryNamedLockRanTest {
     }
 
     @Test
-    @DisplayName("a running class that extends a class of the file is refused by name")
+    @DisplayName("a running class that extends a class of the file is refused by name, at the line it is declared")
     void inheritanceFromAClassOfTheFileIsRefusedByName() throws Exception {
+        // The header runs on to a second line, so the line of its body's brace is not the line of its declaration.
         sourceText(FOO, "    @Test\n    void own() { }\n    abstract static class Base {\n        void helper() { }\n    }\n"
-                + "    @Nested\n    class Impl extends Base {\n        @Test\n        void mine() { }\n    }\n");
+                + "    @Nested\n    class Impl\n            extends Base {\n        @Test\n        void mine() { }\n    }\n");
         report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
                 + "failures=\"0\"", FOO, "own");
         report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "inheritance within the lock's file passed");
-        assertTrue(outcome.output().contains("FooTest.Impl (line 12) extends or implements Base of the same file"),
+        assertTrue(outcome.output().contains("FooTest.Impl (line 12) extends or implements Base, a name of a class in the "
+                        + "same file"),
                 "the refusal does not name the class and what it inherits: " + outcome.output());
     }
 
@@ -332,7 +339,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "implementing an interface of the file passed");
-        assertTrue(outcome.output().contains("extends or implements Marker of the same file"),
+        assertTrue(outcome.output().contains("extends or implements Marker, a name of a class in the same file"),
                 "the refusal does not name the interface: " + outcome.output());
     }
 
@@ -347,7 +354,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a qualified supertype of the file passed");
-        assertTrue(outcome.output().contains("extends or implements Base of the same file"),
+        assertTrue(outcome.output().contains("extends or implements Base, a name of a class in the same file"),
                 "the refusal does not name Base: " + outcome.output());
     }
 
@@ -398,6 +405,115 @@ class EveryNamedLockRanTest {
         assertRefused(outcome, FOO, "a test in a record passed");
         assertTrue(outcome.output().contains("p() at line 9 is in FooTest.Point, which JUnit does not run as written"),
                 "the refusal does not name the record: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a lock declared as an interface is refused by name: JUnit does not run an interface")
+    void aLockThatIsAnInterfaceIsRefusedByName() throws Exception {
+        // Only member classes were asked what they are; the lock's own declaration was taken as a class whatever its
+        // keyword (closing batch 11 review).
+        rawSource(FOO, "import org.junit.jupiter.api.Test;\n\ninterface FooTest {\n    @Test\n    default void a() { }\n}\n");
+        ran(FOO, 0, "a");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a lock that is an interface passed");
+        assertTrue(outcome.output().contains("a() at line 6 is in FooTest, which JUnit does not run as written"),
+                "the refusal does not name the interface: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an enum marked @Nested is refused by name: JUnit runs a @Nested class, not an enum")
+    void aNestedEnumIsRefusedByName() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    enum Kind {\n        ONE;\n        @Test\n"
+                + "        void e() { }\n    }\n");
+        report("TEST-" + FOO + "$Kind.xml", "name=\"" + FOO + "$Kind\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Kind2.xml", "name=\"" + FOO + "$Kind\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Kind", "e");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test in a @Nested enum passed");
+        assertTrue(outcome.output().contains("e() at line 11 is in FooTest.Kind, which JUnit does not run as written"),
+                "the refusal does not name the enum: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a static, a private and an abstract @Nested class are each refused by name: JUnit runs none of them")
+    void aStaticPrivateOrAbstractNestedClassIsRefusedByName() throws Exception {
+        // @Nested on a static, private or abstract class does not make JUnit run it, and the report shows no skip
+        // for it (closing batch 11 review: Codex P2, subagent P3-2).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    static class Holder {\n        @Test\n        void s() { }\n"
+                + "    }\n    @Nested\n    private class Hidden {\n        @Test\n        void p() { }\n    }\n"
+                + "    @Nested\n    abstract class Partial {\n        @Test\n        void q() { }\n    }\n");
+        ran(FOO, 0, "own");
+        report("TEST-" + FOO + "$Holder.xml", "name=\"" + FOO + "$Holder\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Holder", "s");
+        report("TEST-" + FOO + "$Hidden.xml", "name=\"" + FOO + "$Hidden\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Hidden", "p");
+        report("TEST-" + FOO + "$Partial.xml", "name=\"" + FOO + "$Partial\" tests=\"1\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Partial", "q");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test in a static, private or abstract @Nested class passed");
+        assertTrue(outcome.output().contains("cannot judge 3 shape(s)")
+                        && outcome.output().contains("s() at line 10 is in FooTest.Holder, which JUnit does not run")
+                        && outcome.output().contains("p() at line 15 is in FooTest.Hidden, which JUnit does not run")
+                        && outcome.output().contains("q() at line 20 is in FooTest.Partial, which JUnit does not run"),
+                "the refusal does not name each of the three classes: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test annotation with a comment or spaces after its @ is a test JUnit runs, and its absence fails the job")
+    void aTestAnnotationWithACommentAfterItsAtSignIsRequired() throws Exception {
+        // `@ /* note */ Test` compiles and JUnit runs it; a pattern that wanted the name right after @ did not see it, so
+        // a method tagged out at discovery went unrequired (closing batch 11 review, Codex P1).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @ /* note */ Test\n    void spaced() { }\n"
+                + "    @ org.junit.jupiter.api . Test\n    void qualified() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test annotation with a comment after its @ went unrequired");
+        assertTrue(outcome.output().contains("2 of the 3 test methods it declares did not run: FooTest.qualified, "
+                + "FooTest.spaced "), "the refusal does not name both methods: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("@Nested with a comment after its @ is read, so its class is judged rather than refused")
+    void aNestedMarkWithACommentAfterItsAtSignIsRead() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @ /* note */ Nested\n    class Inner {\n        @Test\n"
+                + "        void guard() { }\n    }\n");
+        report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Inner2.xml", "name=\"" + FOO + "$Inner\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Inner", "guard");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a @Nested class with a comment after the @ was not read as @Nested: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a refusal names the file's line, the lines of a block comment and a text block before it counted")
+    void aRefusalCountsTheLinesOfACommentAndATextBlock() throws Exception {
+        // Comments and text blocks were blanked to one space, so every refusal after a licence header named a line 15
+        // lines early (closing batch 11 review, both reviewers).
+        sourceText(FOO, "    /*\n     * a\n     * b\n     */\n    @Test\n    void own() {\n        String s = \"\"\"\n"
+                + "            x\n            y\n            \"\"\";\n    }\n    class Inner {\n        @Test\n"
+                + "        void guard() { }\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test in a class JUnit does not run passed");
+        assertTrue(outcome.output().contains("guard() at line 18 is in FooTest.Inner"),
+                "the refusal names a line other than the file's: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a second test method of the same name in a class is refused by name: a report names a case without its parameters")
+    void aSecondTestOfTheSameNameIsRefusedByName() throws Exception {
+        // The report names a case `each` either way, so one of two same-named methods could be tagged out and the other's
+        // run would stand in for it (closing batch 11 review, subagent P2-2).
+        sourceText(FOO, "    @Test\n    void each() { }\n    @ParameterizedTest\n    @ValueSource(strings = { \"x\" })\n"
+                + "    void each(String v) { }\n");
+        ran(FOO, 0, "each");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "two same-named test methods passed on one report case");
+        assertTrue(outcome.output().contains("each() at line 8 is the second test method of that name in FooTest"),
+                "the refusal does not name the second method: " + outcome.output());
     }
 
     @Test
