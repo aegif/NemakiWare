@@ -21,15 +21,16 @@
 #     skipped. Every method the lock's source declares with @Test, @ParameterizedTest, @RepeatedTest,
 #     @TestFactory or @TestTemplate has to be among the report's test cases. The check JUDGES one shape: test
 #     methods written directly in the lock's class or in a chain of @Nested member classes of it - each a class, not
-#     static, private or abstract - none of which extends or implements a class of the same file, and no two test
-#     methods of one name in a class; each is required under its own class's name. Any other shape is REFUSED by name
-#     rather than guessed at: a test method in a class JUnit does not run as written (a member class without @Nested,
-#     an interface, an enum, a record, a local class, a static, private or abstract @Nested class, another top-level
-#     class), one inside a method body (an anonymous class, an enum constant's body), a running class that inherits
-#     from a class of the file (or names one: a class outside the file with the same simple name is refused too), and
-#     two same-named test methods of one class (a report names a case without its parameters). (A test method
-#     inherited from a class outside the lock's file, or declared with an annotation of the project's own, is not seen
-#     here.)
+#     static, private or abstract - none of which extends or implements anything, and no two test methods of one name
+#     in a class; each is required under its own class's name. The source is read as javac reads it: Unicode escapes
+#     translated (JLS 3.3), a carriage return alone ending a line (JLS 3.4), identifiers in any script. Any other shape
+#     is REFUSED by name rather than guessed at: a test method in a class this check does not judge (a member class
+#     without @Nested, an interface, an enum, a record, a local class, a static, private or abstract @Nested class,
+#     another top-level class), one inside a method body (an anonymous class, an enum constant's body), a running class
+#     that extends or implements a type - of the file or from outside it, whose tests this check cannot see - two
+#     same-named test methods of one class (a report names a case without its parameters), a test annotation followed
+#     by nothing read as a method name, and a Unicode escape of a backslash or a line terminator. (A test method
+#     declared with an annotation of the project's own, meta-annotated with @Test, is not seen here.)
 set -u
 
 if [ "$#" -lt 3 ]; then
@@ -53,8 +54,12 @@ import glob
 import os
 import re
 import sys
+import unicodedata
 
 reports, sources, locks = sys.argv[1], sys.argv[2], sys.argv[3:]
+# A refusal names a method as the source spells it, in any script; a runner whose locale is ASCII must not turn that
+# into a traceback.
+sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 # Whitespace - and so a comment, blanked to whitespace below - may sit after @ and around a qualified name's dots:
 # `@ /* note */ Test` is a test JUnit runs, and a pattern that wanted the name right after @ did not see it, so a method
@@ -62,6 +67,57 @@ reports, sources, locks = sys.argv[1], sys.argv[2], sys.argv[3:]
 QUALIFIER = r"(?:(?:org\s*\.\s*junit\s*\.\s*jupiter\s*\.\s*(?:api|params)\s*\.\s*))?"
 TEST_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b")
 NESTED_ANNOTATION = re.compile(r"@\s*" + QUALIFIER + r"Nested\b")
+
+
+JAVA_KEYWORDS = frozenset(
+    "abstract assert boolean break byte case catch char class const continue default do double else enum extends "
+    "final finally float for goto if implements import instanceof int interface long native new package private "
+    "protected public return short static strictfp super switch synchronized this throw throws transient try void "
+    "volatile while true false null _".split())
+
+
+def identifier_char(c, first=False):
+    """Character.isJavaIdentifierStart / isJavaIdentifierPart, by Unicode category: a letter, a letter number, a currency
+    symbol or a connector starts an identifier, and digits, combining marks and format characters may follow. A method
+    or class named in letters other than ASCII is one JUnit runs, and `[A-Za-z_$]` did not read its name (closing batch
+    12 review, subagent P2-1)."""
+    category = unicodedata.category(c)
+    if category[0] == "L" or category in ("Nl", "Sc", "Pc"):
+        return True
+    return not first and category in ("Nd", "Mn", "Mc", "Cf")
+
+
+def java_identifier(token):
+    return bool(token) and token not in JAVA_KEYWORDS and identifier_char(token[0], first=True) \
+        and all(identifier_char(c) for c in token[1:])
+
+
+UNICODE_ESCAPE = re.compile(r"\\u+([0-9A-Fa-f]{4})")
+
+
+def translate_unicode_escapes(text):
+    """The source as javac reads it, before anything else (JLS 3.3): (text, refused). A backslash with an even number of
+    backslashes right before it, then one or more u and four hex digits, is the character it names - in code, comments
+    and strings alike, so `@\\u0054est` is @Test and `g\\u0075ard` is guard; reading the raw text missed the one and
+    misnamed the other (closing batch 12 review, Codex P1). An escape of a backslash or of a line terminator is not
+    modelled but returned as (offset, escape) to be refused: the one changes which backslash can begin the next escape,
+    the other ends a // comment and moves every line after it."""
+    out, refused = [], []
+    i, n, backslashes = 0, len(text), 0
+    while i < n:
+        if text[i] == "\\" and backslashes % 2 == 0:
+            m = UNICODE_ESCAPE.match(text, i)
+            if m:
+                c = chr(int(m.group(1), 16))
+                if c in "\\\n\r":
+                    refused.append((i, m.group(0)))
+                out.append(c)
+                i, backslashes = m.end(), 0
+                continue
+        backslashes = backslashes + 1 if text[i] == "\\" else 0
+        out.append(text[i])
+        i += 1
+    return "".join(out), refused
 
 
 def without_comments_and_strings(text):
@@ -100,27 +156,61 @@ def without_comments_and_strings(text):
     return "".join(out)
 
 
+def past_annotation(text, i):
+    """The index past the annotation whose @ is at i: its name, qualified or not, with blanks after the @ and around the
+    dots, then its (possibly nested) argument list. A name is read by Java's identifier characters, in any script."""
+    n = len(text)
+    i += 1
+    while True:
+        while i < n and text[i].isspace():
+            i += 1
+        while i < n and identifier_char(text[i]):
+            i += 1
+        j = i
+        while j < n and text[j].isspace():
+            j += 1
+        if j < n and text[j] == ".":
+            i = j + 1
+            continue
+        i = j
+        break
+    if i < n and text[i] == "(":
+        depth = 0
+        while i < n:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return i + 1
+            i += 1
+    return i
+
+
 def strip_annotations(text):
     """Drop annotations, with their (possibly nested) argument lists."""
     out = []
     i, n = 0, len(text)
     while i < n:
         if text[i] == "@":
-            m = re.match(r"@\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*", text[i:])
-            i += m.end() if m else 1
-            if i < n and text[i] == "(":
-                depth = 0
-                while i < n:
-                    if text[i] == "(":
-                        depth += 1
-                    elif text[i] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            i += 1
-                            break
-                    i += 1
+            i = past_annotation(text, i)
         else:
             out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
+def method_head(code, start):
+    """What follows the test annotation whose @ is at start, up to the method's body or its ;, every annotation dropped
+    whole however long its arguments: a 4,000-character window ran out inside a long @CsvSource, so the head came back
+    empty and the method was skipped without a word (closing batch 12 review, subagent P2-1)."""
+    out = []
+    i, n = past_annotation(code, start), len(code)
+    while i < n and code[i] not in "{;":
+        if code[i] == "@":
+            i = past_annotation(code, i)
+        else:
+            out.append(code[i])
             i += 1
     return "".join(out)
 
@@ -164,9 +254,9 @@ def supertypes(header):
         m = re.search(r"\b" + keyword + r"\b(.*?)(?=\bimplements\b|\bpermits\b|$)", h, re.S)
         if m:
             for part in m.group(1).split(","):
-                identifiers = re.findall(r"[A-Za-z_$][\w$]*", part)
-                if identifiers:
-                    names.add(identifiers[-1])
+                names_in_part = re.findall(r"[^\s.]+", part)
+                if names_in_part and java_identifier(names_in_part[-1]):
+                    names.add(names_in_part[-1])
     return names
 
 
@@ -185,7 +275,7 @@ def class_bodies(code):
     pending = None
     depth = 0
     parens = 0
-    for m in re.finditer(r"\b(class|interface|enum|record)\s+([A-Za-z_$][\w$]*)|[{}()]", code):
+    for m in re.finditer(r"\b(class|interface|enum|record)\s+([^\s<>{}()\[\],;=.@&?:]+)|[{}()]", code):
         token = m.group(0)
         if token == "(":
             parens += 1
@@ -211,7 +301,7 @@ def class_bodies(code):
                 entry["end"] = m.start()
                 opens.append(entry)
             depth -= 1
-        else:
+        elif java_identifier(m.group(2)):
             prefix = declaration_prefix(code, m.start())
             modifiers = set(re.findall(r"\b(static|private|abstract)\b", strip_annotations(prefix)))
             pending = (m.group(2), NESTED_ANNOTATION.search(prefix) is not None, m.end(), m.group(1), modifiers,
@@ -227,18 +317,25 @@ def declared_tests(path):
     lock cannot stand in for it (closing batch 6 review, both reviewers).
 
     This check JUDGES one shape: test methods written directly in the lock's class or in a chain of @Nested member
-    classes of it - each a class, not static, private or abstract - none of which extends or implements a class of the
-    same file, with no two test methods of one name in a class. Any other shape is a REFUSAL naming what it could not
-    judge, not a guess: a test method in a class JUnit does not run as written (a member class without @Nested, an
-    interface, an enum, a record, a local class, a static, private or abstract @Nested class, another top-level class),
-    one inside a method body (an anonymous class, an enum constant's body), a running class that inherits from a class
-    of the file, and a second test method of the same name in a class. Four review rounds each found
+    classes of it - each a class, not static, private or abstract - none of which extends or implements anything, with
+    no two test methods of one name in a class. Any other shape is a REFUSAL naming what it could not judge, not a
+    guess: a test method in a class this check does not judge (a member class without @Nested, an interface, an enum, a
+    record, a local class, a static, private or abstract @Nested class, another top-level class), one inside a method
+    body (an anonymous class, an enum constant's body), a running class that extends or implements a type, a second
+    test method of the same name in a class, a test annotation followed by nothing read as a method name, and a Unicode
+    escape of a backslash or a line terminator. Four review rounds each found
     a new shape that a model of JUnit's inheritance and discovery read wrong in one direction or the other (closing
     batches 7 to 10), so the check stops at what it can read exactly and says so at the rest."""
     lock_name = os.path.basename(path)[:-len(".java")]
-    code = without_comments_and_strings(open(path, encoding="utf-8").read())
+    # Read in text mode, a carriage return alone or before a newline is one \n (Python's universal newlines), so a line
+    # ends where javac ends it (JLS 3.4) and a // comment stops there.
+    raw = open(path, encoding="utf-8").read()
+    text, refused = translate_unicode_escapes(raw)
+    if refused:
+        return set(), ["a Unicode escape of a backslash or a line terminator (%s) at line %d, which this check does not "
+                       "model" % (escape, raw.count("\n", 0, offset) + 1) for offset, escape in refused]
+    code = without_comments_and_strings(text)
     classes = class_bodies(code)
-    in_file = {e["name"] for e in classes}
 
     def chain_at(offset):
         return [e for e in classes if e["start"] < offset < e["end"]]
@@ -267,22 +364,24 @@ def declared_tests(path):
     refusals = []
     for e in classes:
         chain = chain_of(e)
-        inherited = sorted(s for s in e["supers"] if s in in_file)
-        if runs(chain) and inherited:
-            refusals.append("%s (line %d) extends or implements %s, a name of a class in the same file, so which "
-                            "class runs an inherited test cannot be told from the source" % (
-                                where(chain), line_of(e["declared_at"]), ", ".join(inherited)))
+        # A supertype outside the file too: its tests run under this class's name, and one of the same name stood in
+        # for a test declared here that a tag took out (closing batch 12 review, subagent P3-1).
+        if runs(chain) and e["supers"]:
+            refusals.append("%s (line %d) extends or implements %s, so a test it inherits - from this file or from "
+                            "outside it, where this check cannot see - runs under its name and can stand in for one "
+                            "declared here" % (where(chain), line_of(e["declared_at"]), ", ".join(sorted(e["supers"]))))
     names = set()
     for m in TEST_ANNOTATION.finditer(code):
-        # Annotations stripped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
-        # brace (@ValueSource(strings = { ... })), and cutting there first lost the method that followed. The "@T"
-        # stands for the test annotation itself, so arguments of its own (@RepeatedTest(5)) go with it.
-        head = strip_annotations("@T" + code[m.end():m.end() + 4000])
-        end = min([k for k in (head.find("{"), head.find(";")) if k >= 0] or [len(head)])
-        name = re.search(r"([A-Za-z_$][\w$]*)\s*\(", head[:end])
-        if not name:
+        # Annotations dropped BEFORE the head is cut at the first { or ; - an annotation's own arguments can hold a
+        # brace (@ValueSource(strings = { ... })), and cutting there first lost the method that followed.
+        line = line_of(m.start())
+        before, paren, _ = method_head(code, m.start()).partition("(")
+        method = re.search(r"([^\s<>\[\],.?&]*)\s*$", before).group(1) if paren else ""
+        if not java_identifier(method):
+            # Read as "no test here" this was the one silent exit of the check (closing batch 12 review, subagent P2-1).
+            refusals.append("the test annotation at line %d is followed by nothing this check reads as a method name, "
+                            "so the method it marks cannot be required" % line)
             continue
-        method, line = name.group(1), line_of(m.start())
         chain = chain_at(m.start())
         if not chain:
             refusals.append("%s() at line %d is outside every class" % (method, line))
@@ -296,9 +395,10 @@ def declared_tests(path):
                                                                                                where(chain)))
             continue
         if not runs(chain):
-            refusals.append("%s() at line %d is in %s, which JUnit does not run as written (a member class without "
-                            "@Nested, an interface, an enum, a record, a local class, or a static, private or abstract "
-                            "@Nested class)" % (method, line, where(chain)))
+            refusals.append("%s() at line %d is in %s, which this check does not judge: it judges the lock's class and "
+                            "@Nested classes in it, each a class that is not static, private or abstract (a member "
+                            "class without @Nested, an interface, an enum, a record and a local class are outside "
+                            "that)" % (method, line, where(chain)))
             continue
         key = ("".join("$" + e["name"] for e in chain[1:]), method)
         if key in names:

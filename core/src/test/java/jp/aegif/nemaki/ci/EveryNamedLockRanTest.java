@@ -209,7 +209,7 @@ class EveryNamedLockRanTest {
     void aBraceInANestedClassHeaderIsNotItsBody() throws Exception {
         // The first brace after `class Inner` was taken as Inner's body; an annotation's arguments in the header hold
         // one, so Inner ended there and its guard() was read as the outer one's (closing batch 7 review, Codex P1).
-        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    class Inner implements @A(values = {1}) Marker {\n"
+        sourceText(FOO, "    @Test\n    void guard() { }\n    @Nested\n    class Inner<@A(values = {1}) T> {\n"
                 + "        @Test\n        void guard() { }\n    }\n");
         report("TEST-" + FOO + "$Inner.xml", "name=\"" + FOO + "$Inner\" tests=\"1\" skipped=\"0\" errors=\"0\" "
                 + "failures=\"0\"", FOO, "guard");
@@ -248,7 +248,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "own");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in a class JUnit does not run passed");
-        assertTrue(outcome.output().contains("guard() at line 9 is in FooTest.Inner, which JUnit does not run as written"),
+        assertTrue(outcome.output().contains("guard() at line 9 is in FooTest.Inner, which this check does not judge"),
                 "the refusal does not name the method, its line and its class: " + outcome.output());
     }
 
@@ -260,8 +260,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "own");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in an interface passed");
-        assertTrue(outcome.output().contains("guard() at line 9 is in FooTest.Contract, which JUnit does not run as "
-                + "written"), "the refusal does not name the interface: " + outcome.output());
+        assertTrue(outcome.output().contains("guard() at line 9 is in FooTest.Contract, which this check does not judge"), "the refusal does not name the interface: " + outcome.output());
     }
 
     @Test
@@ -272,8 +271,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "a");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in a local class passed");
-        assertTrue(outcome.output().contains("notRun() at line 9 is in FooTest.Local, which JUnit does not run as "
-                + "written"), "the refusal does not name the local class: " + outcome.output());
+        assertTrue(outcome.output().contains("notRun() at line 9 is in FooTest.Local, which this check does not judge"), "the refusal does not name the local class: " + outcome.output());
     }
 
     @Test
@@ -323,8 +321,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "inheritance within the lock's file passed");
-        assertTrue(outcome.output().contains("FooTest.Impl (line 12) extends or implements Base, a name of a class in the "
-                        + "same file"),
+        assertTrue(outcome.output().contains("FooTest.Impl (line 12) extends or implements Base, so a test it inherits"),
                 "the refusal does not name the class and what it inherits: " + outcome.output());
     }
 
@@ -339,7 +336,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "implementing an interface of the file passed");
-        assertTrue(outcome.output().contains("extends or implements Marker, a name of a class in the same file"),
+        assertTrue(outcome.output().contains("extends or implements Marker, so a test it inherits"),
                 "the refusal does not name the interface: " + outcome.output());
     }
 
@@ -354,7 +351,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a qualified supertype of the file passed");
-        assertTrue(outcome.output().contains("extends or implements Base, a name of a class in the same file"),
+        assertTrue(outcome.output().contains("extends or implements Base, so a test it inherits"),
                 "the refusal does not name Base: " + outcome.output());
     }
 
@@ -391,7 +388,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "own");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a @Nested class JUnit does not reach passed");
-        assertTrue(outcome.output().contains("x() at line 11 is in FooTest.Holder.X, which JUnit does not run as written"),
+        assertTrue(outcome.output().contains("x() at line 11 is in FooTest.Holder.X, which this check does not judge"),
                 "the refusal does not name the unreachable class: " + outcome.output());
     }
 
@@ -403,7 +400,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "own");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in a record passed");
-        assertTrue(outcome.output().contains("p() at line 9 is in FooTest.Point, which JUnit does not run as written"),
+        assertTrue(outcome.output().contains("p() at line 9 is in FooTest.Point, which this check does not judge"),
                 "the refusal does not name the record: " + outcome.output());
     }
 
@@ -416,7 +413,7 @@ class EveryNamedLockRanTest {
         ran(FOO, 0, "a");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a lock that is an interface passed");
-        assertTrue(outcome.output().contains("a() at line 6 is in FooTest, which JUnit does not run as written"),
+        assertTrue(outcome.output().contains("a() at line 6 is in FooTest, which this check does not judge"),
                 "the refusal does not name the interface: " + outcome.output());
     }
 
@@ -431,7 +428,7 @@ class EveryNamedLockRanTest {
                 + "failures=\"0\"", FOO + "$Kind", "e");
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in a @Nested enum passed");
-        assertTrue(outcome.output().contains("e() at line 11 is in FooTest.Kind, which JUnit does not run as written"),
+        assertTrue(outcome.output().contains("e() at line 11 is in FooTest.Kind, which this check does not judge"),
                 "the refusal does not name the enum: " + outcome.output());
     }
 
@@ -453,9 +450,9 @@ class EveryNamedLockRanTest {
         Outcome outcome = run(FOO);
         assertRefused(outcome, FOO, "a test in a static, private or abstract @Nested class passed");
         assertTrue(outcome.output().contains("cannot judge 3 shape(s)")
-                        && outcome.output().contains("s() at line 10 is in FooTest.Holder, which JUnit does not run")
-                        && outcome.output().contains("p() at line 15 is in FooTest.Hidden, which JUnit does not run")
-                        && outcome.output().contains("q() at line 20 is in FooTest.Partial, which JUnit does not run"),
+                        && outcome.output().contains("s() at line 10 is in FooTest.Holder, which this check does not judge")
+                        && outcome.output().contains("p() at line 15 is in FooTest.Hidden, which this check does not judge")
+                        && outcome.output().contains("q() at line 20 is in FooTest.Partial, which this check does not judge"),
                 "the refusal does not name each of the three classes: " + outcome.output());
     }
 
@@ -516,6 +513,140 @@ class EveryNamedLockRanTest {
                 "the refusal does not name the second method: " + outcome.output());
     }
 
+    // The source is read as javac reads it (closing batch 12 review): Unicode escapes first (JLS 3.3), a carriage return
+    // alone as a line's end (JLS 3.4), identifiers in any script. Each fixture below writes the escape itself, so the Java
+    // strings double the backslash.
+
+    @Test
+    @DisplayName("a test annotation written with a Unicode escape is a test JUnit runs, and its absence fails the job")
+    void aTestAnnotationWrittenWithAUnicodeEscapeIsRequired() throws Exception {
+        sourceText(FOO, "    @Test\n    void decoy() { }\n    @\\u0054est\n    void guard() { }\n");
+        ran(FOO, 0, "decoy");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test annotation written with an escape went unrequired");
+        assertTrue(outcome.output().contains("1 of the 2 test methods it declares did not run: FooTest.guard "),
+                "the refusal does not name the escaped test: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a method name written with a Unicode escape is the name javac reads and surefire reports")
+    void aMethodNameWrittenWithAUnicodeEscapeIsTheNameJavaReads() throws Exception {
+        sourceText(FOO, "    @Test\n    void g\\u0075ard() { }\n");
+        ran(FOO, 0, "guard");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a method named with an escape was read by its raw text: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a backslash right before an escape's backslash keeps it text, so nothing is translated or refused")
+    void aBackslashBeforeAnEscapeKeepsItText() throws Exception {
+        // \\u000a with two backslashes is text: the second one has an odd number of backslashes before it.
+        sourceText(FOO, "    // written out: \\\\u000a\n    @Test\n    void own() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "an escaped backslash before u was read as an escape: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a Unicode escape of a line terminator or a backslash is refused by name, at its line")
+    void anEscapedLineTerminatorOrBackslashIsRefusedByName() throws Exception {
+        // The one ends a // comment and moves every line after it; the other changes which backslash begins the next
+        // escape. Neither is modelled.
+        sourceText(FOO, "    // a \\u000a @Test void hidden() { }\n    @Test\n    void own() { }\n    /* \\u005c */\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "an escaped line terminator and an escaped backslash passed");
+        assertTrue(outcome.output().contains("cannot judge 2 shape(s)")
+                        && outcome.output().contains("(\\u000a) at line 6")
+                        && outcome.output().contains("(\\u005c) at line 9"),
+                "the refusal does not name both escapes at their lines: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a carriage return alone ends a line, so a // comment does not run on over the tests after it")
+    void aCarriageReturnAloneEndsALine() throws Exception {
+        sourceText(FOO, "    // note\r    @Test\r    void hidden() { }\r    @Test\n    void own() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test after a carriage-return line went unrequired");
+        assertTrue(outcome.output().contains(": FooTest.hidden "), "the refusal does not name the test after the comment: "
+                + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test method named outside ASCII is required, and its absence fails the job")
+    void aTestMethodNamedOutsideAsciiIsRequired() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Test\n    void 確かめる() { }\n    @Test\n    void €cost() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "tests named outside ASCII went unrequired");
+        assertTrue(outcome.output().contains("2 of the 3 test methods it declares did not run: FooTest.€cost, "
+                + "FooTest.確かめる "), "the refusal does not name both tests: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a @Nested class named outside ASCII is a class of the lock, judged by its own tests")
+    void aNestedClassNamedOutsideAsciiIsJudged() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    class 内側 {\n        @Test\n        void x() { }\n    }\n");
+        report("TEST-" + FOO + "$内側.xml", "name=\"" + FOO + "$内側\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$内側2.xml", "name=\"" + FOO + "$内側\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$内側", "x");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a @Nested class named outside ASCII was not read as a class: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an annotation named outside ASCII, or with a space after its @, is passed over to the method's name")
+    void anAnnotationNamedOutsideAsciiIsPassedOverToTheMethod() throws Exception {
+        sourceText(FOO, "    @Test\n    @ DisplayName(\"y\")\n    @注記(\"x\")\n    void own() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "an annotation's name was read as the method's: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test annotation followed by nothing read as a method name is refused by name, not skipped")
+    void aTestAnnotationOnNoMethodIsRefusedByName() throws Exception {
+        // Skipped, it was the one way the check said nothing about a test annotation it had found (closing batch 12
+        // review, subagent P2-1).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Test\n    @interface Composed { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test annotation on no method was skipped");
+        assertTrue(outcome.output().contains("the test annotation at line 8 is followed by nothing this check reads as a "
+                + "method name"), "the refusal does not name the annotation's line: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a lambda's parameter named record is not a record declaration, so the body after it is not a class")
+    void aLambdaParameterNamedRecordIsNotAClass() throws Exception {
+        // What follows class, interface, enum or record is a declaration only when it is a Java identifier: `record ->`
+        // names none, and taken as one the anonymous class after it was read as a member class of the lock.
+        sourceText(FOO, "    @Test\n    void own() { }\n"
+                + "    java.util.function.Function<Object, Object> f = record -> new Object() {\n        @Test\n"
+                + "        void ghost() { }\n    };\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test in an anonymous class passed");
+        assertTrue(outcome.output().contains("ghost() at line 9 is inside a method body or an anonymous class"),
+                "the refusal does not say the test is in an anonymous class: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a test whose annotations run past any window is still a declared test, and its absence fails the job")
+    void aTestWhoseAnnotationsRunPastAnyWindowIsRequired() throws Exception {
+        // A 4,000-character window ran out inside a long @CsvSource, so the method went unread (closing batch 12 review,
+        // subagent P2-1).
+        sourceText(FOO, "    @ParameterizedTest\n    @CsvSource({\n" + "        \"row\",\n".repeat(600) + "    })\n"
+                + "    void big(String s) { }\n    @Test\n    void own() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a test behind a long annotation went unrequired");
+        assertTrue(outcome.output().contains(": FooTest.big "), "the refusal does not name the long-annotated test: "
+                + outcome.output());
+    }
+
     @Test
     @DisplayName("a lock with several shapes this check cannot judge names every one of them")
     void aLockWithSeveralShapesNamesEach() throws Exception {
@@ -544,8 +675,10 @@ class EveryNamedLockRanTest {
     }
 
     @Test
-    @DisplayName("a superclass outside the file is not this check's to judge, so the class is judged by its own tests")
-    void aSuperclassOutsideTheFileIsJudged() throws Exception {
+    @DisplayName("a superclass outside the file is refused by name: a test it holds would run under the class's name")
+    void aSuperclassOutsideTheFileIsRefusedByName() throws Exception {
+        // Its tests are reported under the running class's name, so one of the same name stood in for a test declared
+        // here that a tag took out (closing batch 12 review, subagent P3-1).
         sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    class Impl extends java.util.ArrayList<String> {\n"
                 + "        @Test\n        void mine() { }\n    }\n");
         report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
@@ -553,7 +686,9 @@ class EveryNamedLockRanTest {
         report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
                 + "failures=\"0\"", FOO + "$Impl", "mine");
         Outcome outcome = run(FOO);
-        assertEquals(0, outcome.exit(), "a superclass outside the file was refused: " + outcome.output());
+        assertRefused(outcome, FOO, "a class inheriting from outside the file passed");
+        assertTrue(outcome.output().contains("FooTest.Impl (line 9) extends or implements ArrayList, so a test it inherits"),
+                "the refusal does not name the class and what it inherits: " + outcome.output());
     }
 
     @Test
