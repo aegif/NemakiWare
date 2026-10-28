@@ -671,6 +671,54 @@ class EveryNamedLockRanTest {
     }
 
     @Test
+    @DisplayName("a supplementary format character stays in a name, as javac keeps it")
+    void aSupplementaryFormatCharacterStaysInTheName() throws Exception {
+        // javac decides what to ignore per UTF-16 unit, and a surrogate is never ignorable: measured with javac 21 and 27,
+        // gu<U+E0001>ard is the method's name (closing batch 14 review, subagent P3-3). The fixture holds the escapes; the
+        // report holds the character itself.
+        sourceText(FOO, "    @Test\n    void gu\\uDB40\\uDC01ard() { }\n");
+        ran(FOO, 0, "gu\uDB40\uDC01ard");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a supplementary format character was dropped from a name: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("an annotation name qualified further is not the test annotation: @Test.Helper is not @Test")
+    void aTestAnnotationQualifiedFurtherIsNotATest() throws Exception {
+        sourceText(FOO, "    @org.junit.jupiter.api.Test\n    void own() { }\n    @Test.Helper\n    void helper() { }\n"
+                + "    @Test . Other\n    void other() { }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a type qualified under Test was read as the test annotation: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a keyword inside a longer name is not the keyword: Foo$implements is one type, named whole")
+    void aKeywordInsideALongerNameIsNotTheKeyword() throws Exception {
+        // \b ended the name at $, so the inherited type was named Foo$ (closing batch 14 review, subagent P3-6).
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    class Impl extends Foo$implements {\n        @Test\n"
+                + "        void mine() { }\n    }\n");
+        ran(FOO, 0, "own");
+        Outcome outcome = run(FOO);
+        assertRefused(outcome, FOO, "a class inheriting a type with a keyword in its name passed");
+        assertTrue(outcome.output().contains("FooTest.Impl (line 9) extends or implements Foo$implements, so a test it "
+                + "inherits"), "the refusal does not name the whole type: " + outcome.output());
+    }
+
+    @Test
+    @DisplayName("a sealed class's permits list naming Sub$implements is not inheritance, so the class is judged")
+    void aPermittedSubclassNamedWithAKeywordIsNotInheritance() throws Exception {
+        sourceText(FOO, "    @Test\n    void own() { }\n    @Nested\n    sealed class Impl permits Sub$implements {\n"
+                + "        @Test\n        void mine() { }\n    }\n");
+        report("TEST-" + FOO + "$Impl.xml", "name=\"" + FOO + "$Impl\" tests=\"2\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO, "own");
+        report("TEST-" + FOO + "$Impl2.xml", "name=\"" + FOO + "$Impl\" tests=\"0\" skipped=\"0\" errors=\"0\" "
+                + "failures=\"0\"", FOO + "$Impl", "mine");
+        Outcome outcome = run(FOO);
+        assertEquals(0, outcome.exit(), "a permits list was read as inheritance: " + outcome.output());
+    }
+
+    @Test
     @DisplayName("a lambda's parameter named record is not a record declaration, so the body after it is not a class")
     void aLambdaParameterNamedRecordIsNotAClass() throws Exception {
         // What follows class, interface, enum or record is a declaration only when it is a Java identifier: `record ->`

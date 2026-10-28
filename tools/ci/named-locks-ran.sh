@@ -24,8 +24,9 @@
 #     static, private or abstract - none of which extends or implements anything, and no two test methods of one name
 #     in a class; each is required under its own class's name. The source is read as javac reads it: Unicode escapes
 #     translated (JLS 3.3) and a pair of them for one supplementary character joined, a carriage return alone ending a
-#     line (JLS 3.4), identifiers in any script with the characters javac ignores in them dropped (JLS 3.8), an
-#     annotation's name read to its end (@Test$Guard is not @Test). Any other shape
+#     line (JLS 3.4), identifiers in any script with the characters javac ignores in them dropped (JLS 3.8 - in the
+#     basic plane: javac decides it per UTF-16 unit), an annotation's name read to its end (@Test$Guard and @Test.Helper
+#     are not @Test). Any other shape
 #     is REFUSED by name rather than guessed at: a test method in a class this check does not judge (a member class
 #     without @Nested, an interface, an enum, a record, a local class, a static, private or abstract @Nested class,
 #     another top-level class), one inside a method body (an anonymous class, an enum constant's body), a running class
@@ -86,25 +87,56 @@ def identifier_char(c, first=False):
     """Character.isJavaIdentifierStart / isJavaIdentifierPart, by Unicode category: a letter, a letter number, a currency
     symbol or a connector starts an identifier, and digits, combining marks and format characters may follow. A method
     or class named in letters other than ASCII is one JUnit runs, and `[A-Za-z_$]` did not read its name (closing batch
-    12 review, subagent P2-1)."""
+    12 review, subagent P2-1). The format characters of the basic plane never reach here (ignorable() takes them out
+    first); one of a supplementary plane stays in the name, as javac keeps it (closing batch 14 review, subagent P3-3)."""
     category = unicodedata.category(c)
     if category[0] == "L" or category in ("Nl", "Sc", "Pc"):
         return True
-    return not first and category in ("Nd", "Mn", "Mc")
+    return not first and category in ("Nd", "Mn", "Mc", "Cf")
 
 
 def ignorable(c):
     """Character.isIdentifierIgnorable: the ISO controls that are not white space, and the format characters. javac
     leaves them out of an identifier (JLS 3.8), so @T<U+200B>est is @Test and gu<U+00AD>ard is guard; kept, the one
     was not seen and the other was required under a name surefire never reports (closing batch 13 review, subagent
-    P2-1). They are taken out of the code - comments and strings already blanked - before anything is read."""
+    P2-1). They are taken out of the code - comments and strings already blanked - before anything is read.
+
+    javac asks it of each UTF-16 unit, so a supplementary character - U+E0001, a format character - is never ignored: its
+    units are surrogates. Measured with javac 21 and 27: gu<U+E0001>ard stays gu<U+E0001>ard while gu<U+00AD>ard is
+    guard (closing batch 14 review, subagent P3-3)."""
     o = ord(c)
+    if o > 0xFFFF:
+        return False
     return o <= 0x08 or 0x0E <= o <= 0x1B or 0x7F <= o <= 0x9F or unicodedata.category(c) == "Cf"
 
 
 def annotations_named(pattern, text):
-    """The matches of an annotation pattern whose name ends where the match does - not followed by more of a name."""
-    return [m for m in pattern.finditer(text) if m.end() == len(text) or not identifier_char(text[m.end()])]
+    """The matches of an annotation pattern whose name ends where the match does - not followed by more of a name, nor
+    by a dot that qualifies it further: @Test.Helper names a type Helper, not @Test (closing batch 14 review, subagent
+    P3-5)."""
+    found = []
+    for m in pattern.finditer(text):
+        j = m.end()
+        if j < len(text) and identifier_char(text[j]):
+            continue
+        while j < len(text) and text[j].isspace():
+            j += 1
+        if j < len(text) and text[j] == ".":
+            continue
+        found.append(m)
+    return found
+
+
+def whole_words(text, words):
+    """(start, end, word) for each of words written as a word of its own - no identifier character on either side. \\b
+    ends a word at $, so Foo$implements held the keyword implements (closing batch 14 review, subagent P3-6)."""
+    found = []
+    for m in re.finditer("|".join(words), text):
+        before = text[m.start() - 1] if m.start() > 0 else " "
+        after = text[m.end()] if m.end() < len(text) else " "
+        if not identifier_char(before) and not identifier_char(after):
+            found.append((m.start(), m.end(), m.group(0)))
+    return found
 
 
 def java_identifier(token):
@@ -273,12 +305,13 @@ def supertypes(header):
     batch 8 review). A class is refused for inheriting when the keyword is there, named or not: a name this check could
     not read was "inherits nothing" (closing batch 13 review, subagent P3-1)."""
     h = drop_balanced(strip_annotations(header), "<", ">")
-    inherits = re.search(r"\b(?:extends|implements)\b", h) is not None
+    words = whole_words(h, ("extends", "implements", "permits"))
+    inherits = any(word != "permits" for _, _, word in words)
     names = set()
-    for keyword in ("extends", "implements"):
-        m = re.search(r"\b" + keyword + r"\b(.*?)(?=\bimplements\b|\bpermits\b|$)", h, re.S)
-        if m:
-            for part in m.group(1).split(","):
+    for i, (start, end, word) in enumerate(words):
+        if word != "permits":
+            stop = words[i + 1][0] if i + 1 < len(words) else len(h)
+            for part in h[end:stop].split(","):
                 names_in_part = re.findall(r"[^\s.]+", part)
                 if names_in_part and java_identifier(names_in_part[-1]):
                     names.add(names_in_part[-1])
