@@ -273,6 +273,25 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(types.getTypesDescendants(eq(REPO), eq("nemaki:nullParent"), any(BigInteger.class), anyBoolean()))
                 .thenReturn(java.util.Arrays.asList(
                         (org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer) null));
+        // A document type defining a property of the same query name as nemaki:joinable's (closing batch 20 review,
+        // subagent P3-1), and a type the type system does not answer for (closing batch 20 review, Codex P2).
+        DocumentTypeDefinitionImpl withJtag = new DocumentTypeDefinitionImpl();
+        withJtag.setId("nemaki:withJtag");
+        withJtag.setLocalName("withJtag");
+        withJtag.setQueryName("nemaki:withJtag");
+        withJtag.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
+        withJtag.setIsQueryable(true);
+        withJtag.setIsFulltextIndexed(false);
+        withJtag.setIsIncludedInSupertypeQuery(true);
+        Map<String, PropertyDefinition<?>> withJtagProperties = new LinkedHashMap<>();
+        withJtagProperties.put("cmis:name", properties.get("cmis:name"));
+        withJtagProperties.put("cmis:objectId", properties.get("cmis:objectId"));
+        withJtagProperties.put("cmis:objectTypeId", properties.get("cmis:objectTypeId"));
+        withJtagProperties.put("nemaki:jtag", joinableProperties.get("nemaki:jtag"));
+        withJtag.setPropertyDefinitions(withJtagProperties);
+        when(types.getTypeByQueryName(REPO, "nemaki:withJtag")).thenReturn(withJtag);
+        when(types.getTypeByQueryName(REPO, "nemaki:unloadable"))
+                .thenThrow(new CmisRuntimeException("the type system is not loaded"));
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -763,7 +782,15 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
             "has", fields("a", "nemaki:joinable", "x", "x"),
             "hasNot", fields("a", null, null, "x"),
             "hasToo", fields("b", "nemaki:joinable", null, null),
-            "hasSecond", fields("c", "nemaki:second", "y", null));
+            "hasSecond", fields("c", "nemaki:second", "y", null),
+            "typedHas", typedFields("nemaki:withJtag", "a", "x"));
+
+    /** A document of another type, with a value of its own nemaki:jtag and no secondary type. */
+    private static Map<String, List<String>> typedFields(String type, String name, String jtag) {
+        Map<String, List<String>> fields = fields(name, null, jtag, null);
+        fields.put("cmis_objectTypeId", List.of(type));
+        return fields;
+    }
 
     private static Map<String, List<String>> fields(String name, String secondaryType, String jtag, String tag) {
         Map<String, List<String>> fields = new LinkedHashMap<>();
@@ -1039,6 +1066,36 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                     || refused.getMessage().contains("were not all read"), () -> "「" + statement + "」 was refused for "
                     + "another reason: " + refused.getMessage());
             assertEquals(List.of(), sent, "「" + statement + "」 was refused only after a query went to Solr");
+        }
+    }
+
+    @Test
+    @DisplayName("a statement refused for its shape is refused for it when the type system does not answer for a JOIN's type (R215)")
+    void aStatementRefusedForItsShapeReadsNoTypeFirst() {
+        // The first pass told the server's JOINs from the client's by reading each JOIN's type, so a statement whose second
+        // JOIN the parser did not record answered 500 for a type the type system did not answer for (closing batch 20
+        // review, Codex P2).
+        String statement = "SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:unloadable p ON d.cmis:objectId = "
+                + "p.cmis:objectId JOIN nemaki:joinable p ON d.cmis:objectId = p.cmis:objectId";
+        sent.clear();
+        CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class, () -> run(statement),
+                () -> "「" + statement + "」 was not refused for its shape — the queries it sent: " + sent);
+        assertTrue(refused.getMessage().contains("were not all read"), () -> "「" + statement + "」 was refused for "
+                + "another reason: " + refused.getMessage());
+        assertEquals(List.of(), sent, "「" + statement + "」 was refused only after a query went to Solr");
+    }
+
+    @Test
+    @DisplayName("a property the FROM's own type defines is read there, without a JOIN the server adds (R215, over-refusal)")
+    void aPropertyTheFromTypeDefinesGetsNoJoinFromTheServer() {
+        // The server JOINed nemaki:joinable for nemaki:jtag although the FROM's type defines it too: the name became
+        // ambiguous, the parse failed and the manual fallback, which cannot answer the WHERE whole, refused the statement
+        // — a statement answered before was refused once a FROM after a newline was found too (closing batch 20 review,
+        // subagent P3-1). typedHas is of the FROM's type; has has the secondary type's value under the same name.
+        for (String space : List.of(" ", "\n")) {
+            assertEquals(Set.of("typedHas"), answered("SELECT cmis:objectId" + space + "FROM nemaki:withJtag WHERE "
+                    + "nemaki:jtag = 'x' AND cmis:name = 'a'"), () -> "a property of the FROM's own type was not read "
+                    + "there — " + lastSent());
         }
     }
 

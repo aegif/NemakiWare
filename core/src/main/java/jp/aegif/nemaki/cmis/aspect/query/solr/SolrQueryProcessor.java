@@ -1004,7 +1004,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Check if this property belongs to a secondary type
 				TypeDefinition secondaryType = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
-				if (secondaryType != null && !namedIn(fromPart, secondaryType)) {
+				if (secondaryType != null && !namedIn(fromPart, secondaryType)
+						&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {
 					secondaryTypesToJoin.add(secondaryType.getId());
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
@@ -1110,10 +1111,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 						+ "(a JOIN without an alias is named by its type), so the statement is refused rather than "
 						+ "answered with one of those rows lost");
 			}
-			String queryName = types.get(join.alias);
-			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
-			if (join.onLeft == null && join.onRight == null
-					&& injected.contains(joined != null ? joined.getId() : queryName)) {
+			// Told by the text alone: the server writes its JOIN as the type's id, with no alias and no ON, so no type is
+			// read on this pass (closing batch 20 review, Codex P2 — the read of each JOIN's type here answered 500 for a
+			// statement refused for its shape when the type system did not answer).
+			if (join.onLeft == null && join.onRight == null && injected.contains(types.get(join.alias))) {
 				continue;
 			}
 			clientJoinSpecs.add(join);
@@ -1227,6 +1228,22 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return row;
 	}
 
+	/**
+	 * Whether the type the FROM names first defines a property of that query name itself. The parser resolves the name
+	 * there, and a JOIN of a secondary type defining a property of the same query name made the name ambiguous: the parse
+	 * failed and the statement went to the manual fallback (closing batch 20 review, subagent P3-1 — a statement answered
+	 * before was refused once a FROM after a newline was found too). A type the type system does not answer throws, and
+	 * the caller's catch leaves the statement as written.
+	 */
+	private boolean fromTypeDefines(String repositoryId, String fromPart, String propertyName) {
+		Matcher fromType = FROM_TYPE.matcher(fromPart);
+		if (!fromType.find()) {
+			return false;
+		}
+		TypeDefinition type = typeManager.getTypeByQueryName(repositoryId, fromType.group(1));
+		return type != null && typeManager.getPropertyIdForQueryName(repositoryId, type, propertyName) != null;
+	}
+
 	/** Whether the text before WHERE (literals blanked) names the type, by its id or query name, as a type or alias. */
 	private static boolean namedIn(String fromPart, TypeDefinition type) {
 		for (String name : new String[] { type.getId(), type.getQueryName() }) {
@@ -1276,6 +1293,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private static final Pattern WHERE_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])WHERE(?![A-Za-z0-9_:.])");
 	private static final Pattern JOIN_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])JOIN(?![A-Za-z0-9_:.])");
 	private static final Pattern FROM_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])FROM(?![A-Za-z0-9_:.])");
+	private static final Pattern FROM_TYPE = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])FROM\\s+([A-Za-z_][A-Za-z0-9_:]*)");
 	private static final Pattern ORDER_BY_KEYWORD =
 			Pattern.compile("(?i)(?<![A-Za-z0-9_:.])ORDER\\s+BY(?![A-Za-z0-9_:.])");
 
