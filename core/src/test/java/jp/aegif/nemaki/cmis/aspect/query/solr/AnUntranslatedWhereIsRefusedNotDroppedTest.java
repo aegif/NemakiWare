@@ -246,6 +246,22 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         joinable.setPropertyDefinitions(joinableProperties);
         when(types.getTypeByQueryName(REPO, "nemaki:joinable")).thenReturn(joinable);
         when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:jtag")).thenReturn(joinable);
+        // Another secondary type, a type whose subtype a query of it includes, and one whose subtype it leaves out
+        // (closing batch 17 review: subagent P2-1, P3-1, P3-2).
+        secondaryType("nemaki:second", properties.get("cmis:objectId"));
+        SecondaryTypeDefinitionImpl parentAspect = secondaryType("nemaki:parentAspect", properties.get("cmis:objectId"));
+        SecondaryTypeDefinitionImpl childAspect = secondaryType("nemaki:childAspect", properties.get("cmis:objectId"));
+        childAspect.setParentTypeId("nemaki:parentAspect");
+        SecondaryTypeDefinitionImpl quietParent = secondaryType("nemaki:quietParent", properties.get("cmis:objectId"));
+        SecondaryTypeDefinitionImpl quietChild = secondaryType("nemaki:quietChild", properties.get("cmis:objectId"));
+        quietChild.setParentTypeId("nemaki:quietParent");
+        quietChild.setIsIncludedInSupertypeQuery(false);
+        when(types.getTypesDescendants(eq(REPO), eq("nemaki:parentAspect"), any(BigInteger.class), anyBoolean()))
+                .thenReturn(List.of(new org.apache.chemistry.opencmis.commons.impl.dataobjects
+                        .TypeDefinitionContainerImpl(childAspect)));
+        when(types.getTypesDescendants(eq(REPO), eq("nemaki:quietParent"), any(BigInteger.class), anyBoolean()))
+                .thenReturn(List.of(new org.apache.chemistry.opencmis.commons.impl.dataobjects
+                        .TypeDefinitionContainerImpl(quietChild)));
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -283,6 +299,23 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         processor.setSolrUtil(solrUtil);
         processor.setContentService(mock(ContentService.class));
         processor.setExceptionService(new ExceptionServiceImpl());
+    }
+
+    /** A queryable secondary type of the given id, resolvable by its query name, with cmis:objectId for an ON. */
+    private SecondaryTypeDefinitionImpl secondaryType(String id, PropertyDefinition<?> objectId) {
+        SecondaryTypeDefinitionImpl type = new SecondaryTypeDefinitionImpl();
+        type.setId(id);
+        type.setLocalName(id.substring(id.indexOf(':') + 1));
+        type.setQueryName(id);
+        type.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        type.setIsQueryable(true);
+        type.setIsFulltextIndexed(false);
+        type.setIsIncludedInSupertypeQuery(true);
+        Map<String, PropertyDefinition<?>> typeProperties = new LinkedHashMap<>();
+        typeProperties.put("cmis:objectId", objectId);
+        type.setPropertyDefinitions(typeProperties);
+        when(types.getTypeByQueryName(REPO, id)).thenReturn(type);
+        return type;
     }
 
     private static <T extends AbstractPropertyDefinition<?>> T define(T definition, String id, PropertyType type,
@@ -718,7 +751,8 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     private static final Map<String, Map<String, List<String>>> DOCUMENTS = Map.of(
             "has", fields("a", "nemaki:joinable", "x", "x"),
             "hasNot", fields("a", null, null, "x"),
-            "hasToo", fields("b", "nemaki:joinable", null, null));
+            "hasToo", fields("b", "nemaki:joinable", null, null),
+            "hasSecond", fields("c", "nemaki:second", "y", null));
 
     private static Map<String, List<String>> fields(String name, String secondaryType, String jtag, String tag) {
         Map<String, List<String>> fields = new LinkedHashMap<>();
@@ -851,6 +885,72 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         assertEquals(Set.of("has"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
                 + "ON d.cmis:objectId = j.cmis:objectId WHERE nemaki:tag = 'x'"),
                 () -> "the client's JOIN was dropped, or the statement refused, when its parse failed — " + lastSent());
+    }
+
+
+    @Test
+    @DisplayName("a JOIN with a secondary type whose subtype a query of it includes is refused, not answered narrower (R215)")
+    void aJoinWithATypeThatHasSubtypesIsRefused() {
+        // The JOIN asks for the subtype's documents too, and ANY ... IN ('that type') answers the type alone: JOIN
+        // cmis:secondary answered 0 (closing batch 17 review, subagent P2-1).
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:parentAspect p "
+                + "ON d.cmis:objectId = p.cmis:objectId");
+    }
+
+    @Test
+    @DisplayName("a JOIN with a secondary type whose subtypes a query of it leaves out is answered (R215, over-refusal)")
+    void aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered() {
+        answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:quietParent q ON d.cmis:objectId = q.cmis:objectId");
+        assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:quietParent)")),
+                () -> "the JOIN with a type whose subtype is left out was not narrowed to the type — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("an ON qualified by a type's name instead of its alias is the same JOIN (R215, over-refusal)")
+    void anOnQualifiedByTheTypesNameIsTheSameJoin() {
+        // The parser takes a type's query name for the row it names (closing batch 17 review, subagent P3-1).
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON cmis:document.cmis:objectId = j.cmis:objectId"), () -> "an ON naming the FROM by its type was not "
+                + "answered as the JOIN — " + lastSent());
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = nemaki:joinable.cmis:objectId"), () -> "an ON naming the joined type by its name "
+                + "was not answered as the JOIN — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN ON an earlier joined type's cmis:objectId is answered, both JOINs narrowing (R215, over-refusal)")
+    void aJoinChainedOnAnEarlierJoinIsAnswered() {
+        // The earlier joined row is the same object as the FROM's (closing batch 17 review, subagent P3-1). No document of
+        // the fixture has both types, so the answer is none — the JOIN dropped answers hasToo and has.
+        assertEquals(Set.of(), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId JOIN nemaki:second s ON j.cmis:objectId = s.cmis:objectId"),
+                () -> "the chained JOIN was not answered with both JOINs narrowing — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("an alias that is a type's name is not overwritten by the JOIN the server adds for that type (R215)")
+    void anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin() {
+        // The parser files an unaliased JOIN under the type's name and overwrites an entry of that name, so the
+        // server's JOIN of nemaki:joinable took the place of the client's JOIN of nemaki:second (closing batch 17
+        // review, subagent P3-2). hasSecond has the type the client joined and the value the WHERE asks for.
+        assertEquals(Set.of("hasSecond"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:second "
+                + "nemaki:joinable ON d.cmis:objectId = nemaki:joinable.cmis:objectId WHERE nemaki:jtag = 'y'"),
+                () -> "the client's JOIN was taken over by the server's JOIN of the alias's name — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a client's own JOIN without an ON is refused for its ON, not for a JOIN the server added (R215)")
+    void aClientsJoinWithoutAnOnIsRefusedForItsOn() {
+        // The server added a JOIN of the same type and the client's was read as the server's, so only the count of
+        // JOINs refused it, with a reason that was not the reason (closing batch 17 review, subagent P2-2).
+        sent.clear();
+        CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class, () -> run(
+                "SELECT cmis:document.cmis:objectId FROM cmis:document JOIN nemaki:joinable WHERE nemaki:jtag IS NULL"),
+                () -> "a client's JOIN without an ON was answered — the queries it sent: " + sent);
+        assertTrue(refused.getMessage().contains("answered only ON"), () -> "a client's JOIN without an ON was refused "
+                + "for another reason: " + refused.getMessage());
+        assertEquals(List.of(), sent, "a client's JOIN without an ON was refused only after a query went to Solr");
     }
 
     /**

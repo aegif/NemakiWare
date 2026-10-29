@@ -983,6 +983,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Matcher propMatcher = propPattern.matcher(whereClause);
 
 			java.util.Set<String> secondaryTypesToJoin = new java.util.LinkedHashSet<>();
+			// Not when the FROM part already names the type, as a type or as an alias (closing batch 17 review, subagent
+			// P3-2): the parser files an unaliased JOIN under the type's own name and OVERWRITES an entry of that name,
+			// so `JOIN nemaki:other nemaki:commentable ON ...` became a JOIN of nemaki:commentable and the client's JOIN
+			// of nemaki:other was lost; and a client's own unaliased JOIN of the type without an ON was read as the
+			// server's.
+			String fromPart = blanked.substring(0, whereIndex);
 
 			while (propMatcher.find()) {
 				String propertyName = propMatcher.group(1);
@@ -994,7 +1000,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Check if this property belongs to a secondary type
 				TypeDefinition secondaryType = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
-				if (secondaryType != null) {
+				if (secondaryType != null && !namedIn(fromPart, secondaryType)) {
 					secondaryTypesToJoin.add(secondaryType.getId());
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
@@ -1078,6 +1084,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		String mainAlias = queryObject.getMainTypeAlias();
 		Map<String, String> types = queryObject.getTypes();
 		int clientJoins = 0;
+		// The rows an ON may join to: the FROM's and each JOIN's already read, so a JOIN ON an earlier joined type's
+		// cmis:objectId — the same object's — is answered (closing batch 17 review, subagent P3-1).
+		Set<String> bound = new LinkedHashSet<String>();
+		bound.add(mainAlias);
 		for (JoinSpec join : queryObject.getJoins()) {
 			String queryName = types.get(join.alias);
 			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
@@ -1095,11 +1105,29 @@ public class SolrQueryProcessor implements QueryProcessor {
 				throw new CmisInvalidArgumentException("Only an INNER JOIN with a secondary type is answered, so the "
 						+ join.kind + " JOIN with " + named + " is refused");
 			}
-			if (!joinsTheObjectIds(join, mainAlias)) {
+			if (!joinsTheObjectIds(join, bound, types)) {
 				throw new CmisInvalidArgumentException("A JOIN with a secondary type is answered only ON the FROM's "
 						+ "cmis:objectId = the joined type's cmis:objectId, so the JOIN with " + named
 						+ " is refused rather than answered without its condition");
 			}
+			// A type with subtypes a query of it includes: the JOIN asks for those too, and ANY ... IN ('that type')
+			// answers the type alone, so the two would part (closing batch 17 review, subagent P2-1 — JOIN cmis:secondary
+			// answered 0). Refused rather than answered narrower than asked.
+			List<TypeDefinitionContainer> descendants = typeManager.getTypesDescendants(repositoryId, joined.getId(),
+					BigInteger.valueOf(-1), false);
+			if (descendants == null) {
+				// Not «no subtypes»: the type system did not answer.
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"The subtypes of " + named + " could not be read, so the JOIN was not answered");
+			}
+			for (TypeDefinitionContainer descendant : descendants) {
+				TypeDefinition sub = descendant.getTypeDefinition();
+				if (sub != null && !joined.getId().equals(sub.getId()) && Boolean.TRUE.equals(sub.isIncludedInSupertypeQuery())) {
+					throw new CmisInvalidArgumentException("A JOIN with " + named + " would also ask for its subtype "
+							+ sub.getId() + ", which this server does not answer, so the statement is refused");
+				}
+			}
+			bound.add(join.alias);
 			String field = SolrUtil.queryableFieldName(
 					solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
 			// The id escaped as the walker escapes the literal of ANY ... IN ('that type') (walkString): unescaped, the
@@ -1108,8 +1136,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 					org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(joined.getId()))).toString());
 		}
 		if (clientJoins != written) {
-			// The text JOINs a type the parser did not record: refused, not answered as if the JOIN were not there. No
-			// statement this server has been measured with comes here — a guard for a walk that stops part way.
+			// The text JOINs a type the parser did not record: refused, not answered as if the JOIN were not there. A
+			// guard for a walk that stops part way: the one statement known to come here — a client's own JOIN without an
+			// ON, of a type the server JOINed too — no longer does, since the server does not JOIN a type the FROM already
+			// names (closing batch 17 review, subagent P2-2).
 			throw new CmisInvalidArgumentException("The statement's JOINs were not all read (" + clientJoins + " of "
 					+ written + "), so it is refused rather than answered without them"
 					+ (parseFailure != null ? ": " + parseFailure.getMessage() : ""));
@@ -1117,20 +1147,56 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return filters;
 	}
 
-	/** ON {FROM}.cmis:objectId = {joined}.cmis:objectId, in either order, each side qualified by its own type. */
-	private static boolean joinsTheObjectIds(JoinSpec join, String mainAlias) {
+	/**
+	 * ON {a row already read}.cmis:objectId = {the joined type}.cmis:objectId, in either order. A side is qualified by
+	 * its row's alias or by its type's query name when that names one row only — the parser takes both (closing batch 17
+	 * review, subagent P3-1: ON cmis:document.cmis:objectId = c.cmis:objectId under FROM cmis:document d was refused).
+	 */
+	private static boolean joinsTheObjectIds(JoinSpec join, Set<String> bound, Map<String, String> types) {
 		ColumnReference left = join.onLeft;
 		ColumnReference right = join.onRight;
-		if (left == null || right == null || mainAlias == null || join.alias == null) {
+		if (left == null || right == null || join.alias == null) {
 			return false;
 		}
 		if (!PropertyIds.OBJECT_ID.equals(left.getPropertyQueryName())
 				|| !PropertyIds.OBJECT_ID.equals(right.getPropertyQueryName())) {
 			return false;
 		}
-		String l = left.getQualifier();
-		String r = right.getQualifier();
-		return (mainAlias.equals(l) && join.alias.equals(r)) || (mainAlias.equals(r) && join.alias.equals(l));
+		String l = rowOf(left.getQualifier(), types);
+		String r = rowOf(right.getQualifier(), types);
+		return (l != null && r != null)
+				&& ((bound.contains(l) && join.alias.equals(r)) || (bound.contains(r) && join.alias.equals(l)));
+	}
+
+	/** The alias of the row a qualifier names: the alias itself, or a type's query name that one row only has. */
+	private static String rowOf(String qualifier, Map<String, String> types) {
+		if (qualifier == null) {
+			return null;
+		}
+		if (types.containsKey(qualifier)) {
+			return qualifier;
+		}
+		String row = null;
+		for (Map.Entry<String, String> entry : types.entrySet()) {
+			if (qualifier.equals(entry.getValue())) {
+				if (row != null) {
+					return null;
+				}
+				row = entry.getKey();
+			}
+		}
+		return row;
+	}
+
+	/** Whether the text before WHERE (literals blanked) names the type, by its id or query name, as a type or alias. */
+	private static boolean namedIn(String fromPart, TypeDefinition type) {
+		for (String name : new String[] { type.getId(), type.getQueryName() }) {
+			if (name != null && Pattern.compile("(?<![A-Za-z0-9_:.])" + Pattern.quote(name) + "(?![A-Za-z0-9_:.])")
+					.matcher(fromPart).find()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
