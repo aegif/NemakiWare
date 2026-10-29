@@ -121,7 +121,9 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   定義しない名前、補助のパーサが 1 つの述語しか訳せない複合 WHERE、複数値の性質への `=`・`LIKE`（`ANY … IN` に書き換えて
   ください）、`FROM` の型が持たない subtype の性質（`FROM` にその subtype を書いてください）、`FROM` に無い型、
   `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文、secondary type でない型との JOIN・外部結合
-  （`LEFT OUTER JOIN`）・ON が両方の `cmis:objectId` の等価でない JOIN（ON の無いものを含む）。JOIN を書いた文は、その
+  （`LEFT OUTER JOIN`）・ON が両方の `cmis:objectId` の等価でない JOIN（ON の無いものを含む）・FROM の 2 つの行に同じ名前を
+  付けた JOIN（別名の無い JOIN は型の名前を使うので、同じ型を別名なしで 2 度 JOIN した文を含む — 別名を付けてください）。
+  JOIN を書いた文は、その
   secondary type を持たない文書を返さなくなります。
 - query parser の `<>`・`NOT LIKE`・`NOT IN` と、`NOT (…)` で包んだ比較は、その性質を持たない文書を返さなくなります。
   **どれも条件を無視した答えでした**。400 を受けたら、条件を訳せる形（型を `FROM` か `JOIN` に書く、
