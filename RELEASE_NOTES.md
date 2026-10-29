@@ -107,6 +107,9 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   subtype の性質を解けず、400 になっていました）。secondary type の性質で絞るときは secondary type の条件を足さず、
   複数値の性質は `ANY … IN`（完全一致）で問います。**secondary type の性質と他の条件（名前・作成者・日付・型の性質）を
   組み合わせた検索は 400 になります**。
+- secondary type との JOIN を条件として読みます（INNER JOIN）。`FROM cmis:document d JOIN <secondary type> c ON d.cmis:objectId = c.cmis:objectId` は、その secondary type を持つ文書だけを返します（以前は FROM の型の文書を全部
+  返していました — bedroom で 2,457 件、その型を持つのは 2 件）。答えは `ANY cmis:secondaryObjectTypeIds IN ('<その型>')`
+  と同じです。リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
   `ANY cmis:secondaryObjectTypeIds IN (…)` は 0 件 — 同じ WAR で測りました）。CMIS TCK は 38/38 でした。
 
@@ -115,7 +118,9 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 - **これまで 200 を返していた文の一部が 400 になります** — `cmis:rm_*` の条件、接頭辞の無い問い合わせ名、どの型も
   定義しない名前、補助のパーサが 1 つの述語しか訳せない複合 WHERE、複数値の性質への `=`・`LIKE`（`ANY … IN` に書き換えて
   ください）、`FROM` の型が持たない subtype の性質（`FROM` にその subtype を書いてください）、`FROM` に無い型、
-  `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文。
+  `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文、secondary type でない型との JOIN・外部結合
+  （`LEFT OUTER JOIN`）・ON が両方の `cmis:objectId` の等価でない JOIN（ON の無いものを含む）。JOIN を書いた文は、その
+  secondary type を持たない文書を返さなくなります。
 - query parser の `<>`・`NOT LIKE`・`NOT IN` と、`NOT (…)` で包んだ比較は、その性質を持たない文書を返さなくなります。
   **どれも条件を無視した答えでした**。400 を受けたら、条件を訳せる形（型を `FROM` か `JOIN` に書く、
   プロパティの問い合わせ名を接頭辞付きで書く）に直してください。
@@ -127,8 +132,8 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 ### 主張しないこと
 
 - 訳す規則の無い根の形のうち、測ったのは `'a' = ANY <複数値のプロパティ>` だけです。
-- secondary type との JOIN は答えを絞りません（JOIN だけの文は FROM の型の文書を全部返します — 残件 R215、この版では
-  直していません）。secondary type の性質を問うときは、JOIN ではなく WHERE にその性質を書いてください。
+- JOIN の絞りに secondary type の subtype は入りません（`ANY … IN` と同じく、その型 ID だけです）。2 つ以上の secondary
+  type を JOIN した文は測っていません（各々で絞ります）。
 
 ## 汎用 OIDC のログインは、この製品に宛てた ID トークンだけを受けるようになりました（セキュリティ・挙動の変更）
 
