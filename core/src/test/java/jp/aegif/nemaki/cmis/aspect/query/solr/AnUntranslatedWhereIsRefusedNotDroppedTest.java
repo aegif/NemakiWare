@@ -262,6 +262,17 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(types.getTypesDescendants(eq(REPO), eq("nemaki:quietParent"), any(BigInteger.class), anyBoolean()))
                 .thenReturn(List.of(new org.apache.chemistry.opencmis.commons.impl.dataobjects
                         .TypeDefinitionContainerImpl(quietChild)));
+        // Two types whose subtypes the type system cannot say anything of: one listed without its definition — as
+        // TypeManagerImpl keeps such a container — and one listed as null (closing batch 18 review: Codex P2, subagent
+        // P3-2).
+        secondaryType("nemaki:unreadableParent", properties.get("cmis:objectId"));
+        when(types.getTypesDescendants(eq(REPO), eq("nemaki:unreadableParent"), any(BigInteger.class), anyBoolean()))
+                .thenReturn(List.of(new org.apache.chemistry.opencmis.commons.impl.dataobjects
+                        .TypeDefinitionContainerImpl()));
+        secondaryType("nemaki:nullParent", properties.get("cmis:objectId"));
+        when(types.getTypesDescendants(eq(REPO), eq("nemaki:nullParent"), any(BigInteger.class), anyBoolean()))
+                .thenReturn(java.util.Arrays.asList(
+                        (org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer) null));
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -951,6 +962,62 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         assertTrue(refused.getMessage().contains("answered only ON"), () -> "a client's JOIN without an ON was refused "
                 + "for another reason: " + refused.getMessage());
         assertEquals(List.of(), sent, "a client's JOIN without an ON was refused only after a query went to Solr");
+    }
+
+    @Test
+    @DisplayName("a JOIN with a secondary type whose subtype cannot be read is not answered (R215, fail-closed)")
+    void aJoinWithATypeWhoseSubtypeCannotBeReadIsNotAnswered() {
+        // A subtype listed without its definition is not one a query leaves out: skipping it answered the type alone,
+        // narrower than asked whenever the subtype is one a query includes (closing batch 18 review, Codex P2, subagent
+        // P3-2).
+        for (String type : List.of("nemaki:unreadableParent", "nemaki:nullParent")) {
+            sent.clear();
+            assertThrows(CmisRuntimeException.class, () -> run("SELECT d.cmis:objectId FROM cmis:document d JOIN " + type
+                    + " p ON d.cmis:objectId = p.cmis:objectId"), () -> "the JOIN with " + type + ", whose subtype "
+                    + "could not be read, was not refused as unreadable — the queries it sent: " + sent);
+            assertEquals(List.of(), sent, "the JOIN with " + type + " was refused only after a query went to Solr");
+        }
+    }
+
+    @Test
+    @DisplayName("a name given to two rows of the FROM is refused, not answered with one of the rows lost (R215)")
+    void aNameGivenToTwoRowsIsRefused() {
+        // The parser files a JOIN without an alias under its type's name and overwrites the row of that name (closing
+        // batch 18 review, subagent P3-1): the first statement lost its JOIN of nemaki:second and answered has and hasToo,
+        // the second turned the FROM's row into the secondary type's.
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:second nemaki:joinable "
+                + "ON d.cmis:objectId = nemaki:joinable.cmis:objectId JOIN nemaki:joinable "
+                + "ON d.cmis:objectId = nemaki:joinable.cmis:objectId");
+        assertRefusedWithoutAQuery("SELECT nemaki:joinable.cmis:objectId FROM cmis:document nemaki:joinable JOIN "
+                + "nemaki:joinable ON nemaki:joinable.cmis:objectId = nemaki:joinable.cmis:objectId");
+        assertRefusedWithoutAQuery("SELECT cmis:document.cmis:objectId FROM cmis:document JOIN nemaki:joinable "
+                + "ON cmis:document.cmis:objectId = nemaki:joinable.cmis:objectId JOIN nemaki:joinable "
+                + "ON cmis:document.cmis:objectId = nemaki:joinable.cmis:objectId");
+    }
+
+    @Test
+    @DisplayName("the same secondary type JOINed under two aliases is answered (R215, over-refusal)")
+    void theSameTypeJoinedUnderTwoAliasesIsAnswered() {
+        // Two names, two rows: what is refused is a name given twice, not a type joined twice.
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable "
+                + "j1 ON d.cmis:objectId = j1.cmis:objectId JOIN nemaki:joinable j2 ON d.cmis:objectId = j2.cmis:objectId"),
+                () -> "the type JOINed under two aliases was not answered as the type's documents — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a SELECT list naming a secondary type keeps the JOIN the server adds for its property (R215, over-refusal)")
+    void aSelectListNamingATypeKeepsTheServersJoin() {
+        // The FROM was read from the start of the statement, so a column alias that is a type's name counted as the FROM
+        // naming the type: the server added no JOIN, the property did not resolve, and the manual fallback, which cannot
+        // answer the WHERE whole, refused it (closing batch 18 review, subagent P3-3). The second is the same statement
+        // without the alias. The column is qualified: unqualified, cmis:objectId names a column of the server's JOIN too,
+        // and the parse fails with or without the alias.
+        assertEquals(Set.of("has"), answered("SELECT cmis:document.cmis:objectId AS nemaki:joinable FROM cmis:document "
+                + "WHERE nemaki:jtag = 'x' AND cmis:name = 'a'"), () -> "a column alias that is a type's name changed the "
+                + "answer — " + lastSent());
+        assertEquals(Set.of("has"), answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE nemaki:jtag = 'x' "
+                + "AND cmis:name = 'a'"), () -> "the server's JOIN for the property did not answer the WHERE whole — "
+                + lastSent());
     }
 
     /**

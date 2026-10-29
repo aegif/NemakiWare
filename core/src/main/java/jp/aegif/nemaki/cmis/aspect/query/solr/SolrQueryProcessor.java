@@ -988,7 +988,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// so `JOIN nemaki:other nemaki:commentable ON ...` became a JOIN of nemaki:commentable and the client's JOIN
 			// of nemaki:other was lost; and a client's own unaliased JOIN of the type without an ON was read as the
 			// server's.
-			String fromPart = blanked.substring(0, whereIndex);
+			// From the FROM keyword on: the SELECT list may name a type too — a column alias — and that is not the FROM
+			// naming it (closing batch 18 review, subagent P3-3: the server's JOIN went missing and the statement was
+			// refused).
+			Matcher from = FROM_KEYWORD.matcher(blanked);
+			int fromStart = (from.find() && from.start() < whereIndex) ? from.start() : 0;
+			String fromPart = blanked.substring(fromStart, whereIndex);
 
 			while (propMatcher.find()) {
 				String propertyName = propMatcher.group(1);
@@ -1088,7 +1093,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// cmis:objectId — the same object's — is answered (closing batch 17 review, subagent P3-1).
 		Set<String> bound = new LinkedHashSet<String>();
 		bound.add(mainAlias);
+		// Every name the FROM gives a row. The parser refuses an alias used twice, but files an unaliased JOIN under its
+		// type's name without that check and OVERWRITES the row of that name, so `JOIN nemaki:other nemaki:commentable
+		// ON ... JOIN nemaki:commentable ON ...` lost the JOIN of nemaki:other and answered the other alone (closing
+		// batch 18 review, subagent P3-1). Refused as the parser refuses a repeated alias.
+		Set<String> names = new HashSet<String>();
+		if (mainAlias != null) {
+			names.add(mainAlias);
+		}
 		for (JoinSpec join : queryObject.getJoins()) {
+			if (join.alias != null && !names.add(join.alias)) {
+				throw new CmisInvalidArgumentException("The name " + join.alias + " names more than one row of the FROM "
+						+ "(a JOIN without an alias is named by its type), so the statement is refused rather than "
+						+ "answered with one of those rows lost");
+			}
 			String queryName = types.get(join.alias);
 			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
 			if (join.onLeft == null && join.onRight == null
@@ -1121,8 +1139,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 						"The subtypes of " + named + " could not be read, so the JOIN was not answered");
 			}
 			for (TypeDefinitionContainer descendant : descendants) {
-				TypeDefinition sub = descendant.getTypeDefinition();
-				if (sub != null && !joined.getId().equals(sub.getId()) && Boolean.TRUE.equals(sub.isIncludedInSupertypeQuery())) {
+				TypeDefinition sub = (descendant == null) ? null : descendant.getTypeDefinition();
+				if (sub == null) {
+					// Not «a subtype a query leaves out»: the type system listed a subtype it could not say anything of
+					// (TypeManagerImpl keeps a container without its definition), and skipping it answered the type alone
+					// (closing batch 18 review, Codex P2 and subagent P3-2).
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+							"A subtype of " + named + " could not be read, so the JOIN was not answered");
+				}
+				if (!joined.getId().equals(sub.getId()) && Boolean.TRUE.equals(sub.isIncludedInSupertypeQuery())) {
 					throw new CmisInvalidArgumentException("A JOIN with " + named + " would also ask for its subtype "
 							+ sub.getId() + ", which this server does not answer, so the statement is refused");
 				}
@@ -1236,6 +1261,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private static final String PROPERTY = "([A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*)";
 	private static final Pattern WHERE_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])WHERE(?![A-Za-z0-9_:.])");
 	private static final Pattern JOIN_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])JOIN(?![A-Za-z0-9_:.])");
+	private static final Pattern FROM_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])FROM(?![A-Za-z0-9_:.])");
 	private static final Pattern ORDER_BY_KEYWORD =
 			Pattern.compile("(?i)(?<![A-Za-z0-9_:.])ORDER\\s+BY(?![A-Za-z0-9_:.])");
 
