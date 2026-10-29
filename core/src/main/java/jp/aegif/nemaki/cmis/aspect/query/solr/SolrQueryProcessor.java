@@ -966,7 +966,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// around the keyword, never inside a literal). This looked for " WHERE " with a space on each side, so a
 			// keyword after a newline got no JOIN while the rest of the processor saw a WHERE clause (closing batch 2
 			// review, subagent P3). The names are read with the literals blanked, so a value cannot add a JOIN.
-			String upperStatement = statement.toUpperCase();
 			String blanked = withoutStringLiterals(statement);
 			Matcher where = WHERE_KEYWORD.matcher(blanked);
 			if (!where.find()) {
@@ -992,8 +991,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// naming it (closing batch 18 review, subagent P3-3: the server's JOIN went missing and the statement was
 			// refused).
 			Matcher from = FROM_KEYWORD.matcher(blanked);
-			int fromStart = (from.find() && from.start() < whereIndex) ? from.start() : 0;
-			String fromPart = blanked.substring(fromStart, whereIndex);
+			boolean fromFound = from.find() && from.start() < whereIndex;
+			String fromPart = blanked.substring(fromFound ? from.start() : 0, whereIndex);
 
 			while (propMatcher.find()) {
 				String propertyName = propMatcher.group(1);
@@ -1015,9 +1014,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 			// If we found secondary types, inject JOIN clauses
 			if (!secondaryTypesToJoin.isEmpty()) {
-				// Find the FROM clause position
-				int fromIndex = upperStatement.indexOf(" FROM ");
-				if (fromIndex < 0) {
+				// The FROM found as the WHERE is — any whitespace around the keyword, never inside a literal. " FROM " with a
+				// space on each side missed a FROM after a newline or a tab, and the server's JOIN with it (closing batch 19
+				// review, subagent P3-1).
+				if (!fromFound) {
 					return statement;
 				}
 
@@ -1088,7 +1088,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		String mainAlias = queryObject.getMainTypeAlias();
 		Map<String, String> types = queryObject.getTypes();
-		int clientJoins = 0;
 		// The rows an ON may join to: the FROM's and each JOIN's already read, so a JOIN ON an earlier joined type's
 		// cmis:objectId — the same object's — is answered (closing batch 17 review, subagent P3-1).
 		Set<String> bound = new LinkedHashSet<String>();
@@ -1101,6 +1100,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 		if (mainAlias != null) {
 			names.add(mainAlias);
 		}
+		// First the statement's shape — the names of its rows, and whether every JOIN it wrote was read — and only then
+		// what the type system says of each joined type: a statement refused for its shape is refused for that (400), not
+		// for a subtype the type system could not read (500) on the way (closing batch 19 review, Codex P2).
+		List<JoinSpec> clientJoinSpecs = new ArrayList<JoinSpec>();
 		for (JoinSpec join : queryObject.getJoins()) {
 			if (join.alias != null && !names.add(join.alias)) {
 				throw new CmisInvalidArgumentException("The name " + join.alias + " names more than one row of the FROM "
@@ -1113,7 +1116,20 @@ public class SolrQueryProcessor implements QueryProcessor {
 					&& injected.contains(joined != null ? joined.getId() : queryName)) {
 				continue;
 			}
-			clientJoins++;
+			clientJoinSpecs.add(join);
+		}
+		if (clientJoinSpecs.size() != written) {
+			// The text JOINs a type the parser did not record: refused, not answered as if the JOIN were not there. A
+			// guard for a walk that stops part way: the one statement known to come here — a client's own JOIN without an
+			// ON, of a type the server JOINed too — no longer does, since the server does not JOIN a type the FROM already
+			// names (closing batch 17 review, subagent P2-2).
+			throw new CmisInvalidArgumentException("The statement's JOINs were not all read (" + clientJoinSpecs.size()
+					+ " of " + written + "), so it is refused rather than answered without them"
+					+ (parseFailure != null ? ": " + parseFailure.getMessage() : ""));
+		}
+		for (JoinSpec join : clientJoinSpecs) {
+			String queryName = types.get(join.alias);
+			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
 			String named = (queryName != null) ? queryName : join.alias;
 			if (joined == null || joined.getBaseTypeId() != BaseTypeId.CMIS_SECONDARY) {
 				throw new CmisInvalidArgumentException("Only a JOIN with a secondary type is answered, and " + named
@@ -1128,30 +1144,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 						+ "cmis:objectId = the joined type's cmis:objectId, so the JOIN with " + named
 						+ " is refused rather than answered without its condition");
 			}
-			// A type with subtypes a query of it includes: the JOIN asks for those too, and ANY ... IN ('that type')
-			// answers the type alone, so the two would part (closing batch 17 review, subagent P2-1 — JOIN cmis:secondary
-			// answered 0). Refused rather than answered narrower than asked.
-			List<TypeDefinitionContainer> descendants = typeManager.getTypesDescendants(repositoryId, joined.getId(),
-					BigInteger.valueOf(-1), false);
-			if (descendants == null) {
-				// Not «no subtypes»: the type system did not answer.
-				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
-						"The subtypes of " + named + " could not be read, so the JOIN was not answered");
-			}
-			for (TypeDefinitionContainer descendant : descendants) {
-				TypeDefinition sub = (descendant == null) ? null : descendant.getTypeDefinition();
-				if (sub == null) {
-					// Not «a subtype a query leaves out»: the type system listed a subtype it could not say anything of
-					// (TypeManagerImpl keeps a container without its definition), and skipping it answered the type alone
-					// (closing batch 18 review, Codex P2 and subagent P3-2).
-					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
-							"A subtype of " + named + " could not be read, so the JOIN was not answered");
-				}
-				if (!joined.getId().equals(sub.getId()) && Boolean.TRUE.equals(sub.isIncludedInSupertypeQuery())) {
-					throw new CmisInvalidArgumentException("A JOIN with " + named + " would also ask for its subtype "
-							+ sub.getId() + ", which this server does not answer, so the statement is refused");
-				}
-			}
+			refuseSubtypesAQueryIncludes(repositoryId, joined, named);
 			bound.add(join.alias);
 			String field = SolrUtil.queryableFieldName(
 					solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
@@ -1160,16 +1153,37 @@ public class SolrQueryProcessor implements QueryProcessor {
 			filters.add(SolrPredicateWalker.anyOf(field, java.util.Collections.singletonList(
 					org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(joined.getId()))).toString());
 		}
-		if (clientJoins != written) {
-			// The text JOINs a type the parser did not record: refused, not answered as if the JOIN were not there. A
-			// guard for a walk that stops part way: the one statement known to come here — a client's own JOIN without an
-			// ON, of a type the server JOINed too — no longer does, since the server does not JOIN a type the FROM already
-			// names (closing batch 17 review, subagent P2-2).
-			throw new CmisInvalidArgumentException("The statement's JOINs were not all read (" + clientJoins + " of "
-					+ written + "), so it is refused rather than answered without them"
-					+ (parseFailure != null ? ": " + parseFailure.getMessage() : ""));
-		}
 		return filters;
+	}
+
+	/**
+	 * A type with subtypes a query of it includes: the JOIN asks for those too, and ANY ... IN ('that type') answers the
+	 * type alone, so the two would part (closing batch 17 review, subagent P2-1 — JOIN cmis:secondary answered 0).
+	 * Refused (400) rather than answered narrower than asked; a subtype the type system cannot say anything of is not
+	 * one a query leaves out (500).
+	 */
+	private void refuseSubtypesAQueryIncludes(String repositoryId, TypeDefinition joined, String named) {
+		List<TypeDefinitionContainer> descendants = typeManager.getTypesDescendants(repositoryId, joined.getId(),
+				BigInteger.valueOf(-1), false);
+		if (descendants == null) {
+			// Not «no subtypes»: the type system did not answer.
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The subtypes of " + named + " could not be read, so the JOIN was not answered");
+		}
+		for (TypeDefinitionContainer descendant : descendants) {
+			TypeDefinition sub = (descendant == null) ? null : descendant.getTypeDefinition();
+			if (sub == null) {
+				// Not «a subtype a query leaves out»: the type system listed a subtype it could not say anything of
+				// (TypeManagerImpl keeps a container without its definition), and skipping it answered the type alone
+				// (closing batch 18 review, Codex P2 and subagent P3-2).
+				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+						"A subtype of " + named + " could not be read, so the JOIN was not answered");
+			}
+			if (!joined.getId().equals(sub.getId()) && Boolean.TRUE.equals(sub.isIncludedInSupertypeQuery())) {
+				throw new CmisInvalidArgumentException("A JOIN with " + named + " would also ask for its subtype "
+						+ sub.getId() + ", which this server does not answer, so the statement is refused");
+			}
+		}
 	}
 
 	/**

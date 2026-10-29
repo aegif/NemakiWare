@@ -1020,6 +1020,41 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 + lastSent());
     }
 
+    @Test
+    @DisplayName("a statement refused for its shape is refused for it, before a subtype the type system cannot read (R215)")
+    void aStatementRefusedForItsShapeIsRefusedBeforeASubtypeIsRead() {
+        // The names of the rows and the count of the JOINs read were checked JOIN by JOIN, after the type system was asked
+        // for the subtypes of the JOINs before: the first JOIN's unreadable subtype answered 500 for a statement whose
+        // second JOIN named a row already named, or was not read (closing batch 19 review, Codex P2).
+        for (String statement : List.of(
+                "SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable nemaki:unreadableParent "
+                        + "ON d.cmis:objectId = nemaki:unreadableParent.cmis:objectId JOIN nemaki:unreadableParent "
+                        + "ON d.cmis:objectId = nemaki:unreadableParent.cmis:objectId",
+                "SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:unreadableParent p ON d.cmis:objectId = "
+                        + "p.cmis:objectId JOIN nemaki:unreadableParent p ON d.cmis:objectId = p.cmis:objectId")) {
+            sent.clear();
+            CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class, () -> run(statement),
+                    () -> "「" + statement + "」 was not refused for its shape — the queries it sent: " + sent);
+            assertTrue(refused.getMessage().contains("names more than one row")
+                    || refused.getMessage().contains("were not all read"), () -> "「" + statement + "」 was refused for "
+                    + "another reason: " + refused.getMessage());
+            assertEquals(List.of(), sent, "「" + statement + "」 was refused only after a query went to Solr");
+        }
+    }
+
+    @Test
+    @DisplayName("a FROM after a newline or a tab keeps the JOIN the server adds for a property (R215, over-refusal)")
+    void aFromAfterANewlineOrATabKeepsTheServersJoin() {
+        // The server looked for " FROM " with a space on each side, so after any other whitespace it added no JOIN, the
+        // property did not resolve and the manual fallback, which cannot answer the WHERE whole, refused the statement
+        // (closing batch 19 review, subagent P3-1).
+        for (String space : List.of("\n", "\t", "\r\n")) {
+            assertEquals(Set.of("has"), answered("SELECT cmis:document.cmis:objectId" + space + "FROM cmis:document WHERE "
+                    + "nemaki:jtag = 'x' AND cmis:name = 'a'"), () -> "a FROM after " + space.replace("\n", "LF")
+                    .replace("\t", "TAB").replace("\r", "CR") + " changed the answer — " + lastSent());
+        }
+    }
+
     /**
      * The documents a query of the forms this processor sends matches: terms, phrases, {@code field:[* TO *]},
      * {@code *:*}, {@code +} and {@code -}, AND and parentheses. A group of MUST_NOT clauses alone matches nothing
