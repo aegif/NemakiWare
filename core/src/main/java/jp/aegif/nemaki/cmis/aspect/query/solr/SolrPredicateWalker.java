@@ -491,14 +491,20 @@ public class SolrPredicateWalker{
 		// CRITICAL FIX (2025-12-19): Build proper OR query for multi-valued IN clause
 		// The previous implementation called walkEquals() which doesn't handle IN lists correctly
 		// Now we iterate over the list values similar to walkIn() method
-		BooleanQuery.Builder builder = new BooleanQuery.Builder();
 		String field = queryableFieldName(
 				solrUtil.getPropertyNameInSolr(repositoryId, propertyIdOf(colRef)));
-		List<?> list = (List<?>) walkExpr(rightNode);
-		for (Object elm : list) {
-			Term t = new Term(field, elm.toString());
-			TermQuery tq = new TermQuery(t);
-			builder.add(tq, Occur.SHOULD);
+		return anyOf(field, (List<?>) walkExpr(rightNode));
+	}
+
+	/**
+	 * {@code ANY field IN (values)}: a document with one of the values in the multi-valued field. A JOIN with a
+	 * secondary type asks the same of cmis:secondaryObjectTypeIds (R215), and is built here too, so the JOIN and
+	 * {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} send Solr the same text.
+	 */
+	static Query anyOf(String field, List<?> values) {
+		BooleanQuery.Builder builder = new BooleanQuery.Builder();
+		for (Object value : values) {
+			builder.add(new TermQuery(new Term(field, value.toString())), Occur.SHOULD);
 		}
 		return builder.build();
 	}

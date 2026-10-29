@@ -3125,6 +3125,9 @@ class ReleaseReadinessIsMeasuredTest {
                 + "so which one this compares is a guess");
     }
 
+    /** The words in which the RC gate withholds condition 11 for a review (closing batch 17). */
+    private static final String WITHHELD_FOR_A_REVIEW = "条件 11 は確認が済むまで満たしたと書かない";
+
     /**
      * Condition 11 is declared met exactly when the gate's table allows it (2026-09-29).
      *
@@ -3143,6 +3146,12 @@ class ReleaseReadinessIsMeasuredTest {
      *
      * <p>The declaration has two exits in this document — the gate's own introduction and §0's
      * list of met conditions — and both are read.
+     *
+     * <p>One withholding is allowed, and only in so many words: a batch that takes the last P1 out of the table does
+     * not declare condition 11 met before its review (the owner's rule for 3.4.1's closing batch 17, 2026-10-29 — a
+     * review can bring a new P1). The introduction then says {@value #WITHHELD_FOR_A_REVIEW}, neither exit declares
+     * the condition met, and the sentence may not stand over a table that blocks the declaration anyway. Withholding
+     * in silence still fails.
      */
     @Test
     @DisplayName("condition 11 is declared met exactly when its table holds no P0, no P1 and nothing unclassified")
@@ -3175,13 +3184,21 @@ class ReleaseReadinessIsMeasuredTest {
         String zero = slice(readiness, "## 0. 現在地", "## 1.", "the readiness document's §0");
         boolean zeroLists = zero.contains("/ 11 open P0/P1 = 0（");
 
-        if (blocking.isEmpty()) {
+        boolean introWithholds = intro.contains(WITHHELD_FOR_A_REVIEW);
+
+        if (blocking.isEmpty() && introWithholds) {
+            assertFalse(introDeclares, "the gate's introduction withholds condition 11 for a review and declares it "
+                    + "met as well: " + intro);
+            assertFalse(zeroLists, "the gate withholds condition 11 for a review, and §0 lists it as met");
+        } else if (blocking.isEmpty()) {
             assertTrue(introDeclares, "every row of the RC gate's table is P2, P3 or pending a "
                     + "design decision, and the gate's introduction does not declare condition 11 "
                     + "met: " + intro);
             assertTrue(zeroLists, "every row of the RC gate's table allows condition 11, and §0 "
                     + "does not list it among the met conditions");
         } else {
+            assertFalse(introWithholds, "the gate withholds condition 11 for a review over rows that block it anyway: "
+                    + blocking);
             assertFalse(introDeclares, "the gate's introduction declares condition 11 met over "
                     + "rows that are P0, P1 or unclassified: " + blocking);
             assertFalse(zeroLists, "§0 lists condition 11 as met over rows that are P0, P1 or "

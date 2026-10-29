@@ -35,6 +35,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
@@ -91,6 +93,8 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     private SolrUtil solrUtil;
     /** Every {@code q} the processor sent to Solr, in order. */
     private final List<String> sent = new ArrayList<>();
+    /** The {@code fq} list of each query, in the same order as {@link #sent} (R215 — a JOIN narrows the FROM's rows). */
+    private final List<List<String>> filtersSent = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -225,10 +229,30 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:unreadable"))
                 .thenThrow(new IllegalStateException("No types are loaded for repository " + REPO));
 
+        // A secondary type the statements JOIN (R215): resolvable by its query name, with the cmis:objectId an ON names
+        // and a property of its own. A WHERE naming that property gets the server's own JOIN.
+        SecondaryTypeDefinitionImpl joinable = new SecondaryTypeDefinitionImpl();
+        joinable.setId("nemaki:joinable");
+        joinable.setLocalName("joinable");
+        joinable.setQueryName("nemaki:joinable");
+        joinable.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        joinable.setIsQueryable(true);
+        joinable.setIsFulltextIndexed(false);
+        joinable.setIsIncludedInSupertypeQuery(true);
+        Map<String, PropertyDefinition<?>> joinableProperties = new LinkedHashMap<>();
+        joinableProperties.put("cmis:objectId", properties.get("cmis:objectId"));
+        joinableProperties.put("nemaki:jtag", define(new PropertyStringDefinitionImpl(), "nemaki:jtag", PropertyType.STRING,
+                Cardinality.SINGLE));
+        joinable.setPropertyDefinitions(joinableProperties);
+        when(types.getTypeByQueryName(REPO, "nemaki:joinable")).thenReturn(joinable);
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:jtag")).thenReturn(joinable);
+
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
             SolrParams params = call.getArgument(0);
             sent.add(params.get("q"));
+            String[] fqs = params.getParams("fq");
+            filtersSent.add(fqs == null ? List.of() : List.of(fqs));
             QueryResponse response = mock(QueryResponse.class);
             SolrDocumentList none = new SolrDocumentList();
             none.setNumFound(0);
@@ -291,6 +315,7 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
 
     private String assertAnsweredWithOneQuery(String statement) {
         sent.clear();
+        filtersSent.clear();
         // A refusal here is an OVER-refusal, the same weight of defect as an answer without the conditions —
         // so it has to fail this lock's own assertion, not escape as the exception it is.
         assertDoesNotThrow(() -> run(statement), () -> "「" + statement + "」 can be translated whole and was refused "
@@ -679,5 +704,289 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         assertThrows(CmisRuntimeException.class, () -> run("SELECT * FROM nemaki:failing"),
                 "a failure of the server's own was answered as the client's malformed statement");
         assertEquals(List.of(), sent, "a statement whose FROM could not be read was sent anyway");
+    }
+
+    // ---------------------------------------------------------------------------------------------------- R215: JOIN
+    // A JOIN with a secondary type is a condition on the answer. It was parsed and then not read: FROM cmis:document d
+    // JOIN nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
+    // without it, not the 2 that have the type (measured on bedroom before the change, 2026-10-29). What each statement
+    // sent is read against three documents — one with the type, one without it under the same name, and one more with
+    // the type under another name — so a query that drops the JOIN, or keeps only the other condition, answers a set
+    // the lock names as wrong (a count would not: two statements wrong the same way agree on it).
+
+    /** Each document's indexed fields, under the names the mocked map gives them (a property id with : as _). */
+    private static final Map<String, Map<String, List<String>>> DOCUMENTS = Map.of(
+            "has", fields("a", "nemaki:joinable", "x", "x"),
+            "hasNot", fields("a", null, null, "x"),
+            "hasToo", fields("b", "nemaki:joinable", null, null));
+
+    private static Map<String, List<String>> fields(String name, String secondaryType, String jtag, String tag) {
+        Map<String, List<String>> fields = new LinkedHashMap<>();
+        fields.put("repository_id", List.of(REPO));
+        fields.put("cmis_objectTypeId", List.of("cmis:document"));
+        fields.put("cmis_name", List.of(name));
+        fields.put("cmis_secondaryObjectTypeIds", secondaryType == null ? List.of() : List.of(secondaryType));
+        fields.put("nemaki_jtag", jtag == null ? List.of() : List.of(jtag));
+        fields.put("nemaki_tag", tag == null ? List.of() : List.of(tag));
+        return fields;
+    }
+
+    /** The documents the last query sent matches: its q and every one of its fq. */
+    private Set<String> answered(String statement) {
+        assertAnsweredWithOneQuery(statement);
+        String q = sent.get(sent.size() - 1);
+        List<String> fqs = filtersSent.get(filtersSent.size() - 1);
+        Set<String> matched = new TreeSet<>();
+        for (Map.Entry<String, Map<String, List<String>>> document : DOCUMENTS.entrySet()) {
+            boolean all = SentQuery.matches(q, document.getValue());
+            for (String fq : fqs) {
+                all &= SentQuery.matches(fq, document.getValue());
+            }
+            if (all) {
+                matched.add(document.getKey());
+            }
+        }
+        return matched;
+    }
+
+    /** What the last query sent, for a message: its q and its fq. */
+    private String lastSent() {
+        return "q=" + sent.get(sent.size() - 1) + " fq=" + filtersSent.get(filtersSent.size() - 1);
+    }
+
+    @Test
+    @DisplayName("a JOIN with a secondary type answers only the documents that have it, as ANY cmis:secondaryObjectTypeIds does (R215)")
+    void aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt() {
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId"), () -> "the JOIN did not narrow the answer to the documents with the type" + " — " + lastSent());
+        List<String> joinFilters = filtersSent.get(filtersSent.size() - 1);
+        // The same documents the statement that asks it without a JOIN answers — and it is asked in the same text: the
+        // JOIN's filter is the clause the ANY statement sends as its q. A filter in other text answered other documents
+        // on bedroom: the id unescaped was a syntax error to Solr, which the reader below also refuses.
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT cmis:objectId FROM cmis:document WHERE "
+                + "ANY cmis:secondaryObjectTypeIds IN ('nemaki:joinable')"), () -> "the ANY statement answered other documents" + " — " + lastSent());
+        String anyClause = sent.get(sent.size() - 1);
+        assertTrue(joinFilters.stream().anyMatch(fq -> fq.endsWith(" AND (" + anyClause + ")")),
+                () -> "the JOIN did not send the clause ANY sends (" + anyClause + "): " + joinFilters);
+    }
+
+    @Test
+    @DisplayName("a JOIN and a condition answer the documents that meet both, not the condition alone (R215)")
+    void aJoinAndAConditionAnswerTheDocumentsThatMeetBoth() {
+        assertEquals(Set.of("has"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId WHERE d.cmis:name = 'a'"),
+                () -> "the JOIN with a condition answered the condition alone or neither" + " — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN is the same JOIN without aliases and with its ON written the other way round (R215)")
+    void aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin() {
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT cmis:document.cmis:objectId FROM cmis:document JOIN nemaki:joinable "
+                + "ON cmis:document.cmis:objectId = nemaki:joinable.cmis:objectId"),
+                () -> "the JOIN without aliases did not narrow the answer" + " — " + lastSent());
+        assertEquals(Set.of("has", "hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON j.cmis:objectId = d.cmis:objectId"), () -> "the JOIN with its ON turned round did not narrow the answer" + " — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN not ON the two objects' ids is refused, not answered without its condition (R215)")
+    void aJoinThatIsNotOnTheObjectIdsIsRefused() {
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:name = j.cmis:objectId");
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = d.cmis:objectId");
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j");
+    }
+
+    @Test
+    @DisplayName("a JOIN with a type that is not a secondary type is refused: two primary types are not joined (R215)")
+    void aJoinWithAPrimaryTypeIsRefused() {
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:plain p "
+                + "ON d.cmis:objectId = p.cmis:objectId");
+    }
+
+    @Test
+    @DisplayName("an outer JOIN with a secondary type is refused: only the INNER JOIN is answered (R215)")
+    void anOuterJoinIsRefused() {
+        assertRefusedWithoutAQuery("SELECT d.cmis:objectId FROM cmis:document d LEFT OUTER JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId");
+    }
+
+    @Test
+    @DisplayName("the JOIN the server adds for a property of a secondary type keeps the answer it had (R215, over-refusal)")
+    void theJoinTheServerAddsKeepsTheAnswerItHad() {
+        // The server's own JOIN is not the client's condition: WHERE nemaki:jtag IS NULL answers the documents without
+        // the property, those without the type among them, as it did before R215 — neither refused nor narrowed.
+        assertEquals(Set.of("hasNot", "hasToo"), answered("SELECT cmis:objectId FROM cmis:document WHERE nemaki:jtag "
+                + "IS NULL"), () -> "the server's own JOIN changed the answer of a statement the client wrote without one" + " — " + lastSent());
+        assertEquals(Set.of("has"), answered("SELECT cmis:objectId FROM cmis:document WHERE nemaki:jtag = 'x'"),
+                () -> "the server's own JOIN changed the answer of a statement the client wrote without one" + " — " + lastSent());
+        // With the column qualified the statement PARSES after the server's JOIN — unqualified, cmis:objectId names a
+        // column of both types and the parse fails before the JOINs are read at all — so the server's JOIN reaches the
+        // reading of the JOINs, and has to be told from the client's there.
+        assertEquals(Set.of("hasNot", "hasToo"), answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE "
+                + "nemaki:jtag IS NULL"), () -> "the server's own JOIN, read with the client's, changed the answer of a "
+                + "statement that parses — " + lastSent());
+        assertEquals(Set.of("has"), answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE nemaki:jtag = "
+                + "'x'"), () -> "the server's own JOIN, read with the client's, changed the answer of a statement that "
+                + "parses — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN the client wrote stays a condition when the WHERE names a property of the joined type (R215)")
+    void aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty() {
+        // The server adds its own JOIN of the type too; the client's is read as a condition and the server's is not.
+        assertEquals(Set.of("hasToo"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId WHERE j.nemaki:jtag IS NULL"),
+                () -> "the client's JOIN was dropped when the WHERE named a property of the type" + " — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN in a statement the parser walks but cannot resolve stays a condition of the fallback's answer (R215)")
+    void aJoinInAStatementThatFailsToResolveStaysACondition() {
+        // nemaki:tag belongs to a secondary type this world cannot resolve, so the server's JOIN for it fails the parse
+        // after the whole statement was walked — as nemaki:comment of nemaki:commentable fails on bedroom. The manual
+        // fallback answers the WHERE; the client's JOIN must still narrow it (hasNot has the tag and not the type), and
+        // the statement must not be refused either: it was answered right on bedroom before R215.
+        assertEquals(Set.of("has"), answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId WHERE nemaki:tag = 'x'"),
+                () -> "the client's JOIN was dropped, or the statement refused, when its parse failed — " + lastSent());
+    }
+
+    /**
+     * The documents a query of the forms this processor sends matches: terms, phrases, {@code field:[* TO *]},
+     * {@code *:*}, {@code +} and {@code -}, AND and parentheses. A group of MUST_NOT clauses alone matches nothing
+     * nested and everything not excluded at the top, as Lucene and Solr read it. A form it does not know is the lock
+     * not looking, not a document that fails to match.
+     */
+    private static final class SentQuery {
+        private final String text;
+        private int at;
+
+        private SentQuery(String text) {
+            this.text = text;
+        }
+
+        static boolean matches(String query, Map<String, List<String>> document) {
+            SentQuery reader = new SentQuery(query);
+            boolean matched = reader.group(document, true);
+            jp.aegif.nemaki.util.test.HarnessBroken.unless(reader.at == query.length(),
+                    "the lock's reader stopped at " + reader.at + " of the query it was given: " + query);
+            return matched;
+        }
+
+        private boolean group(Map<String, List<String>> document, boolean top) {
+            List<Boolean> must = new ArrayList<>();
+            List<Boolean> should = new ArrayList<>();
+            List<Boolean> mustNot = new ArrayList<>();
+            boolean andBefore = false;
+            while (true) {
+                skipBlanks();
+                if (at >= text.length() || text.charAt(at) == ')') {
+                    break;
+                }
+                if (text.startsWith("AND ", at) || text.startsWith("AND(", at)) {
+                    at += 3;
+                    // AND makes the clause before it required as well as the one after it.
+                    if (!should.isEmpty()) {
+                        must.add(should.remove(should.size() - 1));
+                    }
+                    andBefore = true;
+                    continue;
+                }
+                char occur = text.charAt(at);
+                if (occur == '+' || occur == '-') {
+                    at++;
+                } else {
+                    occur = andBefore ? '+' : ' ';
+                }
+                andBefore = false;
+                boolean clause;
+                if (text.charAt(at) == '(') {
+                    at++;
+                    clause = group(document, false);
+                    jp.aegif.nemaki.util.test.HarnessBroken.unless(at < text.length() && text.charAt(at) == ')',
+                            "the lock's reader found no ) in the query it was given: " + text);
+                    at++;
+                } else {
+                    clause = term(document);
+                }
+                (occur == '+' ? must : occur == '-' ? mustNot : should).add(clause);
+            }
+            if (mustNot.contains(true)) {
+                return false;
+            }
+            if (must.isEmpty() && should.isEmpty()) {
+                return top;
+            }
+            return !must.contains(false) && (!must.isEmpty() || should.contains(true));
+        }
+
+        private boolean term(Map<String, List<String>> document) {
+            if (text.startsWith("*:*", at)) {
+                at += 3;
+                return true;
+            }
+            int colon = text.indexOf(':', at);
+            jp.aegif.nemaki.util.test.HarnessBroken.unless(colon > at, "the lock's reader found no field at " + at
+                    + " of the query it was given: " + text);
+            String field = text.substring(at, colon);
+            at = colon + 1;
+            List<String> values = document.getOrDefault(field, List.of());
+            if (text.startsWith("[* TO *]", at)) {
+                at += "[* TO *]".length();
+                return !values.isEmpty();
+            }
+            StringBuilder value = new StringBuilder();
+            boolean prefix = false;
+            if (at < text.length() && text.charAt(at) == '"') {
+                // A phrase, its escapes read: the repository's and the type's ids are quoted with : escaped.
+                at++;
+                while (at < text.length() && text.charAt(at) != '"') {
+                    if (text.charAt(at) == '\\' && at + 1 < text.length()) {
+                        at++;
+                    }
+                    value.append(text.charAt(at));
+                    at++;
+                }
+                jp.aegif.nemaki.util.test.HarnessBroken.unless(at < text.length(), "the lock's reader found an open "
+                        + "phrase in: " + text);
+                at++;
+            } else {
+                while (at < text.length() && text.charAt(at) != ' ' && text.charAt(at) != ')') {
+                    char c = text.charAt(at);
+                    if (c == '\\' && at + 1 < text.length()) {
+                        value.append(text.charAt(at + 1));
+                        at += 2;
+                        continue;
+                    }
+                    if (c == ':') {
+                        // An unescaped colon in a term's value: Solr's parser refuses the whole query, a 500.
+                        org.junit.jupiter.api.Assertions.fail("Solr cannot parse the query sent — an unescaped : in the "
+                                + "value of " + field + ": " + text);
+                    }
+                    if (c == '*' && (at + 1 == text.length() || text.charAt(at + 1) == ' ' || text.charAt(at + 1) == ')')) {
+                        prefix = true;
+                        at++;
+                        continue;
+                    }
+                    value.append(c);
+                    at++;
+                }
+            }
+            String wanted = value.toString();
+            for (String held : values) {
+                if (prefix ? held.startsWith(wanted) : held.equals(wanted)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void skipBlanks() {
+            while (at < text.length() && text.charAt(at) == ' ') {
+                at++;
+            }
+        }
     }
 }

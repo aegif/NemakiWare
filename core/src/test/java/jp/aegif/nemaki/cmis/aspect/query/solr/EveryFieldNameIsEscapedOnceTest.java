@@ -396,13 +396,15 @@ class EveryFieldNameIsEscapedOnceTest {
         // Counted, not named: this lock found three more the first time it ran (LIKE, = and <> in
         // the same fallback), which is why it counts instead of checking the two the review named.
         // Two now: the five WHERE productions of the fallback build their field through ONE helper,
-        // fieldFor (closing batch 3), and the FROM clause's type-id field is the other. A production
-        // that called the map directly again would make it three, and would have to pass the check
-        // above to be counted.
-        assertEquals(2, found,
+        // fieldFor (closing batch 3), and the FROM clause's type-id field is the other. Three since
+        // closing batch 17: the field a JOIN with a secondary type narrows the FROM's rows on
+        // (cmis:secondaryObjectTypeIds, R215), through the rule like the others. A production that
+        // called the map directly again would make it four, and would have to pass the check above
+        // to be counted.
+        assertEquals(3, found,
                 "the calls of the property map in this file changed in number; each one has to go"
                         + " through SolrUtil.queryableFieldName and be counted here (the fallback's"
-                        + " fieldFor and the FROM clause's type-id field)");
+                        + " fieldFor, the FROM clause's type-id field and a JOIN's secondary-type field)");
         assertTrue(processor.contains("private String fieldFor(String repositoryId, String propertyQueryName) {"),
                 "the fallback's productions no longer share fieldFor, so this count no longer says each of"
                         + " them goes through the rule");
