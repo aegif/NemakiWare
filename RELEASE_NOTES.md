@@ -109,7 +109,9 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   組み合わせた検索は 400 になります**。
 - secondary type との JOIN を条件として読みます（INNER JOIN）。`FROM cmis:document d JOIN <secondary type> c ON d.cmis:objectId = c.cmis:objectId` は、その secondary type を持つ文書だけを返します（以前は FROM の型の文書を全部
   返していました — bedroom で 2,457 件、その型を持つのは 2 件）。答えは `ANY cmis:secondaryObjectTypeIds IN ('<その型>')`
-  と同じです。リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
+  と同じです。ON は別名でも型の問い合わせ名でも書け、前に JOIN した型の `cmis:objectId` に繋いでもかまいません。
+  query で含める subtype を持つ secondary type との JOIN は 400 です（その型だけの `ANY … IN` と答えが食い違うため）。
+  リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
   `ANY cmis:secondaryObjectTypeIds IN (…)` は 0 件 — 同じ WAR で測りました）。CMIS TCK は 38/38 でした。
 
@@ -132,8 +134,7 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 ### 主張しないこと
 
 - 訳す規則の無い根の形のうち、測ったのは `'a' = ANY <複数値のプロパティ>` だけです。
-- JOIN の絞りに secondary type の subtype は入りません（`ANY … IN` と同じく、その型 ID だけです）。2 つ以上の secondary
-  type を JOIN した文は測っていません（各々で絞ります）。
+- 2 つ以上の secondary type を JOIN した文は、両方の型を持つ文書の無い状態でしか測っていません（各々で絞ります）。
 
 ## 汎用 OIDC のログインは、この製品に宛てた ID トークンだけを受けるようになりました（セキュリティ・挙動の変更）
 
