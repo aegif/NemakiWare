@@ -111,10 +111,13 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   返していました — bedroom で 2,457 件、その型を持つのは 2 件）。答えは `ANY cmis:secondaryObjectTypeIds IN ('<その型>')`
   と同じです。ON は別名でも型の問い合わせ名でも書け、前に JOIN した型の `cmis:objectId` に繋いでもかまいません。
   query で含める subtype を持つ secondary type との JOIN は 400 です（その型だけの `ANY … IN` と答えが食い違うため）。
-  JOIN を書かずに secondary type の名前で列を修飾した文（`SELECT nemaki:commentable.nemaki:comment …`、
-  `WHERE nemaki:commentable.nemaki:comment …`、`IN_FOLDER(nemaki:commentable, …)`）も、その JOIN を書いた文と同じに、その型を
-  持つ文書だけを返します（以前はサーバが足す JOIN が絞らず、型を持たない文書も返していました — bedroom で 2,455 件、JOIN を
-  書いた文は 0 件）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
+  JOIN を書かずに secondary type の名前で列を修飾した文 — 修飾子が SELECT・ORDER BY・WHERE のどこに在っても、WHERE の無い文でも —
+  は、サーバがその JOIN を足し、その JOIN を書いた文と同じに、その型を持つ文書だけを返します（以前は、WHERE がその型の性質を
+  名指さない文には JOIN が足されず、`SELECT nemaki:commentable.nemaki:comment FROM cmis:document` は全文書 — bedroom で 2,457 件、
+  JOIN を書いた文は 2 件 — を返し、足されても絞らずに型を持たない文書を返していました）。そうした文では `cmis:name` などの
+  `cmis:*` の性質を FROM の型で修飾してください（`cmis:document.cmis:name`） — secondary type も `cmis:*` の性質の定義を持つので、
+  修飾しない名前はどちらの型の列か決まらず 400 になります。修飾子付きの IN_FOLDER・IN_TREE は、修飾子が何であっても 500 に
+  なる既知の欠陥があります（残件 R219）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
   リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
   `ANY cmis:secondaryObjectTypeIds IN (…)` は 0 件 — 同じ WAR で測りました）。CMIS TCK は 38/38 でした。
@@ -126,7 +129,8 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   ください）、`FROM` の型が持たない subtype の性質（`FROM` にその subtype を書いてください）、`FROM` に無い型、
   `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文、secondary type でない型との JOIN・外部結合
   （`LEFT OUTER JOIN`）・ON が両方の `cmis:objectId` の等価でない JOIN（ON の無いものを含む）・FROM の 2 つの行に同じ名前を
-  付けた JOIN（別名の無い JOIN は型の名前を使うので、同じ型を別名なしで 2 度 JOIN した文を含む — 別名を付けてください）。
+  付けた JOIN（別名の無い JOIN は型の名前を使うので、同じ型を別名なしで 2 度 JOIN した文を含む — 別名を付けてください）・
+  query で含める subtype を持つ secondary type との JOIN と、その型で列を修飾した文（JOIN を書かない文も）。
   JOIN を書いた文と、JOIN を書かずに secondary type の名前で列を修飾した文は、その
   secondary type を持たない文書を返さなくなります。
 - query parser の `<>`・`NOT LIKE`・`NOT IN` と、`NOT (…)` で包んだ比較は、その性質を持たない文書を返さなくなります。
