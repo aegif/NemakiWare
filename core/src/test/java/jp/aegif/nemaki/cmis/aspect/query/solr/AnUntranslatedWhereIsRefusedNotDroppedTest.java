@@ -1100,6 +1100,17 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     }
 
     @Test
+    @DisplayName("a column qualified by a secondary type keeps the server's JOIN when the FROM's type defines the property too (R215, over-refusal)")
+    void aColumnQualifiedByTheTypeKeepsTheServersJoin() {
+        // The JOIN was left out because the FROM's type defines nemaki:jtag too, and it was the one row the qualifier
+        // nemaki:joinable resolved to: the parse failed and the manual fallback refused a statement answered before
+        // (closing batch 21 review, subagent P3-1).
+        assertEquals(Set.of("typedHas"), answered("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE "
+                + "nemaki:joinable.nemaki:jtag = 'x'"), () -> "a column qualified by the secondary type lost the server's "
+                + "JOIN — " + lastSent());
+    }
+
+    @Test
     @DisplayName("a FROM after a newline or a tab keeps the JOIN the server adds for a property (R215, over-refusal)")
     void aFromAfterANewlineOrATabKeepsTheServersJoin() {
         // The server looked for " FROM " with a space on each side, so after any other whitespace it added no JOIN, the

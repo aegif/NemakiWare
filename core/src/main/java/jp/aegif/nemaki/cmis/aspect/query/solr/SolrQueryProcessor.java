@@ -1005,7 +1005,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// Check if this property belongs to a secondary type
 				TypeDefinition secondaryType = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
 				if (secondaryType != null && !namedIn(fromPart, secondaryType)
-						&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {
+						&& !(fromTypeDefines(repositoryId, fromPart, propertyName)
+								&& !qualifiedBy(blanked, secondaryType))) {
 					secondaryTypesToJoin.add(secondaryType.getId());
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
@@ -1242,6 +1243,21 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		TypeDefinition type = typeManager.getTypeByQueryName(repositoryId, fromType.group(1));
 		return type != null && typeManager.getPropertyIdForQueryName(repositoryId, type, propertyName) != null;
+	}
+
+	/**
+	 * Whether the statement (literals blanked) qualifies a column by the type's id or query name. The server's JOIN is the
+	 * one row such a qualifier resolves to, so it is added even when the FROM's own type defines the property too (closing
+	 * batch 21 review, subagent P3-1 — WHERE nemaki:joinable.nemaki:jtag = 'x' was refused once the JOIN was left out).
+	 */
+	private static boolean qualifiedBy(String statement, TypeDefinition type) {
+		for (String name : new String[] { type.getId(), type.getQueryName() }) {
+			if (name != null && Pattern.compile("(?<![A-Za-z0-9_:.])" + Pattern.quote(name) + "\\.")
+					.matcher(statement).find()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Whether the text before WHERE (literals blanked) names the type, by its id or query name, as a type or alias. */
