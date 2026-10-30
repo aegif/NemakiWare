@@ -250,6 +250,10 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         // (closing batch 17 review: subagent P2-1, P3-1, P3-2).
         secondaryType("nemaki:second", properties.get("cmis:objectId"));
         SecondaryTypeDefinitionImpl parentAspect = secondaryType("nemaki:parentAspect", properties.get("cmis:objectId"));
+        // A property of it, so that a statement can name it as a row (R217).
+        parentAspect.getPropertyDefinitions().put("nemaki:ptag", define(new PropertyStringDefinitionImpl(), "nemaki:ptag",
+                PropertyType.STRING, Cardinality.SINGLE));
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:ptag")).thenReturn(parentAspect);
         SecondaryTypeDefinitionImpl childAspect = secondaryType("nemaki:childAspect", properties.get("cmis:objectId"));
         childAspect.setParentTypeId("nemaki:parentAspect");
         SecondaryTypeDefinitionImpl quietParent = secondaryType("nemaki:quietParent", properties.get("cmis:objectId"));
@@ -783,11 +787,12 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
             "hasNot", fields("a", null, null, "x"),
             "hasToo", fields("b", "nemaki:joinable", null, null),
             "hasSecond", fields("c", "nemaki:second", "y", null),
-            "typedHas", typedFields("nemaki:withJtag", "a", "x"));
+            "typedHas", typedFields("nemaki:withJtag", "a", null, "x"),
+            "typedJoined", typedFields("nemaki:withJtag", "b", "nemaki:joinable", "x"));
 
-    /** A document of another type, with a value of its own nemaki:jtag and no secondary type. */
-    private static Map<String, List<String>> typedFields(String type, String name, String jtag) {
-        Map<String, List<String>> fields = fields(name, null, jtag, null);
+    /** A document of another type, with a value of nemaki:jtag — the type's own — and the secondary type given. */
+    private static Map<String, List<String>> typedFields(String type, String name, String secondaryType, String jtag) {
+        Map<String, List<String>> fields = fields(name, secondaryType, jtag, null);
         fields.put("cmis_objectTypeId", List.of(type));
         return fields;
     }
@@ -1100,14 +1105,58 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     }
 
     @Test
-    @DisplayName("a column qualified by a secondary type keeps the server's JOIN when the FROM's type defines the property too (R215, over-refusal)")
+    @DisplayName("a column qualified by a secondary type keeps the server's JOIN when the FROM's type defines the property too, and is narrowed by it (R215, R217)")
     void aColumnQualifiedByTheTypeKeepsTheServersJoin() {
         // The JOIN was left out because the FROM's type defines nemaki:jtag too, and it was the one row the qualifier
         // nemaki:joinable resolved to: the parse failed and the manual fallback refused a statement answered before
-        // (closing batch 21 review, subagent P3-1).
-        assertEquals(Set.of("typedHas"), answered("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE "
-                + "nemaki:joinable.nemaki:jtag = 'x'"), () -> "a column qualified by the secondary type lost the server's "
-                + "JOIN — " + lastSent());
+        // (closing batch 21 review, subagent P3-1). The JOIN narrows (R217): typedHas has the value under the shared
+        // property and not the type, and was answered until the closing batch 22 review (Codex P1); typedJoined has both.
+        assertEquals(Set.of("typedJoined"), answered("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE "
+                + "nemaki:joinable.nemaki:jtag = 'x'"), () -> "a column qualified by the secondary type was not answered as "
+                + "the row of that type — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a column qualified by a secondary type answers only the documents that have it, as the JOIN written does (R217)")
+    void aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt() {
+        // The server's JOIN for a type the statement names as a row narrows as the client's JOIN does: hasNot has no
+        // nemaki:jtag and not the type, and was answered when the server's JOIN added no condition.
+        Set<String> joined = answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId WHERE j.nemaki:jtag IS NULL");
+        assertEquals(Set.of("hasToo"), joined, () -> "the JOIN written did not answer the documents of the type — " + lastSent());
+        assertEquals(joined, answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE "
+                + "nemaki:joinable.nemaki:jtag IS NULL"), () -> "a WHERE qualified by the secondary type answered other "
+                + "than the JOIN written — " + lastSent());
+        assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
+                () -> "the qualified WHERE was not narrowed to the type as ANY ... IN ('nemaki:joinable') is — " + lastSent());
+        assertEquals(joined, answered("SELECT nemaki:joinable.nemaki:jtag FROM cmis:document WHERE nemaki:jtag IS NULL"),
+                () -> "a SELECT list qualified by the secondary type answered other than the JOIN written — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a qualifier before a space or a newline, or the qualifier of IN_FOLDER, names the row too (R217, over-refusal)")
+    void aQualifierAfterWhitespaceOrInAFunctionNamesTheRow() {
+        // Only the dot right after the type's name was read, so the server added no JOIN for these when the FROM's type
+        // defines the property too, and the parse failed on the qualifier (closing batch 22 review, Codex P2, subagent
+        // P3-1).
+        for (String space : List.of(" ", "\n")) {
+            assertEquals(Set.of("typedJoined"), answered("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE "
+                    + "nemaki:joinable" + space + ".nemaki:jtag = 'x'"), () -> "a qualifier before whitespace was not read "
+                    + "as the row — " + lastSent());
+        }
+        assertAnsweredWithOneQuery("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE IN_FOLDER(nemaki:joinable, "
+                + "'f1') AND nemaki:withJtag.nemaki:jtag = 'x'");
+        assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
+                () -> "the qualifier of IN_FOLDER was not read as the row — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a row named of a secondary type whose subtype a query of it includes is refused, as the JOIN written is (R217)")
+    void aRowNamedOfATypeWithSubtypesIsRefused() {
+        assertRefusedWithoutAQuery("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE "
+                + "nemaki:parentAspect.nemaki:ptag = 'x'");
     }
 
     @Test

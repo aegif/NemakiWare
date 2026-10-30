@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.HashMap;
@@ -207,7 +208,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// condition on the answer, one the server added is not (R215).
 		String asWritten = statement;
 		Set<String> injectedJoins = new LinkedHashSet<String>();
-		statement = injectSecondaryTypeJoins(repositoryId, statement, injectedJoins);
+		// R217: of those, the secondary types the statement names as a row (a column qualified by the type).
+		Map<String, TypeDefinition> rowsNamed = new LinkedHashMap<String, TypeDefinition>();
+		statement = injectSecondaryTypeJoins(repositoryId, statement, injectedJoins, rowsNamed);
 
 		// Parse the CMIS query using QueryUtilStrict, then use SolrPredicateWalker
 		// to convert the WHERE clause AST into Solr query syntax.
@@ -327,7 +330,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
 		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29).
 		List<String> joinFilters = secondaryTypeJoinFilters(repositoryId, asWritten, queryObject, parseFailure,
-				injectedJoins);
+				injectedJoins, rowsNamed);
 
 		// Build solr statement of WHERE
 		String whereQueryString = "";
@@ -956,7 +959,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * @param statement the original CMIS SQL statement
 	 * @return the modified statement with JOIN clauses for secondary types, or original if no changes needed
 	 */
-	private String injectSecondaryTypeJoins(String repositoryId, String statement, Set<String> injected) {
+	private String injectSecondaryTypeJoins(String repositoryId, String statement, Set<String> injected,
+			Map<String, TypeDefinition> rowsNamed) {
 		if (statement == null || repositoryId == null || typeManager == null) {
 			return statement;
 		}
@@ -982,6 +986,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			Matcher propMatcher = propPattern.matcher(whereClause);
 
 			java.util.Set<String> secondaryTypesToJoin = new java.util.LinkedHashSet<>();
+			Map<String, TypeDefinition> namedAsARow = new LinkedHashMap<String, TypeDefinition>();
 			// Not when the FROM part already names the type, as a type or as an alias (closing batch 17 review, subagent
 			// P3-2): the parser files an unaliased JOIN under the type's own name and OVERWRITES an entry of that name,
 			// so `JOIN nemaki:other nemaki:commentable ON ...` became a JOIN of nemaki:commentable and the client's JOIN
@@ -1008,6 +1013,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 						&& !(fromTypeDefines(repositoryId, fromPart, propertyName)
 								&& !qualifiedBy(blanked, secondaryType))) {
 					secondaryTypesToJoin.add(secondaryType.getId());
+					if (qualifiedBy(blanked, secondaryType)) {
+						namedAsARow.put(secondaryType.getId(), secondaryType);
+					}
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
 					}
@@ -1032,6 +1040,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 					joinClause.append(" JOIN ").append(secondaryTypeId);
 				}
 				injected.addAll(secondaryTypesToJoin);
+				rowsNamed.putAll(namedAsARow);
 				joinClause.append(' ');
 
 				// Insert JOIN clause before WHERE
@@ -1069,13 +1078,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * JOINs were recorded than the client wrote, the statement is refused.
 	 *
 	 * <p>The JOINs the server adds itself ({@link #injectSecondaryTypeJoins} - a WHERE that names a property of the
-	 * type) add no filter: the WHERE that named the property narrows the answer already, and that answer is kept as it
-	 * was. {@code WHERE nemaki:comment IS NULL} answers the documents without a comment, those without the type
+	 * type) add no filter, except one for a type the statement names as a row (R217, below): the WHERE that named the
+	 * property narrows the answer already, and that answer is kept as it was. {@code WHERE nemaki:comment IS NULL} answers the documents without a comment, those without the type
 	 * among them, as before. (The server adds its JOIN to a statement that JOINs the type already, too; the client's
 	 * JOIN is read as a condition and the server's is not, so the second one changes nothing.)
 	 */
 	List<String> secondaryTypeJoinFilters(String repositoryId, String asWritten, QueryObject queryObject,
-			Exception parseFailure, Set<String> injected) {
+			Exception parseFailure, Set<String> injected, Map<String, TypeDefinition> rowsNamed) {
 		List<String> filters = new ArrayList<String>();
 		int written = 0;
 		if (asWritten != null) {
@@ -1085,7 +1094,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 		if (parseFailure != null && written == 0) {
-			// The server's own JOINs only: the manual fallback answers the WHERE as it did.
+			// The server's own JOINs only: the manual fallback answers the WHERE as it did, narrowed to the rows the
+			// statement names (R217).
+			narrowToTheRowsNamed(repositoryId, rowsNamed, filters);
 			return filters;
 		}
 		String mainAlias = queryObject.getMainTypeAlias();
@@ -1148,14 +1159,37 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 			refuseSubtypesAQueryIncludes(repositoryId, joined, named);
 			bound.add(join.alias);
-			String field = SolrUtil.queryableFieldName(
-					solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
-			// The id escaped as the walker escapes the literal of ANY ... IN ('that type') (walkString): unescaped, the
-			// colon of nemaki:commentable is a syntax error to Solr (measured on bedroom: 500, «Cannot parse»).
-			filters.add(SolrPredicateWalker.anyOf(field, java.util.Collections.singletonList(
-					org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(joined.getId()))).toString());
+			filters.add(theDocumentsThatHave(repositoryId, joined));
 		}
+		narrowToTheRowsNamed(repositoryId, rowsNamed, filters);
 		return filters;
+	}
+
+	/**
+	 * The filter of a JOIN that narrows: the documents that have the type, as {@code ANY cmis:secondaryObjectTypeIds IN
+	 * ('that type')} asks. The id escaped as the walker escapes the literal of ANY ... IN (walkString): unescaped, the
+	 * colon of nemaki:commentable is a syntax error to Solr (measured on bedroom: 500, «Cannot parse»).
+	 */
+	private String theDocumentsThatHave(String repositoryId, TypeDefinition joined) {
+		String field = SolrUtil.queryableFieldName(
+				solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));
+		return SolrPredicateWalker.anyOf(field, java.util.Collections.singletonList(
+				org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(joined.getId()))).toString();
+	}
+
+	/**
+	 * R217: the JOIN the server adds for a secondary type the statement names as a row — a column qualified by the type, in
+	 * the SELECT list or the WHERE, or the type as the qualifier of IN_FOLDER, IN_TREE or CONTAINS — narrows the answer as
+	 * the client's JOIN does, to what {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} answers. The statement asked
+	 * about that row, and a document without the type has none: {@code SELECT nemaki:commentable.nemaki:comment FROM
+	 * cmis:document WHERE nemaki:comment IS NULL} answered 2,455 documents on bedroom, the same statement written with the
+	 * JOIN 0 (measured 2026-10-30). A type with subtypes a query of it includes is refused as the client's JOIN is.
+	 */
+	private void narrowToTheRowsNamed(String repositoryId, Map<String, TypeDefinition> rowsNamed, List<String> filters) {
+		for (TypeDefinition joined : rowsNamed.values()) {
+			refuseSubtypesAQueryIncludes(repositoryId, joined, joined.getId());
+			filters.add(theDocumentsThatHave(repositoryId, joined));
+		}
 	}
 
 	/**
@@ -1246,14 +1280,23 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	/**
-	 * Whether the statement (literals blanked) qualifies a column by the type's id or query name. The server's JOIN is the
-	 * one row such a qualifier resolves to, so it is added even when the FROM's own type defines the property too (closing
-	 * batch 21 review, subagent P3-1 — WHERE nemaki:joinable.nemaki:jtag = 'x' was refused once the JOIN was left out).
+	 * Whether the statement (literals blanked) names the type as a row: a column qualified by the type's id or query name
+	 * — the parser takes whitespace between the qualifier and the dot — or the type as the qualifier IN_FOLDER, IN_TREE
+	 * and CONTAINS take first. The server's JOIN is the one row such a qualifier resolves to, so it is added even when the
+	 * FROM's own type defines the property too (closing batch 21 review, subagent P3-1 — WHERE nemaki:joinable.nemaki:jtag
+	 * = 'x' was refused once the JOIN was left out), and it narrows the answer (R217). Only the dot right after the name
+	 * was read before: nemaki:joinable . nemaki:jtag and IN_FOLDER(nemaki:joinable, ...) were refused (closing batch 22
+	 * review, Codex P2, subagent P3-1).
 	 */
 	private static boolean qualifiedBy(String statement, TypeDefinition type) {
 		for (String name : new String[] { type.getId(), type.getQueryName() }) {
-			if (name != null && Pattern.compile("(?<![A-Za-z0-9_:.])" + Pattern.quote(name) + "\\.")
-					.matcher(statement).find()) {
+			if (name == null) {
+				continue;
+			}
+			String quoted = Pattern.quote(name);
+			if (Pattern.compile("(?<![A-Za-z0-9_:.])" + quoted + "\\s*\\.").matcher(statement).find()
+					|| Pattern.compile("(?i)(?<![A-Za-z0-9_:.])(?:IN_FOLDER|IN_TREE|CONTAINS)\\s*\\(\\s*" + quoted
+							+ "\\s*,").matcher(statement).find()) {
 				return true;
 			}
 		}
