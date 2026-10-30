@@ -325,13 +325,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.error("Exception in getMainFromName()", e);
 		}
 
-		// R215: each JOIN the client wrote narrows the answer to the documents that have the joined secondary type, or
-		// the statement is refused. The JOIN used to be parsed and then not read: FROM cmis:document d JOIN
-		// nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
-		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29).
-		List<String> joinFilters = secondaryTypeJoinFilters(repositoryId, asWritten, queryObject, parseFailure,
-				injectedJoins, rowsNamed);
-
 		// Build solr statement of WHERE
 		String whereQueryString = "";
 		// ANTLR3's Tree.isNil() was `token == null || token.getType() == INVALID_TOKEN_TYPE`,
@@ -389,6 +382,15 @@ public class SolrQueryProcessor implements QueryProcessor {
 						"Invalid CMIS SQL statement: " + e.getMessage());
 			}
 		}
+
+		// R215: each JOIN the client wrote narrows the answer to the documents that have the joined secondary type, or
+		// the statement is refused. The JOIN used to be parsed and then not read: FROM cmis:document d JOIN
+		// nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
+		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29).
+		// Read after the WHERE is translated: a statement the WHERE refuses is refused for that (400), before the type
+		// system is asked for the subtypes of a joined type (500) — closing batch 23 review, subagent P3-2.
+		List<String> joinFilters = secondaryTypeJoinFilters(repositoryId, asWritten, queryObject, parseFailure,
+				injectedJoins, rowsNamed);
 
 		// Build solr query of FROM
 		String fromQueryString = "";
@@ -972,13 +974,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// review, subagent P3). The names are read with the literals blanked, so a value cannot add a JOIN.
 			String blanked = withoutStringLiterals(statement);
 			Matcher where = WHERE_KEYWORD.matcher(blanked);
-			if (!where.find()) {
-				// No WHERE clause, nothing to do
-				return statement;
+			boolean hasWhere = where.find();
+			// Where the FROM part ends: at the WHERE, else at the ORDER BY, else at the end of the statement. A statement
+			// needs no WHERE to name a secondary type as a row (R218: SELECT nemaki:commentable.nemaki:comment FROM
+			// cmis:document had no JOIN and answered every document — 2,457 on bedroom, the statement written with the JOIN 2).
+			int whereIndex;
+			if (hasWhere) {
+				whereIndex = where.start();
+			} else {
+				Matcher orderBy = ORDER_BY_KEYWORD.matcher(blanked);
+				whereIndex = orderBy.find() ? orderBy.start() : blanked.length();
 			}
-			int whereIndex = where.start();
 
-			String whereClause = blanked.substring(where.end());
+			String whereClause = hasWhere ? blanked.substring(where.end()) : "";
 
 			// Find property names in WHERE clause (pattern: prefix:name)
 			// This regex matches CMIS property names like "nemaki:comment", "cmis:name", etc.
@@ -999,6 +1007,24 @@ public class SolrQueryProcessor implements QueryProcessor {
 			boolean fromFound = from.find() && from.start() < whereIndex;
 			String fromPart = blanked.substring(fromFound ? from.start() : 0, whereIndex);
 
+			// R218: the secondary types the statement names as a row — the qualifier of a column anywhere in the statement
+			// (whitespace allowed before the dot), or of IN_FOLDER, IN_TREE or CONTAINS — each get the JOIN, though the WHERE
+			// names none of its properties. The JOIN was added only for a property the WHERE named, so a qualifier in the
+			// SELECT list, the ORDER BY or a function alone had nothing to resolve to: the parse failed, and the statement was
+			// answered without the row (no WHERE: every document) or refused. A name is a type only as the type manager
+			// answers it, so neither an alias nor a name in another case is taken for one (closing batch 23 review, subagent
+			// P3-1). Read once here, and the only reading of "named as a row": the JOIN for a property the WHERE names is
+			// narrowed exactly when its type is in it (R217).
+			Map<String, TypeDefinition> rowsNamedHere = new LinkedHashMap<String, TypeDefinition>();
+			Matcher qualifier = ROW_QUALIFIER.matcher(blanked);
+			while (qualifier.find()) {
+				String name = (qualifier.group(1) != null) ? qualifier.group(1) : qualifier.group(2);
+				TypeDefinition named = typeManager.getTypeByQueryName(repositoryId, name);
+				if (named != null && named.getBaseTypeId() == BaseTypeId.CMIS_SECONDARY && !namedIn(fromPart, named)) {
+					rowsNamedHere.put(named.getId(), named);
+				}
+			}
+
 			while (propMatcher.find()) {
 				String propertyName = propMatcher.group(1);
 
@@ -1009,17 +1035,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Check if this property belongs to a secondary type
 				TypeDefinition secondaryType = typeManager.findSecondaryTypeByPropertyQueryName(repositoryId, propertyName);
+				// A type the statement names as a row gets its JOIN below even when the FROM's type defines the property too.
 				if (secondaryType != null && !namedIn(fromPart, secondaryType)
-						&& !(fromTypeDefines(repositoryId, fromPart, propertyName)
-								&& !qualifiedBy(blanked, secondaryType))) {
+						&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {
 					secondaryTypesToJoin.add(secondaryType.getId());
-					if (qualifiedBy(blanked, secondaryType)) {
-						namedAsARow.put(secondaryType.getId(), secondaryType);
-					}
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
 					}
 				}
+			}
+
+			for (TypeDefinition named : rowsNamedHere.values()) {
+				secondaryTypesToJoin.add(named.getId());
+				namedAsARow.put(named.getId(), named);
 			}
 
 			// If we found secondary types, inject JOIN clauses
@@ -1031,8 +1059,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 					return statement;
 				}
 
-				// Find the end of the FROM clause (either WHERE, ORDER BY, or end of string)
-				int fromEndIndex = whereIndex; // We know WHERE exists
+				// The end of the FROM clause: the WHERE, the ORDER BY or the end of the statement (above).
+				int fromEndIndex = whereIndex;
 
 				// Build the JOIN clause string — a space after it as well, since the keyword need not follow one.
 				StringBuilder joinClause = new StringBuilder();
@@ -1043,7 +1071,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				rowsNamed.putAll(namedAsARow);
 				joinClause.append(' ');
 
-				// Insert JOIN clause before WHERE
+				// Insert JOIN clause before WHERE (or ORDER BY, or at the end)
 				String beforeWhere = statement.substring(0, fromEndIndex);
 				String afterIncludingWhere = statement.substring(fromEndIndex);
 				String modifiedStatement = beforeWhere + joinClause.toString() + afterIncludingWhere;
@@ -1187,7 +1215,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 */
 	private void narrowToTheRowsNamed(String repositoryId, Map<String, TypeDefinition> rowsNamed, List<String> filters) {
 		for (TypeDefinition joined : rowsNamed.values()) {
-			refuseSubtypesAQueryIncludes(repositoryId, joined, joined.getId());
+			refuseSubtypesAQueryIncludes(repositoryId, joined, joined.getId() + " (the row a qualifier names)");
 			filters.add(theDocumentsThatHave(repositoryId, joined));
 		}
 	}
@@ -1279,30 +1307,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return type != null && typeManager.getPropertyIdForQueryName(repositoryId, type, propertyName) != null;
 	}
 
-	/**
-	 * Whether the statement (literals blanked) names the type as a row: a column qualified by the type's id or query name
-	 * — the parser takes whitespace between the qualifier and the dot — or the type as the qualifier IN_FOLDER, IN_TREE
-	 * and CONTAINS take first. The server's JOIN is the one row such a qualifier resolves to, so it is added even when the
-	 * FROM's own type defines the property too (closing batch 21 review, subagent P3-1 — WHERE nemaki:joinable.nemaki:jtag
-	 * = 'x' was refused once the JOIN was left out), and it narrows the answer (R217). Only the dot right after the name
-	 * was read before: nemaki:joinable . nemaki:jtag and IN_FOLDER(nemaki:joinable, ...) were refused (closing batch 22
-	 * review, Codex P2, subagent P3-1).
-	 */
-	private static boolean qualifiedBy(String statement, TypeDefinition type) {
-		for (String name : new String[] { type.getId(), type.getQueryName() }) {
-			if (name == null) {
-				continue;
-			}
-			String quoted = Pattern.quote(name);
-			if (Pattern.compile("(?<![A-Za-z0-9_:.])" + quoted + "\\s*\\.").matcher(statement).find()
-					|| Pattern.compile("(?i)(?<![A-Za-z0-9_:.])(?:IN_FOLDER|IN_TREE|CONTAINS)\\s*\\(\\s*" + quoted
-							+ "\\s*,").matcher(statement).find()) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	/** Whether the text before WHERE (literals blanked) names the type, by its id or query name, as a type or alias. */
 	private static boolean namedIn(String fromPart, TypeDefinition type) {
 		for (String name : new String[] { type.getId(), type.getQueryName() }) {
@@ -1352,6 +1356,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 	private static final Pattern WHERE_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])WHERE(?![A-Za-z0-9_:.])");
 	private static final Pattern JOIN_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])JOIN(?![A-Za-z0-9_:.])");
 	private static final Pattern FROM_KEYWORD = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])FROM(?![A-Za-z0-9_:.])");
+	/** A qualifier: a name before a dot (whitespace between allowed), or the first argument of IN_FOLDER, IN_TREE or CONTAINS. */
+	private static final Pattern ROW_QUALIFIER = Pattern.compile("(?<![A-Za-z0-9_:.])([A-Za-z_][A-Za-z0-9_:]*)\\s*\\."
+			+ "|(?<![A-Za-z0-9_:.])(?i:IN_FOLDER|IN_TREE|CONTAINS)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_:]*)\\s*,");
 	private static final Pattern FROM_TYPE = Pattern.compile("(?i)(?<![A-Za-z0-9_:.])FROM\\s+([A-Za-z_][A-Za-z0-9_:]*)");
 	private static final Pattern ORDER_BY_KEYWORD =
 			Pattern.compile("(?i)(?<![A-Za-z0-9_:.])ORDER\\s+BY(?![A-Za-z0-9_:.])");

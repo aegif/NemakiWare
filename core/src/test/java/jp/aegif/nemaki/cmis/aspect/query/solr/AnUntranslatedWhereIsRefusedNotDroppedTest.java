@@ -1153,6 +1153,71 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
     }
 
     @Test
+    @DisplayName("a secondary type named as a row only outside the WHERE gets its JOIN and is narrowed, as the JOIN written is (R218)")
+    void aRowNamedOnlyOutsideTheWhereGetsItsJoin() {
+        // The server JOINed a type only for a property the WHERE named, so a qualifier in the SELECT list, the ORDER BY or
+        // a function alone had nothing to resolve to: the parse failed and the statement was answered without the row —
+        // with no WHERE, every document (2,457 on bedroom, the statement written with the JOIN 2) — or refused.
+        Set<String> joined = answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId");
+        assertEquals(Set.of("has", "hasToo"), joined, () -> "the JOIN written did not answer the documents of the type — "
+                + lastSent());
+        assertEquals(joined, answered("SELECT nemaki:joinable.nemaki:jtag FROM cmis:document"),
+                () -> "a SELECT list naming the row, with no WHERE, answered other than the JOIN written — " + lastSent());
+        assertEquals(joined, answered("SELECT cmis:document.cmis:objectId FROM cmis:document ORDER BY nemaki:joinable.nemaki:jtag"),
+                () -> "an ORDER BY naming the row answered other than the JOIN written — " + lastSent());
+        Set<String> joinedNamed = answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId WHERE d.cmis:name = 'a'");
+        assertEquals(Set.of("has"), joinedNamed, () -> "the JOIN written with a condition did not answer — " + lastSent());
+        assertEquals(joinedNamed, answered("SELECT nemaki:joinable.nemaki:jtag FROM cmis:document WHERE cmis:name = 'a'"),
+                () -> "a SELECT list naming the row, with a WHERE that names none of its properties, answered other than "
+                        + "the JOIN written — " + lastSent());
+        // The WHERE names a property of a type this world cannot resolve, so the strict parse fails and the manual fallback
+        // answers it — as aJoinInAStatementThatFailsToResolveStaysACondition's JOIN written — and the row still narrows
+        // (closing batch 23 review, subagent P1 (b)).
+        assertEquals(answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j ON d.cmis:objectId = "
+                + "j.cmis:objectId WHERE nemaki:tag = 'x'"), answered("SELECT nemaki:joinable.nemaki:jtag FROM cmis:document "
+                + "WHERE nemaki:tag = 'x'"), () -> "a row named in a statement the fallback answers was not narrowed — "
+                + lastSent());
+        for (String function : List.of("IN_FOLDER", "IN_TREE")) {
+            assertAnsweredWithOneQuery("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE " + function
+                    + "(nemaki:joinable, 'f1')");
+            assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
+                            .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
+                    () -> "the qualifier of " + function + " alone did not name the row — " + lastSent());
+        }
+    }
+
+    @Test
+    @DisplayName("a name the statement uses but not as a qualifier, or in another case, does not name the row (R218, over-narrowing)")
+    void aNameThatIsNotAQualifierDoesNotNameTheRow() {
+        // A column alias that is the type's name is not a qualifier: the WHERE names the property unqualified, so the
+        // server's JOIN keeps the answer it had (the owner's rule of 2026-10-29).
+        assertEquals(Set.of("hasNot", "hasToo"), answered("SELECT cmis:document.cmis:objectId AS nemaki:joinable FROM "
+                + "cmis:document WHERE nemaki:jtag IS NULL"), () -> "a column alias that is the type's name narrowed the "
+                + "answer — " + lastSent());
+        // The parser tells names apart by case: an alias of the FROM in capitals is not the secondary type (closing batch
+        // 23 review, subagent P3-1 — case-insensitive reading of the function's qualifier took it for the type).
+        assertAnsweredWithOneQuery("SELECT cmis:document.cmis:objectId FROM cmis:document NEMAKI:JOINABLE WHERE "
+                + "IN_FOLDER(NEMAKI:JOINABLE, 'f1') AND nemaki:jtag IS NULL");
+        assertFalse(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.contains("cmis_secondaryObjectTypeIds:nemaki\\:joinable")),
+                () -> "an alias of the FROM in capitals was read as the secondary type's row — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a statement the WHERE refuses is refused for it before the subtypes of a row it names are read (R218)")
+    void aStatementTheWhereRefusesIsRefusedBeforeTheTypeSystemIsAsked() {
+        // The JOINs' filters were read before the WHERE was translated, so the type system's failure to list a subtype
+        // answered 500 for a statement whose WHERE is refused anyway (closing batch 23 review, subagent P3-2).
+        sent.clear();
+        assertThrows(CmisInvalidArgumentException.class, () -> run("SELECT nemaki:unreadableParent.cmis:objectId FROM "
+                + "cmis:document WHERE cmis:name = 'a' AND"), () -> "a statement whose WHERE cannot be read was not "
+                + "refused for it — the queries it sent: " + sent);
+        assertEquals(List.of(), sent, "the statement was refused only after a query went to Solr");
+    }
+
+    @Test
     @DisplayName("a row named of a secondary type whose subtype a query of it includes is refused, as the JOIN written is (R217)")
     void aRowNamedOfATypeWithSubtypesIsRefused() {
         assertRefusedWithoutAQuery("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE "
