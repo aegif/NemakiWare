@@ -296,6 +296,23 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(types.getTypeByQueryName(REPO, "nemaki:withJtag")).thenReturn(withJtag);
         when(types.getTypeByQueryName(REPO, "nemaki:unloadable"))
                 .thenThrow(new CmisRuntimeException("the type system is not loaded"));
+        // A secondary type whose query name is not its id, as the type service stores them apart (closing batch 24 review,
+        // Codex P1, subagent P3-3). The type manager answers it by its query name only; the index holds its id.
+        SecondaryTypeDefinitionImpl otherName = new SecondaryTypeDefinitionImpl();
+        otherName.setId("nemaki:otherNameId");
+        otherName.setLocalName("otherName");
+        otherName.setQueryName("nemaki:otherName");
+        otherName.setBaseTypeId(BaseTypeId.CMIS_SECONDARY);
+        otherName.setIsQueryable(true);
+        otherName.setIsFulltextIndexed(false);
+        otherName.setIsIncludedInSupertypeQuery(true);
+        Map<String, PropertyDefinition<?>> otherNameProperties = new LinkedHashMap<>();
+        otherNameProperties.put("cmis:objectId", properties.get("cmis:objectId"));
+        otherNameProperties.put("nemaki:otag", define(new PropertyStringDefinitionImpl(), "nemaki:otag", PropertyType.STRING,
+                Cardinality.SINGLE));
+        otherName.setPropertyDefinitions(otherNameProperties);
+        when(types.getTypeByQueryName(REPO, "nemaki:otherName")).thenReturn(otherName);
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:otag")).thenReturn(otherName);
 
         SolrClient client = mock(SolrClient.class);
         when(client.query(any(SolrParams.class))).thenAnswer(call -> {
@@ -788,7 +805,15 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
             "hasToo", fields("b", "nemaki:joinable", null, null),
             "hasSecond", fields("c", "nemaki:second", "y", null),
             "typedHas", typedFields("nemaki:withJtag", "a", null, "x"),
-            "typedJoined", typedFields("nemaki:withJtag", "b", "nemaki:joinable", "x"));
+            "typedJoined", typedFields("nemaki:withJtag", "b", "nemaki:joinable", "x"),
+            "hasOtherName", otherNameFields());
+
+    /** A document of nemaki:withJtag with the secondary type whose query name is not its id: the index holds the id. */
+    private static Map<String, List<String>> otherNameFields() {
+        Map<String, List<String>> fields = typedFields("nemaki:withJtag", "d", "nemaki:otherNameId", null);
+        fields.put("nemaki_otag", List.of("r"));
+        return fields;
+    }
 
     /** A document of another type, with a value of nemaki:jtag — the type's own — and the secondary type given. */
     private static Map<String, List<String>> typedFields(String type, String name, String secondaryType, String jtag) {
@@ -1215,6 +1240,67 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                 + "cmis:document WHERE cmis:name = 'a' AND"), () -> "a statement whose WHERE cannot be read was not "
                 + "refused for it — the queries it sent: " + sent);
         assertEquals(List.of(), sent, "the statement was refused only after a query went to Solr");
+    }
+
+    @Test
+    @DisplayName("a secondary type whose query name is not its id is JOINed by the server by its query name (R220)")
+    void aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName() {
+        // The server wrote its JOIN with the type's id and the parser resolves a JOIN's type by its query name, so the
+        // statement failed to parse where the JOIN written by the query name is answered (closing batch 24 review, Codex
+        // P1, subagent P3-3).
+        Set<String> joined = answered("SELECT w.cmis:objectId FROM nemaki:withJtag w JOIN nemaki:otherName o "
+                + "ON w.cmis:objectId = o.cmis:objectId");
+        assertEquals(Set.of("hasOtherName"), joined, () -> "the JOIN written by the query name did not answer — " + lastSent());
+        assertEquals(joined, answered("SELECT nemaki:otherName.nemaki:otag FROM nemaki:withJtag"), () -> "a row named by a "
+                + "type whose query name is not its id answered other than the JOIN written — " + lastSent());
+        assertEquals(joined, answered("SELECT nemaki:withJtag.cmis:objectId FROM nemaki:withJtag WHERE nemaki:otag = 'r' "
+                + "AND nemaki:withJtag.cmis:name = 'd'"), () -> "the server's JOIN for a property of a type whose query name "
+                + "is not its id did not parse — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a JOIN of a shape this server does not answer is refused for it before the WHERE's definitions are read (R220)")
+    void aJoinOfTheWrongShapeIsRefusedBeforeTheWhereIsRead() {
+        // The JOINs' shape was read after the WHERE was translated, so an outer JOIN whose WHERE names a property whose
+        // definition cannot be read answered 500 for the definition, not 400 for the JOIN (closing batch 24 review,
+        // subagent P3-1).
+        sent.clear();
+        CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class, () -> run("SELECT "
+                + "d.cmis:objectId FROM cmis:document d LEFT OUTER JOIN nemaki:joinable j ON d.cmis:objectId = j.cmis:objectId "
+                + "WHERE d.nemaki:unreadableField = 'x'"), () -> "an outer JOIN was not refused for its shape — the queries "
+                + "it sent: " + sent);
+        assertTrue(refused.getMessage().contains("INNER JOIN"), () -> "the outer JOIN was refused for another reason: "
+                + refused.getMessage());
+    }
+
+    @Test
+    @DisplayName("a statement that does not parse, or whose FROM names no type, is refused for it before a row's subtypes are read (R220)")
+    void aStatementTheFromRefusesIsRefusedBeforeTheTypeSystemIsAsked() {
+        // The JOINs' filters were read before the FROM was checked, so a statement without a WHERE naming a row of a type
+        // whose subtypes cannot be read answered 500 where its own error is the client's 400 (closing batch 24 review,
+        // subagent P3-2).
+        for (String statement : List.of("SELECT nemaki:unreadableParent.cmis:objectId, FROM cmis:document",
+                "SELECT nemaki:unreadableParent.cmis:objectId FROM nemaki:typo")) {
+            sent.clear();
+            assertThrows(CmisInvalidArgumentException.class, () -> run(statement), () -> "「" + statement + "」 was not "
+                    + "refused for its own error — the queries it sent: " + sent);
+            assertEquals(List.of(), sent, "「" + statement + "」 was refused only after a query went to Solr");
+        }
+    }
+
+    @Test
+    @DisplayName("CONTAINS's qualifier names the row, and a qualifier that is not a secondary type does not (R220)")
+    void containsNamesTheRowAndAPrimaryTypeDoesNot() {
+        // The function arm was locked for IN_FOLDER and IN_TREE only, and the secondary-type check of a qualifier not at
+        // all (closing batch 24 review, subagent P3-5).
+        assertAnsweredWithOneQuery("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE CONTAINS(nemaki:joinable, 'x')");
+        assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
+                () -> "the qualifier of CONTAINS did not name the row — " + lastSent());
+        assertAnsweredWithOneQuery("SELECT nemaki:plain.cmis:name FROM cmis:document");
+        assertFalse(filtersSent.get(filtersSent.size() - 1).stream()
+                        .anyMatch(fq -> fq.contains("cmis_secondaryObjectTypeIds:nemaki\\:plain")),
+                () -> "a qualifier naming a primary type was narrowed as a secondary type's row — " + lastSent());
     }
 
     @Test

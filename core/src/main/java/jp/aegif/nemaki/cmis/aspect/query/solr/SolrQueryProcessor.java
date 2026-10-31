@@ -325,6 +325,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 			logger.error("Exception in getMainFromName()", e);
 		}
 
+		// R215: each JOIN the client wrote narrows the answer to the documents that have the joined secondary type, or
+		// the statement is refused. The JOIN used to be parsed and then not read: FROM cmis:document d JOIN
+		// nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
+		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29). Its shape is read
+		// here, before the WHERE (no type is read); its filters after the FROM is checked (below).
+		List<JoinSpec> clientJoins = theClientJoinsOfARightShape(asWritten, queryObject, parseFailure, injectedJoins);
+
 		// Build solr statement of WHERE
 		String whereQueryString = "";
 		// ANTLR3's Tree.isNil() was `token == null || token.getType() == INVALID_TOKEN_TYPE`,
@@ -383,15 +390,6 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 
-		// R215: each JOIN the client wrote narrows the answer to the documents that have the joined secondary type, or
-		// the statement is refused. The JOIN used to be parsed and then not read: FROM cmis:document d JOIN
-		// nemaki:commentable c ON d.cmis:objectId = c.cmis:objectId answered the same 2,457 documents as the statement
-		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29).
-		// Read after the WHERE is translated: a statement the WHERE refuses is refused for that (400), before the type
-		// system is asked for the subtypes of a joined type (500) — closing batch 23 review, subagent P3-2.
-		List<String> joinFilters = secondaryTypeJoinFilters(repositoryId, asWritten, queryObject, parseFailure,
-				injectedJoins, rowsNamed);
-
 		// Build solr query of FROM
 		String fromQueryString = "";
 		
@@ -441,6 +439,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
 					"FROM names no type this repository has, so the query was not run: " + statement);
 		}
+
+		// The JOINs' filters: after the WHERE and the FROM, so a statement either refuses is refused for that (400) before
+		// the type system is asked of a joined type (500) — closing batch 23 review, subagent P3-2; closing batch 24
+		// review, subagent P3-2.
+		List<String> joinFilters = secondaryTypeJoinFilters(repositoryId, queryObject, clientJoins, rowsNamed);
 
 		// includedInSupertypeQuery
 		// CRITICAL FIX (2025-12-14): Use getId() instead of getQueryName() for Solr type filtering
@@ -950,8 +953,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 *
 	 * CMIS 1.1 requires that queries using secondary type properties must include
 	 * a JOIN clause for the secondary type. However, this is not intuitive for users.
-	 * This method automatically detects secondary type properties in the WHERE clause
-	 * and injects the appropriate JOIN clauses.
+	 * This method adds the JOIN of a secondary type whose property the WHERE clause names, and of one the statement
+	 * names as a row — the qualifier of a column anywhere in it, or of IN_FOLDER, IN_TREE or CONTAINS (R218). Each JOIN
+	 * is written with the type's query name, as the parser resolves it (R220).
 	 *
 	 * Example transformation:
 	 * Input:  SELECT cmis:objectId FROM cmis:document WHERE nemaki:comment LIKE '%test%'
@@ -1038,7 +1042,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 				// A type the statement names as a row gets its JOIN below even when the FROM's type defines the property too.
 				if (secondaryType != null && !namedIn(fromPart, secondaryType)
 						&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {
-					secondaryTypesToJoin.add(secondaryType.getId());
+					secondaryTypesToJoin.add(writtenAs(secondaryType));
 					if (logger.isDebugEnabled()) {
 						logger.debug("Found secondary type property '" + propertyName + "' -> adding JOIN for '" + secondaryType.getId() + "'");
 					}
@@ -1046,7 +1050,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 
 			for (TypeDefinition named : rowsNamedHere.values()) {
-				secondaryTypesToJoin.add(named.getId());
+				secondaryTypesToJoin.add(writtenAs(named));
 				namedAsARow.put(named.getId(), named);
 			}
 
@@ -1064,8 +1068,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 				// Build the JOIN clause string — a space after it as well, since the keyword need not follow one.
 				StringBuilder joinClause = new StringBuilder();
-				for (String secondaryTypeId : secondaryTypesToJoin) {
-					joinClause.append(" JOIN ").append(secondaryTypeId);
+				for (String secondaryTypeName : secondaryTypesToJoin) {
+					joinClause.append(" JOIN ").append(secondaryTypeName);
 				}
 				injected.addAll(secondaryTypesToJoin);
 				rowsNamed.putAll(namedAsARow);
@@ -1091,7 +1095,10 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	/**
-	 * The filter each JOIN the client wrote adds to the FROM's (R215): the documents that have the joined secondary
+	 * The JOINs the client wrote, of a shape this server answers (R215) — read before the WHERE, with no type read; the
+	 * filter each adds is built later by {@link #secondaryTypeJoinFilters}, after the WHERE and the FROM are checked.
+	 *
+	 * <p>The filter each JOIN the client wrote adds to the FROM's (R215): the documents that have the joined secondary
 	 * type - what {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} answers, built by the same method
 	 * ({@link SolrPredicateWalker#anyOf}), so the two send Solr the same text. The JOIN answered is the INNER JOIN of
 	 * the FROM type with a secondary type ON the two objects' ids. Any other JOIN is refused rather than answered
@@ -1106,14 +1113,14 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * JOINs were recorded than the client wrote, the statement is refused.
 	 *
 	 * <p>The JOINs the server adds itself ({@link #injectSecondaryTypeJoins} - a WHERE that names a property of the
-	 * type) add no filter, except one for a type the statement names as a row (R217, below): the WHERE that named the
+	 * type, or a qualifier that names it as a row) add no filter, except one for a type the statement names as a row
+	 * (R217, R218, below): the WHERE that named the
 	 * property narrows the answer already, and that answer is kept as it was. {@code WHERE nemaki:comment IS NULL} answers the documents without a comment, those without the type
 	 * among them, as before. (The server adds its JOIN to a statement that JOINs the type already, too; the client's
 	 * JOIN is read as a condition and the server's is not, so the second one changes nothing.)
 	 */
-	List<String> secondaryTypeJoinFilters(String repositoryId, String asWritten, QueryObject queryObject,
-			Exception parseFailure, Set<String> injected, Map<String, TypeDefinition> rowsNamed) {
-		List<String> filters = new ArrayList<String>();
+	List<JoinSpec> theClientJoinsOfARightShape(String asWritten, QueryObject queryObject, Exception parseFailure,
+			Set<String> injected) {
 		int written = 0;
 		if (asWritten != null) {
 			Matcher joinKeyword = JOIN_KEYWORD.matcher(withoutStringLiterals(asWritten));
@@ -1124,8 +1131,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		if (parseFailure != null && written == 0) {
 			// The server's own JOINs only: the manual fallback answers the WHERE as it did, narrowed to the rows the
 			// statement names (R217).
-			narrowToTheRowsNamed(repositoryId, rowsNamed, filters);
-			return filters;
+			return new ArrayList<JoinSpec>();
 		}
 		String mainAlias = queryObject.getMainTypeAlias();
 		Map<String, String> types = queryObject.getTypes();
@@ -1141,9 +1147,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 		if (mainAlias != null) {
 			names.add(mainAlias);
 		}
-		// First the statement's shape — the names of its rows, and whether every JOIN it wrote was read — and only then
-		// what the type system says of each joined type: a statement refused for its shape is refused for that (400), not
-		// for a subtype the type system could not read (500) on the way (closing batch 19 review, Codex P2).
+		// The statement's shape only — the names of its rows, whether every JOIN it wrote was read, the kind of each JOIN
+		// and its ON — and no type read: what the type system says of each joined type is read later
+		// (secondaryTypeJoinFilters), so a statement refused for its shape is refused for that (400), not for a type or a
+		// subtype the type system could not read (500) on the way (closing batch 19 review, Codex P2; closing batch 24
+		// review, subagent P3-1 — the shape was read after the WHERE, behind a 500 of the WHERE's definitions).
 		List<JoinSpec> clientJoinSpecs = new ArrayList<JoinSpec>();
 		for (JoinSpec join : queryObject.getJoins()) {
 			if (join.alias != null && !names.add(join.alias)) {
@@ -1151,9 +1159,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 						+ "(a JOIN without an alias is named by its type), so the statement is refused rather than "
 						+ "answered with one of those rows lost");
 			}
-			// Told by the text alone: the server writes its JOIN as the type's id, with no alias and no ON, so no type is
-			// read on this pass (closing batch 20 review, Codex P2 — the read of each JOIN's type here answered 500 for a
-			// statement refused for its shape when the type system did not answer).
+			// Told by the text alone: the server writes its JOIN as the type's query name, with no alias and no ON, so no
+			// type is read on this pass (closing batch 20 review, Codex P2 — the read of each JOIN's type here answered
+			// 500 for a statement refused for its shape when the type system did not answer).
 			if (join.onLeft == null && join.onRight == null && injected.contains(types.get(join.alias))) {
 				continue;
 			}
@@ -1170,12 +1178,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 		}
 		for (JoinSpec join : clientJoinSpecs) {
 			String queryName = types.get(join.alias);
-			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
 			String named = (queryName != null) ? queryName : join.alias;
-			if (joined == null || joined.getBaseTypeId() != BaseTypeId.CMIS_SECONDARY) {
-				throw new CmisInvalidArgumentException("Only a JOIN with a secondary type is answered, and " + named
-						+ " is not one, so the statement is refused rather than answered without the JOIN");
-			}
 			if (!"INNER".equalsIgnoreCase(join.kind)) {
 				throw new CmisInvalidArgumentException("Only an INNER JOIN with a secondary type is answered, so the "
 						+ join.kind + " JOIN with " + named + " is refused");
@@ -1185,8 +1188,32 @@ public class SolrQueryProcessor implements QueryProcessor {
 						+ "cmis:objectId = the joined type's cmis:objectId, so the JOIN with " + named
 						+ " is refused rather than answered without its condition");
 			}
-			refuseSubtypesAQueryIncludes(repositoryId, joined, named);
 			bound.add(join.alias);
+		}
+		return clientJoinSpecs;
+	}
+
+	/**
+	 * The filters of the JOINs, read after the statement's shape (theClientJoinsOfARightShape), the WHERE and the FROM
+	 * were: the type of each JOIN the client wrote — a secondary type, without subtypes a query of it includes — and its
+	 * filter, then the rows the statement names (narrowToTheRowsNamed). A statement the WHERE or the FROM refuses is
+	 * refused for that (400), before the type system is asked anything here (closing batch 23 review, subagent P3-2;
+	 * closing batch 24 review, subagent P3-2 — a statement without a WHERE that does not parse, or whose FROM names no
+	 * type, answered 500 for a subtype it could not read).
+	 */
+	List<String> secondaryTypeJoinFilters(String repositoryId, QueryObject queryObject, List<JoinSpec> clientJoinSpecs,
+			Map<String, TypeDefinition> rowsNamed) {
+		List<String> filters = new ArrayList<String>();
+		Map<String, String> types = queryObject.getTypes();
+		for (JoinSpec join : clientJoinSpecs) {
+			String queryName = types.get(join.alias);
+			TypeDefinition joined = (queryName == null) ? null : queryObject.getTypeDefinitionFromQueryName(queryName);
+			String named = (queryName != null) ? queryName : join.alias;
+			if (joined == null || joined.getBaseTypeId() != BaseTypeId.CMIS_SECONDARY) {
+				throw new CmisInvalidArgumentException("Only a JOIN with a secondary type is answered, and " + named
+						+ " is not one, so the statement is refused rather than answered without the JOIN");
+			}
+			refuseSubtypesAQueryIncludes(repositoryId, joined, named);
 			filters.add(theDocumentsThatHave(repositoryId, joined));
 		}
 		narrowToTheRowsNamed(repositoryId, rowsNamed, filters);
@@ -1207,7 +1234,7 @@ public class SolrQueryProcessor implements QueryProcessor {
 
 	/**
 	 * R217: the JOIN the server adds for a secondary type the statement names as a row — a column qualified by the type, in
-	 * the SELECT list or the WHERE, or the type as the qualifier of IN_FOLDER, IN_TREE or CONTAINS — narrows the answer as
+	 * the SELECT list, the WHERE or the ORDER BY, or the type as the qualifier of IN_FOLDER, IN_TREE or CONTAINS (R218) — narrows the answer as
 	 * the client's JOIN does, to what {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} answers. The statement asked
 	 * about that row, and a document without the type has none: {@code SELECT nemaki:commentable.nemaki:comment FROM
 	 * cmis:document WHERE nemaki:comment IS NULL} answered 2,455 documents on bedroom, the same statement written with the
@@ -1289,6 +1316,16 @@ public class SolrQueryProcessor implements QueryProcessor {
 			}
 		}
 		return row;
+	}
+
+	/**
+	 * The name the server writes its JOIN of a type with: the query name, as the parser resolves a type in FROM and JOIN —
+	 * the id it wrote before resolved only where the two were equal, and a type whose query name is not its id (the type
+	 * service stores the query name apart) had its JOIN fail to parse and the statement refused (closing batch 24 review,
+	 * Codex P1, subagent P3-3).
+	 */
+	private static String writtenAs(TypeDefinition type) {
+		return (type.getQueryName() != null) ? type.getQueryName() : type.getId();
 	}
 
 	/**
