@@ -122,8 +122,11 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   問い合わせ名が型の id と違う secondary type でも同じに答えます — ただし FROM の別名が secondary type の問い合わせ名か id と
   同じ文は、JOIN が足されず FROM の型の文書を全部返す既知の欠陥があります（残件 R221。別名は型の名前と違うものにしてください）。
   WHERE の無い文は、SELECT の列や ORDER BY の性質が解けなくても 400 にならず、FROM の型の文書を全部返します（同じく R221）。
-  修飾子付きの IN_FOLDER・IN_TREE（`IN_FOLDER(d, '<id>')`）は、修飾子の無い同じ文と同じに答えます（以前は修飾子が FROM の別名でも
-  Solr が拒み、500 でした — bedroom で 20 の形を測りました）。query で含める subtype を持つ secondary type の修飾子は 400 です。修飾しない性質の名前だけの文は、これまでどおり絞りません。
+  修飾子付きの IN_FOLDER・IN_TREE（`IN_FOLDER(d, '<id>')`）は、修飾子が FROM の行かクライアントの JOIN の行なら修飾子の無い同じ文と同じに、
+  JOIN を書いていない secondary type の名前ならその JOIN を書いた文と同じに答えます（以前は修飾子が FROM の別名でも Solr が拒み、500 でした —
+  bedroom で 20 の形を測りました）。secondary type の名前で修飾するときは、SELECT の `cmis:*` も FROM の型で修飾してください
+  （`cmis:document.cmis:objectId` — 修飾しない名前はどちらの行か決まらず 400）。query で含める subtype を持つ secondary type の修飾子は 400 です。
+  IN_TREE は、フォルダ階層を Solr から読めなかったとき 0 件で答える既知の欠陥があります（残件 R222 — 失敗は ERROR のログに残ります）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
   リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
   `ANY cmis:secondaryObjectTypeIds IN (…)` は 0 件 — 同じ WAR で測りました）。CMIS TCK は 38/38 でした。
@@ -611,6 +614,18 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
 
 **実機の Solr に対しては測っていません**（単体の錠で、組み立てられるクエリ文字列を確かめています）。
 型と ACL の絞り込みは別の `fq` のままなので、この変更で見える範囲は変わりません。
+
+## secondary type 付きの作成・更新で、base type の型定義が変わらなくなりました（挙動の変更）
+
+- 文書を secondary type 付きで作る・更新すると、その secondary type の性質が base type の型定義（`cmis:document` など — AtomPub・
+  Browser の両方）に入り、型のキャッシュが作り直されるまで、全員に「その型の文書がみな持つ性質」と答えていました（bedroom で測りました。
+  CMIS TCK の「Property nemaki:comment」の失敗はこれが機序でした）。いまは型定義は変わりません。
+- **上げると変わること**: secondary type を持つ文書の、その性質だけを更新する要求（`cmis:secondaryObjectTypeIds` を送らない）は、
+  起動の直後は 400（「An undefined property is provided!」）、ほかの要求がキャッシュに性質を入れた後は 200 と、答えが変わっていました。
+  いまは常に通ります — 文書がいま持つ secondary type の性質を、保存と同じ規則で許します。要求が `cmis:secondaryObjectTypeIds` を送れば、
+  その一覧の型の性質だけを許します（外す型の性質は 400）。
+- `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
+  性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
