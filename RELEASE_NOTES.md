@@ -621,11 +621,19 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   Browser の両方）に入り、型のキャッシュが作り直されるまで、全員に「その型の文書がみな持つ性質」と答えていました（bedroom で測りました。
   CMIS TCK の「Property nemaki:comment」の失敗はこれが機序でした）。いまは型定義は変わりません。
 - **上げると変わること**: secondary type を持つ文書の、その性質だけを更新する要求（`cmis:secondaryObjectTypeIds` を送らない）は、
-  起動の直後は 400（「An undefined property is provided!」）、ほかの要求がキャッシュに性質を入れた後は 200 と、答えが変わっていました。
-  いまは常に通ります — 文書がいま持つ secondary type の性質を、保存と同じ規則で許します。要求が `cmis:secondaryObjectTypeIds` を送れば、
-  その一覧の型の性質だけを許します（外す型の性質は 400）。
+  起動の直後は拒否（constraint — Browser binding では 400、「An undefined property is provided!」）、ほかの要求がキャッシュに性質を入れた後は
+  200 と、答えが変わっていました。いまは常に通ります — 文書がいま持つ secondary type の性質を、保存と同じ規則で許します。要求が
+  `cmis:secondaryObjectTypeIds` を送れば、その一覧の型の性質だけを許します（外す型の性質は拒否）。要求が名指す型をリポジトリが定義して
+  いなければ 400 です（以前は 500）。空の一覧（Browser binding では値 `""` 1 つ）は型をすべて外します。
+- **bulk update**（`bulkUpdateProperties`）は、add/remove を一覧に畳み込んだ後の要求で検査します。型を足してその性質の値を入れる要求は通り、
+  型を外してその性質の値を入れる要求は拒否されます（以前は、前者は結果から消え、後者は値を黙って捨てて成功と答えていました — bedroom で測り
+  ました）。
+- **check-in** は、新しい版に渡す性質を更新と同じに検査します。どの型も定義しない性質と、外す型の性質は拒否されます（以前は検査が無く、
+  黙って無視・破棄して成功と答えていました）。
 - `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
   性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
+- **既知の欠陥（3.4.0 からの後退）**: 内容（content stream）の無い文書は、チェックアウトすると取り消しも check-in もできません。check-in は
+  新しい版を作ってから 500 を返します（再試行すると版が増えます）。内容の無い文書をチェックアウトしないでください（残件 R224）。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
