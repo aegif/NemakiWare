@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -53,6 +54,7 @@ import jp.aegif.nemaki.util.cache.model.NemakiCache;
 class AFailedUpdateLeavesTheCacheAsStoredTest {
 
     private CacheManager cacheManager;
+    private CacheService repositoryCache;
     private ContentDaoService stored;
     private ContentDaoService cached;
     private ContentServiceImpl service;
@@ -78,7 +80,7 @@ class AFailedUpdateLeavesTheCacheAsStoredTest {
         Cache<String, Object> heap = cacheManager.createCache("bedroom_contentCache", CacheConfigurationBuilder
                 .newCacheConfigurationBuilder(String.class, Object.class, ResourcePoolsBuilder.heap(100)).build());
         NemakiCache<Content> contentCache = new NemakiCache<>(true, heap);
-        CacheService repositoryCache = mock(CacheService.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        repositoryCache = mock(CacheService.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
         when(repositoryCache.getContentCache()).thenReturn(contentCache);
         doCallRealMethod().when(repositoryCache).removeCmisAndContentCache(anyString());
         NemakiCachePool pool = mock(NemakiCachePool.class);
@@ -152,5 +154,52 @@ class AFailedUpdateLeavesTheCacheAsStoredTest {
                 "the cache answers the description of an update the store refused");
         assertEquals("1", readAgain.getChangeToken(),
                 "the cache answers the change token of an update the store refused, so the caller's token no longer matches");
+    }
+
+    /** An Error from the store, not an exception. */
+    private static final class TheStoreBroke extends Error {
+        private TheStoreBroke() {
+            super("the store broke");
+        }
+    }
+
+    @Test
+    @DisplayName("an update that fails with an Error leaves the cache answering what is stored")
+    void anErrorLeavesTheCacheAsStored() {
+        when(stored.update(anyString(), any(Document.class))).thenThrow(new TheStoreBroke());
+        Content content = cached.getContent("bedroom", "doc-1");
+
+        assertThrows(TheStoreBroke.class, () -> service.updateProperties(mock(CallContext.class), "bedroom",
+                describedAs("written by an update that failed"), content));
+        assertEquals("as stored", cached.getContent("bedroom", "doc-1").getDescription(),
+                "the cache answers the description of an update that failed with an Error");
+    }
+
+    @Test
+    @DisplayName("an eviction that fails with an exception does not take the place of the update's failure")
+    void anEvictionThatFailsDoesNotHideTheFailure() {
+        when(stored.update(anyString(), any(Document.class))).thenThrow(new CmisRuntimeException("the store refused"));
+        IllegalStateException evicting = new IllegalStateException("the cache could not be reached");
+        doThrow(evicting).when(repositoryCache).removeCmisAndContentCache(anyString());
+        Content content = cached.getContent("bedroom", "doc-1");
+
+        CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class, () -> service.updateProperties(
+                mock(CallContext.class), "bedroom", describedAs("written by an update that failed"), content),
+                "the eviction's failure took the place of the update's");
+        assertEquals(List.of(evicting), List.of(thrown.getSuppressed()), "the eviction's failure is not on the update's");
+    }
+
+    @Test
+    @DisplayName("an eviction that fails with an Error does not take the place of the update's failure")
+    void anEvictionThatFailsWithAnErrorDoesNotHideTheFailure() {
+        when(stored.update(anyString(), any(Document.class))).thenThrow(new CmisRuntimeException("the store refused"));
+        TheStoreBroke evicting = new TheStoreBroke();
+        doThrow(evicting).when(repositoryCache).removeCmisAndContentCache(anyString());
+        Content content = cached.getContent("bedroom", "doc-1");
+
+        CmisRuntimeException thrown = assertThrows(CmisRuntimeException.class, () -> service.updateProperties(
+                mock(CallContext.class), "bedroom", describedAs("written by an update that failed"), content),
+                "the eviction's Error took the place of the update's failure");
+        assertEquals(List.of(evicting), List.of(thrown.getSuppressed()), "the eviction's Error is not on the update's failure");
     }
 }

@@ -3441,10 +3441,12 @@ public class ContentServiceImpl implements ContentService {
 			}
 
 			// A property definition with no updatability is one CMIS createType stores when the client leaves it out (the
-			// REST type resource and the Zip importer put READWRITE there; this one passes the client's null on). The switch
+			// REST type resource puts READWRITE there and the Zip export writes a missing one as readwrite; the Zip import
+			// refuses one, and this door passes the client's null on — closing batch 32 review, subagent P3-2). The switch
 			// on it threw a NullPointerException and the create or update answered 500 with no word of what could not be
 			// read — measured on canopy, a secondary type's and a document subtype's (closing batch 31 review, subagent
-			// P3-6). The check lets such a property through, so the store reads it as the other doors write it: READWRITE.
+			// P3-6). The check lets such a property through, so the store reads it as the REST door and the export write it:
+			// READWRITE.
 			Updatability updatability = pd.getUpdatability() != null ? pd.getUpdatability() : Updatability.READWRITE;
 			switch (updatability) {
 			case READONLY:
@@ -3496,8 +3498,11 @@ public class ContentServiceImpl implements ContentService {
 		// modifyProperties writes the request onto THIS object, and it is the one the content cache keeps: the cached DAO
 		// hands out the instance it holds, and the heap tier holds it by reference. A failure after the first write — a
 		// secondary type that could not be read, a value that could not be put, the store refusing the update — left the
-		// cached object with the changes the caller was told had failed, and the next update that succeeded stored them
-		// (closing batch 31 review, Codex P2). On a failure the object leaves the cache, so the next read is the stored one.
+		// cached object with the changes the caller was told had failed, and a later write that reads the cache — an ACL
+		// change — stored them (closing batch 31 review, Codex P2; measured over AtomPub, which puts the properties in the
+		// order sent: a description, then a name that collides, 409, and applyACL stored the description). On a failure the
+		// object leaves the cache. A reader that took the object before it left is not covered: it can still put what it
+		// compiled from it (closing batch 32 review, subagent P3-6).
 		Content result;
 		try {
 			Content modified = modifyProperties(callContext, repositoryId, properties, content);
@@ -3520,8 +3525,10 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	/**
-	 * Takes an object a failed write left changed in memory out of the content cache, so the next read is the stored one.
-	 * A failure to evict is added to the write's failure, not put in its place.
+	 * Takes an object a failed write left changed in memory out of the content cache. A failure to evict — an Error as
+	 * much as an exception — is added to the write's failure, not put in its place, and logged: the changed object is
+	 * then still in the cache (closing batch 32 review, Codex P2 and subagent P3-5 — an Error from the eviction took the
+	 * write's failure's place, and nothing said the cache kept the object).
 	 */
 	private void forgetTheCachedObject(String repositoryId, Content content, Throwable failed) {
 		if (content == null || content.getId() == null) {
@@ -3529,8 +3536,10 @@ public class ContentServiceImpl implements ContentService {
 		}
 		try {
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
-		} catch (RuntimeException evicting) {
+		} catch (RuntimeException | Error evicting) {
 			failed.addSuppressed(evicting);
+			log.error("A failed update of {} could not take it out of the content cache, which may still answer the changes "
+					+ "the update was refused for: {}", content.getId(), evicting.toString());
 		}
 	}
 
