@@ -102,5 +102,64 @@ class TheCheckInCheckSeesTheVersionAsStoredTest {
         // Refused before anything is written: no attachment copied, no version created.
         verify(dao, never()).create(anyString(), any(Document.class));
         verify(dao, never()).getAttachment(anyString(), anyString());
+        // And the PWC as it was: the merge wrote the latest version's types onto the PWC's own list, which stays in the
+        // content cache (closing batch 30 review, subagent P2-1).
+        assertEquals(List.of("nemaki:own"), pwc.getSecondaryIds(), "a refused check-in left the latest version's types on "
+                + "the PWC's secondaryIds");
+        assertEquals(List.of("nemaki:own"), pwc.getAspects().stream().map(Aspect::getName).toList(),
+                "a refused check-in left the latest version's aspects on the PWC");
+    }
+
+    @Test
+    @DisplayName("with a content stream too, the check runs before the journal row opens and the attachment is made (R214)")
+    void theCheckRunsBeforeTheContentIsWritten() throws Exception {
+        // The arm without a content stream copies the PWC's attachment; this one opens the content-write row and makes a new
+        // attachment, and both come after the check (closing batch 30 review, Codex P3).
+        jp.aegif.nemaki.dao.ContentDaoService dao = mock(jp.aegif.nemaki.dao.ContentDaoService.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        Document pwc = document("pwc-1", "att-9", "nemaki:own");
+        pwc.setPrivateWorkingCopy(true);
+        when(dao.getDocument("bedroom", "pwc-1")).thenReturn(pwc);
+        when(dao.getDocumentOfLatestVersion("bedroom", "vs-1")).thenReturn(document("doc-1", "att-8"));
+        ContentServiceImpl service = serviceOn(dao);
+        jp.aegif.nemaki.evidence.RecordContentStateRecorder recorder =
+                mock(jp.aegif.nemaki.evidence.RecordContentStateRecorder.class);
+        Field recordContentState = ContentServiceImpl.class.getDeclaredField("recordContentState");
+        recordContentState.setAccessible(true);
+        recordContentState.set(service, recorder);
+        org.apache.chemistry.opencmis.commons.data.ContentStream bytes =
+                mock(org.apache.chemistry.opencmis.commons.data.ContentStream.class);
+        assertThrows(Refused.class, () -> service.checkIn(mock(CallContext.class), "bedroom", new Holder<>("pwc-1"),
+                Boolean.TRUE, null, bytes, "comment", null, null, null, null, newVersion -> {
+                    throw new Refused();
+                }), "check-in with a content stream did not run the caller's check");
+        verify(recorder, never()).openBeforeWriting(anyString(), anyString(), any(), any(), anyString());
+        verify(dao, never()).create(anyString(), any(Document.class));
+        verify(bytes, never()).getStream();
+    }
+
+    @Test
+    @DisplayName("the store does not take a type it could not read for one that is not there (R214)")
+    void aTypeTheStoreCannotReadIsNotDropped() throws Exception {
+        // buildSecondaryTypes caught every exception and dropped the aspect, every value it held with it, and the update
+        // was answered as done (closing batch 30 review, Codex P2).
+        jp.aegif.nemaki.dao.ContentDaoService dao = mock(jp.aegif.nemaki.dao.ContentDaoService.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        ContentServiceImpl service = serviceOn(dao);
+        jp.aegif.nemaki.cmis.aspect.type.TypeManager types = mock(jp.aegif.nemaki.cmis.aspect.type.TypeManager.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        when(types.getTypeDefinition("bedroom", "nemaki:unreadable")).thenThrow(
+                new IllegalStateException("the type definitions could not be read"));
+        Field typeManager = ContentServiceImpl.class.getDeclaredField("typeManager");
+        typeManager.setAccessible(true);
+        typeManager.set(service, types);
+        Document document = document("doc-1", null);
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+        properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+                "cmis:secondaryObjectTypeIds", List.of("nemaki:unreadable")));
+        assertThrows(IllegalStateException.class, () -> service.updateProperties(mock(CallContext.class), "bedroom",
+                properties, document), "the store answered a type it could not read as an absent type");
+        verify(dao, never()).update(anyString(), any(Document.class));
     }
 }

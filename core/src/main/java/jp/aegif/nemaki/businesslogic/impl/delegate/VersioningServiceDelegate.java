@@ -194,13 +194,14 @@ public class VersioningServiceDelegate {
 	 * were added to the original document but not to the PWC.
 	 */
 	public void mergeSecondaryTypesFromLatest(Document checkedIn, Document latest) {
-		// Merge secondaryIds
+		// Merge secondaryIds — into a copy. buildCopyDocument hands the new version the PWC's own list, so adding to it wrote
+		// the latest version's types onto the PWC, which stays in the content cache; a check-in refused after this merge
+		// (the property check runs on the merged version, closing batch 30) left the PWC naming types it has no aspect for
+		// (closing batch 30 review, subagent P2-1).
 		List<String> pwcSecIds = checkedIn.getSecondaryIds();
 		List<String> latestSecIds = latest.getSecondaryIds();
 		if (latestSecIds != null && !latestSecIds.isEmpty()) {
-			if (pwcSecIds == null) {
-				pwcSecIds = new ArrayList<>();
-			}
+			pwcSecIds = (pwcSecIds == null) ? new ArrayList<>() : new ArrayList<>(pwcSecIds);
 			for (String secId : latestSecIds) {
 				if (!pwcSecIds.contains(secId)) {
 					pwcSecIds.add(secId);
@@ -209,7 +210,8 @@ public class VersioningServiceDelegate {
 			checkedIn.setSecondaryIds(pwcSecIds);
 		}
 
-		// Merge aspects
+		// Merge aspects. buildCopyDocument gives the new version a list of its own (copyEvidenceAspects), so adding to it does
+		// not touch the PWC.
 		List<Aspect> pwcAspects = checkedIn.getAspects();
 		List<Aspect> latestAspects = latest.getAspects();
 		if (latestAspects != null && !latestAspects.isEmpty()) {

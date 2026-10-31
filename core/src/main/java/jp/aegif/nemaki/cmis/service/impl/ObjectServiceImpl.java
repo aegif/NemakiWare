@@ -1236,6 +1236,15 @@ public class ObjectServiceImpl implements ObjectService {
 		if (removeSecondaryTypeIds != null) {
 			secondaryTypeChanges.addAll(removeSecondaryTypeIds);
 		}
+		// A blank or null id in the add or remove list names no type, and the request asked for one: the client's error. The
+		// gate below skips a blank value as the property list's empty list — one empty string — so it is refused here, before
+		// it is folded into nothing and the update answered as done (closing batch 30 review, subagent P3-5).
+		for (String change : secondaryTypeChanges) {
+			if (change == null || change.trim().isEmpty()) {
+				exceptionService.invalidArgument("Invalid cmis:SecondaryObjectTypeIds are provided: a blank id in "
+						+ "addSecondaryTypeIds or removeSecondaryTypeIds");
+			}
+		}
 		if (!secondaryTypeChanges.isEmpty()) {
 			org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl synthetic =
 					new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
@@ -1330,6 +1339,12 @@ public class ObjectServiceImpl implements ObjectService {
 					}
 				}
 			}
+			// A type the request adds is the request's, even if the object names it already: one deleted between the gate
+			// and this task is the client's to hear about, not an id the fold took from the object (closing batch 30 review,
+			// Codex P2 — the add was exempted and the update answered as done without the type).
+			if (addSecondaryTypeIds != null) {
+				held.removeAll(addSecondaryTypeIds);
+			}
 			return held;
 		}
 
@@ -1346,7 +1361,11 @@ public class ObjectServiceImpl implements ObjectService {
 			if (requested != null) {
 				base = new java.util.ArrayList<>();
 				for (Object value : requested.getValues()) {
-					base.add(String.valueOf(value));
+					// As the gate, the check and the store read the list: a null or blank value names no type. String.valueOf
+					// made null the type "null", which the check then refused (closing batch 30 review, subagent P3-5).
+					if (value != null && !value.toString().trim().isEmpty()) {
+						base.add(value.toString());
+					}
 				}
 			} else {
 				base = content.getSecondaryIds() == null

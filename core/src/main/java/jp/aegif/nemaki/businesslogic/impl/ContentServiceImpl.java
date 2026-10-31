@@ -3070,11 +3070,16 @@ public class ContentServiceImpl implements ContentService {
 								td != null ? td.getBaseTypeId() : "null");
 						}
 					}
-				} catch (Exception e) {
+				} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException beingDeleted) {
+					// A type being deleted is no type, as the property check reads it (ExceptionServiceImpl
+					// .secondaryTypeAsTheStoreReadsIt).
 					if (log.isDebugEnabled()) {
-						log.debug("Secondary type {} not found or invalid: {}", secondaryTypeId, e.getMessage());
+						log.debug("Secondary type {} is being deleted: {}", secondaryTypeId, beingDeleted.getMessage());
 					}
 				}
+				// Any other failure — the type system unreadable, a value that cannot be put, the existing aspect's merge —
+				// goes up. It was caught here and the aspect dropped with every value it held, the update answered as done:
+				// a failure to read stored as the type's absence (closing batch 30 review, Codex P2).
 			}
 		}
 		return keepEvidenceAspects(aspects, existingAspectsMap, secondaryTypeIds != null);

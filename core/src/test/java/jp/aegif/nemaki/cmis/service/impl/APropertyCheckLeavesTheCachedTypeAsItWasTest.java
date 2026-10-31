@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.chemistry.opencmis.commons.PropertyIds;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
@@ -296,8 +297,10 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         VersioningServiceImpl service = versioningWithTheRealCheck();
         Document pwc = pwc("pwc");
         when(contentService.getDocument(REPO, "pwc")).thenReturn(pwc);
+        // The second reading answers otherwise: a check that read the latest version again, rather than the version the
+        // store hands it, would refuse (closing batch 30 review, subagent P3-1).
         when(contentService.getDocumentOfLatestVersion(REPO, pwc.getVersionSeriesId()))
-                .thenReturn(document("latest", COMMENTABLE));
+                .thenReturn(document("latest", COMMENTABLE), document("latest"));
         assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("pwc"), true,
                 anUpdate("nemaki:comment"), null, null, null, null, null, null),
                 "checkIn refused a property of a type the latest version has, which the store merges into the new version");
@@ -385,6 +388,36 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                 List.of(new BulkUpdateObjectIdAndChangeTokenImpl("hooked", null)), anUpdate("nemaki:comment"),
                 List.of(COMMENTABLE), null, null).size(), "a bulk update was refused for an id its own fold took from the "
                 + "object's secondaryIds");
+        // Without an add or a remove there is no fold, and a type only in secondaryIds is none the store keeps — its
+        // property would be dropped (closing batch 30 review, subagent P3-2).
+        Document onlyListed = document("onlyListed");
+        onlyListed.setSecondaryIds(new ArrayList<>(List.of(COMMENTABLE)));
+        when(contentService.getContent(REPO, "onlyListed")).thenReturn(onlyListed);
+        assertEquals(List.of(), service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("onlyListed", null)), anUpdate("nemaki:comment"), null,
+                null, null), "a bulk update without an add or remove let a property of a type in secondaryIds alone through");
+        // A type the request adds is the request's: deleted between the gate and the task, it is not exempted as the
+        // object's (closing batch 30 review, Codex P2).
+        when(types.getTypeDefinition(REPO, "nemaki:flaky")).thenReturn(secondary("nemaki:flaky", "nemaki:flakyNote"), (TypeDefinition) null);
+        Document flaky = document("flaky");
+        flaky.setSecondaryIds(new ArrayList<>(List.of("nemaki:flaky")));
+        when(contentService.getContent(REPO, "flaky")).thenReturn(flaky);
+        PropertiesImpl named = new PropertiesImpl();
+        named.addProperty(new PropertyStringImpl(PropertyIds.NAME, "renamed"));
+        assertEquals(List.of(), service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("flaky", null)), named, List.of("nemaki:flaky"), null, null),
+                "a bulk update that adds a type deleted after the gate was answered as done without it");
+        // A blank id in the add list names no type: the client's error (closing batch 30 review, subagent P3-5 — F-1).
+        assertThrows(CmisInvalidArgumentException.class, () -> service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), null, List.of(""), null, null),
+                "a bulk update that adds a blank id was let through");
+        // A null value in the property's list is no type "null" in the fold.
+        PropertiesImpl withNull = anUpdate("nemaki:comment");
+        withNull.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, java.util.Arrays.asList(COMMENTABLE, null)));
+        assertEquals(1, assertDoesNotThrow(() -> service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), withNull, List.of(COMMENTABLE), null, null),
+                "a bulk update whose list holds a null was refused").size(),
+                "a bulk update whose list holds a null was answered as if the null were a type");
     }
 
     @Test
@@ -471,6 +504,10 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                     (String) call.getArgument(3), call.getArgument(4));
             return null;
         }).when(exceptions).constraintPropertyValue(any(), any(), any(), any(), any());
+        doAnswer(call -> {
+            check.invalidArgument((String) call.getArgument(0));
+            return null;
+        }).when(exceptions).invalidArgument(any());
         // The bulk update's gate on the ids it was asked to add or remove, real too (closing batch 29 review, P3-A).
         doAnswer(call -> {
             check.invalidArgumentSecondaryTypeIds((String) call.getArgument(0), call.getArgument(1));
