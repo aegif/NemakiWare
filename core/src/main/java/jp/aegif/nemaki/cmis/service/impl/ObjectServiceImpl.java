@@ -717,7 +717,7 @@ public class ObjectServiceImpl implements ObjectService {
 			exceptionService.constraintBaseTypeId(repositoryId, properties, BaseTypeId.CMIS_DOCUMENT);
 			exceptionService.constraintAllowedChildObjectTypeId(repositoryId, parentFolder, properties);
 			exceptionService.constraintPropertyValue(repositoryId, td, properties,
-					DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID));
+					DataUtil.getIdProperty(properties, PropertyIds.OBJECT_ID), secondaryTypesACopyCarries(original));
 			exceptionService.constraintCotrollablePolicies(td, policies, properties);
 			exceptionService.constraintCotrollableAcl(td, addAces, removeAces, properties);
 		}
@@ -1163,10 +1163,41 @@ public class ObjectServiceImpl implements ObjectService {
 		// Check property constraints only if properties are provided
 		if (properties != null) {
 			TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
-			exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue());
+			exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue(),
+					secondaryTypesItHas(content));
 		}
 
 		return content;
+	}
+
+	/**
+	 * The secondary types an object has, as the store reads them when a request lists none (ContentServiceImpl
+	 * .getSecondaryTypeIds — the aspects' names). The property check allows their properties (R214).
+	 */
+	private static List<String> secondaryTypesItHas(Content content) {
+		List<String> ids = new ArrayList<>();
+		if (content != null && content.getAspects() != null) {
+			for (jp.aegif.nemaki.model.Aspect aspect : content.getAspects()) {
+				if (aspect != null && aspect.getName() != null) {
+					ids.add(aspect.getName());
+				}
+			}
+		}
+		return ids;
+	}
+
+	/**
+	 * Those a copy keeps: the source's, less the evidence types a new object does not carry (ContentServiceImpl
+	 * .stripEvidenceForNewObject).
+	 */
+	private static List<String> secondaryTypesACopyCarries(Content original) {
+		List<String> ids = new ArrayList<>();
+		for (String id : secondaryTypesItHas(original)) {
+			if (!jp.aegif.nemaki.businesslogic.EvidenceTypes.isProtected(id)) {
+				ids.add(id);
+			}
+		}
+		return ids;
 	}
 
 	@Override

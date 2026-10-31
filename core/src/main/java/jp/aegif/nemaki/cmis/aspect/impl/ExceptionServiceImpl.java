@@ -539,17 +539,37 @@ public class ExceptionServiceImpl implements ExceptionService,
 	@Override
 	public <T> void constraintPropertyValue(String repositoryId,
 			TypeDefinition typeDefinition, Properties properties, String objectId) {
-		Map<String, PropertyDefinition<?>> propertyDefinitions = typeDefinition
-				.getPropertyDefinitions();
+		constraintPropertyValue(repositoryId, typeDefinition, properties, objectId, java.util.Collections.emptyList());
+	}
 
-		// Adding secondary types and its properties MAY be done in the same
-		// operation
-		List<String> secIds = DataUtil.getIdListProperty(properties,
-				PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+	@Override
+	public <T> void constraintPropertyValue(String repositoryId, TypeDefinition typeDefinition, Properties properties,
+			String objectId, List<String> secondaryTypeIdsItHas) {
+		// A copy (R214). This was the type cache's own map: each secondary type's properties a create or an update named
+		// were put into it, and from then on the base type's definition — AtomPub and Browser alike — said every object of
+		// the type had them, until the cache was rebuilt (measured on bedroom, closing batch 3 and closing batch 27). And
+		// this check came to lean on it: an update of a secondary type's property, with no list of secondary types, was
+		// refused after a start and allowed once some create had put the property there.
+		Map<String, PropertyDefinition<?>> propertyDefinitions = new java.util.LinkedHashMap<>(typeDefinition
+				.getPropertyDefinitions());
+
+		// The secondary types the object will have, by the rule the store keeps them by (ContentServiceImpl
+		// .buildSecondaryTypes): the list the request carries, or — when it carries none — the ones the object has.
+		// Adding secondary types and its properties MAY be done in the same operation.
+		boolean listed = properties.getProperties() != null
+				&& properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) != null;
+		List<String> secIds = listed ? DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)
+				: secondaryTypeIdsItHas;
 		if (CollectionUtils.isNotEmpty(secIds)) {
 			for (String secId : secIds) {
-				TypeDefinition sec = typeManager.getTypeById(repositoryId, secId)
-						.getTypeDefinition();
+				org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer secContainer = typeManager
+						.getTypeById(repositoryId, secId);
+				if (!listed && (secContainer == null || secContainer.getTypeDefinition() == null)) {
+					// A type the object has that this repository no longer defines: its properties are not allowed —
+					// the answer this check gave before the cache could carry them (the store drops the type too).
+					continue;
+				}
+				TypeDefinition sec = secContainer.getTypeDefinition();
 				for (Entry<String, PropertyDefinition<?>> entry : sec
 						.getPropertyDefinitions().entrySet()) {
 					if (!propertyDefinitions.containsKey(entry.getKey())) {

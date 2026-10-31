@@ -77,6 +77,13 @@ public interface ExceptionService {
 	void constraintBaseTypeId(String repositoryId, Properties properties, BaseTypeId baseTypeId);
 	void constraintAllowedChildObjectTypeId(String repositoryId, Folder folder, Properties childProperties);
 	<T>void constraintPropertyValue(String repositoryId, TypeDefinition typeDefinition, Properties properties, String objectId);
+	/**
+	 * The same check for a request on an object that has secondary types already — an update, or a copy that carries the
+	 * source's. When the request lists no {@code cmis:secondaryObjectTypeIds}, the properties of
+	 * {@code secondaryTypeIdsItHas} are allowed too, as the store keeps those types (R214).
+	 */
+	<T>void constraintPropertyValue(String repositoryId, TypeDefinition typeDefinition, Properties properties, String objectId,
+			List<String> secondaryTypeIdsItHas);
 	void constraintControllableVersionable(DocumentTypeDefinition documentTypeDefinition, VersioningState versioningState, String objectId);
 	void constraintCotrollablePolicies(TypeDefinition typeDefinition, List<String> policies, Properties properties);
 	void constraintCotrollableAcl(TypeDefinition typeDefinition, Acl addAces, Acl removeAces, Properties properties);
