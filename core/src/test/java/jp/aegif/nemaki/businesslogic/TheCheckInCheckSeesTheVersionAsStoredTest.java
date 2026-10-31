@@ -162,4 +162,89 @@ class TheCheckInCheckSeesTheVersionAsStoredTest {
                 properties, document), "the store answered a type it could not read as an absent type");
         verify(dao, never()).update(anyString(), any(Document.class));
     }
+
+    @Test
+    @DisplayName("a type being deleted is no type to the store, as the property check reads it (R214)")
+    void aTypeBeingDeletedIsNoTypeToTheStore() throws Exception {
+        // The not-found of a type being deleted is the one failure the store reads as «no type», where the check does too
+        // (ExceptionServiceImpl.secondaryTypeAsTheStoreReadsIt). Nothing measured that arm: an update that raised it, 404
+        // where the check had let the request through, was green (closing batch 31 review, Codex P3).
+        jp.aegif.nemaki.dao.ContentDaoService dao = mock(jp.aegif.nemaki.dao.ContentDaoService.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        when(dao.update(anyString(), any(Document.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        ContentServiceImpl service = serviceOn(dao);
+        jp.aegif.nemaki.cmis.aspect.type.TypeManager types = mock(jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition documentType =
+                mock(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.class);
+        when(documentType.getPropertyDefinitions()).thenReturn(java.util.Map.of());
+        when(types.getTypeDefinition("bedroom", "cmis:document")).thenReturn(documentType);
+        when(types.getSpecificPropertyDefinitions("cmis:document")).thenReturn(new ArrayList<>());
+        when(types.getTypeDefinition("bedroom", "nemaki:beingDeleted")).thenThrow(
+                new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException("type is being deleted"));
+        Field typeManager = ContentServiceImpl.class.getDeclaredField("typeManager");
+        typeManager.setAccessible(true);
+        typeManager.set(service, types);
+        Document document = document("doc-1", null, "nemaki:beingDeleted");
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+        properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+                "cmis:description", "a description"));
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.updateProperties(mock(CallContext.class),
+                "bedroom", properties, document), "the store refused an update for a type being deleted that the check "
+                + "reads as no type");
+        org.mockito.ArgumentCaptor<Document> written = org.mockito.ArgumentCaptor.forClass(Document.class);
+        verify(dao).update(anyString(), written.capture());
+        assertEquals(List.of(), written.getValue().getAspects().stream().map(Aspect::getName).toList(),
+                "the store kept an aspect of a type being deleted");
+    }
+
+    @Test
+    @DisplayName("a property whose definition has no updatability is stored, as the check lets it through")
+    void aPropertyWithNoUpdatabilityIsStored() throws Exception {
+        // CMIS createType stores a property definition without updatability when the client leaves it out, and the store's
+        // switch on it answered 500 with a NullPointerException (measured on canopy; closing batch 31 review, subagent P3-6).
+        jp.aegif.nemaki.dao.ContentDaoService dao = mock(jp.aegif.nemaki.dao.ContentDaoService.class,
+                org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        when(dao.update(anyString(), any(Document.class))).thenAnswer(invocation -> invocation.getArgument(1));
+        ContentServiceImpl service = serviceOn(dao);
+        jp.aegif.nemaki.cmis.aspect.type.TypeManager types = mock(jp.aegif.nemaki.cmis.aspect.type.TypeManager.class);
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition documentType =
+                mock(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.class);
+        when(documentType.getPropertyDefinitions()).thenReturn(java.util.Map.of());
+        when(types.getTypeDefinition("bedroom", "cmis:document")).thenReturn(documentType);
+        when(types.getSpecificPropertyDefinitions("cmis:document")).thenReturn(new ArrayList<>());
+        org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?> note =
+                mock(org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition.class);
+        when(note.getId()).thenReturn("nemaki:note");
+        when(note.isInherited()).thenReturn(false);
+        when(note.getUpdatability()).thenReturn(null);
+        when(note.getCardinality()).thenReturn(org.apache.chemistry.opencmis.commons.enums.Cardinality.SINGLE);
+        org.apache.chemistry.opencmis.commons.definitions.TypeDefinition noUpdatability =
+                mock(org.apache.chemistry.opencmis.commons.definitions.TypeDefinition.class);
+        when(noUpdatability.getBaseTypeId()).thenReturn(org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_SECONDARY);
+        org.mockito.Mockito.<java.util.Map<String, org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition<?>>>when(
+                noUpdatability.getPropertyDefinitions()).thenReturn(java.util.Map.of("nemaki:note", note));
+        when(types.getTypeDefinition("bedroom", "nemaki:noUpdatability")).thenReturn(noUpdatability);
+        Field typeManager = ContentServiceImpl.class.getDeclaredField("typeManager");
+        typeManager.setAccessible(true);
+        typeManager.set(service, types);
+        Document document = document("doc-1", null);
+        org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl properties =
+                new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl();
+        properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyIdImpl(
+                "cmis:secondaryObjectTypeIds", List.of("nemaki:noUpdatability")));
+        properties.addProperty(new org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl(
+                "nemaki:note", "a note"));
+
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> service.updateProperties(mock(CallContext.class),
+                "bedroom", properties, document), "the store failed on a property whose definition has no updatability");
+        org.mockito.ArgumentCaptor<Document> written = org.mockito.ArgumentCaptor.forClass(Document.class);
+        verify(dao).update(anyString(), written.capture());
+        assertEquals(List.of("nemaki:note=a note"), written.getValue().getAspects().stream()
+                .filter(aspect -> "nemaki:noUpdatability".equals(aspect.getName()))
+                .flatMap(aspect -> aspect.getProperties().stream())
+                .map(property -> property.getKey() + "=" + property.getValue()).toList(),
+                "the store did not keep the value of a property whose definition has no updatability");
+    }
 }

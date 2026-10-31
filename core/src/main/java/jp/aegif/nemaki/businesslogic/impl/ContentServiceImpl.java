@@ -3099,7 +3099,10 @@ public class ContentServiceImpl implements ContentService {
 	 * this is an exception carved into it, not a bug being fixed.
 	 *
 	 * <p><b>Unresolvable type.</b> The loop only rebuilds an aspect when the type definition
-	 * resolves to a secondary type; anything else is swallowed. And when the request carries no
+	 * resolves to a secondary type; a type that is not there, is not a secondary type or is being
+	 * deleted is dropped. (A failure to read the type goes up since closing batch 31; a lookup
+	 * that answers null while the type table is rebuilt is still read as «not there» — R226.)
+	 * And when the request carries no
 	 * id list at all, {@code ids} is the object's own aspect names — so a rename-only update
 	 * during a transient type-cache miss silently drops the evidence. That is the same failure
 	 * P1-1(c) §5.1 already decided for properties ("a type we cannot read is not a reason to lose
@@ -3437,7 +3440,13 @@ public class ContentServiceImpl implements ContentService {
 				continue;
 			}
 
-			switch (pd.getUpdatability()) {
+			// A property definition with no updatability is one CMIS createType stores when the client leaves it out (the
+			// REST type resource and the Zip importer put READWRITE there; this one passes the client's null on). The switch
+			// on it threw a NullPointerException and the create or update answered 500 with no word of what could not be
+			// read — measured on canopy, a secondary type's and a document subtype's (closing batch 31 review, subagent
+			// P3-6). The check lets such a property through, so the store reads it as the other doors write it: READWRITE.
+			Updatability updatability = pd.getUpdatability() != null ? pd.getUpdatability() : Updatability.READWRITE;
+			switch (updatability) {
 			case READONLY:
 				continue;
 			case ONCREATE:
@@ -3484,19 +3493,45 @@ public class ContentServiceImpl implements ContentService {
 	public Content updateProperties(CallContext callContext, String repositoryId, Properties properties,
 			Content content) {
 
-		Content modified = modifyProperties(callContext, repositoryId, properties, content);
+		// modifyProperties writes the request onto THIS object, and it is the one the content cache keeps: the cached DAO
+		// hands out the instance it holds, and the heap tier holds it by reference. A failure after the first write — a
+		// secondary type that could not be read, a value that could not be put, the store refusing the update — left the
+		// cached object with the changes the caller was told had failed, and the next update that succeeded stored them
+		// (closing batch 31 review, Codex P2). On a failure the object leaves the cache, so the next read is the stored one.
+		Content result;
+		try {
+			Content modified = modifyProperties(callContext, repositoryId, properties, content);
 
-		// CRITICAL TCK FIX: Generate new change token for optimistic locking
-		// CMIS spec requires updating change token on each modification
-		String newChangeToken = String.valueOf(System.currentTimeMillis());
-		modified.setChangeToken(newChangeToken);
+			// CRITICAL TCK FIX: Generate new change token for optimistic locking
+			// CMIS spec requires updating change token on each modification
+			String newChangeToken = String.valueOf(System.currentTimeMillis());
+			modified.setChangeToken(newChangeToken);
 
-		Content result = updateInternal(repositoryId, modified);
+			result = updateInternal(repositoryId, modified);
+		} catch (RuntimeException | Error failed) {
+			forgetTheCachedObject(repositoryId, content, failed);
+			throw failed;
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
 
 		return result;
+	}
+
+	/**
+	 * Takes an object a failed write left changed in memory out of the content cache, so the next read is the stored one.
+	 * A failure to evict is added to the write's failure, not put in its place.
+	 */
+	private void forgetTheCachedObject(String repositoryId, Content content, Throwable failed) {
+		if (content == null || content.getId() == null) {
+			return;
+		}
+		try {
+			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
+		} catch (RuntimeException evicting) {
+			failed.addSuppressed(evicting);
+		}
 	}
 
 	@Override
