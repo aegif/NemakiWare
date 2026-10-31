@@ -57,6 +57,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
+	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
 
@@ -213,6 +214,14 @@ public class VersioningServiceImpl implements VersioningService {
 			// Specific Exception
 			// //////////////////
 			exceptionService.constraintVersionable(repositoryId, pwc.getObjectType());
+			// The properties the new version is given are checked as an update's are (R214): checkIn handed them to the
+			// store unchecked, so a property no type of the document defines was ignored and one of a type the request
+			// takes away was dropped, the check-in reported as done (closing batch 27 review, Codex P2). The PWC's
+			// secondary types are the ones the store keeps when the request lists none.
+			if (properties != null) {
+				exceptionService.constraintPropertyValue(repositoryId, typeManager.getTypeDefinition(repositoryId, pwc),
+						properties, pwc.getId(), ObjectServiceImpl.secondaryTypesItHas(pwc));
+			}
 			// NOTE: streamNotSupported check is not implemented as content stream is typically required
 			// exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
 
@@ -482,6 +491,10 @@ public class VersioningServiceImpl implements VersioningService {
 
 	public void setCompileService(CompileService compileService) {
 		this.compileService = compileService;
+	}
+
+	public void setTypeManager(jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager) {
+		this.typeManager = typeManager;
 	}
 
 	public void setExceptionService(ExceptionService exceptionService) {

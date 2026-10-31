@@ -305,6 +305,9 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
+        <property name="typeManager">
+            <ref bean="TypeManager" />
+        </property>
         <property name="compileService">
             <ref bean="CompileService" />
         </property>

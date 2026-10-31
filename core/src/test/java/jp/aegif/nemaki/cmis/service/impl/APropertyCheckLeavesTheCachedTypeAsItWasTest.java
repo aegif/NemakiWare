@@ -23,7 +23,10 @@ import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.data.BulkUpdateObjectIdAndChangeToken;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.BulkUpdateObjectIdAndChangeTokenImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.AbstractPropertyDefinition;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -160,6 +163,111 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                 + "object has — the check was not given the object's types");
         assertEquals(itsPropertiesAtTheStart, cachedDocumentType.getPropertyDefinitions().keySet(),
                 "updateProperties left the property in the cached base type");
+        // And it is a check: a property of a type the object does not have is still refused at the entry (closing batch
+        // 27 review, subagent P3-3 — the entry's lock had no arm that refuses, so dropping the call stayed green).
+        Document plain = document("plain");
+        when(contentService.getContent(REPO, "plain")).thenReturn(plain);
+        assertThrows(CmisConstraintException.class, () -> service.updateProperties(callContext, REPO,
+                new Holder<>("plain"), anUpdate("nemaki:comment"), null, null),
+                "updateProperties allowed a property no type of the object defines");
+    }
+
+    @Test
+    @DisplayName("the types an object has are its aspects, which the store reads, not its secondaryIds (R214)")
+    void theTypesAnObjectHasAreItsAspects() {
+        ObjectServiceImpl service = serviceWithTheRealCheck();
+        // The two disagree here so that reading the other one is seen (closing batch 27 review, subagent P3-4).
+        Document document = document("doc", COMMENTABLE);
+        document.setSecondaryIds(List.of());
+        when(contentService.getContent(REPO, "doc")).thenReturn(document);
+        when(contentService.updateProperties(any(), eq(REPO), any(), any())).thenReturn(document);
+        assertDoesNotThrow(() -> service.updateProperties(callContext, REPO, new Holder<>("doc"),
+                anUpdate("nemaki:comment"), null, null), "the check read the object's secondaryIds, not the aspects the "
+                + "store reads");
+        Document stale = document("stale");
+        stale.setSecondaryIds(List.of(COMMENTABLE));
+        when(contentService.getContent(REPO, "stale")).thenReturn(stale);
+        assertThrows(CmisConstraintException.class, () -> service.updateProperties(callContext, REPO,
+                new Holder<>("stale"), anUpdate("nemaki:comment"), null, null),
+                "the check allowed a property of a type the object names only in secondaryIds — the store keeps no aspect");
+    }
+
+    @Test
+    @DisplayName("a list of secondary types is read as the store reads it, whatever type the property came as (R214)")
+    void aListIsReadAsTheStoreReadsIt() {
+        // REST v1's default property type is string: the list was no list for the check (DataUtil.getIdListProperty
+        // answers null for it) and a list for the store (closing batch 27 review, subagent P3-1).
+        PropertiesImpl asStrings = anUpdate("nemaki:comment");
+        asStrings.addProperty(new PropertyStringImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of(COMMENTABLE)));
+        assertDoesNotThrow(() -> check.constraintPropertyValue(REPO, cachedDocumentType, asStrings, "doc", List.of()),
+                "a list sent as a string property was not read");
+        // The Browser binding sends an empty list as one empty string, and the store skips a blank id: it is the request
+        // that takes every type away (measured on bedroom, closing batch 28 — refused as an unknown type before this).
+        PropertiesImpl takesAllAway = new PropertiesImpl();
+        takesAllAway.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("")));
+        assertDoesNotThrow(() -> check.constraintPropertyValue(REPO, cachedDocumentType, takesAllAway, "doc",
+                List.of(COMMENTABLE)), "a list of one empty string was refused as a type the repository does not define");
+        PropertiesImpl takesAllAwayWithAValue = anUpdate("nemaki:comment");
+        takesAllAwayWithAValue.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("")));
+        assertThrows(CmisConstraintException.class, () -> check.constraintPropertyValue(REPO, cachedDocumentType,
+                takesAllAwayWithAValue, "doc", List.of(COMMENTABLE)), "a property of a type a list of one empty string "
+                + "takes away was not refused as the property it is");
+        PropertiesImpl names = anUpdate("nemaki:comment");
+        names.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("nemaki:gone")));
+        assertThrows(CmisInvalidArgumentException.class, () -> check.constraintPropertyValue(REPO, cachedDocumentType,
+                names, "doc", List.of()), "a type the request names that the repository does not define was not "
+                + "answered as the client's error");
+    }
+
+    @Test
+    @DisplayName("bulkUpdateProperties checks the properties with the add and remove lists folded in, as they are stored (R214)")
+    void theBulkEntryChecksThePropertiesAsTheyAreStored() {
+        ObjectServiceImpl service = serviceWithTheRealCheck();
+        Document plain = document("plain");
+        Document holding = document("holding", COMMENTABLE);
+        holding.setSecondaryIds(List.of(COMMENTABLE));
+        when(contentService.getContent(REPO, "plain")).thenReturn(plain);
+        when(contentService.getContent(REPO, "holding")).thenReturn(holding);
+        when(contentService.updateProperties(any(), eq(REPO), any(), any())).thenAnswer(call -> call.getArgument(3));
+        // Adding the type with a value of its property: stored as asked, so it is allowed — it was refused, the object
+        // missing from the result (measured on bedroom, closing batch 27's WAR).
+        List<BulkUpdateObjectIdAndChangeToken> added = service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), anUpdate("nemaki:comment"),
+                List.of(COMMENTABLE), null, null);
+        // A refused object's task answers null and the list keeps it (the Browser binding drops it), so the objects done are
+        // the entries that are not null.
+        assertEquals(1, added.stream().filter(java.util.Objects::nonNull).count(),
+                "a bulk update that adds the type and sets its property was refused");
+        // Removing the type with a value of its property: the store drops the value, so it is refused — it was let
+        // through and reported as done.
+        List<BulkUpdateObjectIdAndChangeToken> removed = service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("holding", null)), anUpdate("nemaki:comment"), null,
+                List.of(COMMENTABLE), null);
+        assertEquals(0, removed.stream().filter(java.util.Objects::nonNull).count(),
+                "a bulk update that removes the type and sets its property was reported as done");
+    }
+
+    @Test
+    @DisplayName("checkIn checks the properties of the new version as an update does (R214)")
+    void theCheckInEntryChecksTheProperties() {
+        VersioningServiceImpl service = versioningWithTheRealCheck();
+        Document holding = pwc("holding", COMMENTABLE);
+        Document plain = pwc("plain");
+        when(contentService.getDocument(REPO, "holding")).thenReturn(holding);
+        when(contentService.getDocument(REPO, "plain")).thenReturn(plain);
+        when(contentService.checkIn(any(), eq(REPO), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(document("version"));
+        assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("holding"), true,
+                anUpdate("nemaki:comment"), null, null, null, null, null, null),
+                "checkIn refused a property of a secondary type the PWC has");
+        assertThrows(CmisConstraintException.class, () -> service.checkIn(callContext, REPO, new Holder<>("plain"), true,
+                anUpdate("nemaki:comment"), null, null, null, null, null, null),
+                "checkIn let a property no type of the document defines through — the store ignores it");
+        PropertiesImpl dropsIt = anUpdate("nemaki:comment");
+        dropsIt.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, new ArrayList<String>()));
+        assertThrows(CmisConstraintException.class, () -> service.checkIn(callContext, REPO, new Holder<>("holding"),
+                true, dropsIt, null, null, null, null, null, null),
+                "checkIn let a property of a type the request takes away through — the store drops it");
     }
 
     @Test
@@ -189,11 +297,27 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
     private ContentService contentService;
     private CallContext callContext;
 
+    /** VersioningServiceImpl with every collaborator mocked except the property check, which is the real one. */
+    private VersioningServiceImpl versioningWithTheRealCheck() {
+        serviceWithTheRealCheck();
+        VersioningServiceImpl service = new VersioningServiceImpl();
+        service.setContentService(contentService);
+        service.setExceptionService(exceptions);
+        service.setTypeManager(types);
+        service.setNemakiCachePool(caches);
+        service.setThreadLockService(locks);
+        return service;
+    }
+
+    private ExceptionService exceptions;
+    private NemakiCachePool caches;
+    private ThreadLockService locks;
+
     /** ObjectServiceImpl with every collaborator mocked except the property check, which is the real one. */
     private ObjectServiceImpl serviceWithTheRealCheck() {
         contentService = mock(ContentService.class);
         callContext = mock(CallContext.class);
-        ExceptionService exceptions = mock(ExceptionService.class);
+        exceptions = mock(ExceptionService.class);
         doAnswer(call -> {
             check.constraintPropertyValue((String) call.getArgument(0), call.getArgument(1), call.getArgument(2),
                     (String) call.getArgument(3));
@@ -204,9 +328,9 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                     (String) call.getArgument(3), call.getArgument(4));
             return null;
         }).when(exceptions).constraintPropertyValue(any(), any(), any(), any(), any());
-        NemakiCachePool caches = mock(NemakiCachePool.class);
+        caches = mock(NemakiCachePool.class);
         when(caches.get(REPO)).thenReturn(mock(CacheService.class, RETURNS_DEEP_STUBS));
-        ThreadLockService locks = mock(ThreadLockService.class);
+        locks = mock(ThreadLockService.class);
         when(locks.getWriteLock(anyString(), anyString())).thenAnswer(call -> new ReentrantLock());
 
         ObjectServiceImpl service = new ObjectServiceImpl();
@@ -227,8 +351,17 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
             aspects.add(new Aspect(type, new ArrayList<>()));
         }
         document.setAspects(aspects);
-        document.setSecondaryIds(List.of(secondaryTypes));
+        // secondaryIds left empty: the types an object has are read from its aspects, as the store reads them, and a
+        // fixture that set both alike would not see a reader of the other (closing batch 27 review, subagent P3-4).
+        document.setSecondaryIds(new ArrayList<>());
         return document;
+    }
+
+    private static Document pwc(String id, String... secondaryTypes) {
+        Document pwc = document(id, secondaryTypes);
+        pwc.setPrivateWorkingCopy(true);
+        pwc.setVersionSeriesId("series-" + id);
+        return pwc;
     }
 
     private static PropertiesImpl aCreate(String secondaryType, String itsProperty) {

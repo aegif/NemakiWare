@@ -1130,6 +1130,14 @@ public class ObjectServiceImpl implements ObjectService {
 
 	private Content checkExceptionBeforeUpdateProperties(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken) {
+		return checkExceptionBeforeUpdateProperties(callContext, repositoryId, objectId, properties, changeToken,
+				content -> properties);
+	}
+
+	/** The same checks, the properties checked as {@code asStored} turns them into what the store will be given. */
+	private Content checkExceptionBeforeUpdateProperties(CallContext callContext, String repositoryId,
+			Holder<String> objectId, Properties properties, Holder<String> changeToken,
+			java.util.function.Function<Content, Properties> asStored) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -1161,9 +1169,10 @@ public class ObjectServiceImpl implements ObjectService {
 		exceptionService.updateConflict(content, changeToken);
 
 		// Check property constraints only if properties are provided
-		if (properties != null) {
+		Properties stored = properties == null ? null : asStored.apply(content);
+		if (stored != null) {
 			TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
-			exceptionService.constraintPropertyValue(repositoryId, tdf, properties, objectId.getValue(),
+			exceptionService.constraintPropertyValue(repositoryId, tdf, stored, objectId.getValue(),
 					secondaryTypesItHas(content));
 		}
 
@@ -1172,9 +1181,10 @@ public class ObjectServiceImpl implements ObjectService {
 
 	/**
 	 * The secondary types an object has, as the store reads them when a request lists none (ContentServiceImpl
-	 * .getSecondaryTypeIds — the aspects' names). The property check allows their properties (R214).
+	 * .getSecondaryTypeIds — the aspects' names). The property check allows their properties (R214). Check-in reads
+	 * them too ({@link VersioningServiceImpl#checkIn}).
 	 */
-	private static List<String> secondaryTypesItHas(Content content) {
+	static List<String> secondaryTypesItHas(Content content) {
 		List<String> ids = new ArrayList<>();
 		if (content != null && content.getAspects() != null) {
 			for (jp.aegif.nemaki.model.Aspect aspect : content.getAspects()) {
@@ -1346,9 +1356,14 @@ public class ObjectServiceImpl implements ObjectService {
 			try {
 				lock.lock();
 
+				// The properties are checked as they will be stored — with the add/remove lists folded in below. Checked
+				// as the request carried them, a property of a type being added was refused and one of a type being
+				// removed was let through and dropped by the store, the update reported as done (closing batch 27
+				// review, Codex P2 and subagent P2-1).
 				Content content = checkExceptionBeforeUpdateProperties(callContext, repositoryId,
 						new Holder<String>(objectIdAndChangeToken.getId()), properties,
-						new Holder<String>(objectIdAndChangeToken.getChangeToken()));
+						new Holder<String>(objectIdAndChangeToken.getChangeToken()),
+						checked -> withSecondaryTypeChanges(properties, checked));
 				// addSecondaryTypeIds / removeSecondaryTypeIds were accepted, stored on this
 				// task — and never read: bulk updates silently could not touch secondary types
 				// at all (audit #16). They are folded into cmis:secondaryObjectTypeIds HERE so

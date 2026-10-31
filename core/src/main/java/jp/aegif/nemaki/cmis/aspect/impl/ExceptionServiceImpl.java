@@ -555,18 +555,37 @@ public class ExceptionServiceImpl implements ExceptionService,
 
 		// The secondary types the object will have, by the rule the store keeps them by (ContentServiceImpl
 		// .buildSecondaryTypes): the list the request carries, or — when it carries none — the ones the object has.
-		// Adding secondary types and its properties MAY be done in the same operation.
-		boolean listed = properties.getProperties() != null
-				&& properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS) != null;
-		List<String> secIds = listed ? DataUtil.getIdListProperty(properties, PropertyIds.SECONDARY_OBJECT_TYPE_IDS)
-				: secondaryTypeIdsItHas;
+		// Adding secondary types and its properties MAY be done in the same operation. The list is read as the store
+		// reads it, every value whatever type the property came as: one sent as a string property (REST v1's default)
+		// was no list here and a list there (closing batch 27 review, subagent P3-1).
+		PropertyData<?> listed = properties.getProperties() == null ? null
+				: properties.getProperties().get(PropertyIds.SECONDARY_OBJECT_TYPE_IDS);
+		List<String> secIds = new ArrayList<String>();
+		if (listed == null) {
+			if (secondaryTypeIdsItHas != null) {
+				secIds.addAll(secondaryTypeIdsItHas);
+			}
+		} else if (listed.getValues() != null) {
+			for (Object value : listed.getValues()) {
+				// A blank value names no type — the store skips it too. The Browser binding sends an empty list as one
+				// empty string, and refusing it as an unknown type refused the request that takes every type away.
+				if (value != null && !value.toString().trim().isEmpty()) {
+					secIds.add(value.toString());
+				}
+			}
+		}
 		if (CollectionUtils.isNotEmpty(secIds)) {
 			for (String secId : secIds) {
 				org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer secContainer = typeManager
 						.getTypeById(repositoryId, secId);
-				if (!listed && (secContainer == null || secContainer.getTypeDefinition() == null)) {
+				if (secContainer == null || secContainer.getTypeDefinition() == null) {
+					if (listed != null) {
+						// A type the request names that this repository does not define: the client's error, as
+						// invalidArgumentSecondaryTypeIds answers it — not a NullPointerException (a 500).
+						invalidArgument("Invalid cmis:SecondaryObjectTypeIds are provided:" + secId);
+					}
 					// A type the object has that this repository no longer defines: its properties are not allowed —
-					// the answer this check gave before the cache could carry them (the store drops the type too).
+					// the answer this check gave before the cache could carry them.
 					continue;
 				}
 				TypeDefinition sec = secContainer.getTypeDefinition();
