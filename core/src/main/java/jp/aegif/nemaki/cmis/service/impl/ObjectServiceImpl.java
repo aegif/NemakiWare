@@ -1256,7 +1256,11 @@ public class ObjectServiceImpl implements ObjectService {
 		for (Future<BulkUpdateObjectIdAndChangeToken> future : futures) {
 			try {
 				BulkUpdateObjectIdAndChangeToken result = future.get();
-				results.add(result);
+				// A refused object's task answers null: it is left out, so the list holds the objects updated (R225 — the
+				// REST v1 resource read every entry and answered the whole request with a 500).
+				if (result != null) {
+					results.add(result);
+				}
 			} catch (InterruptedException e) {
 				log.warn("Bulk update operation was interrupted", e);
 				Thread.currentThread().interrupt();

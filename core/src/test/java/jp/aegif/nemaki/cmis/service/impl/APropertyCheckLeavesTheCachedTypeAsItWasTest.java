@@ -2,6 +2,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -92,9 +93,17 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         itsPropertiesAtTheStart = new LinkedHashSet<>(cachedDocumentType.getPropertyDefinitions().keySet());
 
         types = mock(TypeManager.class);
-        when(types.getTypeById(REPO, COMMENTABLE)).thenReturn(container(secondary(COMMENTABLE, "nemaki:comment")));
-        when(types.getTypeById(REPO, EVIDENCE)).thenReturn(container(secondary(EVIDENCE, "nemaki:sourceSystem")));
+        SecondaryTypeDefinitionImpl commentable = secondary(COMMENTABLE, "nemaki:comment");
+        SecondaryTypeDefinitionImpl evidence = secondary(EVIDENCE, "nemaki:sourceSystem");
+        when(types.getTypeById(REPO, COMMENTABLE)).thenReturn(container(commentable));
+        when(types.getTypeById(REPO, EVIDENCE)).thenReturn(container(evidence));
         when(types.getTypeById(REPO, "nemaki:gone")).thenReturn(null);
+        // The store's lookup, which reads the types again when the cache does not have one: the check asks it too.
+        when(types.getTypeDefinition(REPO, COMMENTABLE)).thenReturn(commentable);
+        when(types.getTypeDefinition(REPO, EVIDENCE)).thenReturn(evidence);
+        // A type another replica made: this replica's cache does not have it, the store's lookup reads it again.
+        when(types.getTypeById(REPO, "nemaki:fresh")).thenReturn(null);
+        when(types.getTypeDefinition(REPO, "nemaki:fresh")).thenReturn(secondary("nemaki:fresh", "nemaki:freshNote"));
         when(types.getTypeDefinition(REPO, "cmis:document")).thenReturn(cachedDocumentType);
         when(types.getTypeDefinition(eq(REPO), any(Content.class))).thenReturn(cachedDocumentType);
 
@@ -234,17 +243,23 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         List<BulkUpdateObjectIdAndChangeToken> added = service.bulkUpdateProperties(callContext, REPO,
                 List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), anUpdate("nemaki:comment"),
                 List.of(COMMENTABLE), null, null);
-        // A refused object's task answers null and the list keeps it (the Browser binding drops it), so the objects done are
-        // the entries that are not null.
-        assertEquals(1, added.stream().filter(java.util.Objects::nonNull).count(),
-                "a bulk update that adds the type and sets its property was refused");
+        // The list holds the objects updated: a refused object's task answers null, and the list kept it (R225 — the
+        // REST v1 resource read every entry and answered the whole request with a 500).
+        assertEquals(1, added.size(), "a bulk update that adds the type and sets its property was refused");
+        assertFalse(added.contains(null), "a refused object's null is in the list of objects updated");
         // Removing the type with a value of its property: the store drops the value, so it is refused — it was let
         // through and reported as done.
         List<BulkUpdateObjectIdAndChangeToken> removed = service.bulkUpdateProperties(callContext, REPO,
                 List.of(new BulkUpdateObjectIdAndChangeTokenImpl("holding", null)), anUpdate("nemaki:comment"), null,
                 List.of(COMMENTABLE), null);
-        assertEquals(0, removed.stream().filter(java.util.Objects::nonNull).count(),
-                "a bulk update that removes the type and sets its property was reported as done");
+        assertEquals(List.of(), removed, "a bulk update that removes the type and sets its property was reported as done, "
+                + "or its refusal left a null in the list");
+        // No properties at all: nothing to check, the add is done (the guard that skips the check).
+        Document another = document("another");
+        when(contentService.getContent(REPO, "another")).thenReturn(another);
+        assertEquals(1, service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("another", null)), null, List.of(COMMENTABLE), null, null)
+                .size(), "a bulk update that only adds a type was refused");
     }
 
     @Test
@@ -268,6 +283,50 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         assertThrows(CmisConstraintException.class, () -> service.checkIn(callContext, REPO, new Holder<>("holding"),
                 true, dropsIt, null, null, null, null, null, null),
                 "checkIn let a property of a type the request takes away through — the store drops it");
+        // No properties at all: nothing to check (the ingest, OData and an empty REST v1 check-in send none).
+        assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("plain"), true, null, null, null, null,
+                null, null, null), "a check-in without properties was refused or failed");
+    }
+
+    @Test
+    @DisplayName("checkIn reads the secondary types the latest version has as well, as the store merges them in (R214)")
+    void theCheckInEntryReadsTheTypesTheLatestVersionHas() {
+        // ContentServiceImpl.checkIn adds the latest version's aspects the PWC lacks (mergeSecondaryTypesFromLatest) before
+        // it stores the properties — a document pushed to a cloud drive while checked out has one there (closing batch 28
+        // review, both reviewers).
+        VersioningServiceImpl service = versioningWithTheRealCheck();
+        Document pwc = pwc("pwc");
+        when(contentService.getDocument(REPO, "pwc")).thenReturn(pwc);
+        when(contentService.getDocumentOfLatestVersion(REPO, pwc.getVersionSeriesId()))
+                .thenReturn(document("latest", COMMENTABLE));
+        when(contentService.checkIn(any(), eq(REPO), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(document("version"));
+        assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("pwc"), true,
+                anUpdate("nemaki:comment"), null, null, null, null, null, null),
+                "checkIn refused a property of a type the latest version has, which the store merges into the new version");
+    }
+
+    @Test
+    @DisplayName("a type is looked up as the store looks it up, and only a secondary type is one (R214)")
+    void aTypeIsLookedUpAsTheStoreLooksItUp() {
+        // The cache alone answered «no such type» for one another replica had just made; the store reads the types again
+        // (closing batch 28 review, subagent P3-1).
+        PropertiesImpl fresh = new PropertiesImpl();
+        fresh.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("nemaki:fresh")));
+        fresh.addProperty(new PropertyStringImpl("nemaki:freshNote", "n"));
+        assertDoesNotThrow(() -> check.constraintPropertyValue(REPO, cachedDocumentType, fresh, "doc", List.of()),
+                "a type the cache did not have but the store's lookup reads was refused");
+        // A base type in the list is no secondary type: the store keeps no aspect for it (subagent P3-2).
+        PropertiesImpl notSecondary = new PropertiesImpl();
+        notSecondary.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("cmis:document")));
+        assertThrows(CmisInvalidArgumentException.class, () -> check.constraintPropertyValue(REPO, cachedDocumentType,
+                notSecondary, "doc", List.of()), "a type that is not a secondary type was read as one");
+        // A type the object names already that the repository no longer defines is not the client's error — a bulk update
+        // folds the object's own list in.
+        PropertiesImpl folded = anUpdate("nemaki:comment");
+        folded.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("nemaki:gone", COMMENTABLE)));
+        assertDoesNotThrow(() -> check.constraintPropertyValue(REPO, cachedDocumentType, folded, "doc",
+                List.of("nemaki:gone")), "a type the object has that the repository no longer defines was answered as the client's error");
     }
 
     @Test

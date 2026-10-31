@@ -576,19 +576,21 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 		if (CollectionUtils.isNotEmpty(secIds)) {
 			for (String secId : secIds) {
-				org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer secContainer = typeManager
-						.getTypeById(repositoryId, secId);
-				if (secContainer == null || secContainer.getTypeDefinition() == null) {
-					if (listed != null) {
-						// A type the request names that this repository does not define: the client's error, as
-						// invalidArgumentSecondaryTypeIds answers it — not a NullPointerException (a 500).
+				// Looked up as the store looks it up (ContentServiceImpl.buildSecondaryTypes): getTypeDefinition, which reads
+				// the types again when this replica's cache does not have one — the cache alone answered «no such type» for a
+				// type another replica had just made — and only a secondary type is one, as the store keeps no other
+				// (closing batch 28 review, subagent P3-1 and P3-2).
+				TypeDefinition sec = typeManager.getTypeDefinition(repositoryId, secId);
+				if (sec == null || sec.getBaseTypeId() != BaseTypeId.CMIS_SECONDARY) {
+					if (listed != null && (secondaryTypeIdsItHas == null || !secondaryTypeIdsItHas.contains(secId))) {
+						// A type the request names that this repository does not define as a secondary type: the client's
+						// error, as invalidArgumentSecondaryTypeIds answers it — not a NullPointerException (a 500). One the
+						// object has already is not the client's (a bulk update folds the object's list in).
 						invalidArgument("Invalid cmis:SecondaryObjectTypeIds are provided:" + secId);
 					}
-					// A type the object has that this repository no longer defines: its properties are not allowed —
-					// the answer this check gave before the cache could carry them.
+					// Its properties are not allowed — the answer this check gave before the cache could carry them.
 					continue;
 				}
-				TypeDefinition sec = secContainer.getTypeDefinition();
 				for (Entry<String, PropertyDefinition<?>> entry : sec
 						.getPropertyDefinitions().entrySet()) {
 					if (!propertyDefinitions.containsKey(entry.getKey())) {

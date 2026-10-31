@@ -216,11 +216,19 @@ public class VersioningServiceImpl implements VersioningService {
 			exceptionService.constraintVersionable(repositoryId, pwc.getObjectType());
 			// The properties the new version is given are checked as an update's are (R214): checkIn handed them to the
 			// store unchecked, so a property no type of the document defines was ignored and one of a type the request
-			// takes away was dropped, the check-in reported as done (closing batch 27 review, Codex P2). The PWC's
-			// secondary types are the ones the store keeps when the request lists none.
+			// takes away was dropped, the check-in reported as done (closing batch 27 review, Codex P2). The types the store
+			// keeps when the request lists none are the PWC's and the latest version's — ContentServiceImpl.checkIn merges
+			// the latest's in (mergeSecondaryTypesFromLatest) — so both are read (closing batch 28 review, 2 reviewers).
 			if (properties != null) {
+				List<String> itHas = new ArrayList<>(ObjectServiceImpl.secondaryTypesItHas(pwc));
+				for (String latestHas : ObjectServiceImpl.secondaryTypesItHas(
+						contentService.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId()))) {
+					if (!itHas.contains(latestHas)) {
+						itHas.add(latestHas);
+					}
+				}
 				exceptionService.constraintPropertyValue(repositoryId, typeManager.getTypeDefinition(repositoryId, pwc),
-						properties, pwc.getId(), ObjectServiceImpl.secondaryTypesItHas(pwc));
+						properties, pwc.getId(), itHas);
 			}
 			// NOTE: streamNotSupported check is not implemented as content stream is typically required
 			// exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
