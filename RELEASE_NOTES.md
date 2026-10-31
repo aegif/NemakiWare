@@ -114,9 +114,12 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   JOIN を書かずに secondary type の名前で列を修飾した文 — 修飾子が SELECT・ORDER BY・WHERE のどこに在っても、WHERE の無い文でも —
   は、サーバがその JOIN を足し、その JOIN を書いた文と同じに、その型を持つ文書だけを返します（以前は、WHERE がその型の性質を
   名指さない文には JOIN が足されず、`SELECT nemaki:commentable.nemaki:comment FROM cmis:document` は全文書 — bedroom で 2,457 件、
-  JOIN を書いた文は 2 件 — を返し、足されても絞らずに型を持たない文書を返していました）。そうした文では `cmis:name` などの
+  JOIN を書いた文は 2 件 — を返し、足されても絞らずに型を持たない文書を返していました）。そうした文の WHERE では `cmis:name` などの
   `cmis:*` の性質を FROM の型で修飾してください（`cmis:document.cmis:name`） — secondary type も `cmis:*` の性質の定義を持つので、
-  修飾しない名前はどちらの型の列か決まらず 400 になります。修飾子付きの IN_FOLDER・IN_TREE は、修飾子が何であっても 500 に
+  修飾しない名前はどちらの型の列か決まらず、補助のパーサが訳せない WHERE は 400 になります。型の管理が secondary type の性質を
+  解けないとき（bedroom の `nemaki:commentable` の `nemaki:comment`）は、WHERE の中でその性質を型の名前で修飾した文も 400 です
+  （JOIN を書いて別名で修飾すれば答えます）。サーバが足す JOIN は型の問い合わせ名で書くので、問い合わせ名が型の id と違う
+  secondary type でも同じに答えます。修飾子付きの IN_FOLDER・IN_TREE は、修飾子が何であっても 500 に
   なる既知の欠陥があります（残件 R219）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
   リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
