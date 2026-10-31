@@ -345,6 +345,22 @@ public class ExceptionServiceImpl implements ExceptionService,
 		}
 	}
 
+	/**
+	 * The secondary type the store keeps for this id (ContentServiceImpl.buildSecondaryTypes): looked up by
+	 * getTypeDefinition, which reads the types again when this replica's cache does not have it, and only when it is a
+	 * secondary type — or null. A type being deleted is no type (getTypeDefinition answers it with a not-found, which made
+	 * the client's error a 404 — closing batch 29 review, Codex P3).
+	 */
+	private TypeDefinition secondaryTypeAsTheStoreReadsIt(String repositoryId, String secondaryTypeId) {
+		TypeDefinition type;
+		try {
+			type = typeManager.getTypeDefinition(repositoryId, secondaryTypeId);
+		} catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException beingDeleted) {
+			return null;
+		}
+		return type != null && type.getBaseTypeId() == BaseTypeId.CMIS_SECONDARY ? type : null;
+	}
+
 	@Override
 	public void invalidArgumentSecondaryTypeIds(String repositoryId, Properties properties) {
 		if (properties == null)
@@ -358,9 +374,15 @@ public class ExceptionServiceImpl implements ExceptionService,
 		if (ids == null || CollectionUtils.isEmpty(ids.getValues()))
 			return;
 		for (Object _id : ids.getValues()) {
-			String id = (String) _id;
-			TypeDefinitionContainer tdc = typeManager.getTypeById(repositoryId, id);
-			if (tdc == null) {
+			// As the property check and the store read the list: a blank value names no type, and an id names a type only
+			// when the store would keep it — a secondary type, read again when this replica's cache does not have it. This
+			// gate read the cache alone and took a base type for one, so a bulk update refused a type another replica had
+			// just made and reported cmis:document as attached (closing batch 29 review, subagent P3-A).
+			if (_id == null || _id.toString().trim().isEmpty()) {
+				continue;
+			}
+			String id = _id.toString();
+			if (secondaryTypeAsTheStoreReadsIt(repositoryId, id) == null) {
 				results.add(id);
 			}
 		}
@@ -580,8 +602,8 @@ public class ExceptionServiceImpl implements ExceptionService,
 				// the types again when this replica's cache does not have one — the cache alone answered «no such type» for a
 				// type another replica had just made — and only a secondary type is one, as the store keeps no other
 				// (closing batch 28 review, subagent P3-1 and P3-2).
-				TypeDefinition sec = typeManager.getTypeDefinition(repositoryId, secId);
-				if (sec == null || sec.getBaseTypeId() != BaseTypeId.CMIS_SECONDARY) {
+				TypeDefinition sec = secondaryTypeAsTheStoreReadsIt(repositoryId, secId);
+				if (sec == null) {
 					if (listed != null && (secondaryTypeIdsItHas == null || !secondaryTypeIdsItHas.contains(secId))) {
 						// A type the request names that this repository does not define as a secondary type: the client's
 						// error, as invalidArgumentSecondaryTypeIds answers it — not a NullPointerException (a 500). One the

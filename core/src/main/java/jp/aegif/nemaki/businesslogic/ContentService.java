@@ -594,6 +594,20 @@ public interface ContentService {
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension);
 
 	/**
+	 * checkIn, with {@code checkTheNewVersion} run on the new version — the PWC's copy with the latest version's
+	 * secondary types merged in — before anything is written. A check that read the latest version itself read it a
+	 * second time, and a type the latest version gained or lost in between was answered by one reading and stored by the
+	 * other (R214, closing batch 29 review, Codex P2).
+	 */
+	Document checkIn(CallContext callContext, String repositoryId,
+			Holder<String> objectId, Boolean major, Properties properties,
+			ContentStream contentStream, String checkinComment,
+			List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension,
+			java.util.function.Consumer<Document> checkTheNewVersion);
+
+	/**
 	 * Create a folder
 	 *
 	 * @param callContext

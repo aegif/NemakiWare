@@ -254,7 +254,8 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                 List.of(COMMENTABLE), null);
         assertEquals(List.of(), removed, "a bulk update that removes the type and sets its property was reported as done, "
                 + "or its refusal left a null in the list");
-        // No properties at all: nothing to check, the add is done (the guard that skips the check).
+        // No properties at all, an add only: done. This does not measure the guard that skips the check — with or without
+        // it a fold of ids alone passes (closing batch 29 review, subagent P3-F 3); the gate before it is measured below.
         Document another = document("another");
         when(contentService.getContent(REPO, "another")).thenReturn(another);
         assertEquals(1, service.bulkUpdateProperties(callContext, REPO,
@@ -270,8 +271,6 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         Document plain = pwc("plain");
         when(contentService.getDocument(REPO, "holding")).thenReturn(holding);
         when(contentService.getDocument(REPO, "plain")).thenReturn(plain);
-        when(contentService.checkIn(any(), eq(REPO), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(document("version"));
         assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("holding"), true,
                 anUpdate("nemaki:comment"), null, null, null, null, null, null),
                 "checkIn refused a property of a secondary type the PWC has");
@@ -299,11 +298,19 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         when(contentService.getDocument(REPO, "pwc")).thenReturn(pwc);
         when(contentService.getDocumentOfLatestVersion(REPO, pwc.getVersionSeriesId()))
                 .thenReturn(document("latest", COMMENTABLE));
-        when(contentService.checkIn(any(), eq(REPO), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenReturn(document("version"));
         assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("pwc"), true,
                 anUpdate("nemaki:comment"), null, null, null, null, null, null),
                 "checkIn refused a property of a type the latest version has, which the store merges into the new version");
+        // Both, when each has one: the new version has the union, and reading either alone refuses the other's property
+        // (closing batch 29 review, subagent P3-F 1).
+        Document pwcWithItsOwn = pwc("own", EVIDENCE);
+        when(contentService.getDocument(REPO, "own")).thenReturn(pwcWithItsOwn);
+        when(contentService.getDocumentOfLatestVersion(REPO, pwcWithItsOwn.getVersionSeriesId()))
+                .thenReturn(document("latestToo", COMMENTABLE));
+        PropertiesImpl both = anUpdate("nemaki:comment");
+        both.addProperty(new PropertyStringImpl("nemaki:sourceSystem", "s"));
+        assertDoesNotThrow(() -> service.checkIn(callContext, REPO, new Holder<>("own"), true, both, null, null, null,
+                null, null, null), "checkIn refused a property of the PWC's type or of the latest version's when both have one");
     }
 
     @Test
@@ -327,6 +334,57 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
         folded.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("nemaki:gone", COMMENTABLE)));
         assertDoesNotThrow(() -> check.constraintPropertyValue(REPO, cachedDocumentType, folded, "doc",
                 List.of("nemaki:gone")), "a type the object has that the repository no longer defines was answered as the client's error");
+        // The exemption is for the types the object has, not for any object that has some: a typo next to them is still the
+        // client's (closing batch 29 review, subagent P3-F 2).
+        PropertiesImpl typo = anUpdate("nemaki:comment");
+        typo.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of(COMMENTABLE, "nemaki:typo")));
+        assertThrows(CmisInvalidArgumentException.class, () -> check.constraintPropertyValue(REPO, cachedDocumentType,
+                typo, "doc", List.of(EVIDENCE)), "a type the request names that neither the repository defines nor the "
+                + "object has was let through because the object has another");
+        // A type being deleted is no type: the client's error, not the type manager's not-found (closing batch 29 review,
+        // Codex P3 — it answered 404).
+        when(types.getTypeDefinition(REPO, "nemaki:deleting")).thenThrow(
+                new org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException("being deleted"));
+        PropertiesImpl deleting = new PropertiesImpl();
+        deleting.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("nemaki:deleting")));
+        assertThrows(CmisInvalidArgumentException.class, () -> check.constraintPropertyValue(REPO, cachedDocumentType,
+                deleting, "doc", List.of()), "a type being deleted was not answered as the client's error");
+    }
+
+    @Test
+    @DisplayName("the bulk update's gate reads a type as the check and the store do, and its fold's own ids are not the client's (R214)")
+    void theBulkGateReadsATypeAsTheStoreDoes() {
+        ObjectServiceImpl service = serviceWithTheRealCheck();
+        Document plain = document("plain");
+        when(contentService.getContent(REPO, "plain")).thenReturn(plain);
+        when(contentService.updateProperties(any(), eq(REPO), any(), any())).thenAnswer(call -> call.getArgument(3));
+        // A base type is no secondary type: the gate took it for one, and with no properties the update was reported as
+        // done with nothing attached (closing batch 29 review, subagent P3-A).
+        assertThrows(CmisInvalidArgumentException.class, () -> service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), null, List.of("cmis:document"), null, null),
+                "a bulk update that adds a base type was let through");
+        // The Browser binding's empty list — one empty string — names no type, for the gate as for the store.
+        PropertiesImpl emptyList = new PropertiesImpl();
+        emptyList.addProperty(new PropertyIdImpl(PropertyIds.SECONDARY_OBJECT_TYPE_IDS, List.of("")));
+        // Wrapped: a refusal escapes as an exception, and the lock has to fail on its own assertion for it.
+        assertEquals(1, assertDoesNotThrow(() -> service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), emptyList, null, null, null),
+                "a bulk update that sends the empty list was refused as a type the repository does not define").size(),
+                "a bulk update that sends the empty list did not update the object");
+        // A type another replica made: the gate read the cache alone and refused it.
+        assertEquals(1, assertDoesNotThrow(() -> service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("plain", null)), null, List.of("nemaki:fresh"), null, null),
+                "a bulk update that adds a type the store's lookup reads was refused").size(),
+                "a bulk update that adds a type the store's lookup reads did not update the object");
+        // An id the object names only in secondaryIds — nemaki:webhookable is written there alone — that the repository no
+        // longer defines came from the object, not the request (subagent P3-B).
+        Document hooked = document("hooked");
+        hooked.setSecondaryIds(new ArrayList<>(List.of("nemaki:gone")));
+        when(contentService.getContent(REPO, "hooked")).thenReturn(hooked);
+        assertEquals(1, service.bulkUpdateProperties(callContext, REPO,
+                List.of(new BulkUpdateObjectIdAndChangeTokenImpl("hooked", null)), anUpdate("nemaki:comment"),
+                List.of(COMMENTABLE), null, null).size(), "a bulk update was refused for an id its own fold took from the "
+                + "object's secondaryIds");
     }
 
     @Test
@@ -356,9 +414,35 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
     private ContentService contentService;
     private CallContext callContext;
 
-    /** VersioningServiceImpl with every collaborator mocked except the property check, which is the real one. */
+    /**
+     * VersioningServiceImpl with every collaborator mocked except the property check, which is the real one. The mocked
+     * store builds the new version as ContentServiceImpl.checkIn does — the PWC's aspects with the latest version's merged
+     * in — and runs the caller's check on it (that the real store does so, before it writes, is measured by
+     * TheCheckInCheckSeesTheVersionAsStoredTest).
+     */
     private VersioningServiceImpl versioningWithTheRealCheck() {
         serviceWithTheRealCheck();
+        when(contentService.checkIn(any(), eq(REPO), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(call -> {
+                    Holder<String> id = call.getArgument(2);
+                    Document pwc = contentService.getDocument(REPO, id.getValue());
+                    Document latest = contentService.getDocumentOfLatestVersion(REPO, pwc.getVersionSeriesId());
+                    List<Aspect> aspects = new ArrayList<>(pwc.getAspects());
+                    if (latest != null) {
+                        for (Aspect aspect : latest.getAspects()) {
+                            if (aspects.stream().noneMatch(a -> a.getName().equals(aspect.getName()))) {
+                                aspects.add(aspect);
+                            }
+                        }
+                    }
+                    Document newVersion = document("version");
+                    newVersion.setAspects(aspects);
+                    java.util.function.Consumer<Document> checkTheNewVersion = call.getArgument(11);
+                    if (checkTheNewVersion != null) {
+                        checkTheNewVersion.accept(newVersion);
+                    }
+                    return newVersion;
+                });
         VersioningServiceImpl service = new VersioningServiceImpl();
         service.setContentService(contentService);
         service.setExceptionService(exceptions);
@@ -387,6 +471,11 @@ class APropertyCheckLeavesTheCachedTypeAsItWasTest {
                     (String) call.getArgument(3), call.getArgument(4));
             return null;
         }).when(exceptions).constraintPropertyValue(any(), any(), any(), any(), any());
+        // The bulk update's gate on the ids it was asked to add or remove, real too (closing batch 29 review, P3-A).
+        doAnswer(call -> {
+            check.invalidArgumentSecondaryTypeIds((String) call.getArgument(0), call.getArgument(1));
+            return null;
+        }).when(exceptions).invalidArgumentSecondaryTypeIds(any(), any());
         caches = mock(NemakiCachePool.class);
         when(caches.get(REPO)).thenReturn(mock(CacheService.class, RETURNS_DEEP_STUBS));
         locks = mock(ThreadLockService.class);

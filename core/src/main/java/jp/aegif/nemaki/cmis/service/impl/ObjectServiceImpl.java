@@ -1131,13 +1131,17 @@ public class ObjectServiceImpl implements ObjectService {
 	private Content checkExceptionBeforeUpdateProperties(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken) {
 		return checkExceptionBeforeUpdateProperties(callContext, repositoryId, objectId, properties, changeToken,
-				content -> properties);
+				content -> properties, ObjectServiceImpl::secondaryTypesItHas);
 	}
 
-	/** The same checks, the properties checked as {@code asStored} turns them into what the store will be given. */
+	/**
+	 * The same checks, the properties checked as {@code asStored} turns them into what the store will be given, and the
+	 * types the object has read by {@code itHas}.
+	 */
 	private Content checkExceptionBeforeUpdateProperties(CallContext callContext, String repositoryId,
 			Holder<String> objectId, Properties properties, Holder<String> changeToken,
-			java.util.function.Function<Content, Properties> asStored) {
+			java.util.function.Function<Content, Properties> asStored,
+			java.util.function.Function<Content, List<String>> itHas) {
 		// //////////////////
 		// General Exception
 		// //////////////////
@@ -1173,7 +1177,7 @@ public class ObjectServiceImpl implements ObjectService {
 		if (stored != null) {
 			TypeDefinition tdf = typeManager.getTypeDefinition(repositoryId, content);
 			exceptionService.constraintPropertyValue(repositoryId, tdf, stored, objectId.getValue(),
-					secondaryTypesItHas(content));
+					itHas.apply(content));
 		}
 
 		return content;
@@ -1308,6 +1312,27 @@ public class ObjectServiceImpl implements ObjectService {
 		 * into a fresh {@link Properties} is what makes that request shape work at all
 		 * (external review of the first fold, which NPE'd here instead).
 		 */
+		/**
+		 * The types the object already names, for the check's «not the client's error»: the fold starts from the object's
+		 * secondaryIds, so an id there that the repository no longer defines came from the object, not the request (the
+		 * request's own ids were checked up front). The check's exemption read the aspects, which the fold does not, and a
+		 * type written to secondaryIds alone — nemaki:webhookable — refused the object (closing batch 29 review, subagent
+		 * P3-B). Without an add or remove there is no fold, and the types the object has are its aspects, as the store reads.
+		 */
+		private List<String> heldForTheFold(Content content) {
+			List<String> held = new ArrayList<>(secondaryTypesItHas(content));
+			boolean folds = (addSecondaryTypeIds != null && !addSecondaryTypeIds.isEmpty())
+					|| (removeSecondaryTypeIds != null && !removeSecondaryTypeIds.isEmpty());
+			if (folds && content != null && content.getSecondaryIds() != null) {
+				for (String id : content.getSecondaryIds()) {
+					if (id != null && !held.contains(id)) {
+						held.add(id);
+					}
+				}
+			}
+			return held;
+		}
+
 		private Properties withSecondaryTypeChanges(Properties original, Content content) {
 			boolean hasAdds = addSecondaryTypeIds != null && !addSecondaryTypeIds.isEmpty();
 			boolean hasRemoves = removeSecondaryTypeIds != null && !removeSecondaryTypeIds.isEmpty();
@@ -1367,7 +1392,7 @@ public class ObjectServiceImpl implements ObjectService {
 				Content content = checkExceptionBeforeUpdateProperties(callContext, repositoryId,
 						new Holder<String>(objectIdAndChangeToken.getId()), properties,
 						new Holder<String>(objectIdAndChangeToken.getChangeToken()),
-						checked -> withSecondaryTypeChanges(properties, checked));
+						checked -> withSecondaryTypeChanges(properties, checked), this::heldForTheFold);
 				// addSecondaryTypeIds / removeSecondaryTypeIds were accepted, stored on this
 				// task — and never read: bulk updates silently could not touch secondary types
 				// at all (audit #16). They are folded into cmis:secondaryObjectTypeIds HERE so

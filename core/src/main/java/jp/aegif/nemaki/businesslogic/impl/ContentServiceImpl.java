@@ -2072,6 +2072,16 @@ public class ContentServiceImpl implements ContentService {
 			Properties properties, ContentStream contentStream, String checkinComment, List<String> policies,
 			org.apache.chemistry.opencmis.commons.data.Acl addAces,
 			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension) {
+		return checkIn(callContext, repositoryId, objectId, major, properties, contentStream, checkinComment, policies,
+				addAces, removeAces, extension, null);
+	}
+
+	@Override
+	public Document checkIn(CallContext callContext, String repositoryId, Holder<String> objectId, Boolean major,
+			Properties properties, ContentStream contentStream, String checkinComment, List<String> policies,
+			org.apache.chemistry.opencmis.commons.data.Acl addAces,
+			org.apache.chemistry.opencmis.commons.data.Acl removeAces, ExtensionsData extension,
+			java.util.function.Consumer<Document> checkTheNewVersion) {
 
 		String id = objectId.getValue();
 
@@ -2084,6 +2094,11 @@ public class ContentServiceImpl implements ContentService {
 		// secondary type properties (e.g. cloud drive metadata) were saved on the
 		// original document during push but not on the PWC.
 		mergeSecondaryTypesFromLatest(checkedIn, latest);
+
+		// The caller's check of the properties, on the types this version will be stored with — before anything is written.
+		if (checkTheNewVersion != null) {
+			checkTheNewVersion.accept(checkedIn);
+		}
 
 		// E1 (W4). Declared here so the statement below can be recorded after the new version
 		// exists — only then is there a version key for it to be about.

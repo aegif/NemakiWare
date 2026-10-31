@@ -217,19 +217,13 @@ public class VersioningServiceImpl implements VersioningService {
 			// The properties the new version is given are checked as an update's are (R214): checkIn handed them to the
 			// store unchecked, so a property no type of the document defines was ignored and one of a type the request
 			// takes away was dropped, the check-in reported as done (closing batch 27 review, Codex P2). The types the store
-			// keeps when the request lists none are the PWC's and the latest version's — ContentServiceImpl.checkIn merges
-			// the latest's in (mergeSecondaryTypesFromLatest) — so both are read (closing batch 28 review, 2 reviewers).
-			if (properties != null) {
-				List<String> itHas = new ArrayList<>(ObjectServiceImpl.secondaryTypesItHas(pwc));
-				for (String latestHas : ObjectServiceImpl.secondaryTypesItHas(
-						contentService.getDocumentOfLatestVersion(repositoryId, pwc.getVersionSeriesId()))) {
-					if (!itHas.contains(latestHas)) {
-						itHas.add(latestHas);
-					}
-				}
-				exceptionService.constraintPropertyValue(repositoryId, typeManager.getTypeDefinition(repositoryId, pwc),
-						properties, pwc.getId(), itHas);
-			}
+			// keeps when the request lists none are the new version's — the PWC's with the latest version's merged in
+			// (closing batch 28 review, 2 reviewers) — and the check is run on that version, by the store, before it writes:
+			// reading the latest version here was a second reading of it (closing batch 29 review, Codex P2).
+			java.util.function.Consumer<Document> checkTheNewVersion = properties == null ? null
+					: newVersion -> exceptionService.constraintPropertyValue(repositoryId,
+							typeManager.getTypeDefinition(repositoryId, pwc), properties, pwc.getId(),
+							ObjectServiceImpl.secondaryTypesItHas(newVersion));
 			// NOTE: streamNotSupported check is not implemented as content stream is typically required
 			// exceptionService.streamNotSupported(documentTypeDefinition, contentStream);
 
@@ -238,7 +232,7 @@ public class VersioningServiceImpl implements VersioningService {
 			// //////////////////
 			Document checkedIn = contentService.checkIn(callContext, repositoryId,
 					objectId, major, properties, contentStream, checkinComment,
-					policies, addAces, removeAces, extension);
+					policies, addAces, removeAces, extension, checkTheNewVersion);
 			objectId.setValue(checkedIn.getId());
 
 
