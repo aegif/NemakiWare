@@ -625,7 +625,8 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   200 と、答えが変わっていました。いまは常に通ります — 文書がいま持つ secondary type の性質を、保存と同じ規則で許します。要求が
   `cmis:secondaryObjectTypeIds` を送れば、その一覧の型の性質だけを許します（外す型の性質は拒否）。要求が名指す型をリポジトリが定義して
   いなければ 400 です（以前は 500）。**secondary type でない型を一覧に名指した作成・更新・bulk も 400 になります**（以前は 200/201 で、
-  その型は付きませんでした）。空の一覧（Browser binding では値 `""` 1 つ）は型をすべて
+  その型は付きませんでした）。400 になるのは CMIS の binding（Browser・AtomPub）です — REST v1（`/api/v1`）は CMIS の拒否を 500 で返します
+  （既知の挙動）。空の一覧（Browser binding では値 `""` 1 つ）は型をすべて
   外します（証拠の型は外せず、拒否されます）。
 - **bulk update**（`bulkUpdateProperties`）は、add/remove を一覧に畳み込んだ後の要求で検査します。型を足してその性質の値を入れる要求は通り、
   型を外してその性質の値を入れる要求は拒否されます（以前は、前者は結果から消え、後者は値を黙って捨てて成功と答えていました — bedroom で測り
@@ -635,7 +636,13 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   新しい版に足します）。どの型も定義しない性質と、外す型の性質は拒否されます（以前は検査が無く、
   黙って無視・破棄して成功と答えていました）。
 - 保存は、secondary type の定義を読めなかったとき、その型を値ごと黙って落とさず、要求を失敗させます（以前は落として成功と答えていました）。
-  bulk の `addSecondaryTypeIds` / `removeSecondaryTypeIds` に空の id を入れた要求は 400 です。
+  ただし型の表の作り直しが重なる狭い窓では、在る型がまだ「無い」と読まれえます（残件 R226）。Browser binding の bulk の
+  `addSecondaryTypeId` / `removeSecondaryTypeId` に空の id を入れた要求は 400 です（REST v1 の `PUT …/objects/bulk` の
+  `addSecondaryTypeIds` / `removeSecondaryTypeIds` では 500 です）。
+- 失敗した更新（型を読めなかった・保存が拒んだ）は、その文書をキャッシュから外します。以前は、失敗と答えた変更がキャッシュの文書に残って
+  読み返され、次に成功した更新がそれを保存しえました。
+- CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します（以前は secondary type の性質も
+  document の subtype の性質も 500 でした）。型定義の updatability は空のままです。
 - `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
   性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
 - **既知の欠陥（3.4.0 からの後退）**: 内容（content stream）の無い文書は、チェックアウトすると取り消しも check-in もできません。check-in は
