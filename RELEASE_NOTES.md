@@ -639,10 +639,13 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   ただし型の表の作り直しが重なる狭い窓では、在る型がまだ「無い」と読まれえます（残件 R226）。Browser binding の bulk の
   `addSecondaryTypeId` / `removeSecondaryTypeId` に空の id を入れた要求は 400 です（REST v1 の `PUT …/objects/bulk` の
   `addSecondaryTypeIds` / `removeSecondaryTypeIds` では 500 です）。
-- 失敗した更新（型を読めなかった・保存が拒んだ）は、その文書をキャッシュから外します。以前は、失敗と答えた変更がキャッシュの文書に残って
-  読み返され、次に成功した更新がそれを保存しえました。
-- CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します（以前は secondary type の性質も
-  document の subtype の性質も 500 でした）。型定義の updatability は空のままです。
+- 性質の更新（`updateProperties`）が失敗したとき（型を読めなかった・名前が重なった・保存が拒んだ）は、その文書をキャッシュから外します。
+  以前は、失敗と答えた変更がキャッシュの文書に残り、後の ACL の変更などがそれを保存しえました（AtomPub で測りました）。外すことに
+  失敗したときは、その失敗を元の失敗に添えて ERROR の log を出します。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
+  この直しの外です（同じ形が残っています）。
+- CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します。3.4.0 では、secondary type の
+  性質は型ごと黙って落ちて成功と答え、document の subtype の性質は 500 でした — 3.4.0 でそのような secondary type を付けた文書は、その型と
+  値が保存されていないことがあります。型定義の updatability は空のままです。
 - `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
   性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
 - **既知の欠陥（3.4.0 からの後退）**: 内容（content stream）の無い文書は、チェックアウトすると取り消しも check-in もできません。check-in は
