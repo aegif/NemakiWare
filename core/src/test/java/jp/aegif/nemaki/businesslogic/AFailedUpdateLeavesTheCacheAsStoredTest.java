@@ -202,4 +202,36 @@ class AFailedUpdateLeavesTheCacheAsStoredTest {
                 "the eviction's Error took the place of the update's failure");
         assertEquals(List.of(evicting), List.of(thrown.getSuppressed()), "the eviction's Error is not on the update's failure");
     }
+
+    @Test
+    @DisplayName("an eviction that fails because the JVM is failing lets that go up, not the update's failure")
+    void aFatalErrorFromTheEvictionGoesUp() {
+        // A VirtualMachineError is not a failure to add to the write's: suppressed into it, the JVM's failure was answered as
+        // the update's (closing batch 33 review, Codex P2).
+        when(stored.update(anyString(), any(Document.class))).thenThrow(new CmisRuntimeException("the store refused"));
+        OutOfMemoryError fatal = new OutOfMemoryError("the heap is full");
+        doThrow(fatal).when(repositoryCache).removeCmisAndContentCache(anyString());
+        Content content = cached.getContent("bedroom", "doc-1");
+
+        OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class, () -> service.updateProperties(
+                mock(CallContext.class), "bedroom", describedAs("written by an update that failed"), content),
+                "the JVM's failure was added to the update's instead of going up");
+        assertEquals(fatal, thrown, "another failure went up than the JVM's");
+    }
+
+    @Test
+    @DisplayName("the same failure from the update and the eviction is not added to itself")
+    void theSameFailureFromTheUpdateAndTheEvictionIsNotAddedToItself() {
+        // Throwable refuses to suppress itself with an IllegalArgumentException, an exception where the update had failed with
+        // an Error — and callers that catch exceptions carried on (closing batch 33 review, subagent P3-1).
+        TheStoreBroke same = new TheStoreBroke();
+        when(stored.update(anyString(), any(Document.class))).thenThrow(same);
+        doThrow(same).when(repositoryCache).removeCmisAndContentCache(anyString());
+        Content content = cached.getContent("bedroom", "doc-1");
+
+        TheStoreBroke thrown = assertThrows(TheStoreBroke.class, () -> service.updateProperties(mock(CallContext.class),
+                "bedroom", describedAs("written by an update that failed"), content),
+                "the update's failure was added to itself and turned into another");
+        assertEquals(same, thrown, "another failure went up than the update's");
+    }
 }

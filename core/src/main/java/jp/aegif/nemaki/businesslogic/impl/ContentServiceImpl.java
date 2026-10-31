@@ -3526,9 +3526,10 @@ public class ContentServiceImpl implements ContentService {
 
 	/**
 	 * Takes an object a failed write left changed in memory out of the content cache. A failure to evict — an Error as
-	 * much as an exception — is added to the write's failure, not put in its place, and logged: the changed object is
-	 * then still in the cache (closing batch 32 review, Codex P2 and subagent P3-5 — an Error from the eviction took the
-	 * write's failure's place, and nothing said the cache kept the object).
+	 * much as an exception — is logged and added to the write's failure, not put in its place: the changed object may
+	 * then still be in the cache (closing batch 32 review, Codex P2 and subagent P3-5 — an Error from the eviction took the
+	 * write's failure's place, and nothing said the cache might keep the object). A VirtualMachineError is the JVM failing,
+	 * not a failure to add to the write's: it goes up as it is (closing batch 33 review, Codex P2).
 	 */
 	private void forgetTheCachedObject(String repositoryId, Content content, Throwable failed) {
 		if (content == null || content.getId() == null) {
@@ -3537,9 +3538,17 @@ public class ContentServiceImpl implements ContentService {
 		try {
 			nemakiCachePool.get(repositoryId).removeCmisAndContentCache(content.getId());
 		} catch (RuntimeException | Error evicting) {
-			failed.addSuppressed(evicting);
+			if (evicting instanceof VirtualMachineError) {
+				throw (VirtualMachineError) evicting;
+			}
 			log.error("A failed update of {} could not take it out of the content cache, which may still answer the changes "
 					+ "the update was refused for: {}", content.getId(), evicting.toString());
+			// The same instance from the write and the eviction — a thrower that reuses one — would be added to itself,
+			// which Throwable refuses with an IllegalArgumentException, and that took the write's failure's place
+			// (closing batch 33 review, subagent P3-1).
+			if (evicting != failed) {
+				failed.addSuppressed(evicting);
+			}
 		}
 	}
 
