@@ -24184,11 +24184,11 @@ CONTROLS = [
     ),
     dict(
         id='HG5',
-        what='the one call of the property map whose result is a VALUE (buildQualField, used as new Term("type", …)) is escaped as if it were a field name, so it looks for a term that was never indexed',
+        what="a call of the property map whose result is a VALUE comes back unescaped — the qualifier's term of R219, which named an index field that does not exist — and the lock that counts every call must look at it, not let it through (re-pointed at closing batch 26: the one exemption, buildQualField, was removed with the term)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
-        find='\t\tString solrName = solrUtil.getPropertyNameInSolr(repositoryId, cmisName);\n',
-        replace='\t\tString solrName = queryableFieldName(solrUtil.getPropertyNameInSolr(repositoryId, cmisName));\n',
+        find='\t\t\treturn walkInFolder(node.getChild(node.getChildCount() - 1));\n',
+        replace='\t\t\treturn node.getChildCount() == 2 ? new BooleanQuery.Builder().add(new TermQuery(new Term("type", solrUtil.getPropertyNameInSolr(repositoryId, queryObject.getTypeQueryName(safeWalkExprToString(node.getChild(0)))))), Occur.MUST).add(walkInFolder(node.getChild(1)), Occur.MUST).build() : walkInFolder(node.getChild(0));\n',
         test='EveryFieldNameIsEscapedOnceTest',
         expect_fail=['everyProductionInTheWalkerGoesThroughTheRule'],
     ),
@@ -28211,7 +28211,7 @@ CONTROLS = [
         find='\t\tfor (String joinFilter : joinFilters) {\n\t\t\tfromQueryString += " AND (" + joinFilter + ")";\n\t\t}\n',
         replace='',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='WQ5',
@@ -28221,7 +28221,7 @@ CONTROLS = [
         find='\t\tfor (JoinSpec join : clientJoinSpecs) {\n\t\t\tString queryName = types.get(join.alias);\n\t\t\tString named = ',
         replace='\t\tfor (JoinSpec join : clientJoinSpecs) {\n\t\t\tif (join != null) {\n\t\t\t\tthrow new CmisInvalidArgumentException("every JOIN refused");\n\t\t\t}\n\t\t\tString queryName = types.get(join.alias);\n\t\t\tString named = ',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aClientsJoinWithoutAnOnIsRefusedForItsOn', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'aJoinWithATypeWhoseSubtypeCannotBeReadIsNotAnswered', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aJoinOfTheWrongShapeIsRefusedBeforeTheWhereIsRead', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName'],
+        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aClientsJoinWithoutAnOnIsRefusedForItsOn', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'aJoinWithATypeWhoseSubtypeCannotBeReadIsNotAnswered', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aJoinOfTheWrongShapeIsRefusedBeforeTheWhereIsRead', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='WR5',
@@ -28231,7 +28231,7 @@ CONTROLS = [
         find='\t\t\tif (join.onLeft == null && join.onRight == null && injected.contains(types.get(join.alias))) {\n\t\t\t\tcontinue;\n\t\t\t}\n',
         replace='',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinInAStatementThatFailsToResolveStaysACondition', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aJoinInAStatementThatFailsToResolveStaysACondition', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='WS5',
@@ -28311,7 +28311,7 @@ CONTROLS = [
         find='\t\t\t\tinjected.addAll(secondaryTypesToJoin);\n',
         replace='',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinInAStatementThatFailsToResolveStaysACondition', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aJoinInAStatementThatFailsToResolveStaysACondition', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XA5',
@@ -28321,7 +28321,7 @@ CONTROLS = [
         find='\t\t\t\tsolrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.SECONDARY_OBJECT_TYPE_IDS));\n',
         replace='\t\t\t\tsolrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.OBJECT_TYPE_ID));\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XB5',
@@ -28331,7 +28331,7 @@ CONTROLS = [
         find='org.apache.solr.client.solrj.util.ClientUtils.escapeQueryChars(joined.getId())',
         replace='joined.getId()',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aJoinWithASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aJoinAndAConditionAnswerTheDocumentsThatMeetBoth', 'aJoinWithoutAliasesOrTurnedRoundIsTheSameJoin', 'aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'aJoinChainedOnAnEarlierJoinIsAnswered', 'aJoinWithATypeWhoseSubtypesAQueryLeavesOutIsAnswered', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'anOnQualifiedByTheTypesNameIsTheSameJoin', 'theSameTypeJoinedUnderTwoAliasesIsAnswered', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XC5',
@@ -28401,7 +28401,7 @@ CONTROLS = [
         find_span=('\t\t\t\tif (secondaryType != null && !namedIn(fromPart, secondaryType)\n\t\t\t\t\t\t&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {\n', '\t\t\t\tinjected.addAll(secondaryTypesToJoin);\n'),
         replace='\t\t\t\tif (secondaryType != null\n\t\t\t\t\t\t&& !fromTypeDefines(repositoryId, fromPart, propertyName)) {\n\t\t\t\t\tsecondaryTypesToJoin.add(writtenAs(secondaryType));\n\t\t\t\t\tif (logger.isDebugEnabled()) {\n\t\t\t\t\t\tlogger.debug("Found secondary type property \'" + propertyName + "\' -> adding JOIN for \'" + secondaryType.getId() + "\'");\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfor (TypeDefinition named : rowsNamedHere.values()) {\n\t\t\t\tsecondaryTypesToJoin.add(writtenAs(named));\n\t\t\t\tnamedAsARow.put(named.getId(), named);\n\t\t\t}\n\n\t\t\t// If we found secondary types, inject JOIN clauses\n\t\t\tif (!secondaryTypesToJoin.isEmpty()) {\n\t\t\t\t// The FROM found as the WHERE is — any whitespace around the keyword, never inside a literal. " FROM " with a\n\t\t\t\t// space on each side missed a FROM after a newline or a tab, and the server\'s JOIN with it (closing batch 19\n\t\t\t\t// review, subagent P3-1).\n\t\t\t\tif (!fromFound) {\n\t\t\t\t\treturn statement;\n\t\t\t\t}\n\n\t\t\t\t// The end of the FROM clause: the WHERE, the ORDER BY or the end of the statement (above).\n\t\t\t\tint fromEndIndex = whereIndex;\n\n\t\t\t\t// Build the JOIN clause string — a space after it as well, since the keyword need not follow one.\n\t\t\t\tStringBuilder joinClause = new StringBuilder();\n\t\t\t\tfor (String secondaryTypeName : secondaryTypesToJoin) {\n\t\t\t\t\tjoinClause.append(" JOIN ").append(secondaryTypeName);\n\t\t\t\t}\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aClientsJoinWithoutAnOnIsRefusedForItsOn', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aWrittenJoinStaysAConditionWhenTheWhereNamesItsProperty', 'aJoinInAStatementThatFailsToResolveStaysACondition', 'anAliasNamedAsATypeIsNotOverwrittenByTheServersJoin', 'theJoinTheServerAddsKeepsTheAnswerItHad', 'aSelectListNamingATypeKeepsTheServersJoin', 'aClientsJoinWithoutAnOnIsRefusedForItsOn', 'aFromAfterANewlineOrATabKeepsTheServersJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aNameThatIsNotAQualifierDoesNotNameTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XJ5',
@@ -28491,7 +28491,7 @@ CONTROLS = [
         find='\t\t\tfor (TypeDefinition named : rowsNamedHere.values()) {\n\t\t\t\tsecondaryTypesToJoin.add(writtenAs(named));\n',
         replace='\t\t\tfor (TypeDefinition named : rowsNamedHere.values()) {\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XS5',
@@ -28501,7 +28501,7 @@ CONTROLS = [
         find='\t\t\trefuseSubtypesAQueryIncludes(repositoryId, joined, joined.getId() + " (the row a qualifier names)");\n\t\t\tfilters.add(theDocumentsThatHave(repositoryId, joined));\n',
         replace='\t\t\trefuseSubtypesAQueryIncludes(repositoryId, joined, joined.getId() + " (the row a qualifier names)");\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XT5',
@@ -28511,7 +28511,7 @@ CONTROLS = [
         find='\t\t\t\trowsNamed.putAll(namedAsARow);\n',
         replace='',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XU5',
@@ -28541,7 +28541,7 @@ CONTROLS = [
         find='+ "|(?<![A-Za-z0-9_:.])(?i:IN_FOLDER|IN_TREE|CONTAINS)\\\\s*\\\\(\\\\s*([A-Za-z_][A-Za-z0-9_:]*)\\\\s*,");',
         replace='+ "|(?<![A-Za-z0-9_:.])(?i:NO_SUCH_FUNCTION)\\\\s*\\\\(\\\\s*([A-Za-z_][A-Za-z0-9_:]*)\\\\s*,");',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XX5',
@@ -28561,7 +28561,7 @@ CONTROLS = [
         find='\t\t\tMatcher qualifier = ROW_QUALIFIER.matcher(blanked);\n\t\t\twhile (qualifier.find()) {\n\t\t\t\tString name = (qualifier.group(1) != null) ? qualifier.group(1) : qualifier.group(2);\n\t\t\t\tTypeDefinition named = typeManager.getTypeByQueryName(repositoryId, name);\n\t\t\t\tif (named != null && named.getBaseTypeId() == BaseTypeId.CMIS_SECONDARY && !namedIn(fromPart, named)) {\n\t\t\t\t\trowsNamedHere.put(named.getId(), named);\n\t\t\t\t}\n\t\t\t}\n',
         replace='',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='XZ5',
@@ -28591,7 +28591,7 @@ CONTROLS = [
         find='\t\tnarrowToTheRowsNamed(repositoryId, rowsNamed, filters);\n\t\treturn filters;\n',
         replace='\t\tif (!clientJoinSpecs.isEmpty()) {\n\t\t\tnarrowToTheRowsNamed(repositoryId, rowsNamed, filters);\n\t\t}\n\t\treturn filters;\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot'],
+        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aColumnQualifiedByASecondaryTypeAnswersOnlyTheDocumentsThatHaveIt', 'aColumnQualifiedByTheTypeKeepsTheServersJoin', 'aQualifierAfterWhitespaceOrInAFunctionNamesTheRow', 'aRowNamedOfATypeWithSubtypesIsRefused', 'aTypeWhoseQueryNameIsNotItsIdIsJoinedByItsQueryName', 'containsNamesTheRowAndAPrimaryTypeDoesNot', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='YC5',
@@ -28601,7 +28601,7 @@ CONTROLS = [
         find='+ "|(?<![A-Za-z0-9_:.])(?i:IN_FOLDER|IN_TREE|CONTAINS)\\\\s*\\\\(\\\\s*([A-Za-z_][A-Za-z0-9_:]*)\\\\s*,");',
         replace='+ "|(?<![A-Za-z0-9_:.])(?i:IN_FOLDER|CONTAINS)\\\\s*\\\\(\\\\s*([A-Za-z_][A-Za-z0-9_:]*)\\\\s*,");',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
-        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin'],
+        expect_fail=['aRowNamedOnlyOutsideTheWhereGetsItsJoin', 'aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
     dict(
         id='YD5',
@@ -28692,6 +28692,26 @@ CONTROLS = [
         replace='\t\t\t\tif (named != null && !namedIn(fromPart, named)) {\n',
         test='AnUntranslatedWhereIsRefusedNotDroppedTest',
         expect_fail=['containsNamesTheRowAndAPrimaryTypeDoesNot'],
+    ),
+    dict(
+        id='YM5',
+        what='a qualified IN_FOLDER adds a term for its qualifier on an index field ("type") the index does not have, so Solr matches nothing or refuses the query — every qualified IN_FOLDER was a 500 on bedroom (R219, closing batch 26)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\t\treturn walkInFolder(node.getChild(node.getChildCount() - 1));\n',
+        replace='\t\t\treturn node.getChildCount() == 2 ? new BooleanQuery.Builder().add(new TermQuery(new Term("type", safeWalkExprToString(node.getChild(0)).replace(\':\', \'_\'))), Occur.MUST).add(walkInFolder(node.getChild(1)), Occur.MUST).build() : walkInFolder(node.getChild(0));\n',
+        test='AnUntranslatedWhereIsRefusedNotDroppedTest',
+        expect_fail=['aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
+    ),
+    dict(
+        id='YN5',
+        what='a qualified IN_TREE adds a term for its qualifier on an index field ("type") the index does not have — the IN_TREE half of R219 (closing batch 26)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/query/solr/SolrPredicateWalker.java',
+        find='\t\t\treturn walkInTree(node.getChild(node.getChildCount() - 1));\n',
+        replace='\t\t\treturn node.getChildCount() == 2 ? new BooleanQuery.Builder().add(new TermQuery(new Term("type", safeWalkExprToString(node.getChild(0)).replace(\':\', \'_\'))), Occur.MUST).add(walkInTree(node.getChild(1)), Occur.MUST).build() : walkInTree(node.getChild(0));\n',
+        test='AnUntranslatedWhereIsRefusedNotDroppedTest',
+        expect_fail=['aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne'],
     ),
 ]
 

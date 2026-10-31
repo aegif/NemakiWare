@@ -331,6 +331,10 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         when(solrUtil.getPropertyNameInSolr(eq(REPO), anyString()))
                 .thenAnswer(call -> ((String) call.getArgument(1)).replace(':', '_'));
         when(solrUtil.getPropertyNameInSolr(REPO, "cmis:contentStreamMimeType")).thenReturn("content_mimetype");
+        // The real map's name for the parent (SolrUtil), which IN_TREE writes itself; f1 and f2 are filed under root and
+        // hold no folder, so IN_TREE of either is that folder alone.
+        when(solrUtil.getPropertyNameInSolr(REPO, "cmis:parentId")).thenReturn("parent_id");
+        when(solrUtil.getFolderHierarchy(REPO)).thenReturn(Map.of("root", List.of("f1", "f2")));
         when(solrUtil.getPropertyNameInSolr(REPO, "nemaki:unreadableAspect")).thenThrow(
                 new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("the definition could not be read"));
         when(solrUtil.getPropertyNameInSolr(REPO, "nemaki:unreadableField")).thenThrow(
@@ -808,6 +812,14 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
             "typedJoined", typedFields("nemaki:withJtag", "b", "nemaki:joinable", "x"),
             "hasOtherName", otherNameFields());
 
+    // Where each document is filed: hasToo and hasSecond in f2, every other one in f1 (R219).
+    static {
+        for (Map.Entry<String, Map<String, List<String>>> document : DOCUMENTS.entrySet()) {
+            document.getValue().put("parent_id",
+                    List.of(Set.of("hasToo", "hasSecond").contains(document.getKey()) ? "f2" : "f1"));
+        }
+    }
+
     /** A document of nemaki:withJtag with the secondary type whose query name is not its id: the index holds the id. */
     private static Map<String, List<String>> otherNameFields() {
         Map<String, List<String>> fields = typedFields("nemaki:withJtag", "d", "nemaki:otherNameId", null);
@@ -1175,6 +1187,42 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
                         .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
                 () -> "the qualifier of IN_FOLDER was not read as the row — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a qualified IN_FOLDER or IN_TREE answers what the statement without the qualifier answers (R219)")
+    void aQualifiedFolderPredicateAnswersAsTheUnqualifiedOne() {
+        // The walker added a term for the qualifier on an index field "type" that does not exist, so Solr refused every
+        // qualified IN_FOLDER and IN_TREE with a 500 — the FROM's alias, the type's name and a JOIN's alias alike
+        // (measured on bedroom, closing batch 26). Every row is the same object and its type is narrowed already, so the
+        // qualifier adds nothing. Each statement is read against the documents filed in f1 and f2: a term on a field the
+        // index does not have matches none of them here, as Solr matches none of its documents — or refuses the query.
+        for (String function : List.of("IN_FOLDER", "IN_TREE")) {
+            Set<String> unqualified = answered("SELECT cmis:objectId FROM cmis:document WHERE " + function + "('f1')");
+            assertEquals(Set.of("has", "hasNot"), unqualified, () -> "the unqualified " + function + " did not answer "
+                    + "the documents in f1 — " + lastSent());
+            assertEquals(unqualified, answered("SELECT d.cmis:objectId FROM cmis:document d WHERE " + function
+                    + "(d, 'f1')"), () -> "a qualifier that is the FROM's alias changed what " + function + " answers — "
+                    + lastSent());
+            assertEquals(unqualified, answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE " + function
+                    + "(cmis:document, 'f1')"), () -> "a qualifier that is the FROM's type changed what " + function
+                    + " answers — " + lastSent());
+            assertEquals(Set.of("hasToo", "hasSecond"), answered("SELECT d.cmis:objectId FROM cmis:document d WHERE NOT "
+                    + function + "(d, 'f1')"), () -> "a qualified NOT " + function + " did not answer the documents "
+                    + "filed elsewhere — " + lastSent());
+            String join = "SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j ON d.cmis:objectId = "
+                    + "j.cmis:objectId WHERE ";
+            Set<String> joined = answered(join + function + "('f1')");
+            assertEquals(Set.of("has"), joined, () -> "the JOIN with the unqualified " + function + " did not answer — "
+                    + lastSent());
+            for (String qualifier : List.of("d", "j")) {
+                assertEquals(joined, answered(join + function + "(" + qualifier + ", 'f1')"), () -> "a qualifier that is "
+                        + "a row of the JOIN (" + qualifier + ") changed what " + function + " answers — " + lastSent());
+            }
+            assertEquals(joined, answered("SELECT cmis:document.cmis:objectId FROM cmis:document WHERE " + function
+                    + "(nemaki:joinable, 'f1')"), () -> "a qualifier that is the secondary type did not answer as the "
+                    + "JOIN written — " + lastSent());
+        }
     }
 
     @Test

@@ -136,17 +136,11 @@ public class SolrPredicateWalker{
 			return walkIsNotNull(node.getChild(0));
 			// GetChildren type walks
 		case CmisQlStrictLexer.IN_FOLDER:
-			if (node.getChildCount() == 1) {
-				return walkInFolder(null, node.getChild(0));
-			} else {
-				return walkInFolder(node.getChild(0), node.getChild(1));
-			}
+			// The folder is the last child: the first, when there are two, is the qualifier, which asks
+			// nothing of the index (see walkInFolder).
+			return walkInFolder(node.getChild(node.getChildCount() - 1));
 		case CmisQlStrictLexer.IN_TREE:
-			if (node.getChildCount() == 1) {
-				return walkInTree(null, node.getChild(0));
-			} else {
-				return walkInTree(node.getChild(0), node.getChild(1));
-			}
+			return walkInTree(node.getChild(node.getChildCount() - 1));
 			// Full-text search type walk
 		case CmisQlStrictLexer.CONTAINS:
 			if (node.getChildCount() == 1) {
@@ -624,7 +618,16 @@ public class SolrPredicateWalker{
 	// //////////////////////////////////////////////////////////////////////////////
 	// Definition of getChildren type walks
 	// //////////////////////////////////////////////////////////////////////////////
-	private Query walkInFolder(CmisTree qualNode, CmisTree paramNode) {
+	/**
+	 * The documents filed in the folder. A qualifier ({@code IN_FOLDER(d, 'id')}) adds nothing to the
+	 * query (R219): the parser refuses one that names no row of the FROM, every JOIN this server answers
+	 * joins on {@code cmis:objectId} (one object in every row), and the row's type is narrowed already
+	 * — the FROM's type by its filter, a JOIN's type by the JOIN's. The term this used to add asked an
+	 * index field {@code type} that does not exist, so Solr refused every qualified IN_FOLDER and
+	 * IN_TREE — FROM's alias, the type's name, a JOIN's alias alike — and the client got a 500
+	 * (measured on bedroom, closing batch 26).
+	 */
+	private Query walkInFolder(CmisTree paramNode) {
 		// Extract folder ID safely handling ArrayList cases
 		String folderId = null;
 		Object lit = walkExpr(paramNode);
@@ -650,21 +653,11 @@ public class SolrPredicateWalker{
 		String parentIdField = queryableFieldName(
 				solrUtil.getPropertyNameInSolr(repositoryId, PropertyIds.PARENT_ID));
 		Term t = new Term(parentIdField, folderId);
-		Query q = new TermQuery(t);
-		
-		if (qualNode != null) { // When a table alias exists
-			String qualifier = safeWalkExprToString(qualNode);
-			Term tQual = new Term("type", buildQualField(qualifier));
-			Query qQual = new TermQuery(tQual);
-			BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
-			bqBuilder.add(qQual, Occur.MUST);
-			bqBuilder.add(q, Occur.MUST);
-			return bqBuilder.build();
-		}
-		return q;
+		return new TermQuery(t);
 	}
 
-	private Query walkInTree(CmisTree qualNode, CmisTree paramNode) {
+	/** The documents filed in the folder or below it. A qualifier adds nothing, as in {@link #walkInFolder}. */
+	private Query walkInTree(CmisTree paramNode) {
 		// OpenCMIS correctly returns ArrayList for IN_TREE parameters
 		// Extract folder ID from the ArrayList structure
 		Object lit = walkExpr(paramNode);
@@ -693,19 +686,7 @@ public class SolrPredicateWalker{
 		}
 
 		// Build a Statement using the extracted folder ID
-		Query q = walkInTreeInternal(folderId, this.repositoryId);
-		if (qualNode != null) {
-			String qualifier = safeWalkExprToString(qualNode);
-			if (qualifier != null) {
-				Term tQual = new Term("type", buildQualField(qualifier));
-				Query qQual = new TermQuery(tQual);
-				BooleanQuery.Builder bqBuilder = new BooleanQuery.Builder();
-				bqBuilder.add(qQual, Occur.MUST);
-				bqBuilder.add(q, Occur.MUST);
-				return bqBuilder.build();
-			}
-		}
-		return q;
+		return walkInTreeInternal(folderId, this.repositoryId);
 	}
 
 	private Query walkInTreeInternal(String folderId, String repositoryId) {
@@ -761,13 +742,8 @@ public class SolrPredicateWalker{
 	// Wildcards of CONTAINS() is the same as those of Solr, so leave them as they are.
 	private Query walkContains(CmisTree qualNode, CmisTree queryNode) {
 		if (qualNode != null) {
-			//Qualifier isn't needed as long as JOIN isn't supported
-			//String qualifier = walkExpr(qualNode).toString();
-			//Term tQual = new Term("type", buildQualField(qualifier));
-			//Query qQual = new TermQuery(tQual);
-
+			// The qualifier adds nothing, as in walkInFolder: every row is the same object.
 			BooleanQuery.Builder builder = new BooleanQuery.Builder();
-			//q.add(qQual, Occur.MUST);
 			builder.add(walkSearchExpr(queryNode), Occur.MUST);
 
 			return builder.build();
@@ -1114,26 +1090,6 @@ public class SolrPredicateWalker{
 		}
 		// Fallback to toString()
 		return result != null ? result.toString() : null;
-	}
-
-	/**
-	 * Look up a Solr name of a table from alias
-	 *
-	 * @param alias
-	 * @return
-	 */
-	/**
-	 * The one call of the property map in this class whose result is a VALUE, not a field name:
-	 * callers put it in {@code new Term("type", …)}, where {@code "type"} is the field. It must
-	 * therefore NOT go through {@link #queryableFieldName} — escaping a value as if it were a field
-	 * name would look for a term that was never indexed. The lock in
-	 * {@code EveryFieldNameIsEscapedOnceTest} names this site as the single exemption, so a new call
-	 * cannot join it silently (round-6 review).
-	 */
-	private String buildQualField(String alias) {
-		String cmisName = queryObject.getTypeQueryName(alias);
-		String solrName = solrUtil.getPropertyNameInSolr(repositoryId, cmisName);
-		return solrName;
 	}
 
 	/**

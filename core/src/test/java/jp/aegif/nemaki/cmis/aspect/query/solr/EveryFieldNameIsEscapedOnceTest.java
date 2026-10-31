@@ -339,7 +339,6 @@ class EveryFieldNameIsEscapedOnceTest {
         // Every CALL of the property map, not three syntactic shapes: a production written with any
         // other variable name used to pass both counts unchanged (round-6 review, P3).
         int found = 0;
-        int exemptions = 0;
         int from = 0;
         while ((from = walker.indexOf("getPropertyNameInSolr(", from)) >= 0) {
             found++;
@@ -352,27 +351,18 @@ class EveryFieldNameIsEscapedOnceTest {
             boolean wrapped = before.endsWith("queryableFieldName(")
                     || before.endsWith("queryableFieldName(solrUtil.");
             from += "getPropertyNameInSolr(".length();
-            // The one exemption, named: buildQualField's result is a VALUE (callers put it in
-            // new Term("type", …)), so escaping it as a field name would look for a term that was
-            // never indexed. Everything else is a field name (round-6 review).
-            if (statement.contains("String solrName = solrUtil.getPropertyNameInSolr")) {
-                exemptions++;
-                continue;
-            }
+            // No exemption since closing batch 26 (R219). The one call whose result was a VALUE —
+            // buildQualField, put in new Term("type", …) — asked an index field that does not exist, and
+            // went with the term. A call whose result is not a field name has to be looked at, not assumed.
             assertTrue(wrapped,
                     "a field name is built without the one rule that escapes it exactly once: "
                             + statement.trim());
         }
-        assertEquals(1, exemptions,
-                "the number of calls of the property map that produce a VALUE rather than a field"
-                        + " name changed; there is exactly one (buildQualField) and a new one must"
-                        + " be looked at, not assumed");
-        // Ten since closing batch 4: fieldOf, which the negations (<>, NOT LIKE, NOT IN) use to require the field
-        // to be present, is the tenth — and goes through the rule like the others.
-        assertEquals(10, found,
+        // Ten since closing batch 4 (fieldOf, which the negations (<>, NOT LIKE, NOT IN) use to require the
+        // field to be present, was the tenth); nine since closing batch 26, which removed buildQualField (R219).
+        assertEquals(9, found,
                 "the number of calls of the property map in this walker changed; each one has to go"
-                        + " through queryableFieldName — or be the ONE exemption below — and be"
-                        + " counted here");
+                        + " through queryableFieldName and be counted here");
     }
 
     @Test
