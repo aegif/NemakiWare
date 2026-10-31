@@ -634,6 +634,8 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
 - **check-in** は、新しい版に渡す性質を更新と同じに検査します — PWC と最新版が持つ secondary type の性質を許します（保存は最新版の型も
   新しい版に足します）。どの型も定義しない性質と、外す型の性質は拒否されます（以前は検査が無く、
   黙って無視・破棄して成功と答えていました）。
+- 保存は、secondary type の定義を読めなかったとき、その型を値ごと黙って落とさず、要求を失敗させます（以前は落として成功と答えていました）。
+  bulk の `addSecondaryTypeIds` / `removeSecondaryTypeIds` に空の id を入れた要求は 400 です。
 - `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
   性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
 - **既知の欠陥（3.4.0 からの後退）**: 内容（content stream）の無い文書は、チェックアウトすると取り消しも check-in もできません。check-in は
