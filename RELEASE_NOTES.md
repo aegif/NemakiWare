@@ -122,8 +122,8 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   問い合わせ名が型の id と違う secondary type でも同じに答えます — ただし FROM の別名が secondary type の問い合わせ名か id と
   同じ文は、JOIN が足されず FROM の型の文書を全部返す既知の欠陥があります（残件 R221。別名は型の名前と違うものにしてください）。
   WHERE の無い文は、SELECT の列や ORDER BY の性質が解けなくても 400 にならず、FROM の型の文書を全部返します（同じく R221）。
-  修飾子付きの IN_FOLDER・IN_TREE は 500 になる既知の欠陥があります（残件 R219。query で含める subtype を持つ secondary type の
-  修飾子は 400）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
+  修飾子付きの IN_FOLDER・IN_TREE（`IN_FOLDER(d, '<id>')`）は、修飾子の無い同じ文と同じに答えます（以前は修飾子が FROM の別名でも
+  Solr が拒み、500 でした — bedroom で 20 の形を測りました）。query で含める subtype を持つ secondary type の修飾子は 400 です。修飾しない性質の名前だけの文は、これまでどおり絞りません。
   リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
   `ANY cmis:secondaryObjectTypeIds IN (…)` は 0 件 — 同じ WAR で測りました）。CMIS TCK は 38/38 でした。
