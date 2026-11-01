@@ -150,6 +150,13 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   `cmis:versionSeriesCheckedOutBy`・`cmis:allowedChildObjectTypeIds`・`cmis:isImmutable`・`cmis:isLatestMajorVersion`・
   `cmis:policyText`。どれも問い合わせると 400 です。
 
+### 既知の欠陥（以前から — 残件 R221）
+
+- WHERE も JOIN も無い問い合わせで、SELECT の列や ORDER BY の性質が解けない（問い合わせの解析が失敗する）と、400 にならず、FROM の型の文書を
+  全部返します。bedroom で `SELECT nemaki:comment FROM cmis:document`（この性質の問い合わせ名は `comment`）と `SELECT zz.cmis:objectId FROM
+  cmis:document`（`zz` は FROM に無い修飾子）は、どちらも `SELECT cmis:objectId FROM cmis:document` と同じ 2,663 件を返しました。3.4.1 で直す
+  予定で、直すとこれらの文は 400 になります。
+
 ### 主張しないこと
 
 - 訳す規則の無い根の形のうち、測ったのは `'a' = ANY <複数値のプロパティ>` だけです。
@@ -641,7 +648,9 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   `addSecondaryTypeIds` / `removeSecondaryTypeIds` では 500 です）。
 - 性質の更新（`updateProperties`）が失敗したとき（型を読めなかった・名前が重なった・保存が拒んだ）は、その文書をキャッシュから外します。
   以前は、失敗と答えた変更がキャッシュの文書に残り、後の ACL の変更などがそれを保存しえました（3.4.1 の作業中の版を AtomPub で測りました。3.4.0 も読解では同じ形です）。外すことに
-  失敗したときは、ERROR の log を出し、その失敗を元の失敗に添えます（JVM の失敗 — `VirtualMachineError` — はそのまま上げます）。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
+  失敗したときは、ERROR の log を出し、その失敗を元の失敗に添えます。JVM の失敗（`VirtualMachineError`）はそのまま上げ、そのときは log を
+  出しません。bulk では、ある文書の task で JVM が失敗すると、すべての文書を待ってから要求を失敗させます（以前は、その文書を結果から外して
+  200 で答えていました）。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
   この直しの外です（同じ形が残っています）。
 - CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します。3.4.0 では、secondary type の
   性質は型ごと黙って落ちて成功と答え、document の subtype の性質は 500 でした — 3.4.0 でそのような secondary type を付けた文書は、その型と
