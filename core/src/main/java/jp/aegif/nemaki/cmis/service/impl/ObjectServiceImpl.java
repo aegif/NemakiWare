@@ -1266,9 +1266,14 @@ public class ObjectServiceImpl implements ObjectService {
 					properties, addSecondaryTypeIds, removeSecondaryTypeIds, extension)));
 		}
 
-		for (Future<BulkUpdateObjectIdAndChangeToken> future : futures) {
+		// A task's Error escapes its catch of exceptions and comes back here wrapped, and it was logged at DEBUG and the
+		// request answered with the other objects as done (closing batch 34 review, Codex P2-2). The JVM failing is not one
+		// object's failure: every task is waited for, then it goes up. Another Error leaves its object out, as a refusal
+		// does, and says so at ERROR.
+		VirtualMachineError jvmFailing = null;
+		for (int i = 0; i < futures.size(); i++) {
 			try {
-				BulkUpdateObjectIdAndChangeToken result = future.get();
+				BulkUpdateObjectIdAndChangeToken result = futures.get(i).get();
 				// A refused object's task answers null: it is left out, so the list holds the objects updated (R225 — the
 				// REST v1 resource read every entry and answered the whole request with a 500).
 				if (result != null) {
@@ -1278,8 +1283,21 @@ public class ObjectServiceImpl implements ObjectService {
 				log.warn("Bulk update operation was interrupted", e);
 				Thread.currentThread().interrupt();
 			} catch (ExecutionException e) {
-				log.debug("Bulk update task failed for one object", e);
+				Throwable cause = e.getCause();
+				if (cause instanceof VirtualMachineError) {
+					if (jvmFailing == null) {
+						jvmFailing = (VirtualMachineError) cause;
+					}
+				} else if (cause instanceof Error) {
+					log.error("bulkUpdateProperties: " + objectIdAndChangeTokenList.get(i).getId() + " failed with an Error and "
+							+ "is left out of the results", cause);
+				} else {
+					log.debug("Bulk update task failed for one object", e);
+				}
 			}
+		}
+		if (jvmFailing != null) {
+			throw jvmFailing;
 		}
 
 		return results;

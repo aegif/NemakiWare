@@ -29163,6 +29163,26 @@ CONTROLS = [
         test='AFailedUpdateLeavesTheCacheAsStoredTest',
         expect_fail=['theSameFailureFromTheUpdateAndTheEvictionIsNotAddedToItself'],
     ),
+    dict(
+        id='AH6',
+        what='a bulk update waits for the JVM failing in a task and then answers as if it had not happened, the other objects as done (closing batch 34 review, Codex P2-2)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java',
+        find='\t\tif (jvmFailing != null) {\n\t\t\tthrow jvmFailing;\n\t\t}\n',
+        replace='\t\tif (false) {\n\t\t\tthrow jvmFailing;\n\t\t}\n',
+        test='ABulkUpdateDoesNotAnswerTheJvmFailingAsDoneTest',
+        expect_fail=['theJvmFailingInOneTaskGoesUp'],
+    ),
+    dict(
+        id='AI6',
+        what='a bulk update reads the JVM failing in a task as any other Error, the object left out and the request answered (closing batch 34 review, Codex P2-2)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/ObjectServiceImpl.java',
+        find='\t\t\t\tif (cause instanceof VirtualMachineError) {\n',
+        replace='\t\t\t\tif (false && cause instanceof VirtualMachineError) {\n',
+        test='ABulkUpdateDoesNotAnswerTheJvmFailingAsDoneTest',
+        expect_fail=['theJvmFailingInOneTaskGoesUp'],
+    ),
 ]
 
 
