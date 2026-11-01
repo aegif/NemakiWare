@@ -153,7 +153,8 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 ### 既知の欠陥（以前から — 残件 R221）
 
 - WHERE も JOIN も無い問い合わせで、SELECT の列や ORDER BY の性質が解けない（問い合わせの解析が失敗する）と、400 にならず、FROM の型の文書を
-  全部返します。bedroom で `SELECT nemaki:comment FROM cmis:document`（この性質の問い合わせ名は `comment`）と `SELECT zz.cmis:objectId FROM
+  全部返します。bedroom で `SELECT nemaki:comment FROM cmis:document`（bedroom の型の定義では、この性質の問い合わせ名は `comment` — 型の
+  定義を読んで確かめました。`SELECT comment FROM cmis:document` も全件を返します）と `SELECT zz.cmis:objectId FROM
   cmis:document`（`zz` は FROM に無い修飾子）は、どちらも `SELECT cmis:objectId FROM cmis:document` と同じ 2,663 件を返しました。3.4.1 で直す
   予定で、直すとこれらの文は 400 になります。
 
@@ -649,16 +650,32 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
 - 性質の更新（`updateProperties`）が失敗したとき（型を読めなかった・名前が重なった・保存が拒んだ）は、その文書をキャッシュから外します。
   以前は、失敗と答えた変更がキャッシュの文書に残り、後の ACL の変更などがそれを保存しえました（3.4.1 の作業中の版を AtomPub で測りました。3.4.0 も読解では同じ形です）。外すことに
   失敗したときは、ERROR の log を出し、その失敗を元の失敗に添えます。JVM の失敗（`VirtualMachineError`）はそのまま上げ、そのときは log を
-  出しません。bulk では、ある文書の task で JVM が失敗すると、すべての文書を待ってから要求を失敗させます（以前は、その文書を結果から外して
-  200 で答えていました）。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
+  出しません。bulk では、ある文書の task で JVM が失敗すると、ほかの文書を待ってから要求を失敗させます（以前は、その文書を結果から外して
+  200 で答えていました）。要求の thread が待つ間に割り込まれたときは、残りを待たずに途中までの一覧を返します（3.4.0 から同じ — 残件 R227）。
+  要求が失敗で終わっても、ほかの文書の更新は保存されていることがあります。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
   この直しの外です（同じ形が残っています）。
 - CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します。3.4.0 では、secondary type の
   性質は型ごと黙って落ちて成功と答え、document の subtype の性質は 500 でした — 3.4.0 でそのような secondary type を付けた文書は、その型と
   値が保存されていないことがあります。型定義の updatability は空のままです。
 - `createDocumentFromSource` で性質を上書きするときも、コピーが引き継ぐ secondary type（証拠の型を除く）の性質を許します。**ただし
   性質を付けたコピーは、この版でも保存の段で 500 になります**（既知の欠陥 — 残件 R223）。
-- **既知の欠陥（3.4.0 からの後退）**: 内容（content stream）の無い文書は、チェックアウトすると取り消しも check-in もできません。check-in は
-  新しい版を作ってから 500 を返します（再試行すると版が増えます）。内容の無い文書をチェックアウトしないでください（残件 R224）。
+- 内容（content stream）の無い文書のチェックアウトは、取り消しも check-in もできるようになりました（3.4.0 からの後退を直しました — 残件 R224）。
+  3.4.0 では、check-in は新しい版を作ってから 500 を返し、PWC は残り、文書はチェックアウト中のままです（再試行すると版が増えます）。
+  取り消しも 500 です（3.4.1 の作業中の版で測りました。3.4.0 に入っていることは、コードと `git tag --contains` で辿りました）。
+- **3.4.0 で既にできた形の後始末**（上げた後に行います。コードを直しても、既にチェックアウトされた文書は、取り消すか check-in するまで
+  残ります）:
+  1. 残った PWC を探します: `SELECT cmis:objectId, cmis:name, cmis:creationDate FROM cmis:document WHERE cmis:isPrivateWorkingCopy = true`
+     （Browser binding では `searchAllVersions=true`）。
+  2. それぞれの系列の版を見ます（`cmisselector=versions`）。PWC より後に作られた版は、失敗した check-in が作った版です。
+  3. PWC を取り消します（`cancelCheckOut`）。上げた後は通ります。
+  4. 失敗した check-in が作った版を残すか消すかを決めます。内容を付けた check-in なら、その版は check-in した内容を持っています。
+     - 消すときは、その版だけを消します（`delete` に `allVersions=false`）。前の版が最新に戻ります。
+     - 残すときは、その版は Solr に索引されていません（検索に出ません）。そのフォルダを再索引してください
+       （`POST /api/v1/cmis/repositories/{repo}/search-engine/reindex/folder/{id}` — 渡したフォルダ自身は索引されません。
+       この手順は測っていません）。
+  bedroom で、3.4.1 の作業中の版が残した同じ形の PWC 5 つで 1〜4 を測りました（取り消しと版の削除はどれも 200、消した系列は前の版が最新に戻り、残した版は
+  索引されていないまま）。読解だけで測っていないこと: 3.4.0 で取り消しを試みた PWC には、消えていないのに DELETED の変更イベントが
+  記録されています。内容を付けた check-in が失敗したものは、内容の記録の行（`openBeforeWriting`）が開いたままのことがあります。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
