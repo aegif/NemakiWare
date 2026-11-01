@@ -1702,7 +1702,13 @@ public class ContentServiceImpl implements ContentService {
 		// previous getAttachment therefore downloaded the entire OLD binary, discarded it, and
 		// then overwrote it on the next line. F3 separated these two calls for exactly this: the
 		// body-opening one is for callers that read the body.
-		AttachmentNode an = contentDaoService.getAttachmentRef(repositoryId, originalPwc.getAttachmentNodeId());
+		// A PWC of a document with no content has no attachment: its id is null, which means «no content» here, and the read
+		// of it is one the DAO refuses («could not be read — NOT a finding that the document has no attachment»), so the PWC
+		// could not be given content — 500, with that untrue message (closing batch 36 review, subagent P2-1; the flow R224
+		// opened: check out a document with no content, give the PWC its content, check in). The content is created, as
+		// updateDocumentWithNewStream does for a document with none.
+		String pwcAttachmentId = originalPwc.getAttachmentNodeId();
+		AttachmentNode an = pwcAttachmentId == null ? null : contentDaoService.getAttachmentRef(repositoryId, pwcAttachmentId);
 		// E1 (W9). The PWC is the version being rewritten, so its id IS the version key.
 		jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pwcWrite =
 				recordContentState == null ? null
@@ -1710,8 +1716,13 @@ public class ContentServiceImpl implements ContentService {
 								originalPwc.getId(),
 								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.REPLACE_PWC,
 								java.time.Instant.now().toString());
-		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcContent =
-				updateAttachmentRecording(repositoryId, an, contentStream);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcContent;
+		if (pwcAttachmentId != null) {
+			pwcContent = updateAttachmentRecording(repositoryId, an, contentStream);
+		} else {
+			pwcContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			originalPwc.setAttachmentNodeId(pwcContent.attachmentId());
+		}
 		recordUpdatedContentState(repositoryId, originalPwc, pwcContent, pwcWrite);
 
 		// Update rendition contentStream
@@ -5047,23 +5058,33 @@ public class ContentServiceImpl implements ContentService {
 	public void appendAttachment(CallContext callContext, String repositoryId, Holder<String> objectId,
 			Holder<String> changeToken, ContentStream contentStream, boolean isLastChunk, ExtensionsData extension) {
 		Document document = contentDaoService.getDocument(repositoryId, objectId.getValue());
-		AttachmentNode attachment = getAttachment(repositoryId, document.getAttachmentNodeId());
+		// A document with no content has no attachment to append to: its id is null, which means «no content» here, and the
+		// read of it is one the DAO refuses with «could not be read», so the append answered 500 with that untrue message
+		// (closing batch 36 review, subagent P2-1). The appended stream becomes the content, as CMIS has it for a document
+		// without one.
+		boolean noContent = document.getAttachmentNodeId() == null;
+		AttachmentNode attachment = noContent ? null : getAttachment(repositoryId, document.getAttachmentNodeId());
 
-		InputStream is = attachment.getInputStream();
-
-		// Append
-		SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
-		// appendStream will be used for a huge file, so avoid reading stream
-		long existingLength = attachment.getLength();
-		long newLength = contentStream.getLength();
-		long totalLength;
-		if (existingLength < 0 || newLength < 0) {
-			// If either length is unknown (-1), the total is also unknown
-			totalLength = -1;
+		ContentStream cs;
+		if (noContent) {
+			cs = contentStream;
 		} else {
-			totalLength = existingLength + newLength;
+			InputStream is = attachment.getInputStream();
+
+			// Append
+			SequenceInputStream sis = new SequenceInputStream(is, contentStream.getStream());
+			// appendStream will be used for a huge file, so avoid reading stream
+			long existingLength = attachment.getLength();
+			long newLength = contentStream.getLength();
+			long totalLength;
+			if (existingLength < 0 || newLength < 0) {
+				// If either length is unknown (-1), the total is also unknown
+				totalLength = -1;
+			} else {
+				totalLength = existingLength + newLength;
+			}
+			cs = new ContentStreamImpl("content", BigInteger.valueOf(totalLength), attachment.getMimeType(), sis);
 		}
-		ContentStream cs = new ContentStreamImpl("content", BigInteger.valueOf(totalLength), attachment.getMimeType(), sis);
 		// E1 (W7). ONE statement per call, and it says nothing about which call is the last:
 		// this product does not use isLastChunk, so it does not know. The digest covers the
 		// whole concatenation that went past on THIS call — existing bytes plus the appended
@@ -5074,8 +5095,12 @@ public class ContentServiceImpl implements ContentService {
 								document.getId(),
 								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.APPEND,
 								java.time.Instant.now().toString());
-		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written appendContent =
-				updateAttachmentRecording(repositoryId, attachment, cs);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written appendContent = noContent
+				? createAttachmentAtomicRecording(callContext, repositoryId, cs)
+				: updateAttachmentRecording(repositoryId, attachment, cs);
+		if (noContent) {
+			document.setAttachmentNodeId(appendContent.attachmentId());
+		}
 		recordUpdatedContentState(repositoryId, document, appendContent, appendWrite);
 
 		// Note: No separate metadata update needed here.
@@ -5092,6 +5117,9 @@ public class ContentServiceImpl implements ContentService {
 		// appendContentStream would append the same chunk twice. Reading the current document and
 		// adding only the token also preserves whatever property change landed concurrently.
 		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+		if (noContent) {
+			freshDocument.setAttachmentNodeId(appendContent.attachmentId());
+		}
 		String newChangeToken = String.valueOf(System.currentTimeMillis());
 		freshDocument.setChangeToken(newChangeToken);
 
