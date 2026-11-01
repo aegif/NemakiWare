@@ -651,7 +651,8 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   以前は、失敗と答えた変更がキャッシュの文書に残り、後の ACL の変更などがそれを保存しえました（3.4.1 の作業中の版を AtomPub で測りました。3.4.0 も読解では同じ形です）。外すことに
   失敗したときは、ERROR の log を出し、その失敗を元の失敗に添えます。JVM の失敗（`VirtualMachineError`）はそのまま上げ、そのときは log を
   出しません。bulk では、ある文書の task で JVM が失敗すると、ほかの文書を待ってから要求を失敗させます（以前は、その文書を結果から外して
-  200 で答えていました）。要求の thread が待つ間に割り込まれたときは、残りを待たずに途中までの一覧を返します（3.4.0 から同じ — 残件 R227）。
+  200 で答えていました）。要求の thread が待つ間に割り込まれたときは、残りを待たずに答えます — それまでに JVM の失敗を見ていれば要求を失敗させ、見ていなければ
+  途中までの一覧を返します（3.4.0 から同じ — 残件 R227）。
   要求が失敗で終わっても、ほかの文書の更新は保存されていることがあります。content stream の更新・ポリシーの適用など、ほかの書き込みの失敗は
   この直しの外です（同じ形が残っています）。
 - CMIS の createType で updatability を付けずに作った性質は、作成・更新で READWRITE として保存します。3.4.0 では、secondary type の
@@ -664,18 +665,25 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   取り消しも 500 です（3.4.1 の作業中の版で測りました。3.4.0 に入っていることは、コードと `git tag --contains` で辿りました）。
 - **3.4.0 で既にできた形の後始末**（上げた後に行います。コードを直しても、既にチェックアウトされた文書は、取り消すか check-in するまで
   残ります）:
-  1. 残った PWC を探します: `SELECT cmis:objectId, cmis:name, cmis:creationDate FROM cmis:document WHERE cmis:isPrivateWorkingCopy = true`
-     （Browser binding では `searchAllVersions=true`）。
+  1. 残った PWC を店から列挙します: Browser binding の `cmisselector=checkedout`（REST v1 では
+     `GET /api/v1/cmis/repositories/{repo}/documents/checkedout` — こちらは測っていません）。どちらも PWC の view を読み、読めなければ失敗します。
+     CMIS の問い合わせ（`WHERE cmis:isPrivateWorkingCopy = true`）は Solr を読むので、索引に無い PWC を返しません — チェックアウトの時の
+     索引の失敗は握られ、全再索引は最新版しか辿りません。bedroom では、店の一覧の 59 件に対して問い合わせは 53 件でした（2026-11-02）。
   2. それぞれの系列の版を見ます（`cmisselector=versions`）。PWC より後に作られた版は、失敗した check-in が作った版です。
   3. PWC を取り消します（`cancelCheckOut`）。上げた後は通ります。
   4. 失敗した check-in が作った版を残すか消すかを決めます。内容を付けた check-in なら、その版は check-in した内容を持っています。
-     - 消すときは、その版だけを消します（`delete` に `allVersions=false`）。前の版が最新に戻ります。
-     - 残すときは、その版は Solr に索引されていません（検索に出ません）。そのフォルダを再索引してください
-       （`POST /api/v1/cmis/repositories/{repo}/search-engine/reindex/folder/{id}` — 渡したフォルダ自身は索引されません。
-       この手順は測っていません）。
-  bedroom で、3.4.1 の作業中の版が残した同じ形の PWC 5 つで 1〜4 を測りました（取り消しと版の削除はどれも 200、消した系列は前の版が最新に戻り、残した版は
-  索引されていないまま）。読解だけで測っていないこと: 3.4.0 で取り消しを試みた PWC には、消えていないのに DELETED の変更イベントが
-  記録されています。内容を付けた check-in が失敗したものは、内容の記録の行（`openBeforeWriting`）が開いたままのことがあります。
+     - 消すときは、その版だけを消します（`delete` に `allVersions=false`）。前の版が最新に戻ります。再試行で余分な版が複数あるときは、
+       最新でない版だけは消せないので（409）、新しい版から 1 つずつ消します。最後の 1 つを消すと、失敗する前の版が最新に戻ります。
+     - 残すときは、その版は Solr に索引されていません（検索に出ません）。その文書を再索引してください
+       （`POST /api/v1/cmis/repositories/{repo}/search-engine/reindex/document/{objectId}` — この手順は測っていません）。
+  bedroom で、3.4.1 の作業中の版が残した同じ形の PWC 5 つで、手順 2〜4（版の見分け、取り消しと版の削除はどれも 200、消した系列は前の版が
+  最新に戻り、残した版は索引されていないまま）と、手順 1 の店からの列挙（上の件数）を測りました。版が複数ある形と再索引は測っていません。
+  読解だけで測っていないこと: 3.4.0 で取り消しや check-in を試みた PWC には、消えていないのに DELETED の変更イベントが記録されています。
+  失敗した check-in が作った版には CREATED の、その前の版には UPDATED の変更イベントがありません。check-in に渡した policies は当たって
+  いません。内容を付けた check-in が失敗したものは、内容の記録の行（`openBeforeWriting`）が開いたままのことがあります。
+- 内容の無い文書の PWC に内容を入れる（`setContentStream`）ことと、内容の無い文書への追記（`appendContentStream`）ができるように
+  なりました。どちらも 500 で、「読めなかった — 内容が無いという答えではない」と事実と違うことを言っていました（3.3.1 からの形 — 読解）。
+  追記した内容は、その文書の内容になります。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
