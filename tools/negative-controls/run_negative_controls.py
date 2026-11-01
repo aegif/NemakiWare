@@ -29183,6 +29183,16 @@ CONTROLS = [
         test='ABulkUpdateDoesNotAnswerTheJvmFailingAsDoneTest',
         expect_fail=['theJvmFailingInOneTaskGoesUp'],
     ),
+    dict(
+        id='AJ6',
+        what="cancelCheckOut deletes the PWC's attachment by its id when the PWC has none, the DAO refuses the null id, and a check-out of a document with no content can be neither cancelled nor checked in — the check-in answers 500 after it has made the version (R224, a 3.4.0 regression)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/businesslogic/impl/ContentServiceImpl.java',
+        find='\tif (pwc.getAttachmentNodeId() != null) {\n',
+        replace='\tif (true) {\n',
+        test='ACheckOutOfAContentlessDocumentCanEndTest',
+        expect_fail=['aContentlessCheckOutCanBeCancelled', 'aContentlessCheckOutCanBeCheckedIn'],
+    ),
 ]
 
 

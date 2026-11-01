@@ -52,7 +52,7 @@ class ABulkUpdateDoesNotAnswerTheJvmFailingAsDoneTest {
     }
 
     @Test
-    @DisplayName("an OutOfMemoryError in one object's task goes up, after the other object is answered as done")
+    @DisplayName("an OutOfMemoryError in one object's task goes up")
     void theJvmFailingInOneTaskGoesUp() {
         ContentService contentService = mock(ContentService.class);
         when(contentService.getContent(REPO, "fine")).thenReturn(document("fine"));

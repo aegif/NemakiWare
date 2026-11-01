@@ -2018,8 +2018,14 @@ public class ContentServiceImpl implements ContentService {
 
 		writeChangeEvent(callContext, repositoryId, pwc, ChangeType.DELETED);
 
-	// Delete attachment & document itself(without archiving)
-	contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
+	// Delete attachment & document itself(without archiving). A PWC with no content has no attachment to delete: the delete
+	// of a null id is a read the DAO refuses (3.4's fail-closed reads — «could not read», not «not there»), so a check-out of
+	// a content-less document could be neither checked in nor cancelled, and a check-in made its version and then answered
+	// 500 (R224 — a 3.4.0 regression, measured on bedroom). The guard is here, where null means «no content»; the DAO keeps
+	// refusing a null id, which elsewhere would be a read that failed.
+	if (pwc.getAttachmentNodeId() != null) {
+		contentDaoService.delete(repositoryId, pwc.getAttachmentNodeId());
+	}
 	contentDaoService.delete(repositoryId, pwc.getId());
 
 	// Ensure the deleted PWC cannot be served from ANY cache (content/ACL/data).
