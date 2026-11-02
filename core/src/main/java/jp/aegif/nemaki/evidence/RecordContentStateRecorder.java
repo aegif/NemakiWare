@@ -265,6 +265,26 @@ public class RecordContentStateRecorder {
     }
 
     /**
+     * Whether the journal holds a statement for a version: true or false, or null when that is not known — no journal, an
+     * inactive one, or a read that failed. Read for the kind of the statement a version gets when it had no content at the
+     * write: CAPTURED says the content was first stored for this version, UPDATED that its content was replaced in place,
+     * and neither is true until this is known (closing batch 37 review, subagent P3-1). The journal is the evidence database
+     * every replica writes, so false is «none recorded there».
+     */
+    public Boolean holdsAStatementFor(String repositoryId, String versionObjectId) {
+        if (journal == null || !journal.isActive() || versionObjectId == null) {
+            return null;
+        }
+        try {
+            return journal.latestRecorded(repositoryId, versionObjectId) != null;
+        } catch (RuntimeException e) {
+            logger.warn("Whether a statement is recorded for {} could not be read; no kind is known for content it is "
+                    + "given now.", versionObjectId, e);
+            return null;
+        }
+    }
+
+    /**
      * Records that {@code transition} happened to the version {@code pending} was opened for,
      * with the prior digest copied from the ledger, and closes the row.
      *

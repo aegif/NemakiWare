@@ -1717,13 +1717,16 @@ public class ContentServiceImpl implements ContentService {
 								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.REPLACE_PWC,
 								java.time.Instant.now().toString());
 		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcContent;
+		String createdAttachmentId = null;
 		if (pwcAttachmentId != null) {
 			pwcContent = updateAttachmentRecording(repositoryId, an, contentStream);
+			recordUpdatedContentState(repositoryId, originalPwc, pwcContent, pwcWrite);
 		} else {
+			// Recorded once the PWC is stored pointing at it — see recordContentOnAVersionThatHadNone.
 			pwcContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			createdAttachmentId = pwcContent.attachmentId();
 			originalPwc.setAttachmentNodeId(pwcContent.attachmentId());
 		}
-		recordUpdatedContentState(repositoryId, originalPwc, pwcContent, pwcWrite);
 
 		// Update rendition contentStream
 		if (isPreviewEnabled()) {
@@ -1781,7 +1784,17 @@ public class ContentServiceImpl implements ContentService {
 		setSignature(callContext, originalPwc);
 
 		// Persist document metadata changes (modified timestamp, rendition IDs) to CouchDB
-		contentDaoService.update(repositoryId, originalPwc);
+		try {
+			contentDaoService.update(repositoryId, originalPwc);
+		} catch (RuntimeException failed) {
+			if (createdAttachmentId != null) {
+				takeBackContentAVersionWasNotStoredWith(repositoryId, originalPwc, createdAttachmentId, pwcWrite, failed);
+			}
+			throw failed;
+		}
+		if (createdAttachmentId != null) {
+			recordContentOnAVersionThatHadNone(repositoryId, originalPwc, pwcContent, pwcWrite);
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, originalPwc, ChangeType.UPDATED);
@@ -1833,17 +1846,20 @@ public class ContentServiceImpl implements ContentService {
 								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.UPDATE_IN_PLACE,
 								java.time.Instant.now().toString());
 		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written inPlaceContent;
+		String createdAttachmentId = null;
 		if (original.getAttachmentNodeId() != null) {
 			// Case 1: Document already has attachment - update it
 			AttachmentNode ref = contentDaoService.getAttachmentRef(repositoryId, original.getAttachmentNodeId());
 			inPlaceContent = updateAttachmentRecording(repositoryId, ref, contentStream);
+			recordUpdatedContentState(repositoryId, original, inPlaceContent, inPlaceWrite);
 		} else {
-			// Case 2: Document created without content - create new attachment
+			// Case 2: Document created without content - create new attachment. Recorded once the document is stored
+			// pointing at it — see recordContentOnAVersionThatHadNone.
 			inPlaceContent = createAttachmentAtomicRecording(callContext, repositoryId, contentStream);
+			createdAttachmentId = inPlaceContent.attachmentId();
 			original.setAttachmentNodeId(inPlaceContent.attachmentId());
 			log.debug("Created new attachment for document without content: {}", inPlaceContent.attachmentId());
 		}
-		recordUpdatedContentState(repositoryId, original, inPlaceContent, inPlaceWrite);
 
 		// Update rendition contentStream if preview is enabled
 		if (isPreviewEnabled()) {
@@ -1881,7 +1897,18 @@ public class ContentServiceImpl implements ContentService {
 		original.setChangeToken(newChangeToken);
 
 		// Update the document in CouchDB
-		Document result = contentDaoService.update(repositoryId, original);
+		Document result;
+		try {
+			result = contentDaoService.update(repositoryId, original);
+		} catch (RuntimeException failed) {
+			if (createdAttachmentId != null) {
+				takeBackContentAVersionWasNotStoredWith(repositoryId, original, createdAttachmentId, inPlaceWrite, failed);
+			}
+			throw failed;
+		}
+		if (createdAttachmentId != null) {
+			recordContentOnAVersionThatHadNone(repositoryId, original, inPlaceContent, inPlaceWrite);
+		}
 
 		// Record the change event
 		writeChangeEvent(callContext, repositoryId, result, ChangeType.UPDATED);
@@ -5095,13 +5122,17 @@ public class ContentServiceImpl implements ContentService {
 								document.getId(),
 								jp.aegif.nemaki.evidence.ContentWriteJournal.WriteKind.APPEND,
 								java.time.Instant.now().toString());
-		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written appendContent = noContent
-				? createAttachmentAtomicRecording(callContext, repositoryId, cs)
-				: updateAttachmentRecording(repositoryId, attachment, cs);
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written appendContent;
 		if (noContent) {
-			document.setAttachmentNodeId(appendContent.attachmentId());
+			// Recorded once the document is stored pointing at it — see recordContentOnAVersionThatHadNone. The id is not put
+			// on `document` here: the read below returns the cached instance, the same one, and would take this request's own
+			// id for content another request gave the document (measured on nb33 — every append to a document with no content
+			// answered 409).
+			appendContent = createAttachmentAtomicRecording(callContext, repositoryId, cs);
+		} else {
+			appendContent = updateAttachmentRecording(repositoryId, attachment, cs);
+			recordUpdatedContentState(repositoryId, document, appendContent, appendWrite);
 		}
-		recordUpdatedContentState(repositoryId, document, appendContent, appendWrite);
 
 		// Note: No separate metadata update needed here.
 		// CouchDB _attachments metadata automatically tracks the correct size after binary upload.
@@ -5116,19 +5147,38 @@ public class ContentServiceImpl implements ContentService {
 		// revision from the top of the method, CouchDB would answer 409, and a client retrying
 		// appendContentStream would append the same chunk twice. Reading the current document and
 		// adding only the token also preserves whatever property change landed concurrently.
-		Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
-		if (noContent) {
-			freshDocument.setAttachmentNodeId(appendContent.attachmentId());
-		}
-		String newChangeToken = String.valueOf(System.currentTimeMillis());
-		freshDocument.setChangeToken(newChangeToken);
+		Document updatedDocument;
+		try {
+			Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
+			if (noContent) {
+				// Another request gave the document its content while this one wrote its own: storing this one's id over
+				// it would lose the other's bytes and leave them unreferenced, both answered as done (closing batch 37
+				// review, subagent P3-3 — a replica's lock is its own).
+				if (freshDocument.getAttachmentNodeId() != null) {
+					throw new org.apache.chemistry.opencmis.commons.exceptions.CmisUpdateConflictException("the document " + objectId.getValue() + " was given content by "
+							+ "another request while this append wrote its own; append again");
+				}
+				freshDocument.setAttachmentNodeId(appendContent.attachmentId());
+			}
+			String newChangeToken = String.valueOf(System.currentTimeMillis());
+			freshDocument.setChangeToken(newChangeToken);
 
-		// The DAO's update returns the written object with its new revision — it converts the
-		// model it just wrote (ContentDaoServiceImpl:2161-2166), the same return
-		// deleteContentStream already uses for its holder, its Solr index and its change event.
-		// Reading the document back afterwards was a third GET of a document this method had
-		// itself just written. Ledger V4.
-		Document updatedDocument = contentDaoService.update(repositoryId, freshDocument);
+			// The DAO's update returns the written object with its new revision — it converts the
+			// model it just wrote (ContentDaoServiceImpl:2161-2166), the same return
+			// deleteContentStream already uses for its holder, its Solr index and its change event.
+			// Reading the document back afterwards was a third GET of a document this method had
+			// itself just written. Ledger V4.
+			updatedDocument = contentDaoService.update(repositoryId, freshDocument);
+		} catch (RuntimeException failed) {
+			if (noContent) {
+				takeBackContentAVersionWasNotStoredWith(repositoryId, document, appendContent.attachmentId(), appendWrite,
+						failed);
+			}
+			throw failed;
+		}
+		if (noContent) {
+			recordContentOnAVersionThatHadNone(repositoryId, updatedDocument, appendContent, appendWrite);
+		}
 
 		// Update holders with new change token and object ID
 		if (changeToken != null) {
@@ -5801,6 +5851,54 @@ public class ContentServiceImpl implements ContentService {
 			// Including the statement's own validation. A version key or a digest this class
 			// cannot produce is a reason to record nothing, not a reason to fail the create.
 			log.warn("E1: no content statement was recorded for {}.", created.getId(), e);
+		}
+	}
+
+	/**
+	 * Records the statement for content a version got when it had none — after the version is stored pointing at it, so the
+	 * statement names bytes the version has (closing batch 37 review, Codex P2 and subagent P3-2: the row was closed before
+	 * the version was stored, and a failed store left a statement for content nothing pointed at). The kind is read from the
+	 * journal: CAPTURED when it holds no statement for the version, UPDATED when it holds one — content a
+	 * deleteContentStream removed is superseded — and no statement, the row left open, when that cannot be read
+	 * (subagent P3-1: UPDATED, «replaced in place», is untrue of a version that had nothing to replace).
+	 */
+	private void recordContentOnAVersionThatHadNone(String repositoryId, Document version,
+			jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written written,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending) {
+		if (recordContentState == null || version == null) {
+			return;
+		}
+		Boolean held = recordContentState.holdsAStatementFor(repositoryId, version.getId());
+		if (held == null) {
+			log.warn("E1: whether content was recorded for {} before could not be read, so no kind is known for the "
+					+ "content it was given and no statement was recorded. The journal row stays open.", version.getId());
+			return;
+		}
+		recordContentState(repositoryId, version, written, pending, held
+				? jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.UPDATED
+				: jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED);
+	}
+
+	/**
+	 * Takes back content a write created for a version that had none, when the version could not be stored pointing at it:
+	 * the version is left with none, the content is deleted, and the journal row is abandoned — the write verifiably did not
+	 * happen. A delete that fails is added to the write's failure and leaves the row open, listed as unresolved (closing
+	 * batch 37 review, Codex P2).
+	 */
+	private void takeBackContentAVersionWasNotStoredWith(String repositoryId, Document version, String createdAttachmentId,
+			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending, RuntimeException failed) {
+		version.setAttachmentNodeId(null);
+		try {
+			contentDaoService.delete(repositoryId, createdAttachmentId);
+		} catch (RuntimeException deleting) {
+			failed.addSuppressed(deleting);
+			log.error("The content {} written for {} could not be deleted after the version failed to be stored; it is "
+					+ "left unreferenced and its journal row stays open.", createdAttachmentId, version.getId());
+			return;
+		}
+		if (recordContentState != null && pending != null) {
+			recordContentState.abandon(pending, "the version was not stored pointing at the content written for it, which "
+					+ "was deleted");
 		}
 	}
 

@@ -474,8 +474,15 @@ class E1LeavesNoSilentGapTest {
                 .replaceAll("(?m)//.*$", "")
                 .replaceAll("(?s)/\\*.*?\\*/", "");
 
-        assertTrue(text.contains("CommitmentKind.UPDATED"),
-                "no path records an in-place rewrite as UPDATED any more, so replacing a "
+        // The UPDATED recorder's own body, not the file: since closing batch 38 the recorder for content a version had none
+        // of names UPDATED too (for a version whose recorded content was removed), and a file-wide search was satisfied by
+        // it with this recorder turned to CAPTURED — the control HU3 stayed green.
+        int start = text.indexOf("private void recordUpdatedContentState(");
+        HarnessBroken.unless(start >= 0, "recordUpdatedContentState is not in ContentServiceImpl");
+        int end = text.indexOf("\n\t}\n", start);
+        HarnessBroken.unless(end > start, "the end of recordUpdatedContentState was not found");
+        assertTrue(text.substring(start, end).contains("CommitmentKind.UPDATED"),
+                "recordUpdatedContentState records an in-place rewrite as other than UPDATED, so replacing a "
                         + "version's content now reads as those bytes having been its first");
         // The three in-place paths (W3, W7, W9) all go through recordUpdatedContentState.
         int updatedCalls = text.split(Pattern.quote("recordUpdatedContentState(repositoryId"), -1)
