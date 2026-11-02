@@ -1728,67 +1728,72 @@ public class ContentServiceImpl implements ContentService {
 			originalPwc.setAttachmentNodeId(pwcContent.attachmentId());
 		}
 
-		// Update rendition contentStream
-		if (isPreviewEnabled()) {
-			if (renditionManager.checkConvertible(contentStream.getMimeType())) {
-				List<String> renditionIds = originalPwc.getRenditionIds();
-
-				// Remove existing preview renditions
-				if (CollectionUtils.isNotEmpty(renditionIds)) {
-					List<String> removedRenditionIds = new ArrayList<String>();
-					for (String renditionId : renditionIds) {
-						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
-							removedRenditionIds.add(renditionId);
-						}
-					}
-					renditionIds.removeAll(removedRenditionIds);
-					originalPwc.setRenditionIds(renditionIds);
-				}
-
-				// CRITICAL FIX: Read fresh content from CouchDB into a byte array for preview generation.
-				// Do NOT reuse the cached AttachmentNode's InputStream, as consuming it would
-				// corrupt the cache and cause subsequent reads (e.g., copyAttachment during checkIn)
-				// to get an empty/consumed stream, resulting in content reversion.
-				try {
-					AttachmentNode freshAn = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
-					if (freshAn != null && freshAn.getInputStream() != null) {
-						// Read entire stream into byte array so we don't consume the cached stream
-						byte[] contentBytes;
-						try (InputStream is = freshAn.getInputStream()) {
-							java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-							byte[] buffer = new byte[8192];
-							int bytesRead;
-							while ((bytesRead = is.read(buffer)) != -1) {
-								baos.write(buffer, 0, bytesRead);
-							}
-							contentBytes = baos.toByteArray();
-						}
-						ContentStream previewCS = new ContentStreamImpl(
-								contentStream.getFileName(),
-								BigInteger.valueOf(contentBytes.length),
-								contentStream.getMimeType(),
-								new java.io.ByteArrayInputStream(contentBytes));
-						createPreview(callContext, repositoryId, previewCS, originalPwc);
-					}
-				} catch (Exception e) {
-					log.warn("replacePwc: Failed to generate preview rendition: " + e.getMessage());
-				}
-
-				// Invalidate attachment cache after preview generation consumed the stream
-				nemakiCachePool.get(repositoryId).getAttachmentCache().remove(originalPwc.getAttachmentNodeId());
-			}
-		}
-
-		// Modify signature of pwc
-		setSignature(callContext, originalPwc);
-
-		// Persist document metadata changes (modified timestamp, rendition IDs) to CouchDB
+		// Everything from here to the store can fail with the content created and its id on the PWC — the PWC this method was
+		// given, which may be the cached instance (closing batch 38 review, Codex P2: a failure before the store left both).
+		boolean storeAsked = false;
 		try {
+			// Update rendition contentStream
+			if (isPreviewEnabled()) {
+				if (renditionManager.checkConvertible(contentStream.getMimeType())) {
+					List<String> renditionIds = originalPwc.getRenditionIds();
+
+					// Remove existing preview renditions
+					if (CollectionUtils.isNotEmpty(renditionIds)) {
+						List<String> removedRenditionIds = new ArrayList<String>();
+						for (String renditionId : renditionIds) {
+							Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
+							if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
+								removedRenditionIds.add(renditionId);
+							}
+						}
+						renditionIds.removeAll(removedRenditionIds);
+						originalPwc.setRenditionIds(renditionIds);
+					}
+
+					// CRITICAL FIX: Read fresh content from CouchDB into a byte array for preview generation.
+					// Do NOT reuse the cached AttachmentNode's InputStream, as consuming it would
+					// corrupt the cache and cause subsequent reads (e.g., copyAttachment during checkIn)
+					// to get an empty/consumed stream, resulting in content reversion.
+					try {
+						AttachmentNode freshAn = contentDaoService.getAttachment(repositoryId, originalPwc.getAttachmentNodeId());
+						if (freshAn != null && freshAn.getInputStream() != null) {
+							// Read entire stream into byte array so we don't consume the cached stream
+							byte[] contentBytes;
+							try (InputStream is = freshAn.getInputStream()) {
+								java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+								byte[] buffer = new byte[8192];
+								int bytesRead;
+								while ((bytesRead = is.read(buffer)) != -1) {
+									baos.write(buffer, 0, bytesRead);
+								}
+								contentBytes = baos.toByteArray();
+							}
+							ContentStream previewCS = new ContentStreamImpl(
+									contentStream.getFileName(),
+									BigInteger.valueOf(contentBytes.length),
+									contentStream.getMimeType(),
+									new java.io.ByteArrayInputStream(contentBytes));
+							createPreview(callContext, repositoryId, previewCS, originalPwc);
+						}
+					} catch (Exception e) {
+						log.warn("replacePwc: Failed to generate preview rendition: " + e.getMessage());
+					}
+
+					// Invalidate attachment cache after preview generation consumed the stream
+					nemakiCachePool.get(repositoryId).getAttachmentCache().remove(originalPwc.getAttachmentNodeId());
+				}
+			}
+
+			// Modify signature of pwc
+			setSignature(callContext, originalPwc);
+
+			// Persist document metadata changes (modified timestamp, rendition IDs) to CouchDB
+			storeAsked = true;
 			contentDaoService.update(repositoryId, originalPwc);
 		} catch (RuntimeException failed) {
 			if (createdAttachmentId != null) {
-				takeBackContentAVersionWasNotStoredWith(repositoryId, originalPwc, createdAttachmentId, pwcWrite, failed);
+				answerAFailedStoreOfFirstContent(repositoryId, originalPwc, originalPwc, createdAttachmentId, pwcWrite, failed,
+						storeAsked);
 			}
 			throw failed;
 		}
@@ -1861,48 +1866,52 @@ public class ContentServiceImpl implements ContentService {
 			log.debug("Created new attachment for document without content: {}", inPlaceContent.attachmentId());
 		}
 
-		// Update rendition contentStream if preview is enabled
-		if (isPreviewEnabled()) {
-			// Fetched HERE — after the write — so the stream carries the new content.
-			AttachmentNode an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
-			ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
-					contentStream.getMimeType(), an.getInputStream());
+		// From here to the store, a failure leaves the content created and its id on the document — see replacePwc.
+		Document result;
+		boolean storeAsked = false;
+		try {
+			// Update rendition contentStream if preview is enabled
+			if (isPreviewEnabled()) {
+				// Fetched HERE — after the write — so the stream carries the new content.
+				AttachmentNode an = contentDaoService.getAttachment(repositoryId, original.getAttachmentNodeId());
+				ContentStream previewCS = new ContentStreamImpl(contentStream.getFileName(), contentStream.getBigLength(),
+						contentStream.getMimeType(), an.getInputStream());
 
-			if (renditionManager.checkConvertible(previewCS.getMimeType())) {
-				List<String> renditionIds = original.getRenditionIds();
-				if (CollectionUtils.isNotEmpty(renditionIds)) {
-					List<String> removedRenditionIds = new ArrayList<String>();
+				if (renditionManager.checkConvertible(previewCS.getMimeType())) {
+					List<String> renditionIds = original.getRenditionIds();
+					if (CollectionUtils.isNotEmpty(renditionIds)) {
+						List<String> removedRenditionIds = new ArrayList<String>();
 
-					// Create preview
-					for (String renditionId : renditionIds) {
-						Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
-						if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
-							removedRenditionIds.add(renditionId);
-							createPreview(callContext, repositoryId, previewCS, original);
+						// Create preview
+						for (String renditionId : renditionIds) {
+							Rendition rd = contentDaoService.getRendition(repositoryId, renditionId);
+							if (RenditionKind.CMIS_PREVIEW.value().equals(rd.getKind())) {
+								removedRenditionIds.add(renditionId);
+								createPreview(callContext, repositoryId, previewCS, original);
+							}
 						}
-					}
 
-					// Update reference to preview ID
-					renditionIds.removeAll(removedRenditionIds);
-					original.setRenditionIds(renditionIds);
+						// Update reference to preview ID
+						renditionIds.removeAll(removedRenditionIds);
+						original.setRenditionIds(renditionIds);
+					}
 				}
 			}
-		}
 
-		// Modify signature
-		setSignature(callContext, original);
+			// Modify signature
+			setSignature(callContext, original);
 
-		// CRITICAL TCK FIX: Update change token for optimistic locking
-		String newChangeToken = String.valueOf(System.currentTimeMillis());
-		original.setChangeToken(newChangeToken);
+			// CRITICAL TCK FIX: Update change token for optimistic locking
+			String newChangeToken = String.valueOf(System.currentTimeMillis());
+			original.setChangeToken(newChangeToken);
 
-		// Update the document in CouchDB
-		Document result;
-		try {
+			// Update the document in CouchDB
+			storeAsked = true;
 			result = contentDaoService.update(repositoryId, original);
 		} catch (RuntimeException failed) {
 			if (createdAttachmentId != null) {
-				takeBackContentAVersionWasNotStoredWith(repositoryId, original, createdAttachmentId, inPlaceWrite, failed);
+				answerAFailedStoreOfFirstContent(repositoryId, original, original, createdAttachmentId, inPlaceWrite, failed,
+						storeAsked);
 			}
 			throw failed;
 		}
@@ -5148,6 +5157,10 @@ public class ContentServiceImpl implements ContentService {
 		// appendContentStream would append the same chunk twice. Reading the current document and
 		// adding only the token also preserves whatever property change landed concurrently.
 		Document updatedDocument;
+		// The instance the id is put on is the one re-read here, not `document` (closing batch 38 review, subagent P3-1: the
+		// take-back reset `document`, and a re-read that answered another instance kept the id of content it then deleted).
+		Document givenTheContent = null;
+		boolean storeAsked = false;
 		try {
 			Document freshDocument = contentDaoService.getDocument(repositoryId, objectId.getValue());
 			if (noContent) {
@@ -5159,6 +5172,7 @@ public class ContentServiceImpl implements ContentService {
 							+ "another request while this append wrote its own; append again");
 				}
 				freshDocument.setAttachmentNodeId(appendContent.attachmentId());
+				givenTheContent = freshDocument;
 			}
 			String newChangeToken = String.valueOf(System.currentTimeMillis());
 			freshDocument.setChangeToken(newChangeToken);
@@ -5168,11 +5182,12 @@ public class ContentServiceImpl implements ContentService {
 			// deleteContentStream already uses for its holder, its Solr index and its change event.
 			// Reading the document back afterwards was a third GET of a document this method had
 			// itself just written. Ledger V4.
+			storeAsked = true;
 			updatedDocument = contentDaoService.update(repositoryId, freshDocument);
 		} catch (RuntimeException failed) {
 			if (noContent) {
-				takeBackContentAVersionWasNotStoredWith(repositoryId, document, appendContent.attachmentId(), appendWrite,
-						failed);
+				answerAFailedStoreOfFirstContent(repositoryId, document, givenTheContent, appendContent.attachmentId(),
+						appendWrite, failed, storeAsked);
 			}
 			throw failed;
 		}
@@ -5870,8 +5885,10 @@ public class ContentServiceImpl implements ContentService {
 		}
 		Boolean held = recordContentState.holdsAStatementFor(repositoryId, version.getId());
 		if (held == null) {
-			log.warn("E1: whether content was recorded for {} before could not be read, so no kind is known for the "
-					+ "content it was given and no statement was recorded. The journal row stays open.", version.getId());
+			// Counted, and the row — when there is one — left open: this arm said a row stayed open when the journal could not
+			// open one, and counted nothing (closing batch 38 review, subagent P3-4).
+			recordContentState.leaveUnrecorded(pending, "whether content was recorded for the version before could not be read, "
+					+ "so no kind is known for the content it was given");
 			return;
 		}
 		recordContentState(repositoryId, version, written, pending, held
@@ -5880,14 +5897,57 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	/**
-	 * Takes back content a write created for a version that had none, when the version could not be stored pointing at it:
-	 * the version is left with none, the content is deleted, and the journal row is abandoned — the write verifiably did not
-	 * happen. A delete that fails is added to the write's failure and leaves the row open, listed as unresolved (closing
-	 * batch 37 review, Codex P2).
+	 * Answers a failure between creating content for a version that had none and storing the version pointing at it. Only a
+	 * failure that says the version was NOT stored takes the content back — the store was never asked, or it refused the
+	 * revision (CouchDB's 409; the update is sent with the revision the version was read at). Any other failure of the store
+	 * says nothing about whether it holds the version pointing at the content: a write that landed and whose answer was lost
+	 * is one, and so is a cache that failed after the store took it. The content is then kept — deleting it would leave a
+	 * stored version pointing at bytes that are gone — and no statement is recorded, the gap counted and its row, when there
+	 * is one, left open (closing batch 38 review, both reviewers independently: every failure was read as «not stored»).
+	 * Either way the version is taken out of the content cache: this write changed the instance it was read as.
+	 *
+	 * @param version the version, by whose id the cache is told to forget it
+	 * @param changed the instance the content's id was put on, or null when it was not put on one
 	 */
-	private void takeBackContentAVersionWasNotStoredWith(String repositoryId, Document version, String createdAttachmentId,
-			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending, RuntimeException failed) {
-		version.setAttachmentNodeId(null);
+	private void answerAFailedStoreOfFirstContent(String repositoryId, Document version, Document changed,
+			String createdAttachmentId, jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			RuntimeException failed, boolean storeAsked) {
+		forgetTheCachedObject(repositoryId, version, failed);
+		if (storeAsked && !theStoreRefusedTheRevision(failed)) {
+			log.error("The store of {} failed after it was asked to point the version at the content {} written for it. "
+					+ "Whether it holds that is not known, so the content is kept.", version.getId(), createdAttachmentId);
+			if (recordContentState != null) {
+				recordContentState.leaveUnrecorded(pending, "whether the version was stored pointing at the content written "
+						+ "for it is not known");
+			}
+			return;
+		}
+		takeBackContentAVersionWasNotStoredWith(repositoryId, version, changed, createdAttachmentId, pending, failed);
+	}
+
+	/** A CouchDB revision conflict anywhere in the chain, by type — the one answer that says the update was not stored. */
+	private static boolean theStoreRefusedTheRevision(Throwable failed) {
+		java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (Throwable t = failed; t != null && seen.add(t); t = t.getCause()) {
+			if (t instanceof com.ibm.cloud.sdk.core.service.exception.ConflictException) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Takes back content a write created for a version that had none, when the version was verifiably not stored pointing at
+	 * it: the instance the id was put on is left with none, the content is deleted, and the journal row is abandoned — the
+	 * write did not happen. A delete that fails is added to the write's failure and leaves the row open, listed as unresolved
+	 * (closing batch 37 review, Codex P2).
+	 */
+	private void takeBackContentAVersionWasNotStoredWith(String repositoryId, Document version, Document changed,
+			String createdAttachmentId, jp.aegif.nemaki.evidence.RecordContentStateRecorder.Pending pending,
+			RuntimeException failed) {
+		if (changed != null) {
+			changed.setAttachmentNodeId(null);
+		}
 		try {
 			contentDaoService.delete(repositoryId, createdAttachmentId);
 		} catch (RuntimeException deleting) {

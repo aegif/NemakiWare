@@ -285,6 +285,29 @@ public class RecordContentStateRecorder {
     }
 
     /**
+     * Leaves a write that happened — or may have — with no statement: counted as {@link #recordAndClose} counts a statement
+     * the ledger did not take, its row, when there is one, left open and listed as unresolved. For a caller that cannot
+     * build a true statement (the kind of content a version had none of, when the journal cannot say whether it had any) or
+     * does not know whether its write landed (closing batch 38 review, subagent P3-4: such an arm said a row stayed open
+     * when the journal had not opened one, and counted nothing).
+     *
+     * @return {@link Outcome#UNRECORDED_GAP_OPEN} when the row lists the gap, {@link Outcome#UNRECORDED_GAP_UNLISTABLE}
+     *         when there is no row to list it
+     */
+    public Outcome leaveUnrecorded(Pending pending, String reason) {
+        unrecordedWrites.incrementAndGet();
+        Outcome outcome = pending != null && pending.intentId() != null
+                ? Outcome.UNRECORDED_GAP_OPEN
+                : Outcome.UNRECORDED_GAP_UNLISTABLE;
+        logger.warn("No content statement is recorded for {}: {}. {}",
+                pending == null ? null : pending.versionObjectId(), reason,
+                outcome == Outcome.UNRECORDED_GAP_OPEN
+                        ? "The open journal row records the gap."
+                        : "There is no journal row either, so the gap is not listable.");
+        return outcome;
+    }
+
+    /**
      * Records that {@code transition} happened to the version {@code pending} was opened for,
      * with the prior digest copied from the ledger, and closes the row.
      *
