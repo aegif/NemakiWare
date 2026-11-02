@@ -34,6 +34,16 @@ import jp.aegif.nemaki.model.Document;
  */
 class AnUpdateThatNeverWentOutSaysSoTest {
 
+    /** A call built as postDocument builds it, which goes out — and here fails — in execute(). */
+    @SuppressWarnings("unchecked")
+    private static com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> failingOnExecute(
+            RuntimeException failure) {
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> call =
+                mock(com.ibm.cloud.sdk.core.http.ServiceCall.class);
+        when(call.execute()).thenThrow(failure);
+        return call;
+    }
+
     private static CloudantClientWrapper wrapperOver(com.ibm.cloud.cloudant.v1.Cloudant cloudant) {
         return new CloudantClientWrapper(cloudant, "bedroom",
                 jp.aegif.nemaki.config.ObjectMapperFactory.createCouchdbObjectMapper());
@@ -81,7 +91,8 @@ class AnUpdateThatNeverWentOutSaysSoTest {
     void anAnsweredUpdateIsNotMarkedNotSent() {
         com.ibm.cloud.sdk.core.service.exception.ConflictException conflict = CouchConflicts.conflict();
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
-        when(cloudant.postDocument(any())).thenThrow(conflict);
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> call = failingOnExecute(conflict);
+        when(cloudant.postDocument(any())).thenReturn(call);
         Map<String, Object> stored = new HashMap<>(Map.of("_id", "doc-1", "_rev", "1-a", "type", "cmis:document"));
 
         RuntimeException thrown = assertThrows(RuntimeException.class, () -> wrapperOver(cloudant).update((Object) stored));
@@ -94,13 +105,29 @@ class AnUpdateThatNeverWentOutSaysSoTest {
     @DisplayName("an update whose request failed on the way does not say it never went out")
     void anUpdateThatFailedOnTheWayIsNotMarkedNotSent() {
         // Not a conflict: a conflict takes the wrapper's own catch, which never asks whether the request went out, so a
-        // lock on it alone stayed green with the flag never set (BM6 did not fire, closing batch 40).
+        // lock on it alone stayed green with the flag never set (BM6 did not fire, closing batch 40). In execute(), where the
+        // request goes out: postDocument only builds the call, and a failure there is one before the request (closing
+        // batch 40 review, Codex P2 — this lock threw from postDocument, and held the flag at the wrong place).
         com.ibm.cloud.cloudant.v1.Cloudant cloudant = mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
-        when(cloudant.postDocument(any())).thenThrow(new RuntimeException("connection reset"));
+        com.ibm.cloud.sdk.core.http.ServiceCall<com.ibm.cloud.cloudant.v1.model.DocumentResult> call =
+                failingOnExecute(new RuntimeException("connection reset"));
+        when(cloudant.postDocument(any())).thenReturn(call);
         Map<String, Object> stored = new HashMap<>(Map.of("_id", "doc-1", "_rev", "1-a", "type", "cmis:document"));
 
         RuntimeException thrown = assertThrows(RuntimeException.class, () -> wrapperOver(cloudant).update((Object) stored));
         assertFalse(thrown instanceof CouchUpdateNotSentException,
                 "an update whose request may have reached the store was reported as one that never went out");
+    }
+
+    @Test
+    @DisplayName("an update whose call cannot be built says it never went out")
+    void anUpdateWhoseCallCannotBeBuiltIsNotSent() {
+        // postDocument only builds the call; nothing has gone to the store when it fails (closing batch 40 review, Codex P2).
+        com.ibm.cloud.cloudant.v1.Cloudant cloudant = mock(com.ibm.cloud.cloudant.v1.Cloudant.class);
+        when(cloudant.postDocument(any())).thenThrow(new IllegalArgumentException("the call could not be built"));
+        Map<String, Object> stored = new HashMap<>(Map.of("_id", "doc-1", "_rev", "1-a", "type", "cmis:document"));
+
+        assertThrows(CouchUpdateNotSentException.class, () -> wrapperOver(cloudant).update((Object) stored),
+                "an update whose call failed while it was being built did not say it never went out");
     }
 }

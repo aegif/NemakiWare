@@ -4375,8 +4375,8 @@ public class ContentServiceImpl implements ContentService {
 	 * there is no "as received" to differ from. It IS an extra full read, which is why it is
 	 * only on the copy paths.
 	 *
-	 * @return null when the bytes could not be read to the end, in which case no statement is
-	 *         recorded and the journal row stays open
+	 * @return null when there is no copy to digest; a {@code Written} with no digest when the copy could not be read to the
+	 *         end, in which case no statement is recorded, the write is counted, and its row — when there is one — stays open
 	 */
 	private jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written
 			digestOfStoredAttachment(String repositoryId, String attachmentId) {
@@ -4388,33 +4388,42 @@ public class ContentServiceImpl implements ContentService {
 			stored = contentDaoService.getAttachment(repositoryId, attachmentId);
 		} catch (RuntimeException e) {
 			log.warn("E1: the copied content {} could not be opened to digest it.", attachmentId, e);
-			return null;
+			return undigested(attachmentId);
 		}
 		if (stored == null || stored.getInputStream() == null) {
-			return null;
+			return undigested(attachmentId);
 		}
 		try (InputStream body = stored.getInputStream()) {
 			jp.aegif.nemaki.evidence.DigestingInputStream digesting =
 					jp.aegif.nemaki.evidence.DigestingInputStream.over(body);
 			if (digesting == null) {
-				return null;
+				return undigested(attachmentId);
 			}
 			// Drained through a fixed buffer. readAllBytes() held the whole body in memory and
 			// never terminated on a stream that made no progress — it turned an existing test
 			// into an OutOfMemoryError.
 			if (!digesting.drain()) {
-				return null;
+				return undigested(attachmentId);
 			}
 			String digest = digesting.digestIfTrustworthy(stored.getLength());
 			if (digest == null) {
-				return null;
+				return undigested(attachmentId);
 			}
 			return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
 					attachmentId, digest, digesting.bytesRead());
 		} catch (java.io.IOException | RuntimeException e) {
 			log.warn("E1: the copied content {} could not be read to the end.", attachmentId, e);
-			return null;
+			return undigested(attachmentId);
 		}
+	}
+
+	/**
+	 * A copy that was written and could not be digested: no digest, so no statement, and the write is counted as one with
+	 * none (recordContentState). Answering null for it — the answer for «there was nothing to copy» — left a written copy
+	 * uncounted (closing batch 40 review, subagent: the third arm of the shape closing batch 40 counted).
+	 */
+	private static jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written undigested(String attachmentId) {
+		return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(attachmentId, null, -1);
 	}
 
 	/**

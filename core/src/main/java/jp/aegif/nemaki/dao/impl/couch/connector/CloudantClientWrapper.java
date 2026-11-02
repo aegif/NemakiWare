@@ -2314,8 +2314,10 @@ public class CloudantClientWrapper {
 	}
 
 	public void update(Object document) {
-		// Whether the request went out. A failure before it did is CouchUpdateNotSentException: the store was not written.
-		// One after it is not, because the write may have landed and its answer been lost.
+		// Whether the request may have gone out: set when execute() is called, which is where it goes out — postDocument only
+		// builds the call. A failure before that is CouchUpdateNotSentException: the store was not written. One after it is
+		// not, because the write may have landed and its answer been lost; a failure inside execute() before any byte went
+		// out is counted on that side, which keeps what a caller created (closing batch 40 review, Codex P2 and subagent).
 		boolean sent = false;
 		try {
 			ObjectMapper mapper = getObjectMapper();
@@ -2391,8 +2393,9 @@ public class CloudantClientWrapper {
 				.contentType("application/json")
 				.build();
 
+			com.ibm.cloud.sdk.core.http.ServiceCall<DocumentResult> call = client.postDocument(options);
 			sent = true;
-			DocumentResult result = client.postDocument(options).execute().getResult();
+			DocumentResult result = call.execute().getResult();
 			log.debug("Ektorp-style update successful: " + id + " (from revision " + currentRev + " to " + result.getRev() + ")");
 			
 			// Update the revision in the original object to maintain Ektorp-style state consistency
