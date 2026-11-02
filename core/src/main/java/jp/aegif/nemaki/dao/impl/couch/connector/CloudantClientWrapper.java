@@ -2314,6 +2314,9 @@ public class CloudantClientWrapper {
 	}
 
 	public void update(Object document) {
+		// Whether the request went out. A failure before it did is CouchUpdateNotSentException: the store was not written.
+		// One after it is not, because the write may have landed and its answer been lost.
+		boolean sent = false;
 		try {
 			ObjectMapper mapper = getObjectMapper();
 
@@ -2388,6 +2391,7 @@ public class CloudantClientWrapper {
 				.contentType("application/json")
 				.build();
 
+			sent = true;
 			DocumentResult result = client.postDocument(options).execute().getResult();
 			log.debug("Ektorp-style update successful: " + id + " (from revision " + currentRev + " to " + result.getRev() + ")");
 			
@@ -2409,6 +2413,9 @@ public class CloudantClientWrapper {
 			// CRITICAL FIX (2025-10-13): RE-THROW all exceptions for locked operations
 			// Silent failures break the contract of update() method
 			log.error("Error in Ektorp-style document update: " + e.getMessage(), e);
+			if (!sent) {
+				throw new CouchUpdateNotSentException("CouchDB update failed: " + e.getMessage(), e);
+			}
 			throw new RuntimeException("CouchDB update failed: " + e.getMessage(), e);
 		}
 	}

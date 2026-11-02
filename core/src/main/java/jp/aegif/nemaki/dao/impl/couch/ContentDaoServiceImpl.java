@@ -2382,10 +2382,11 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 		CouchDocument update = new CouchDocument(document);
 		
 		// Ektorp-style: Object must maintain its own revision state
-		// CloudantClientWrapper expects objects to have valid revisions
+		// CloudantClientWrapper expects objects to have valid revisions. The refusal comes before the request, and its type
+		// says so — see CouchUpdateNotSentException (closing batch 39 review, Codex P2 and subagent F2).
 		if (update.getRevision() == null || update.getRevision().isEmpty()) {
-			throw new IllegalArgumentException("Document " + document.getId() + " has no revision - " +
-				"objects must maintain revision state per Ektorp patterns");
+			throw new jp.aegif.nemaki.dao.impl.couch.connector.CouchUpdateNotSentException("Document " + document.getId()
+					+ " has no revision - objects must maintain revision state per Ektorp patterns", null);
 		}
 		
 		log.debug("Ektorp-style update: using object revision " + update.getRevision() + " for document " + document.getId());
