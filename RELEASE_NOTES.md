@@ -669,6 +669,8 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
      `GET /api/v1/cmis/repositories/{repo}/documents/checkedout` — こちらは測っていません）。どちらも PWC の view を読み、読めなければ失敗します。
      CMIS の問い合わせ（`WHERE cmis:isPrivateWorkingCopy = true`）は Solr を読むので、索引に無い PWC を返しません — チェックアウトの時の
      索引の失敗は握られ、全再索引は最新版しか辿りません。bedroom では、店の一覧の 59 件に対して問い合わせは 53 件でした（2026-11-02）。
+     どちらの扉も 1 回に既定で 100 件を返します。`hasMoreItems` が true なら、`skipCount` を進めて（または `maxItems` を上げて — 上限は
+     10,000）続きを読みます。
   2. それぞれの系列の版を見ます（`cmisselector=versions`）。PWC より後に作られた版は、失敗した check-in が作った版です。
   3. PWC を取り消します（`cancelCheckOut`）。上げた後は通ります。
   4. 失敗した check-in が作った版を残すか消すかを決めます。内容を付けた check-in なら、その版は check-in した内容を持っています。
@@ -682,8 +684,11 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   失敗した check-in が作った版には CREATED の、その前の版には UPDATED の変更イベントがありません。check-in に渡した policies は当たって
   いません。内容を付けた check-in が失敗したものは、内容の記録の行（`openBeforeWriting`）が開いたままのことがあります。
 - 内容の無い文書の PWC に内容を入れる（`setContentStream`）ことと、内容の無い文書への追記（`appendContentStream`）ができるように
-  なりました。どちらも 500 で、「読めなかった — 内容が無いという答えではない」と事実と違うことを言っていました（3.3.1 からの形 — 読解）。
-  追記した内容は、その文書の内容になります。
+  なりました。どちらも 500 でした（3.3.1 から — 3.3.1 は NullPointerException、3.4.0 は「読めなかった — 内容が無いという答えではない」と事実と
+  違う文）。
+  追記した内容は、その文書の内容になります。E1 の内容の記録は、版を保存した後に書き、種類はその版の記録が無ければ `CAPTURED`、在れば
+  `UPDATED` です（以前は保存の前に `UPDATED` と書き、保存が落ちても残りました。`updateDocumentWithNewStream` で内容の無い文書に内容を
+  入れるときも同じに直しました）。内容の無い文書への追記が、ほかの要求が同時に内容を付けたことに気づいたときは 409 を返します。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
