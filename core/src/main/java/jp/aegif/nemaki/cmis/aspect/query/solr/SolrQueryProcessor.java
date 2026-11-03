@@ -58,6 +58,7 @@ import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
+import org.apache.chemistry.opencmis.server.support.query.CmisSelector;
 import org.apache.chemistry.opencmis.server.support.query.ColumnReference;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject;
 import org.apache.chemistry.opencmis.server.support.query.QueryObject.JoinSpec;
@@ -266,6 +267,9 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// client's (closing batch 4 review, subagent P3-5 — `SELECT * FORM cmis:document` became a 500 once the
 		// FROM lookup below stopped answering an empty list).
 		Exception parseFailure = null;
+		// The type definitions could not be read while the statement was processed: answered (500) once the JOINs' shape
+		// is read, below.
+		Exception definitionsUnreadable = null;
 		try {
 			if (logger.isDebugEnabled()) {
 				logger.debug("About to call util.processStatement()");
@@ -287,11 +291,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 			if (jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException.isIn(e)) {
 				// The type definitions could not be read: not a statement that does not parse (closing batch 4
 				// review, subagent P2-1 (c) — a repository whose type system did not load answered WHERE cmis:name =
-				// 'a' with the client's 400).
-				throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
-						"The type definitions could not be read, so the query was not run: " + e.getMessage(), e);
+				// 'a' with the client's 400). Thrown after the JOINs' shape is read, not here: an outer JOIN was refused
+				// for its shape (400) only when the definition failed in the walker, and answered 500 when it failed
+				// here (closing batch 25 review, Codex P2). The walker reads a type only once the whole statement is
+				// walked (resolveTypes is its last step), so the JOINs it recorded are all of them.
+				definitionsUnreadable = e;
+			} else if (e instanceof org.apache.chemistry.opencmis.server.support.query.CmisQueryException) {
+				// The walker refusing the statement it walks — a column alias used twice — before it reached the FROM: the
+				// client's statement, as a syntax error is, not the server's failure to resolve a FROM it never read
+				// (closing batch 44 — `SELECT cmis:name x, cmis:objectId x FROM cmis:document` answered 500 on bedroom).
+				parseFailure = new CmisInvalidArgumentException(e.getMessage(), e);
+			} else {
+				parseFailure = e;
 			}
-			parseFailure = e;
 		}
 		
 		// Check queryObject after processStatement
@@ -331,6 +343,13 @@ public class SolrQueryProcessor implements QueryProcessor {
 		// without it, not the 2 that have the type (measured on bedroom before this change, 2026-10-29). Its shape is read
 		// here, before the WHERE (no type is read); its filters after the FROM is checked (below).
 		List<JoinSpec> clientJoins = theClientJoinsOfARightShape(asWritten, queryObject, parseFailure, injectedJoins);
+		if (definitionsUnreadable != null) {
+			// Before the WHERE is translated: the manual fallback would refuse a WHERE it does not translate as the client's
+			// 400 (closing batch 4 review, subagent P2-1 (c)).
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisRuntimeException(
+					"The type definitions could not be read, so the query was not run: "
+							+ definitionsUnreadable.getMessage(), definitionsUnreadable);
+		}
 
 		// Build solr statement of WHERE
 		String whereQueryString = "";
@@ -438,6 +457,12 @@ public class SolrQueryProcessor implements QueryProcessor {
 			// nemaki:typo` answered 200 with nothing (closing batch 3 review, subagent P3-7, measured on bedroom).
 			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
 					"FROM names no type this repository has, so the query was not run: " + statement);
+		}
+
+		// R221: a statement that did not parse is answered only for columns its rows define — read before the JOINs'
+		// subtypes are, so it is refused for its column (400) before the type system is asked of one (500).
+		if (parseFailure != null) {
+			refuseAColumnNoRowDefines(queryObject, parseFailure);
 		}
 
 		// The JOINs' filters: after the WHERE and the FROM, so a statement either refuses is refused for that (400) before
@@ -1098,12 +1123,11 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * The JOINs the client wrote, of a shape this server answers (R215) — read before the WHERE, with no type read; the
 	 * filter each adds is built later by {@link #secondaryTypeJoinFilters}, after the WHERE and the FROM are checked.
 	 *
-	 * <p>The filter each JOIN the client wrote adds to the FROM's (R215): the documents that have the joined secondary
-	 * type - what {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} answers, built by the same method
-	 * ({@link SolrPredicateWalker#anyOf}), so the two send Solr the same text. The JOIN answered is the INNER JOIN of
-	 * the FROM type with a secondary type ON the two objects' ids. Any other JOIN is refused rather than answered
-	 * without its condition: a JOIN with a type that is not a secondary type (two primary types are not joined), an
-	 * outer JOIN, and a JOIN whose ON is not the FROM's cmis:objectId equal to the joined type's (or that has no ON).
+	 * <p>The shape answered is an INNER JOIN ON a row's cmis:objectId equal to the joined type's — the FROM's, or that of
+	 * a JOIN read before it. Any other is refused rather than answered without its condition: an outer JOIN, a JOIN whose
+	 * ON is not the two objects' ids (or that has no ON), a name that names two rows, and a statement with a JOIN the
+	 * parser did not record. What the joined type is — a secondary type, without subtypes a query of it includes — is
+	 * not read here but there.
 	 *
 	 * <p>A statement whose parse failed is read the same way when the parser recorded every JOIN the client wrote: a
 	 * column the type manager cannot resolve - a property of the joined type it does not name, as nemaki:comment of
@@ -1112,12 +1136,8 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * over-refusal of a statement answered right without the change (measured on bedroom, 2026-10-29). When fewer
 	 * JOINs were recorded than the client wrote, the statement is refused.
 	 *
-	 * <p>The JOINs the server adds itself ({@link #injectSecondaryTypeJoins} - a WHERE that names a property of the
-	 * type, or a qualifier that names it as a row) add no filter, except one for a type the statement names as a row
-	 * (R217, R218, below): the WHERE that named the
-	 * property narrows the answer already, and that answer is kept as it was. {@code WHERE nemaki:comment IS NULL} answers the documents without a comment, those without the type
-	 * among them, as before. (The server adds its JOIN to a statement that JOINs the type already, too; the client's
-	 * JOIN is read as a condition and the server's is not, so the second one changes nothing.)
+	 * <p>The JOINs the server adds itself ({@link #injectSecondaryTypeJoins}) are not the client's and are left out: told
+	 * by the text alone — the type's query name, with no alias and no ON.
 	 */
 	List<JoinSpec> theClientJoinsOfARightShape(String asWritten, QueryObject queryObject, Exception parseFailure,
 			Set<String> injected) {
@@ -1200,6 +1220,17 @@ public class SolrQueryProcessor implements QueryProcessor {
 	 * refused for that (400), before the type system is asked anything here (closing batch 23 review, subagent P3-2;
 	 * closing batch 24 review, subagent P3-2 — a statement without a WHERE that does not parse, or whose FROM names no
 	 * type, answered 500 for a subtype it could not read).
+	 *
+	 * <p>The filter each JOIN the client wrote adds to the FROM's (R215): the documents that have the joined secondary
+	 * type - what {@code ANY cmis:secondaryObjectTypeIds IN ('that type')} answers, built by the same method
+	 * ({@link SolrPredicateWalker#anyOf}), so the two send Solr the same text. A JOIN with a type that is not a
+	 * secondary type (two primary types are not joined) is refused rather than answered without its condition.
+	 *
+	 * <p>The JOINs the server adds itself ({@link #injectSecondaryTypeJoins} - a WHERE that names a property of the
+	 * type, or a qualifier that names it as a row) add no filter, except one for a type the statement names as a row
+	 * (R217, R218 — narrowToTheRowsNamed): the WHERE that named the property narrows the answer already, and that
+	 * answer is kept as it was. {@code WHERE nemaki:comment IS NULL} answers the documents without a comment, those
+	 * without the type among them, as before.
 	 */
 	List<String> secondaryTypeJoinFilters(String repositoryId, QueryObject queryObject, List<JoinSpec> clientJoinSpecs,
 			Map<String, TypeDefinition> rowsNamed) {
@@ -1319,6 +1350,116 @@ public class SolrQueryProcessor implements QueryProcessor {
 	}
 
 	/**
+	 * R221: a statement whose strict parse failed is answered — with {@code *:*}, or by the manual fallback — only when
+	 * every column its SELECT list and its ORDER BY name is a property of one of its rows: of the row the column's
+	 * qualifier names, or of any of its rows when it has none. Otherwise it is refused (400). A failed parse was taken for
+	 * leave to answer without the column: with no WHERE, every document of the FROM's type — {@code SELECT
+	 * cmis:document.nemaki:nonexistent FROM cmis:document}, {@code SELECT zz.cmis:objectId FROM cmis:document} (a
+	 * qualifier that names no row) and {@code SELECT cmis:objectId FROM cmis:document ORDER BY nemaki:nonexistent} each
+	 * answered all 2,930 documents on bedroom, where the same mistake in a WHERE is refused (measured 2026-11-03). A
+	 * qualifier is read as the parser reads it, an alias first ({@link #rowOf}): {@code SELECT
+	 * nemaki:commentable.nemaki:comment FROM cmis:document nemaki:commentable} names the FROM's row, which does not define
+	 * the property, and is refused — it answered every document (closing batch 25 review, Codex P1).
+	 *
+	 * <p>A property is named by its query name, in any case, as the parser compares it, or by its id, as this server's
+	 * own lookups find it ({@code findSecondaryTypeByPropertyQueryName}, the manual fallback). The parse fails on bedroom
+	 * for exactly that — its nemaki:commentable defines nemaki:comment under the query name {@code comment} — and
+	 * {@code SELECT nemaki:commentable.nemaki:comment FROM cmis:document} is answered with the row's JOIN (R218), as it
+	 * was. The rows are the parser's: the FROM, the client's JOINs and the server's ({@link #injectSecondaryTypeJoins}).
+	 * So {@code SELECT nemaki:comment FROM cmis:document WHERE nemaki:comment IS NOT NULL} is answered — its WHERE gets
+	 * the server's JOIN — and {@code SELECT nemaki:comment FROM cmis:document} is refused: nothing JOINs the type for a
+	 * SELECT list alone, and the parse of it fails on any repository.
+	 *
+	 * <p>The WHERE is the manual fallback's to translate or refuse ({@link #wholeWhereOrRefuse}). Of its columns only the
+	 * qualifier is read here: the fallback reads a column without it ({@code d.nemaki:comment} as nemaki:comment), and
+	 * so answered {@code WHERE zz.nemaki:comment IS NOT NULL} as if zz were a row. An ON is read by
+	 * {@link #theClientJoinsOfARightShape}.
+	 */
+	private static void refuseAColumnNoRowDefines(QueryObject queryObject, Exception parseFailure) {
+		Map<String, String> types = queryObject.getTypes();
+		List<CmisSelector> columns = new ArrayList<CmisSelector>(queryObject.getSelectReferences());
+		for (SortSpec sort : queryObject.getOrderBys()) {
+			columns.add(sort.getSelector());
+		}
+		for (CmisSelector selector : columns) {
+			if (!(selector instanceof ColumnReference)) {
+				// SCORE()
+				continue;
+			}
+			ColumnReference column = (ColumnReference) selector;
+			String property = column.getPropertyQueryName();
+			String qualifier = column.getQualifier();
+			if (qualifier != null) {
+				TypeDefinition row = typeOfTheRowNamed(queryObject, qualifier, types, parseFailure);
+				if (!"*".equals(property) && !defines(row, property)) {
+					throw aColumnNoRowDefines(qualifier + "." + property + " names a property its row (" + row.getId()
+							+ ") does not define", parseFailure);
+				}
+				continue;
+			}
+			// An ORDER BY may name a column of the SELECT list by its alias, as the parser reads it.
+			if ("*".equals(property) || queryObject.isPredfinedQueryName(property)
+					|| queryObject.getSelectAlias(property) != null) {
+				continue;
+			}
+			boolean defined = false;
+			for (String typeQueryName : types.values()) {
+				if (defines(queryObject.getTypeDefinitionFromQueryName(typeQueryName), property)) {
+					defined = true;
+					break;
+				}
+			}
+			if (!defined) {
+				throw aColumnNoRowDefines(property + " is a property of none of its rows", parseFailure);
+			}
+		}
+		for (CmisSelector selector : queryObject.getWhereReferences()) {
+			String qualifier = (selector instanceof ColumnReference) ? ((ColumnReference) selector).getQualifier() : null;
+			if (qualifier != null && rowOf(qualifier, types) == null) {
+				throw aColumnNoRowDefines("the qualifier " + qualifier + " in its WHERE names none of its rows",
+						parseFailure);
+			}
+		}
+	}
+
+	/** The type of the row a qualifier names ({@link #rowOf}), refused when it names none, or one no type answers. */
+	private static TypeDefinition typeOfTheRowNamed(QueryObject queryObject, String qualifier, Map<String, String> types,
+			Exception parseFailure) {
+		String row = rowOf(qualifier, types);
+		TypeDefinition type = (row == null) ? null : queryObject.getTypeDefinitionFromQueryName(types.get(row));
+		if (type == null) {
+			throw aColumnNoRowDefines("the qualifier " + qualifier + " names none of its rows", parseFailure);
+		}
+		return type;
+	}
+
+	/**
+	 * Whether the type defines the property: by its query name in any case, as the parser compares it
+	 * ({@code TypeValidator.typeContainsPropertyWithQueryName}), or by its id.
+	 */
+	private static boolean defines(TypeDefinition type, String property) {
+		if (type == null || property == null) {
+			return false;
+		}
+		Map<String, PropertyDefinition<?>> definitions = type.getPropertyDefinitions();
+		if (definitions == null) {
+			return false;
+		}
+		for (PropertyDefinition<?> definition : definitions.values()) {
+			if (definition != null
+					&& (property.equalsIgnoreCase(definition.getQueryName()) || property.equals(definition.getId()))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private static CmisInvalidArgumentException aColumnNoRowDefines(String why, Exception parseFailure) {
+		return new CmisInvalidArgumentException("The statement could not be parsed (" + parseFailure.getMessage()
+				+ "), and " + why + ", so it is refused rather than answered without that column");
+	}
+
+	/**
 	 * The name the server writes its JOIN of a type with: the query name, as the parser resolves a type in FROM and JOIN —
 	 * the id it wrote before resolved only where the two were equal, and a type whose query name is not its id (the type
 	 * service stores the query name apart) had its JOIN fail to parse and the statement refused (closing batch 24 review,
@@ -1344,15 +1485,19 @@ public class SolrQueryProcessor implements QueryProcessor {
 		return type != null && typeManager.getPropertyIdForQueryName(repositoryId, type, propertyName) != null;
 	}
 
-	/** Whether the text before WHERE (literals blanked) names the type, by its id or query name, as a type or alias. */
+	/**
+	 * Whether the text before WHERE (literals blanked) uses the name the server writes the type's JOIN with
+	 * ({@link #writtenAs} — its query name), as a type or as an alias. As a type, the client JOINs it already; as an
+	 * alias, the server's JOIN would take the alias's row (the parser files an unaliased JOIN under its type's name and
+	 * overwrites a row of that name), and a qualifier of that name names the alias's row, not the type. Not its id: the
+	 * server writes the JOIN by the query name, so an alias that is the id neither collides with it nor names the type,
+	 * and a qualifier of the type by its query name went without its JOIN and answered every document (R221; closing
+	 * batch 25 review, subagent P3-2).
+	 */
 	private static boolean namedIn(String fromPart, TypeDefinition type) {
-		for (String name : new String[] { type.getId(), type.getQueryName() }) {
-			if (name != null && Pattern.compile("(?<![A-Za-z0-9_:.])" + Pattern.quote(name) + "(?![A-Za-z0-9_:.])")
-					.matcher(fromPart).find()) {
-				return true;
-			}
-		}
-		return false;
+		String name = writtenAs(type);
+		return name != null && Pattern.compile("(?<![A-Za-z0-9_:.])" + Pattern.quote(name) + "(?![A-Za-z0-9_:.])")
+				.matcher(fromPart).find();
 	}
 
 	/**

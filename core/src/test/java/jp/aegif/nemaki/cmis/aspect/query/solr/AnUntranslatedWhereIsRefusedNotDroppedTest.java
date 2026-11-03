@@ -243,9 +243,21 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         joinableProperties.put("cmis:objectId", properties.get("cmis:objectId"));
         joinableProperties.put("nemaki:jtag", define(new PropertyStringDefinitionImpl(), "nemaki:jtag", PropertyType.STRING,
                 Cardinality.SINGLE));
+        // A property whose query name is not its id, as bedroom's nemaki:commentable defines nemaki:comment under the
+        // query name comment: a statement naming it by its id fails the strict parse (R221).
+        PropertyStringDefinitionImpl jnote = define(new PropertyStringDefinitionImpl(), "nemaki:jnote", PropertyType.STRING,
+                Cardinality.SINGLE);
+        jnote.setQueryName("jnote");
+        joinableProperties.put("nemaki:jnote", jnote);
         joinable.setPropertyDefinitions(joinableProperties);
         when(types.getTypeByQueryName(REPO, "nemaki:joinable")).thenReturn(joinable);
         when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:jtag")).thenReturn(joinable);
+        // As TypeManagerImpl finds it: by its query name or its id.
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "nemaki:jnote")).thenReturn(joinable);
+        when(types.findSecondaryTypeByPropertyQueryName(REPO, "jnote")).thenReturn(joinable);
+        // A type whose definition cannot be read when the parser resolves a column of it (closing batch 25 review, Codex P2).
+        when(types.getTypeByQueryName(REPO, "nemaki:defsUnreadable")).thenThrow(
+                new jp.aegif.nemaki.cmis.aspect.type.DefinitionsUnreadableException("No types are loaded"));
         // Another secondary type, a type whose subtype a query of it includes, and one whose subtype it leaves out
         // (closing batch 17 review: subagent P2-1, P3-1, P3-2).
         secondaryType("nemaki:second", properties.get("cmis:objectId"));
@@ -1345,10 +1357,10 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
         assertTrue(filtersSent.get(filtersSent.size() - 1).stream()
                         .anyMatch(fq -> fq.endsWith(" AND (cmis_secondaryObjectTypeIds:nemaki\\:joinable)")),
                 () -> "the qualifier of CONTAINS did not name the row — " + lastSent());
-        assertAnsweredWithOneQuery("SELECT nemaki:plain.cmis:name FROM cmis:document");
-        assertFalse(filtersSent.get(filtersSent.size() - 1).stream()
-                        .anyMatch(fq -> fq.contains("cmis_secondaryObjectTypeIds:nemaki\\:plain")),
-                () -> "a qualifier naming a primary type was narrowed as a secondary type's row — " + lastSent());
+        // A primary type is not taken for a row: the server adds no JOIN of it, the qualifier names none of the
+        // statement's rows, and the statement is refused (R221). It was answered with every document before — locked
+        // so here until closing batch 44 — and taken for a row, it would be answered narrowed to it.
+        assertRefusedWithoutAQuery("SELECT nemaki:plain.cmis:name FROM cmis:document");
     }
 
     @Test
@@ -1369,6 +1381,111 @@ class AnUntranslatedWhereIsRefusedNotDroppedTest {
                     + "nemaki:jtag = 'x' AND cmis:name = 'a'"), () -> "a FROM after " + space.replace("\n", "LF")
                     .replace("\t", "TAB").replace("\r", "CR") + " changed the answer — " + lastSent());
         }
+    }
+
+    // ------------------------------------------------------------------------------------- R221: a parse that failed
+    // A statement whose strict parse failed was answered without reading what failed: with no WHERE, `*:*`, every document
+    // of the FROM's type, and with a WHERE the manual fallback translates, its answer. A column of the SELECT list or the
+    // ORDER BY that no row defines, or a qualifier that names no row, was not refused (measured on bedroom, 2026-11-03: each
+    // of SELECT cmis:document.nemaki:nonexistent FROM cmis:document, SELECT zz.cmis:objectId FROM cmis:document and ...
+    // ORDER BY nemaki:nonexistent answered all 2,930 documents; with WHERE nemaki:comment IS NOT NULL, 56).
+
+    @Test
+    @DisplayName("a statement that does not parse is refused for a column none of its rows defines, or a qualifier that names no row (R221)")
+    void aStatementThatDoesNotParseIsRefusedForAColumnNoRowDefines() {
+        for (String statement : List.of(
+                "SELECT cmis:document.nemaki:nonexistent FROM cmis:document",
+                "SELECT zz.cmis:objectId FROM cmis:document",
+                "SELECT cmis:objectId FROM cmis:document ORDER BY nemaki:nonexistent",
+                "SELECT cmis:objectId FROM cmis:document ORDER BY zz.cmis:name",
+                // Nothing JOINs a secondary type for a SELECT list alone, so its property names no row.
+                "SELECT nemaki:jtag FROM cmis:document",
+                // With a WHERE the manual fallback translates.
+                "SELECT cmis:document.nemaki:nonexistent FROM cmis:document WHERE nemaki:tag = 'x'",
+                "SELECT cmis:objectId FROM cmis:document WHERE nemaki:tag = 'x' ORDER BY nemaki:nonexistent",
+                "SELECT cmis:objectId FROM cmis:document WHERE zz.nemaki:tag = 'x'")) {
+            assertRefusedWithoutAQuery(statement);
+        }
+    }
+
+    @Test
+    @DisplayName("a FROM alias that is a secondary type's query name names the FROM's row, so its qualifier is not the type (R221)")
+    void anAliasThatIsATypesQueryNameNamesTheFromsRow() {
+        // The server added no JOIN for the qualifier — the FROM names the type's query name, as an alias — and the parser
+        // reads the qualifier as the alias, whose type does not define the property: the parse failed and the statement
+        // answered every document, where the JOIN written answers the documents with the type (closing batch 25 review,
+        // Codex P1). The CMIS reading of the statement is the alias's, so it is refused.
+        assertRefusedWithoutAQuery("SELECT nemaki:joinable.nemaki:jtag FROM cmis:document nemaki:joinable");
+    }
+
+    @Test
+    @DisplayName("a FROM alias that is a secondary type's id does not keep the server's JOIN of the type from its qualifier (R221)")
+    void anAliasThatIsATypesIdDoesNotStopItsJoin() {
+        // The server writes its JOIN by the query name, and the FROM was read for the id too: an alias that is the id
+        // took the JOIN away, and the qualifier of the type by its query name named nothing — every document of the
+        // FROM's type was answered (closing batch 25 review, subagent P3-2).
+        assertEquals(Set.of("hasOtherName"), answered("SELECT nemaki:otherName.nemaki:otag FROM nemaki:withJtag "
+                + "nemaki:otherNameId"), () -> "the row named by the type's query name was not narrowed — " + lastSent());
+    }
+
+    @Test
+    @DisplayName("a statement that does not parse is answered when every column it names is a property of its row (R221, over-refusal)")
+    void aStatementThatDoesNotParseIsAnsweredForColumnsItsRowsDefine() {
+        Set<String> joined = answered("SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j "
+                + "ON d.cmis:objectId = j.cmis:objectId");
+        assertEquals(Set.of("has", "hasToo"), joined, () -> "the JOIN written did not answer — " + lastSent());
+        // Named by its id, whose query name is jnote: the parse fails, as nemaki:comment of nemaki:commentable does on
+        // bedroom, and the statement is answered as it was — narrowed to the row its qualifier names (R218).
+        for (String statement : List.of(
+                "SELECT nemaki:joinable.nemaki:jnote FROM cmis:document",
+                "SELECT nemaki:joinable.nemaki:jnote AS n FROM cmis:document ORDER BY n",
+                "SELECT j.nemaki:jnote FROM cmis:document d JOIN nemaki:joinable j ON d.cmis:objectId = j.cmis:objectId",
+                "SELECT d.cmis:objectId FROM cmis:document d JOIN nemaki:joinable j ON d.cmis:objectId = j.cmis:objectId "
+                        + "ORDER BY j.nemaki:jnote",
+                "SELECT j.* FROM cmis:document d JOIN nemaki:joinable j ON d.cmis:objectId = j.cmis:objectId "
+                        + "ORDER BY j.nemaki:jnote")) {
+            assertEquals(joined, answered(statement), () -> "「" + statement + "」 answered other than the JOIN written — "
+                    + lastSent());
+        }
+        // The rows are the parser's, the server's JOINs among them: the WHERE's property gets one, so the SELECT list and
+        // the ORDER BY may name it unqualified (bedroom: SELECT nemaki:comment FROM cmis:document WHERE nemaki:comment IS
+        // NOT NULL answered 56 before and after).
+        assertAnsweredWithOneQuery("SELECT nemaki:jnote FROM cmis:document WHERE nemaki:jnote IS NOT NULL");
+        assertAnsweredWithOneQuery("SELECT cmis:objectId FROM cmis:document WHERE nemaki:jnote IS NOT NULL ORDER BY nemaki:jnote");
+        // A query name in another case, as the parser compares it; *, and a qualified one; SCORE(); and a WHERE column
+        // qualified by a row of the statement, which the fallback reads as the property (only the qualifier is read here).
+        assertAnsweredWithOneQuery("SELECT CMIS:NAME FROM cmis:document WHERE nemaki:tag = 'x'");
+        assertAnsweredWithOneQuery("SELECT * FROM cmis:document WHERE nemaki:tag = 'x'");
+        assertAnsweredWithOneQuery("SELECT d.* FROM cmis:document d WHERE nemaki:tag = 'x'");
+        assertAnsweredWithOneQuery("SELECT cmis:objectId, SCORE() FROM cmis:document WHERE nemaki:tag = 'x'");
+        assertAnsweredWithOneQuery("SELECT d.cmis:name FROM cmis:document d WHERE d.nemaki:tag = 'x'");
+    }
+
+    @Test
+    @DisplayName("an outer JOIN is refused for its shape when a definition fails while the statement is processed (R221)")
+    void aJoinOfTheWrongShapeIsRefusedBeforeAnUnreadableDefinitionIsAnswered() {
+        // processStatement's failure to read a definition answered 500 before the JOINs' shape was read; an outer JOIN was
+        // refused for its shape only when the definition failed in the walker (closing batch 25 review, Codex P2).
+        sent.clear();
+        CmisInvalidArgumentException refused = assertThrows(CmisInvalidArgumentException.class, () -> run("SELECT "
+                + "d.cmis:objectId FROM cmis:document d LEFT OUTER JOIN nemaki:defsUnreadable u "
+                + "ON d.cmis:objectId = u.cmis:objectId"), () -> "an outer JOIN was not refused for its shape — the queries "
+                + "it sent: " + sent);
+        assertTrue(refused.getMessage().contains("INNER JOIN"), () -> "the outer JOIN was refused for another reason: "
+                + refused.getMessage());
+        // The JOIN of a right shape: the server's failure, before the WHERE the fallback cannot translate is refused.
+        assertThrows(CmisRuntimeException.class, () -> run("SELECT d.cmis:objectId FROM cmis:document d JOIN "
+                + "nemaki:defsUnreadable u ON d.cmis:objectId = u.cmis:objectId WHERE cmis:name = 'a'"),
+                "a definition that could not be read was answered as the client's mistake");
+        assertEquals(List.of(), sent, "a statement whose definitions could not be read was sent anyway");
+    }
+
+    @Test
+    @DisplayName("a statement the walker refuses before its FROM — a column alias used twice — is the client's 400, not a 500 (R221)")
+    void aStatementTheWalkerRefusesIsTheClients() {
+        // The walker's own exception was not the parser's, so the FROM it never reached was answered as one the server
+        // could not resolve (measured on bedroom: 500, 2026-11-03).
+        assertRefusedWithoutAQuery("SELECT cmis:name x, cmis:objectId x FROM cmis:document");
     }
 
     /**
