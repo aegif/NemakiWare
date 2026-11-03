@@ -1902,79 +1902,94 @@ public class ContentServiceImpl implements ContentService {
 		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcCopyContent =
 				digestOfStoredAttachment(repositoryId, attachmentId);
 
-		// Set other properties
-		updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
+		// From here the copy is written, when there is one: a failure before its statement leaves a write with none, and it is
+		// counted (closing batch 41 review, subagent P3-1). The JVM failing is not answered.
+		Document result;
+		try {
+			// Set other properties
+			updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
 
-		// Create PWC itself
-		Document result = contentDaoService.create(repositoryId, pwc);
+			// Create PWC itself
+			result = contentDaoService.create(repositoryId, pwc);
 
-		// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
-		if (log.isDebugEnabled()) {
-			log.debug("Setting versionSeriesCheckedOutId for PWC: {}", result.getId());
+			// CRITICAL TCK FIX: Set versionSeriesCheckedOutId for PWC after it has been created and has an ID
+			if (log.isDebugEnabled()) {
+				log.debug("Setting versionSeriesCheckedOutId for PWC: {}", result.getId());
+			}
+			// PWC renditions, AFTER the PWC exists. They are copies OF the working copy, so they
+			// need its id both to be attached to it and to be recorded against it — and the old
+			// order had neither: the copies were made first and their ids thrown away.
+			copyRenditionsOnto(callContext, repositoryId, latest, result);
+			result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
+			result.setVersionSeriesCheckedOutId(result.getId());
+			result.setVersionSeriesCheckedOut(true);
+			result.setVersionSeriesCheckedOutBy(callContext.getUsername());
+			result = contentDaoService.update(repositoryId, result); // CRITICAL FIX: Use updated result
+			if (log.isDebugEnabled()) {
+				log.debug("PWC versionSeriesCheckedOutId set to: {}", result.getVersionSeriesCheckedOutId());
+			}
+
+		// Modify versionSeries
+		VersionSeries vs = getVersionSeries(repositoryId, result);
+		if (vs == null) {
+			log.warn("VersionSeries not found for document: {} during checkOut - document may have been deleted concurrently", result.getId());
+			// The working copy is created with the copy: its statement is true whatever became of the version series. This arm
+			// returned before it, leaving the row open and the write uncounted (closing batch 41 review, subagent P3-1 — since
+			// 3.4.0).
+			recordCreatedContentState(repositoryId, result, pwcCopyContent, pwcCopyWrite);
+			return result;
 		}
-		// PWC renditions, AFTER the PWC exists. They are copies OF the working copy, so they
-		// need its id both to be attached to it and to be recorded against it — and the old
-		// order had neither: the copies were made first and their ids thrown away.
-		copyRenditionsOnto(callContext, repositoryId, latest, result);
-		result.setPrivateWorkingCopy(true); // CRITICAL FIX: Ensure PWC flag is set before update
-		result.setVersionSeriesCheckedOutId(result.getId());
-		result.setVersionSeriesCheckedOut(true);
-		result.setVersionSeriesCheckedOutBy(callContext.getUsername());
-		result = contentDaoService.update(repositoryId, result); // CRITICAL FIX: Use updated result
-		if (log.isDebugEnabled()) {
-			log.debug("PWC versionSeriesCheckedOutId set to: {}", result.getVersionSeriesCheckedOutId());
-		}
+		updateVersionSeriesWithPwc(callContext, repositoryId, vs, result);
 
-	// Modify versionSeries
-	VersionSeries vs = getVersionSeries(repositoryId, result);
-	if (vs == null) {
-		log.warn("VersionSeries not found for document: {} during checkOut - document may have been deleted concurrently", result.getId());
-		return result;
-	}
-	updateVersionSeriesWithPwc(callContext, repositoryId, vs, result);
-
-		// CRITICAL TCK FIX: Update all versions in version series to reflect checked-out state
-		// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
-		if (log.isDebugEnabled()) {
-			log.debug("Starting version series update for VS: {}", vs.getId());
-		}
-		List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
-		if (log.isDebugEnabled()) {
-			log.debug("Found {} versions in version series", (versions != null ? versions.size() : 0));
-		}
-		if (CollectionUtils.isNotEmpty(versions)) {
-			for (Document version : versions) {
-				if (log.isDebugEnabled()) {
-					log.debug("Processing version {} (PWC: {})", version.getId(), version.isPrivateWorkingCopy());
-				}
-				if (!version.isPrivateWorkingCopy()) { // Don't update PWC, it already has correct properties
-					// Update versioning properties to reflect VersionSeries state
-					version.setVersionSeriesCheckedOut(true);
-					version.setVersionSeriesCheckedOutBy(callContext.getUsername());
-					version.setVersionSeriesCheckedOutId(result.getId());
-					contentDaoService.update(repositoryId, version);
-
-					// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
-					nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
+			// CRITICAL TCK FIX: Update all versions in version series to reflect checked-out state
+			// This ensures cmis:isVersionSeriesCheckedOut and related properties are updated
+			if (log.isDebugEnabled()) {
+				log.debug("Starting version series update for VS: {}", vs.getId());
+			}
+			List<Document> versions = contentDaoService.getAllVersions(repositoryId, vs.getId());
+			if (log.isDebugEnabled()) {
+				log.debug("Found {} versions in version series", (versions != null ? versions.size() : 0));
+			}
+			if (CollectionUtils.isNotEmpty(versions)) {
+				for (Document version : versions) {
 					if (log.isDebugEnabled()) {
-						log.debug("Updated and invalidated cache for version {}", version.getId());
+						log.debug("Processing version {} (PWC: {})", version.getId(), version.isPrivateWorkingCopy());
+					}
+					if (!version.isPrivateWorkingCopy()) { // Don't update PWC, it already has correct properties
+						// Update versioning properties to reflect VersionSeries state
+						version.setVersionSeriesCheckedOut(true);
+						version.setVersionSeriesCheckedOutBy(callContext.getUsername());
+						version.setVersionSeriesCheckedOutId(result.getId());
+						contentDaoService.update(repositoryId, version);
+
+						// CRITICAL FIX: Invalidate cache for updated version to ensure UI sees updated properties
+						nemakiCachePool.get(repositoryId).getObjectDataCache().remove(version.getId());
+						if (log.isDebugEnabled()) {
+							log.debug("Updated and invalidated cache for version {}", version.getId());
+						}
 					}
 				}
 			}
-		}
 
-		// Write change event
-		writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
+			// Write change event
+			writeChangeEvent(callContext, repositoryId, result, ChangeType.CREATED);
 
-		// Solr indexing (failure won't affect main operation)
-		try {
-			if (solrUtil != null) {
-				solrUtil.indexDocument(repositoryId, result);
+			// Solr indexing (failure won't affect main operation)
+			try {
+				if (solrUtil != null) {
+					solrUtil.indexDocument(repositoryId, result);
+				}
+			} catch (Exception e) {
+				log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
 			}
-		} catch (Exception e) {
-			log.warn("checkOut: Solr indexing failed for PWC " + result.getId() + ": " + e.getMessage());
-		}
 
+		} catch (RuntimeException | Error failed) {
+			if (attachmentId != null && recordContentState != null && !(failed instanceof VirtualMachineError)) {
+				recordContentState.leaveUnrecorded(pwcCopyWrite, "the check-out of " + objectId
+						+ " failed after its content was copied, before the copy was recorded");
+			}
+			throw failed;
+		}
 		recordCreatedContentState(repositoryId, result, pwcCopyContent, pwcCopyWrite);
 
 		return result;
