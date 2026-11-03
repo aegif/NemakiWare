@@ -172,6 +172,7 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   （`SELECT nemaki:commentable.nemaki:comment FROM cmis:document` は 198 件のまま）。同じ WAR で 32 の文を直す前と後で測りました。
 - **既知の欠陥（残件 R234・R235）**: 解析が落ちる文の ORDER BY が、問い合わせ名が id と違う性質を問い合わせ名で名指すとき（bedroom の `ORDER BY comment`）と、
   SELECT の列の別名を名指すときは、並べ替えずに返します（昇順と降順が同じ順でした — 性質の id で名指す `ORDER BY nemaki:comment` は並べ替えます）。
+  3.4.1 では直しません。
   大文字小文字の違う問い合わせ名の列（`SELECT CMIS:NAME`）は、答えの行にその列が入りません（解析が通る文でも同じ — 以前から）。
   IN_TREE は、木の大きいフォルダ（bedroom のルート）を名指すと 500 です（Solr が URI の長さで拒みます — 以前から）。
 
