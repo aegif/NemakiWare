@@ -125,7 +125,8 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   修飾子付きの IN_FOLDER・IN_TREE（`IN_FOLDER(d, '<id>')`）は、修飾子が FROM の行かクライアントの JOIN の行なら修飾子の無い同じ文と同じに、
   JOIN を書いていない secondary type の名前ならその JOIN を書いた文と同じに答えます（以前は修飾子が FROM の別名でも Solr が拒み、500 でした —
   bedroom で 20 の形を測りました）。secondary type の名前で修飾するときは、SELECT の `cmis:*` も FROM の型で修飾してください
-  （`cmis:document.cmis:objectId` — 修飾しない名前はどちらの行か決まらず 400）。query で含める subtype を持つ secondary type の修飾子は 400 です。
+  （`cmis:document.cmis:objectId`。修飾しない名前はどちらの行か決まらないので、補助のパーサが訳せない WHERE の文 — 修飾子付きの IN_FOLDER・IN_TREE を
+  含む — は 400 です。WHERE の無い文は答えます — `SELECT cmis:objectId, nemaki:commentable.nemaki:comment FROM cmis:document` は 198 件。残件 R234）。query で含める subtype を持つ secondary type の修飾子は 400 です。
   IN_TREE は、フォルダ階層を Solr から読めなかったとき 0 件で答える既知の欠陥があります（残件 R222 — 失敗は ERROR のログに残ります）。修飾しない性質の名前だけの文は、これまでどおり絞りません。
   リポジトリの能力の宣言（`capabilityJoin`）は `none` のままです。
 - 訳せる文の答えは変わりません（WHERE 無しは 2,449 件・`cmis:name LIKE '%a%'` は 15 件・
@@ -163,12 +164,16 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   足しません。JOIN を書くか型の名前で修飾してください — `SELECT nemaki:commentable.nemaki:comment FROM cmis:document` はその型を持つ
   文書を返します）、FROM の行で修飾した secondary type の性質（`SELECT d.nemaki:comment FROM cmis:document d WHERE …`・
   `SELECT cmis:document.nemaki:comment FROM cmis:document` — 修飾子の行の型が定義しません）、どの行でもない修飾子（`zz.`、JOIN していない
-  primary type の名前 — WHERE の中も）、FROM の別名が secondary type の問い合わせ名で、その別名で secondary type の性質を修飾した文。
+  primary type の名前。WHERE の中では、型の名前の修飾子は以前から 400 で、新しく 400 になるのは `zz.` のような型の名前でない修飾子です）、FROM の別名が secondary type の問い合わせ名で、その別名で secondary type の性質を修飾した文。
   SELECT の列の別名を重ねた文（`SELECT cmis:name x, cmis:objectId x FROM …`）は 500 から 400 になりました。型の定義が読めないときも、
   外部結合などの形で拒む JOIN は 500 ではなく 400 です。
 - 解析が落ちる文でも、答えが変わらないものがあります — 補助のパーサが WHERE を訳し、列がどれも行の型に定義される文
   （`SELECT nemaki:comment FROM cmis:document WHERE nemaki:comment IS NOT NULL` は 56 件のまま）、修飾子で行を名指す文
   （`SELECT nemaki:commentable.nemaki:comment FROM cmis:document` は 198 件のまま）。同じ WAR で 32 の文を直す前と後で測りました。
+- **既知の欠陥（残件 R234・R235）**: 解析が落ちる文の ORDER BY が、問い合わせ名が id と違う性質を問い合わせ名で名指すとき（bedroom の `ORDER BY comment`）と、
+  SELECT の列の別名を名指すときは、並べ替えずに返します（昇順と降順が同じ順でした — 性質の id で名指す `ORDER BY nemaki:comment` は並べ替えます）。
+  大文字小文字の違う問い合わせ名の列（`SELECT CMIS:NAME`）は、答えの行にその列が入りません（解析が通る文でも同じ — 以前から）。
+  IN_TREE は、木の大きいフォルダ（bedroom のルート）を名指すと 500 です（Solr が URI の長さで拒みます — 以前から）。
 
 ### 主張しないこと
 
