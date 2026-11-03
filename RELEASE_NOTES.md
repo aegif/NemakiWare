@@ -119,9 +119,9 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   修飾しない名前はどちらの型の列か決まらず、補助のパーサが訳せない WHERE は 400 になります。型の管理が secondary type の性質を
   解けないとき（bedroom の `nemaki:commentable` の `nemaki:comment`）は、WHERE の中でその性質を型の名前で修飾した文も 400 です
   （JOIN を書いて別名で修飾し、補助のパーサが WHERE を丸ごと訳せれば答えます）。サーバが足す JOIN は型の問い合わせ名で書くので、
-  問い合わせ名が型の id と違う secondary type でも同じに答えます — ただし FROM の別名が secondary type の問い合わせ名か id と
-  同じ文は、JOIN が足されず FROM の型の文書を全部返す既知の欠陥があります（残件 R221。別名は型の名前と違うものにしてください）。
-  WHERE の無い文は、SELECT の列や ORDER BY の性質が解けなくても 400 にならず、FROM の型の文書を全部返します（同じく R221）。
+  問い合わせ名が型の id と違う secondary type でも同じに答えます。FROM の別名が secondary type の id と同じ文でも、その JOIN を足して
+  絞ります。FROM の別名が secondary type の問い合わせ名と同じ文では、その名前の修飾子は CMIS の規則どおり別名の行を指します（その行の型が
+  定義しない性質なら 400 — 以前は JOIN が足されず、FROM の型の文書を全部返していました。下の「解析が落ちた文の答え」）。
   修飾子付きの IN_FOLDER・IN_TREE（`IN_FOLDER(d, '<id>')`）は、修飾子が FROM の行かクライアントの JOIN の行なら修飾子の無い同じ文と同じに、
   JOIN を書いていない secondary type の名前ならその JOIN を書いた文と同じに答えます（以前は修飾子が FROM の別名でも Solr が拒み、500 でした —
   bedroom で 20 の形を測りました）。secondary type の名前で修飾するときは、SELECT の `cmis:*` も FROM の型で修飾してください
@@ -136,7 +136,7 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
 - **これまで 200 を返していた文の一部が 400 になります** — `cmis:rm_*` の条件、接頭辞の無い問い合わせ名、どの型も
   定義しない名前、補助のパーサが 1 つの述語しか訳せない複合 WHERE、複数値の性質への `=`・`LIKE`（`ANY … IN` に書き換えて
   ください）、`FROM` の型が持たない subtype の性質（`FROM` にその subtype を書いてください）、`FROM` に無い型、
-  `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文、secondary type でない型との JOIN・外部結合
+  `ANY … NOT IN`、検索の索引に入っていない 9 つの性質（上）、解析できない文、解析が落ちる文でどの行も定義しない列やどの行でもない修飾子を書いた文（下の「解析が落ちた文の答え」）、secondary type でない型との JOIN・外部結合
   （`LEFT OUTER JOIN`）・ON が両方の `cmis:objectId` の等価でない JOIN（ON の無いものを含む）・FROM の 2 つの行に同じ名前を
   付けた JOIN（別名の無い JOIN は型の名前を使うので、同じ型を別名なしで 2 度 JOIN した文を含む — 別名を付けてください）・
   query で含める subtype を持つ secondary type との JOIN と、その型で列を修飾した文（JOIN を書かない文も）。
@@ -150,13 +150,25 @@ WHERE 節の中の述語を 1 つだけ見つけたときは、**その 1 つだ
   `cmis:versionSeriesCheckedOutBy`・`cmis:allowedChildObjectTypeIds`・`cmis:isImmutable`・`cmis:isLatestMajorVersion`・
   `cmis:policyText`。どれも問い合わせると 400 です。
 
-### 既知の欠陥（以前から — 残件 R221）
+### 解析が落ちた文の答え（残件 R221 — 3.4.1 で直しました）
 
-- WHERE も JOIN も無い問い合わせで、SELECT の列や ORDER BY の性質が解けない（問い合わせの解析が失敗する）と、400 にならず、FROM の型の文書を
-  全部返します。bedroom で `SELECT nemaki:comment FROM cmis:document`（bedroom の型の定義では、この性質の問い合わせ名は `comment` — 型の
-  定義を読んで確かめました。`SELECT comment FROM cmis:document` も全件を返します）と `SELECT zz.cmis:objectId FROM
-  cmis:document`（`zz` は FROM に無い修飾子）は、どちらも `SELECT cmis:objectId FROM cmis:document` と同じ 2,663 件を返しました。3.4.1 で直す
-  予定で、直すとこれらの文は 400 になります。
+- 問い合わせの解析が落ちた文（型の管理が secondary type の性質を解けない bedroom の `nemaki:comment` など）は、SELECT の列や ORDER BY の性質が
+  解けなくても、WHERE が無ければ FROM の型の文書を全部、補助のパーサが訳す WHERE があればその答えを返していました。bedroom で
+  `SELECT cmis:document.nemaki:nonexistent FROM cmis:document`・`SELECT zz.cmis:objectId FROM cmis:document`（`zz` は FROM に無い修飾子）・
+  `SELECT cmis:objectId FROM cmis:document ORDER BY nemaki:nonexistent` はどれも全 2,930 件を返し、存在しない SELECT の列と ORDER BY は
+  `WHERE nemaki:comment IS NOT NULL` を足しても、WHERE の中のどの行でもない修飾子（`WHERE zz.nemaki:comment IS NOT NULL`）も 56 件を
+  返しました。今はどれも 400 です。解析が落ちた文は、SELECT と ORDER BY の各列が、修飾子が名指す行（修飾子が無ければ
+  いずれかの行）の型に問い合わせ名か id で定義され、WHERE の修飾子がどれも行を名指すときだけ答えます。
+- **上げると 400 になる文**: `SELECT nemaki:comment FROM cmis:document`（WHERE に出ない修飾無しの secondary type の性質には、サーバは JOIN を
+  足しません。JOIN を書くか型の名前で修飾してください — `SELECT nemaki:commentable.nemaki:comment FROM cmis:document` はその型を持つ
+  文書を返します）、FROM の行で修飾した secondary type の性質（`SELECT d.nemaki:comment FROM cmis:document d WHERE …`・
+  `SELECT cmis:document.nemaki:comment FROM cmis:document` — 修飾子の行の型が定義しません）、どの行でもない修飾子（`zz.`、JOIN していない
+  primary type の名前 — WHERE の中も）、FROM の別名が secondary type の問い合わせ名で、その別名で secondary type の性質を修飾した文。
+  SELECT の列の別名を重ねた文（`SELECT cmis:name x, cmis:objectId x FROM …`）は 500 から 400 になりました。型の定義が読めないときも、
+  外部結合などの形で拒む JOIN は 500 ではなく 400 です。
+- 解析が落ちる文でも、答えが変わらないものがあります — 補助のパーサが WHERE を訳し、列がどれも行の型に定義される文
+  （`SELECT nemaki:comment FROM cmis:document WHERE nemaki:comment IS NOT NULL` は 56 件のまま）、修飾子で行を名指す文
+  （`SELECT nemaki:commentable.nemaki:comment FROM cmis:document` は 198 件のまま）。同じ WAR で 32 の文を直す前と後で測りました。
 
 ### 主張しないこと
 
@@ -693,7 +705,7 @@ removing M`）、**誰が要求したか**は出ません。`allowedAuthMethods`
   版を読み直して、その内容を指していないと確かめたときだけです。それ以外の失敗（要求を出す途中で接続を拒まれたものを含む）では保存された
   かどうか分からないので、内容を残し、E1 の記録は書かずに未記録の書き込みとして数えます（記録の行があれば開いたまま。JVM の失敗では、版を
   キャッシュから外すだけです）。内容の無かった PWC・文書に内容を入れるときの preview は、版を保存した後に作ります（文書は preview を持って
-  いたときだけ作り直そうとしますが、その作り直しは今は落ちて preview は作られず、消した内容の preview が残ります — 3.4.1 のうちに直す予定）。preview が例外で作れないときも要求は落としません（Error では落ちます — 記録した限界）。
+  いたときだけ作り直そうとしますが、その作り直しは今は落ちます — rendition を保存し、複製を記録してから一覧に足して落ちるので、試すたびに使われない rendition と、どの版も指さない複製の記録が残り、消した内容の preview も残ります。残件 R231 — 3.4.1 のうちに直す予定）。preview が例外で作れないときも要求は落としません（Error では落ちます — 記録した限界）。
 
 ## CMIS の `productVersion` がビルドの版を返すようになりました
 
