@@ -171,4 +171,81 @@ class ACheckOutThatDoesNotFinishStillAnswersForItsCopyTest {
         assertThrows(StackOverflowError.class, () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null));
         verify(recorder, never()).leaveUnrecorded(any(), anyString());
     }
+
+    @Test
+    @DisplayName("a copy whose source cannot be taken out of the cache writes nothing — no copy is left unanswered")
+    @SuppressWarnings("unchecked")
+    void aCopyWhoseCacheCannotBeClearedWritesNothing() throws Exception {
+        // The eviction ran after the copy was written: when it failed, the copy was written and its id never returned, so
+        // nothing could record or count it (closing batch 42 review, Codex P3 and subagent P3-4).
+        jp.aegif.nemaki.dao.ContentDaoService dao = withACopy();
+        RecordContentStateRecorder recorder = recorder();
+        ContentServiceImpl service = serviceOn(dao, recorder);
+        Field poolField = ContentServiceImpl.class.getDeclaredField("nemakiCachePool");
+        poolField.setAccessible(true);
+        jp.aegif.nemaki.util.cache.NemakiCachePool pool = (jp.aegif.nemaki.util.cache.NemakiCachePool) poolField.get(service);
+        jp.aegif.nemaki.util.cache.model.NemakiCache<AttachmentNode> attachments = mock(jp.aegif.nemaki.util.cache.model.NemakiCache.class);
+        org.mockito.Mockito.doThrow(new IllegalStateException("the cache could not be cleared")).when(attachments).remove("att-9");
+        when(pool.get("bedroom").getAttachmentCache()).thenReturn(attachments);
+
+        assertThrows(IllegalStateException.class, () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null));
+        verify(dao, never()).createAttachment(anyString(), any(AttachmentNode.class), any());
+    }
+
+    @Test
+    @DisplayName("a check-out whose copy's digest fails with an Error counts the copy")
+    void aCheckOutWhoseCopyDigestFailsWithAnErrorCountsIt() throws Exception {
+        jp.aegif.nemaki.dao.ContentDaoService dao = withACopy();
+        when(dao.getAttachment("bedroom", "att-copy")).thenThrow(new NoClassDefFoundError("a stream class"));
+        RecordContentStateRecorder recorder = recorder();
+        ContentServiceImpl service = serviceOn(dao, recorder);
+
+        assertThrows(NoClassDefFoundError.class, () -> service.checkOut(mock(CallContext.class), "bedroom", "doc-1", null));
+        verify(recorder).leaveUnrecorded(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a statement that cannot be built because a class will not load is counted as a write with no statement")
+    void aStatementThatCannotBeBuiltWithAnErrorIsCounted() throws Exception {
+        // No arm produces it, so the arm is driven directly: the version's id is read to build the statement.
+        RecordContentStateRecorder recorder = recorder();
+        ContentServiceImpl service = serviceOn(dao(null), recorder);
+        Document version = mock(Document.class);
+        when(version.getId()).thenThrow(new NoClassDefFoundError("a model class")).thenReturn("pwc-1");
+        java.lang.reflect.Method record = ContentServiceImpl.class.getDeclaredMethod("recordContentState", String.class,
+                Document.class, jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written.class,
+                RecordContentStateRecorder.Pending.class, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.class);
+        record.setAccessible(true);
+
+        assertDoesNotThrow(() -> record.invoke(service, "bedroom", version,
+                new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-copy",
+                        "0000000000000000000000000000000000000000000000000000000000000000", 11L),
+                PENDING, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED),
+                "a statement that could not be built for want of a class failed the write instead of being counted");
+        verify(recorder).leaveUnrecorded(any(), anyString());
+        verify(recorder, never()).recordAndClose(any(), any());
+    }
+
+    @Test
+    @DisplayName("the JVM failing while a statement is built goes up, uncounted")
+    void theJvmFailingWhileBuildingAStatementGoesUp() throws Exception {
+        RecordContentStateRecorder recorder = recorder();
+        ContentServiceImpl service = serviceOn(dao(null), recorder);
+        Document version = mock(Document.class);
+        when(version.getId()).thenThrow(new StackOverflowError("deep")).thenReturn("pwc-1");
+        java.lang.reflect.Method record = ContentServiceImpl.class.getDeclaredMethod("recordContentState", String.class,
+                Document.class, jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written.class,
+                RecordContentStateRecorder.Pending.class, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.class);
+        record.setAccessible(true);
+
+        java.lang.reflect.InvocationTargetException thrown = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> record.invoke(service, "bedroom", version,
+                        new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-copy",
+                                "0000000000000000000000000000000000000000000000000000000000000000", 11L),
+                        PENDING, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED),
+                "the JVM failing while a statement was built was swallowed");
+        org.junit.jupiter.api.Assertions.assertInstanceOf(StackOverflowError.class, thrown.getCause(),
+                "the JVM failing while a statement was built did not go up as it was");
+        verify(recorder, never()).leaveUnrecorded(any(), anyString());
+    }
 }

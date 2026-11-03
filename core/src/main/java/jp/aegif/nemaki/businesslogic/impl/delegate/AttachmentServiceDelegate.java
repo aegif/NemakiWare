@@ -239,12 +239,12 @@ public class AttachmentServiceDelegate {
 		copy.setMimeType(mimeType);
 		helper.setSignature(callContext, copy);
 
-		String newAttachmentId = contentDaoService.createAttachment(repositoryId, copy, cs);
-
-		// Invalidate cache: getAttachment cached the original with its InputStream now consumed
+		// Invalidate cache BEFORE the copy is written: getAttachment cached the original with the InputStream the copy is
+		// about to consume. After the write, a failure to evict left the copy written and its id unreturned, so the caller
+		// could neither record it nor count it (closing batch 42 review, Codex P3 and subagent P3-4).
 		nemakiCachePool.get(repositoryId).getAttachmentCache().remove(attachmentId);
 
-		return newAttachmentId;
+		return contentDaoService.createAttachment(repositoryId, copy, cs);
 	}
 
 	/**

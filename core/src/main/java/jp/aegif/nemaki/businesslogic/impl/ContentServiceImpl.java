@@ -1899,13 +1899,15 @@ public class ContentServiceImpl implements ContentService {
 		// checked out into a working copy that reports itself as having no content.
 		String attachmentId = copyAttachmentOrRefuse(callContext, repositoryId, latest.getAttachmentNodeId());
 		pwc.setAttachmentNodeId(attachmentId);
-		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcCopyContent =
-				digestOfStoredAttachment(repositoryId, attachmentId);
 
 		// From here the copy is written, when there is one: a failure before its statement leaves a write with none, and it is
-		// counted (closing batch 41 review, subagent P3-1). The JVM failing is not answered.
+		// counted (closing batch 41 review, subagent P3-1) — the digest of the copy among them (closing batch 42 review, Codex
+		// P3 and subagent P3-4: the try began after it). The JVM failing is not answered.
+		jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written pwcCopyContent = null;
 		Document result;
 		try {
+			pwcCopyContent = digestOfStoredAttachment(repositoryId, attachmentId);
+
 			// Set other properties
 			updateVersionProperties(callContext, repositoryId, VersioningState.CHECKEDOUT, pwc, latest);
 
@@ -5824,9 +5826,13 @@ public class ContentServiceImpl implements ContentService {
 					repositoryId, created.getId(), created.getId(),
 					written.attachmentId(), written.contentDigest(), written.length(),
 					kind, null, java.time.Instant.now().toString());
-		} catch (RuntimeException e) {
-			// The statement's own validation. A version key or a digest this class cannot produce is a reason to record
-			// nothing, not a reason to fail the write.
+		} catch (RuntimeException | Error e) {
+			if (e instanceof VirtualMachineError) {
+				throw (VirtualMachineError) e;
+			}
+			// The statement's own validation, or a class it needs that will not load. A version key or a digest this class
+			// cannot produce is a reason to record nothing, not a reason to fail the write — and an Error here went up
+			// uncounted on the main path of a check-out (closing batch 42 review, subagent P3-4).
 			recordContentState.leaveUnrecorded(pending, "no statement could be built for " + created.getId() + ": " + e);
 			return;
 		}
