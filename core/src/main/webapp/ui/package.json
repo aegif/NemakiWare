@@ -64,7 +64,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
-    "vite": "^7.2.2",
+    "vite": "^7.3.7",
     "vitest": "^4.0.16"
   },
   "overrides": {
