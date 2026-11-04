@@ -1103,6 +1103,26 @@ setup が CouchDB に送る要求のうち、admin のパスワード変更、�
   既存の入れ子を接頭辞付きのまま比べます（前は接頭辞を外して比べたので、LDAP のグループと同じ id のローカルの
   グループを同じものとみなし、入れ子を置き換えていませんでした）。
 
+## 依存を更新しました（Dependabot）
+
+公開の前に Dependabot の警告をこの版の依存と照らし、配布物（WAR）に入るものを上げました。
+
+- **dompurify 3.4.16 → 3.4.17**（UI。GHSA-cg2g-xh64-v4q7・GHSA-mrv2-3pqr-j5jr・GHSA-c6gr-qvv4-5v3f）。図と CAD の
+  プレビューは、サーバが作った SVG を dompurify で消毒してから表示します。2 つの版をプレビューと同じ設定で SVG 1,798 個に
+  当てた出力は、すべて同じでした
+- **guava 33.6.0-jre → 33.7.2-jre**（サーバ。GHSA-xxph-c9ww-hj94）。一緒に error_prone_annotations が 2.47.0 → 2.50.0 になります
+
+どちらも、この製品の使い方では届かないと読んでいます — DOMPurify は文字列の出力だけに使い、警告の条件
+（SAFE_FOR_TEMPLATES と DOM の出力、IN_PLACE、xhtml としての解析）を使っていません。guava の警告は Java の逆直列化で、
+製品のコードは逆直列化をしていません。読解であって、突けないことを試したのではありません。
+
+上げていないもの:
+
+- **deepmerge 4.3.1**（GHSA-gcqx-w48m-w2h4、low）— 直った版がありません。API のドキュメントの画面（swagger-ui）が持ち込み、
+  UI に入っています
+- **follow-redirects 1.16.0** — package-lock.json では本番の依存ですが、UI には入っていません（axios のブラウザ版は使いません）
+- 開発用の **vite・vitest（@vitest/mocker）・undici** — 配布物に入りません
+
 ## 独立 verifier の CLI は 3.4.1 の版で配ります（判定は 3.4.0 と同じです）
 
 verifier のコードは 3.4.0 から変えていません。配布物の名前だけが 3.4.1 になります。
