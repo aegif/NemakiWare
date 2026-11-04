@@ -42,7 +42,7 @@
 
 		     1.85 is the fix for the Name Constraints bypass (trailing dot) that Dependabot
 		     rates critical, and for the lazy-ASN.1 nesting-depth reset it rates high. -->
-		<org.bouncycastle.version>1.85</org.bouncycastle.version>
+		<org.bouncycastle.version>1.86</org.bouncycastle.version>
 		<httpcomponents.client5.version>5.6.3</httpcomponents.client5.version>
 		<httpcomponents.core5.version>5.4.3</httpcomponents.core5.version>
 		<opencmis.github.packages.url>https://maven.pkg.github.com/aegif/chemistry-opencmis-nemakiware</opencmis.github.packages.url>
