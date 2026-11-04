@@ -843,10 +843,20 @@ public class ArchiveDaoDelegate {
 						if (updatedDoc != null) {
 							Map<String, com.ibm.cloud.cloudant.v1.model.Attachment> atts = updatedDoc.getAttachments();
 							if (atts != null && atts.get("content") != null) {
-								long actualLength = atts.get("content").length();
-								// Vouched for only when what CouchDB stored is what went past.
+								long storedLength = atts.get("content").length();
+								// THE DOCUMENT'S LENGTH IS THE BYTES WRITTEN BACK, not the stub's (R241). The row is kept
+								// with `encoding: gzip`, and its stub `length` is then the size of the encoded bytes —
+								// measured on nb33: 3 bytes restored, stub `length` = `encoded_length` = 23, for
+								// application/octet-stream as for text/plain. Copying that declared 23 and a CMIS read
+								// ended after 3. The other writes record the length counted at upload, and the reader
+								// (CouchAttachmentNode.getActualLength) discards a gzip stub's length and reads that field.
+								long writtenBack = bytesCounted[0];
+								// Vouched for only when what CouchDB stored is what went past. This still compares the
+								// stub's length, so a row kept gzip-encoded is vouched for only when its encoded size
+								// happens to equal the bytes, and otherwise its journal row stays open — not changed
+								// here (R243).
 								restored = new jp.aegif.nemaki.dao.ContentDaoService.RestoredBytes(originalId,
-										actualLength == bytesCounted[0] ? restoredDigest : null, actualLength);
+										storedLength == writtenBack ? restoredDigest : null, storedLength);
 								Map<String, Object> updateMap = new HashMap<>();
 								updateMap.put("_id", originalId);
 								updateMap.put("_rev", updatedDoc.getRev());
@@ -854,8 +864,8 @@ public class ArchiveDaoDelegate {
 								if (props != null) {
 									updateMap.putAll(props);
 								}
-								updateMap.put("length", actualLength);
-								updateMap.put("actualLength", actualLength);
+								updateMap.put("length", writtenBack);
+								updateMap.put("actualLength", writtenBack);
 								// Include _attachments stubs to preserve binary
 								Map<String, Object> attachmentsStubs = new HashMap<>();
 								for (Map.Entry<String, com.ibm.cloud.cloudant.v1.model.Attachment> entry : atts.entrySet()) {
@@ -867,7 +877,7 @@ public class ArchiveDaoDelegate {
 								}
 								updateMap.put("_attachments", attachmentsStubs);
 								client.update(updateMap);
-								log.info("restoreAttachment: updated length to " + actualLength + " for " + originalId);
+								log.info("restoreAttachment: updated length to " + writtenBack + " for " + originalId);
 							}
 						}
 

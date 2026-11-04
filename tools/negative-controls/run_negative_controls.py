@@ -30103,6 +30103,26 @@ CONTROLS = [
         test='TheAttachmentWriteReportsItsRevisionTest',
         expect_fail=['aRowReadBackCarriesItsRevision'],
     ),
+    dict(
+        id='DX6',
+        what="R241: a restored row's length is the gzip stub's length again, so a CMIS read declares the encoded size and ends short of it (closing batch 46, measured on nb33)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/ArchiveDaoDelegate.java',
+        find='\t\t\t\t\t\t\t\tlong writtenBack = bytesCounted[0];\n',
+        replace='\t\t\t\t\t\t\t\tlong writtenBack = storedLength;\n',
+        test='ARestoredRowDeclaresTheBytesItWroteBackTest',
+        expect_fail=['theRestoredRowDeclaresTheBytesWrittenBack'],
+    ),
+    dict(
+        id='DY6',
+        what="R241: a restored row keeps the length its archive carried, so a row an earlier build restored with the encoded size keeps declaring it (closing batch 46)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/dao/impl/couch/delegate/ArchiveDaoDelegate.java',
+        find='\t\t\t\t\t\t\t\tupdateMap.put("length", writtenBack);\n\t\t\t\t\t\t\t\tupdateMap.put("actualLength", writtenBack);\n',
+        replace='',
+        test='ARestoredRowDeclaresTheBytesItWroteBackTest',
+        expect_fail=['theRestoredRowDeclaresTheBytesWrittenBack'],
+    ),
 ]
 
 
