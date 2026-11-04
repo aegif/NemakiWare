@@ -48,8 +48,11 @@ import static org.mockito.Mockito.when;
  * recorded in either order: the content made for a version that had none was stored, another replica appended to it and
  * recorded that, and the first statement was recorded after — the statement of bytes the append had replaced became the
  * newest (closing batch 38 review, Codex P1-1). In-place rewrites have the same shape (3.4.0). The store gives every write of a
- * row a revision of a higher generation, and that is the order the writes were made in. Across rows — content removed and made
- * again, a transition, a restore — the order stays the ledger's (the owner's choice, 2026-11-04).
+ * row a revision of a higher generation, and that is the order the writes were made in — within one lifetime of the row. Across
+ * rows — content removed and made again, a transition, a restore — the order stays the ledger's (the owner's choice,
+ * 2026-11-04), and so it does across lifetimes of one row: a restore makes the row again under its id and its revisions count
+ * from 1 again, so the generations of a write before the deletion and one after the restore say nothing about each other
+ * (R239 — measured on nb33: the second deletion's ARCHIVED copied the digest of the content before the first deletion).
  */
 class ALaterWriteOfTheSameRowIsTheNewestTest {
 
@@ -61,8 +64,16 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
         return journal;
     }
 
-    /** A closed row as the journal stores it: its statement (about content {@code row}, or none), sequence and generation. */
+    /** The lifetime the rows of these tests were written in, unless a test names another (R239). */
+    private static final String LIFETIME = "inc-before";
+
+    /** A closed row as the journal stores it, written in {@link #LIFETIME} when it has a generation. */
     private static Map<String, Object> row(String digest, String row, long sequence, Object generation) {
+        return row(digest, row, sequence, generation, generation == null ? null : LIFETIME);
+    }
+
+    /** A closed row as the journal stores it: its statement (about content {@code row}, or none), sequence, generation and lifetime. */
+    private static Map<String, Object> row(String digest, String row, long sequence, Object generation, Object lifetime) {
         Map<String, Object> statement = new LinkedHashMap<>();
         statement.put("contentDigest", digest);
         if (row != null) {
@@ -73,6 +84,9 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
         props.put("entrySequence", sequence);
         if (generation != null) {
             props.put("writtenGeneration", generation);
+        }
+        if (lifetime != null) {
+            props.put("writtenLifetime", lifetime);
         }
         return props;
     }
@@ -141,7 +155,43 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
     }
 
     @Test
-    @DisplayName("the journal keeps the generation a row was closed with, and closes a row given none without one")
+    @DisplayName("a write before a restore does not take the newest place from one after it, whatever its generation (R239)")
+    void aWriteBeforeARestoreDoesNotOvertakeOneAfterIt() {
+        // Written up to generation 6 before the deletion; the restore made the row again and the next write left it at 5.
+        assertEquals("after", newestDigest(row("before", "att-1", 10, 6L, "inc-before"), row("archived", null, 11, null),
+                        row("after", "att-1", 13, 5L, "inc-after")),
+                "a write made before the deletion took the newest place from one made after the restore — its generation "
+                        + "counts in another lifetime of the row");
+        // In one lifetime the generation still decides (R229).
+        assertEquals("stored-later", newestDigest(row("stored-later", "att-1", 13, 7L, "inc-after"),
+                        row("recorded-later", "att-1", 14, 5L, "inc-after"), row("before", "att-1", 10, 9L, "inc-before")),
+                "in one lifetime of the row the later write was not the newest, or a write of another lifetime was compared");
+    }
+
+    @Test
+    @DisplayName("a generation kept without a lifetime is ordered by the ledger, as a row closed before the generation was kept")
+    void aGenerationKeptWithoutALifetimeIsOrderedByTheLedger() {
+        assertEquals("recorded-later", newestDigest(row("higher", "att-1", 10, 9L, null), row("recorded-later", "att-1", 12, 2L, null)),
+                "rows whose generations count in no known lifetime were compared by generation");
+        assertEquals("placed", newestDigest(row("unplaced", "att-1", 10, 9L, null), row("placed", "att-1", 12, 2L, "inc-after")),
+                "a generation with no lifetime was compared with one written in a known lifetime");
+        assertEquals("unplaced", newestDigest(row("placed", "att-1", 10, 9L, "inc-after"), row("unplaced", "att-1", 12, 2L, null)),
+                "a newest row whose generation counts in no known lifetime was overtaken by an earlier one");
+    }
+
+    @Test
+    @DisplayName("a lifetime that cannot be read is a refusal, not a row of no lifetime (R239)")
+    void aLifetimeThatCannotBeReadIsARefusal() {
+        for (Object lifetime : java.util.Arrays.asList(5, "")) {
+            assertThrows(ContentWriteJournal.ContentWriteJournalUnavailable.class,
+                    () -> journalOver(clientReturning(row("a", "att-1", 10, 4L), row("b", "att-1", 11, 5L, lifetime)))
+                            .latestRecorded("bedroom", "v-1"),
+                    () -> "a row whose lifetime " + lifetime + " cannot be read was read as one of no lifetime");
+        }
+    }
+
+    @Test
+    @DisplayName("the journal keeps the generation and lifetime a row was closed with, and closes a row given none without them")
     @SuppressWarnings("unchecked")
     void theJournalKeepsTheGenerationARowWasClosedWith() {
         for (Long generation : java.util.Arrays.asList(7L, null)) {
@@ -161,12 +211,16 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
 
             ContentWriteJournal.CloseOutcome closed = generation == null
                     ? journal.close("intent-1", "v-1", "d".repeat(64), Map.of("contentDigest", "d"), 42L)
-                    : journal.close("intent-1", "v-1", "d".repeat(64), Map.of("contentDigest", "d"), 42L, generation);
+                    : journal.close("intent-1", "v-1", "d".repeat(64), Map.of("contentDigest", "d"), 42L, generation,
+                            "inc-1");
 
             assertEquals(ContentWriteJournal.CloseOutcome.CLOSED, closed, "the row was not closed");
             assertEquals(generation, written.getValue().get("writtenGeneration"),
                     () -> "the row was closed with a generation other than " + generation + " — the newest statement of its "
                             + "content is read from it");
+            assertEquals(generation == null ? null : "inc-1", written.getValue().get("writtenLifetime"),
+                    () -> "the row was closed with its generation and without the lifetime it counts in — a write before a "
+                            + "restore then compares with one after it (R239)");
         }
     }
 
@@ -189,7 +243,8 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
     private static ContentWriteJournal journal() {
         ContentWriteJournal journal = mock(ContentWriteJournal.class);
         when(journal.isActive()).thenReturn(true);
-        when(journal.close(anyString(), anyString(), anyString(), anyMap(), anyLong(), anyLong()))
+        // any() for the lifetime: a recorder that closed a row with none must reach the assertion that says so, not a null.
+        when(journal.close(anyString(), anyString(), anyString(), anyMap(), anyLong(), anyLong(), any()))
                 .thenReturn(ContentWriteJournal.CloseOutcome.CLOSED);
         when(journal.close(anyString(), anyString(), anyString(), anyMap(), anyLong()))
                 .thenReturn(ContentWriteJournal.CloseOutcome.CLOSED);
@@ -209,9 +264,9 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
     void theRowIsClosedWithTheGenerationOfTheWrittenRevision() {
         ContentWriteJournal journal = journal();
         RecordContentStateRecorder.Result result = recorderOver(journal, appending())
-                .recordAndClose(PENDING.writtenAt("7-0a1b"), statement());
+                .recordAndClose(PENDING.writtenAt("7-0a1b", "inc-1"), statement());
         assertEquals(RecordContentStateRecorder.Outcome.CHAINED, result.outcome(), "the write was not recorded: " + result);
-        verify(journal).close(eq("intent-1"), eq("v-1"), anyString(), anyMap(), eq(42L), eq(7L));
+        verify(journal).close(eq("intent-1"), eq("v-1"), anyString(), anyMap(), eq(42L), eq(7L), eq("inc-1"));
         verify(journal, never()).close(anyString(), anyString(), anyString(), anyMap(), anyLong());
     }
 
@@ -222,11 +277,27 @@ class ALaterWriteOfTheSameRowIsTheNewestTest {
             ContentWriteJournal journal = journal();
             EvidenceLedgerService ledger = appending();
             RecordContentStateRecorder recorder = recorderOver(journal, ledger);
-            RecordContentStateRecorder.Result result = recorder.recordAndClose(PENDING.writtenAt(revision), statement());
+            RecordContentStateRecorder.Result result = recorder.recordAndClose(PENDING.writtenAt(revision, "inc-1"), statement());
             assertEquals(RecordContentStateRecorder.Outcome.UNRECORDED_GAP_OPEN, result.outcome(),
                     () -> "a statement with the unreadable place " + revision + " was " + result.outcome());
             verify(ledger, never()).append(anyString(), any(), anyString(), anyString(), anyString());
             assertEquals(1, recorder.unrecordedWritesSinceStartup(), () -> "the unrecorded write " + revision
+                    + " was not counted");
+        }
+    }
+
+    @Test
+    @DisplayName("a write whose lifetime is not known leaves the statement unrecorded and the row open (R239)")
+    void aWriteWhoseLifetimeIsNotKnownIsLeftUnrecorded() {
+        for (String lifetime : java.util.Arrays.asList(null, "")) {
+            ContentWriteJournal journal = journal();
+            EvidenceLedgerService ledger = appending();
+            RecordContentStateRecorder recorder = recorderOver(journal, ledger);
+            RecordContentStateRecorder.Result result = recorder.recordAndClose(PENDING.writtenAt("7-0a1b", lifetime), statement());
+            assertEquals(RecordContentStateRecorder.Outcome.UNRECORDED_GAP_OPEN, result.outcome(),
+                    () -> "a statement whose generation counts in the unknown lifetime " + lifetime + " was " + result.outcome());
+            verify(ledger, never()).append(anyString(), any(), anyString(), anyString(), anyString());
+            assertEquals(1, recorder.unrecordedWritesSinceStartup(), () -> "the unrecorded write with lifetime " + lifetime
                     + " was not counted");
         }
     }

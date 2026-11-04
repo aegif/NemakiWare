@@ -135,6 +135,7 @@ class AContentWriteIsPlacedByTheRevisionItLeftTest {
         document.setSubTypeProperties(new ArrayList<>());
         document.setAspects(new ArrayList<>());
         document.setSecondaryIds(new ArrayList<>());
+        document.setContentIncarnation("inc-1");
         return document;
     }
 
@@ -148,6 +149,27 @@ class AContentWriteIsPlacedByTheRevisionItLeftTest {
         ArgumentCaptor<RecordContentStateRecorder.Pending> pending = ArgumentCaptor.forClass(RecordContentStateRecorder.Pending.class);
         verify(recorder).recordAndClose(pending.capture(), any());
         return pending.getValue().writtenRevision();
+    }
+
+    private static String recordedLifetime(RecordContentStateRecorder recorder) {
+        ArgumentCaptor<RecordContentStateRecorder.Pending> pending = ArgumentCaptor.forClass(RecordContentStateRecorder.Pending.class);
+        verify(recorder).recordAndClose(pending.capture(), any());
+        return pending.getValue().writtenLifetime();
+    }
+
+    @Test
+    @DisplayName("the write's place counts in the lifetime of the version it was made on — its content incarnation (R239)")
+    void theWriteIsPlacedInTheLifetimeOfItsVersion() throws Exception {
+        // A restore mints the version a new incarnation and makes the content row again, whose revisions count from 1 again.
+        // Recorded without it, a write made before the deletion is compared by generation with one made after the restore.
+        RecordContentStateRecorder rewritten = recorder();
+        serviceOn(dao("4-after"), rewritten).replacePwc(mock(CallContext.class), "bedroom", version(true, "att-1"), someContent());
+        assertEquals("inc-1", recordedLifetime(rewritten),
+                "the rewrite was recorded without the lifetime of the version it was made on");
+        RecordContentStateRecorder made = recorder();
+        serviceOn(dao("4-after"), made).replacePwc(mock(CallContext.class), "bedroom", version(true, null), someContent());
+        assertEquals("inc-1", recordedLifetime(made),
+                "the content made for a version was recorded without the lifetime of that version");
     }
 
     @Test

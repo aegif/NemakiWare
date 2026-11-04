@@ -5853,7 +5853,8 @@ public class ContentServiceImpl implements ContentService {
 		}
 		try {
 			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
-					recordContentState.recordAndClose(pending == null ? null : pending.writtenAt(written.revision()), statement);
+					recordContentState.recordAndClose(pending == null ? null
+							: pending.writtenAt(written.revision(), created.getContentIncarnation()), statement);
 			if (!result.inChain()) {
 				log.warn("E1: the content statement for {} is not in the chain ({}).",
 						created.getId(), result.outcome());

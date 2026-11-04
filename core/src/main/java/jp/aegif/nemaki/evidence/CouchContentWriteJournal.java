@@ -131,18 +131,22 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
     @Override
     public CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
             Map<String, Object> statementDocument, long entrySequence) {
-        return closeRow(intentId, versionObjectId, statementDigest, statementDocument, entrySequence, null);
+        return closeRow(intentId, versionObjectId, statementDigest, statementDocument, entrySequence, null, null);
     }
 
-    /** Closes the row with the generation the write left its content's row at, which {@link #latestRecorded} reads (R229). */
+    /**
+     * Closes the row with the generation the write left its content's row at and the lifetime of the row that generation
+     * counts in, which {@link #latestRecorded} reads (R229, R239).
+     */
     @Override
     public CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
-            Map<String, Object> statementDocument, long entrySequence, long writtenGeneration) {
-        return closeRow(intentId, versionObjectId, statementDigest, statementDocument, entrySequence, writtenGeneration);
+            Map<String, Object> statementDocument, long entrySequence, long writtenGeneration, String writtenLifetime) {
+        return closeRow(intentId, versionObjectId, statementDigest, statementDocument, entrySequence, writtenGeneration,
+                writtenLifetime);
     }
 
     private CloseOutcome closeRow(String intentId, String versionObjectId, String statementDigest,
-            Map<String, Object> statementDocument, long entrySequence, Long writtenGeneration) {
+            Map<String, Object> statementDocument, long entrySequence, Long writtenGeneration, String writtenLifetime) {
         String id = documentId(intentId);
         for (int attempt = 1; attempt <= MAX_CLOSE_ATTEMPTS; attempt++) {
             Document existing;
@@ -192,6 +196,7 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
             updated.put("entrySequence", entrySequence);
             if (writtenGeneration != null) {
                 updated.put("writtenGeneration", writtenGeneration);
+                updated.put("writtenLifetime", writtenLifetime);
             }
             try {
                 DocumentResult result = client().update(updated);
@@ -304,9 +309,13 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
         // had (found while wiring the transitions, 2026-09-22). The ledger sequence is the
         // one order that is time — of RECORDING. Unless a row of the same content was written later than that one (R229):
         // two writes of one content row made on two replicas are recorded in either order, and the store's revision of the
-        // row, whose generation each write raises, is the order they were made in.
+        // row, whose generation each write raises, is the order they were made in — within one lifetime of the row (R239): a
+        // restore makes the row again under its id and its revisions count from 1 again, so a write before the deletion can
+        // hold a higher generation than one after the restore. The lifetime is the version's content incarnation when the
+        // write was made, which a restore mints afresh.
         Recorded newest = null;
         Long newestGeneration = null;
+        String newestLifetime = null;
         java.util.List<Object[]> written = new java.util.ArrayList<>();
         for (ViewResultRow row : result.getRows()) {
             Document doc = row.getDoc();
@@ -341,19 +350,32 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
                         + " has no readable place among its content's writes; which statement is newest cannot "
                         + "be determined");
             }
+            Object lifetime = props.get("writtenLifetime");
+            if (lifetime != null && !(lifetime instanceof String && !((String) lifetime).isEmpty())) {
+                // Present and not a lifetime: which writes its generation can be compared with cannot be read — the same
+                // answer as a generation that cannot be read.
+                throw new ContentWriteJournalUnavailable("a statement row for " + versionObjectId
+                        + " has no readable lifetime of the content row its place counts in; which statement is newest "
+                        + "cannot be determined");
+            }
             Recorded recorded = new Recorded((Map<String, Object>) statement, at);
             Long readGeneration = generation == null ? null : ((Number) generation).longValue();
-            if (readGeneration != null) {
-                written.add(new Object[] { recorded, readGeneration });
+            // Placed among its row's writes only with both: a generation kept without the lifetime it counts in cannot be
+            // compared with any other write, and is ordered by the ledger like a row closed before the generation was kept.
+            String readLifetime = readGeneration == null ? null : (String) lifetime;
+            if (readGeneration != null && readLifetime != null) {
+                written.add(new Object[] { recorded, readGeneration, readLifetime });
             }
             if (newest == null || at > newest.entrySequence()) {
                 newest = recorded;
-                newestGeneration = readGeneration;
+                newestGeneration = readLifetime == null ? null : readGeneration;
+                newestLifetime = readLifetime;
             }
         }
-        // A later write of the newest one's content row: the highest generation of that row, then the highest sequence. Only
-        // when the newest one was itself placed by its row's revision — a transition, a restore and a row closed before the
-        // generation was kept are not writes of a row with a revision to compare, and keep the ledger's order.
+        // A later write of the newest one's content row in the same lifetime of that row: the highest generation, then the
+        // highest sequence. Only when the newest one was itself placed by its row's revision — a transition, a restore and a
+        // row closed before the generation (or its lifetime) was kept are not writes of a row with a revision to compare, and
+        // keep the ledger's order.
         Object content = newest == null ? null : newest.statement().get("contentStreamId");
         if (newestGeneration != null && content != null) {
             long best = newestGeneration;
@@ -361,6 +383,9 @@ public class CouchContentWriteJournal implements ContentWriteJournal {
                 Recorded other = (Recorded) candidate[0];
                 long otherGeneration = (Long) candidate[1];
                 if (!content.equals(other.statement().get("contentStreamId"))) {
+                    continue;
+                }
+                if (!newestLifetime.equals(candidate[2])) {
                     continue;
                 }
                 if (otherGeneration > best || (otherGeneration == best && other.entrySequence() > newest.entrySequence())) {

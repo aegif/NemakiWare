@@ -85,19 +85,22 @@ public class RecordContentStateRecorder {
      *        statement, and the fact that this particular gap could not be LISTED is counted.
      */
     public record Pending(String intentId, String repositoryId, String objectId,
-                          String versionObjectId, ContentWriteJournal.WriteKind kind, String writtenRevision) {
+                          String versionObjectId, ContentWriteJournal.WriteKind kind, String writtenRevision,
+                          String writtenLifetime) {
 
         public Pending(String intentId, String repositoryId, String objectId, String versionObjectId,
                 ContentWriteJournal.WriteKind kind) {
-            this(intentId, repositoryId, objectId, versionObjectId, kind, null);
+            this(intentId, repositoryId, objectId, versionObjectId, kind, null, null);
         }
 
         /**
          * This pending write, with the revision the write left its content's attachment row at — the place of the write among
-         * the writes of that row, which the journal reads for the newest statement (R229).
+         * the writes of that row, which the journal reads for the newest statement (R229) — and the lifetime of the row that
+         * revision counts in: the version's content incarnation when the write was made. A restore makes the row again under
+         * its id and mints the version a new incarnation, and the row's revisions count from 1 again (R239).
          */
-        public Pending writtenAt(String revision) {
-            return new Pending(intentId, repositoryId, objectId, versionObjectId, kind, revision);
+        public Pending writtenAt(String revision, String lifetime) {
+            return new Pending(intentId, repositoryId, objectId, versionObjectId, kind, revision, lifetime);
         }
     }
 
@@ -225,6 +228,20 @@ public class RecordContentStateRecorder {
                 return new Result(pending.intentId() != null ? Outcome.UNRECORDED_GAP_OPEN : Outcome.UNRECORDED_GAP_UNLISTABLE,
                         digest, -1, unplaced);
             }
+            if (pending.writtenLifetime() == null || pending.writtenLifetime().isEmpty()) {
+                // A generation counts in one lifetime of its row. Closed with the generation alone, a write before a deletion
+                // could take the newest place from one after the restore (R239); closed without it, a write recorded late could
+                // take it from a later write of the same row (R229). Neither: the statement is left unrecorded, its row stays
+                // open and the write is counted — the same answer as a revision that cannot be read.
+                unrecordedWrites.incrementAndGet();
+                String unplaced = "the lifetime of the content row the write of " + statement.versionObjectId()
+                        + " left at " + pending.writtenRevision() + " is not known";
+                logger.warn("The content statement for {} was not recorded: {}. {}", statement.versionObjectId(), unplaced,
+                        pending.intentId() != null ? "The open journal row records the gap."
+                                : "There is no journal row either, so the gap is not listable.");
+                return new Result(pending.intentId() != null ? Outcome.UNRECORDED_GAP_OPEN : Outcome.UNRECORDED_GAP_UNLISTABLE,
+                        digest, -1, unplaced);
+            }
         }
 
         EvidenceLedgerService.AppendResult appended = ledgerService == null
@@ -259,7 +276,7 @@ public class RecordContentStateRecorder {
                     ? journal.close(pending.intentId(), statement.versionObjectId(), digest, statement.toDocument(),
                             appended.sequence())
                     : journal.close(pending.intentId(), statement.versionObjectId(), digest, statement.toDocument(),
-                            appended.sequence(), generation);
+                            appended.sequence(), generation, pending.writtenLifetime());
         } catch (RuntimeException e) {
             logger.warn("The journal row {} could not be closed after its statement was chained "
                     + "at sequence {}. It stays open and will be listed as unresolved.",

@@ -119,11 +119,15 @@ public interface ContentWriteJournal {
 
     /**
      * {@link #close(String, String, String, java.util.Map, long)}, with the write's place among the writes of its content's
-     * row: the generation of the revision the write left the attachment row at (R229). {@link #latestRecorded} reads it. A
-     * journal that does not keep it closes the row without it.
+     * row: the generation of the revision the write left the attachment row at (R229), and the lifetime of the row that
+     * generation counts in — the version's content incarnation when the write was made (R239). A restore makes the row again
+     * under the same id and its revisions count from 1 again, so a generation says nothing about a write of another
+     * lifetime; the restore mints the version a new incarnation. {@link #latestRecorded} reads both. A journal that does not
+     * keep them closes the row without them.
      */
     default CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
-            java.util.Map<String, Object> statementDocument, long entrySequence, long writtenGeneration) {
+            java.util.Map<String, Object> statementDocument, long entrySequence, long writtenGeneration,
+            String writtenLifetime) {
         return close(intentId, versionObjectId, statementDigest, statementDocument, entrySequence);
     }
 
@@ -167,8 +171,11 @@ public interface ContentWriteJournal {
      * were RECORDED in, and two writes of one row made on two replicas are recorded in either order — a write that stored
      * its bytes first and recorded them last took the newest place from the bytes that replaced them. The store gives each
      * write of a row a revision of a higher generation, so the newest is the row with the highest sequence unless a row of
-     * the same content was written later than it. Across rows — content removed and made again, a transition — the order
-     * stays the ledger sequence.
+     * the same content was written later than it IN THE SAME LIFETIME of that row. Across rows — content removed and made
+     * again, a transition — the order stays the ledger sequence, and so it does across lifetimes of one row: a restore
+     * makes the row again under its id and its revisions count from 1 again, so a write before the deletion can hold a
+     * higher generation than one after the restore (R239). A row whose generation was kept without a lifetime is not
+     * compared either.
      */
     default Recorded latestRecorded(String repositoryId, String versionObjectId) {
         return null;
