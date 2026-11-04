@@ -194,7 +194,7 @@
 			<dependency>
 				<groupId>com.google.guava</groupId>
 				<artifactId>guava</artifactId>
-				<version>33.6.0-jre</version>
+				<version>33.7.2-jre</version>
 			</dependency>
 			<!-- Override transitive commons-compress 1.24.0 (resolved at compile
 			     scope via testcontainers / POI / Tika). 1.27.1 fixes
@@ -1068,7 +1068,7 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>33.6.0-jre</version>
+			<version>33.7.2-jre</version>
 		</dependency>
 		<!-- SECURITY FIX (2025-11-19): Updated from 24.1.1-jre to 33.5.0-jre to fix multiple CVEs including CVE-2018-10237 -->
 
