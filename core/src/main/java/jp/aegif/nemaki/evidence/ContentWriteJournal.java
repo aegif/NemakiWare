@@ -118,6 +118,16 @@ public interface ContentWriteJournal {
             java.util.Map<String, Object> statementDocument, long entrySequence);
 
     /**
+     * {@link #close(String, String, String, java.util.Map, long)}, with the write's place among the writes of its content's
+     * row: the generation of the revision the write left the attachment row at (R229). {@link #latestRecorded} reads it. A
+     * journal that does not keep it closes the row without it.
+     */
+    default CloseOutcome close(String intentId, String versionObjectId, String statementDigest,
+            java.util.Map<String, Object> statementDocument, long entrySequence, long writtenGeneration) {
+        return close(intentId, versionObjectId, statementDigest, statementDocument, entrySequence);
+    }
+
+    /**
      * The statement recorded for a version, or null when none was.
      *
      * <p>Null is "this node has no statement for that version", which is NOT "the version has
@@ -152,6 +162,13 @@ public interface ContentWriteJournal {
      * version of {@link #statementFor} took the last row and called it the newest, which for a
      * version written twice (W3 / W7 / W9 rewrite in place) shipped whichever statement's id
      * happened to sort last (found while wiring the transitions, 2026-09-22).
+     *
+     * <p>The one exception is a later write of the same content row (R229). The ledger sequence is the order statements
+     * were RECORDED in, and two writes of one row made on two replicas are recorded in either order — a write that stored
+     * its bytes first and recorded them last took the newest place from the bytes that replaced them. The store gives each
+     * write of a row a revision of a higher generation, so the newest is the row with the highest sequence unless a row of
+     * the same content was written later than it. Across rows — content removed and made again, a transition — the order
+     * stays the ledger sequence.
      */
     default Recorded latestRecorded(String repositoryId, String versionObjectId) {
         return null;

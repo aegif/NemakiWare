@@ -106,6 +106,8 @@ class ACheckOutThatDoesNotFinishStillAnswersForItsCopyTest {
         copy.setMimeType("text/plain");
         copy.setLength(11L);
         copy.setInputStream(new ByteArrayInputStream("the minutes".getBytes(StandardCharsets.UTF_8)));
+        // The copy's row as read back, with its revision — the place of the copy among the row's writes (R229).
+        copy.setRevision("2-copy");
         when(dao.getAttachment("bedroom", "att-copy")).thenReturn(copy);
         return dao;
     }
@@ -219,7 +221,7 @@ class ACheckOutThatDoesNotFinishStillAnswersForItsCopyTest {
 
         assertDoesNotThrow(() -> record.invoke(service, "bedroom", version,
                 new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-copy",
-                        "0000000000000000000000000000000000000000000000000000000000000000", 11L),
+                        "0000000000000000000000000000000000000000000000000000000000000000", 11L, "2-copy"),
                 PENDING, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED),
                 "a statement that could not be built for want of a class failed the write instead of being counted");
         verify(recorder).leaveUnrecorded(any(), anyString());
@@ -241,7 +243,7 @@ class ACheckOutThatDoesNotFinishStillAnswersForItsCopyTest {
         java.lang.reflect.InvocationTargetException thrown = assertThrows(java.lang.reflect.InvocationTargetException.class,
                 () -> record.invoke(service, "bedroom", version,
                         new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-copy",
-                                "0000000000000000000000000000000000000000000000000000000000000000", 11L),
+                                "0000000000000000000000000000000000000000000000000000000000000000", 11L, "2-copy"),
                         PENDING, jp.aegif.nemaki.evidence.RecordContentStatementV1.CommitmentKind.CAPTURED),
                 "the JVM failing while a statement was built was swallowed");
         org.junit.jupiter.api.Assertions.assertInstanceOf(StackOverflowError.class, thrown.getCause(),

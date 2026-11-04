@@ -737,7 +737,8 @@ public interface ContentDaoService {
 	/**
 	 * Create an attachment
 	 * @param repositoryId TODO
-	 * @param attachment
+	 * @param attachment on return, its revision is the one the bytes were stored at — the place of this write among the
+	 *        writes of the row, which E1 reads (R229) — when the bytes were stored
 	 * @param contentStream
 	 *
 	 * @return a created attachment's node id
@@ -748,7 +749,8 @@ public interface ContentDaoService {
 	 * Update an attachment
 	 * (replace an existing attachment)
 	 * @param repositoryId TODO
-	 * @param attachment
+	 * @param attachment on return, its revision is the one the new bytes were stored at — the place of this write among the
+	 *        writes of the row, which E1 reads (R229) — when new bytes were stored
 	 * @param contentStream
 	 */
 	void updateAttachment(String repositoryId, AttachmentNode attachment, ContentStream contentStream);

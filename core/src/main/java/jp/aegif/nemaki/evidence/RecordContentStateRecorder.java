@@ -85,7 +85,40 @@ public class RecordContentStateRecorder {
      *        statement, and the fact that this particular gap could not be LISTED is counted.
      */
     public record Pending(String intentId, String repositoryId, String objectId,
-                          String versionObjectId, ContentWriteJournal.WriteKind kind) {
+                          String versionObjectId, ContentWriteJournal.WriteKind kind, String writtenRevision) {
+
+        public Pending(String intentId, String repositoryId, String objectId, String versionObjectId,
+                ContentWriteJournal.WriteKind kind) {
+            this(intentId, repositoryId, objectId, versionObjectId, kind, null);
+        }
+
+        /**
+         * This pending write, with the revision the write left its content's attachment row at — the place of the write among
+         * the writes of that row, which the journal reads for the newest statement (R229).
+         */
+        public Pending writtenAt(String revision) {
+            return new Pending(intentId, repositoryId, objectId, versionObjectId, kind, revision);
+        }
+    }
+
+    /**
+     * The generation of a CouchDB revision ({@code N-hash}): N, which every save of the row raises by one. Null when the
+     * revision is not of that form — a place that cannot be read.
+     */
+    static Long generationOf(String revision) {
+        if (revision == null) {
+            return null;
+        }
+        int dash = revision.indexOf('-');
+        if (dash <= 0) {
+            return null;
+        }
+        try {
+            long generation = Long.parseLong(revision.substring(0, dash));
+            return generation > 0 ? generation : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -176,6 +209,24 @@ public class RecordContentStateRecorder {
         }
         String digest = statement.digest();
 
+        // The write's place among the writes of its content row, read BEFORE the statement is appended (R229): a revision
+        // that cannot be read as one leaves the statement unrecorded — closed with a guessed place, it could take the newest
+        // place from a later write of the same row, which is the defect. Its row stays open and the write is counted.
+        Long generation = null;
+        if (pending != null && pending.writtenRevision() != null) {
+            generation = generationOf(pending.writtenRevision());
+            if (generation == null) {
+                unrecordedWrites.incrementAndGet();
+                String unplaced = "the revision " + pending.writtenRevision() + " the write left the content of "
+                        + statement.versionObjectId() + " at is not one whose place can be read";
+                logger.warn("The content statement for {} was not recorded: {}. {}", statement.versionObjectId(), unplaced,
+                        pending.intentId() != null ? "The open journal row records the gap."
+                                : "There is no journal row either, so the gap is not listable.");
+                return new Result(pending.intentId() != null ? Outcome.UNRECORDED_GAP_OPEN : Outcome.UNRECORDED_GAP_UNLISTABLE,
+                        digest, -1, unplaced);
+            }
+        }
+
         EvidenceLedgerService.AppendResult appended = ledgerService == null
                 ? new EvidenceLedgerService.AppendResult(
                         EvidenceLedgerService.AppendOutcome.UNAVAILABLE, -1, null,
@@ -204,8 +255,11 @@ public class RecordContentStateRecorder {
         }
         ContentWriteJournal.CloseOutcome closed;
         try {
-            closed = journal.close(pending.intentId(), statement.versionObjectId(), digest,
-                    statement.toDocument(), appended.sequence());
+            closed = generation == null
+                    ? journal.close(pending.intentId(), statement.versionObjectId(), digest, statement.toDocument(),
+                            appended.sequence())
+                    : journal.close(pending.intentId(), statement.versionObjectId(), digest, statement.toDocument(),
+                            appended.sequence(), generation);
         } catch (RuntimeException e) {
             logger.warn("The journal row {} could not be closed after its statement was chained "
                     + "at sequence {}. It stays open and will be listed as unresolved.",

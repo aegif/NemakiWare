@@ -235,6 +235,10 @@ public class CouchAttachmentNode extends CouchNodeBase{
 	 */
 	public AttachmentNode convertRef(){
 		AttachmentNode a = new AttachmentNode(super.convert());
+		// The row's revision as read. AttachmentNode(NodeBase) copies the base fields but not this one, so a read node had none,
+		// and E1 placed a copy among its row's writes by a revision it never had: the check-out's copy was left unrecorded
+		// (R229, closing batch 45 — measured on nb33).
+		a.setRevision(getRevision());
 
 		a.setName(getName());
 		// Use actual length from CouchDB _attachments instead of the stored field

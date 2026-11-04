@@ -133,7 +133,7 @@ public class AttachmentServiceDelegate {
 		// could not be snapshotted. The caller records NO statement in that case rather than a
 		// digest that may cover the wrong bytes.
 		String digest = digesting == null ? null : digesting.digestIfTrustworthy(streamLength);
-		return new Written(attachmentId, digest, streamLength);
+		return new Written(attachmentId, digest, streamLength, a.getRevision());
 	}
 
 	/**
@@ -141,8 +141,14 @@ public class AttachmentServiceDelegate {
 	 *
 	 * @param contentDigest null when the write could not be digested; NOT an empty string and
 	 *        not the digest of nothing, both of which look exactly like an answer
+	 * @param revision the revision the write left the attachment row at — the place of the write among the row's writes,
+	 *        which E1 records (R229); null when the store did not say, and then no statement is recorded
 	 */
-	public record Written(String attachmentId, String contentDigest, long length) {
+	public record Written(String attachmentId, String contentDigest, long length, String revision) {
+
+		public Written(String attachmentId, String contentDigest, long length) {
+			this(attachmentId, contentDigest, length, null);
+		}
 	}
 
 	public String copyAttachment(CallContext callContext, String repositoryId, String attachmentId) {

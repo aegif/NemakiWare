@@ -85,8 +85,10 @@ class FirstContentOfAVersionIsRecordedOnceStoredTest {
             return body;
         });
         // The bytes are read as the real store reads them, so the digest the statement carries is taken.
+        // ... and the revision the bytes went in at is put on the node, as the store's DAO does (R229).
         when(dao.createAttachment(anyString(), any(AttachmentNode.class), any(ContentStream.class))).thenAnswer(invocation -> {
             ((ContentStream) invocation.getArgument(2)).getStream().readAllBytes();
+            ((AttachmentNode) invocation.getArgument(1)).setRevision("2-att-new");
             return "att-new";
         });
         when(dao.update(anyString(), any(Document.class))).thenAnswer(invocation -> invocation.getArgument(1));
@@ -636,7 +638,8 @@ class FirstContentOfAVersionIsRecordedOnceStoredTest {
         record.setAccessible(true);
 
         record.invoke(service, "bedroom", contentless(false),
-                new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-new", "NOT-A-DIGEST", 7L),
+                new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written("att-new", "NOT-A-DIGEST", 7L,
+                        "2-att-new"),
                 PENDING, RecordContentStatementV1.CommitmentKind.CAPTURED);
         verify(recorder, never()).recordAndClose(any(), any());
         verify(recorder).leaveUnrecorded(any(), anyString());

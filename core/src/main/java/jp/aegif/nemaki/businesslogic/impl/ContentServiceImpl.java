@@ -4426,8 +4426,9 @@ public class ContentServiceImpl implements ContentService {
 			if (digest == null) {
 				return undigested(attachmentId);
 			}
+			// The copy's revision as read, with the bytes digested: the place of the copy among its row's writes (R229).
 			return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
-					attachmentId, digest, digesting.bytesRead());
+					attachmentId, digest, digesting.bytesRead(), stored.getRevision());
 		} catch (java.io.IOException | RuntimeException e) {
 			log.warn("E1: the copied content {} could not be read to the end.", attachmentId, e);
 			return undigested(attachmentId);
@@ -4462,11 +4463,17 @@ public class ContentServiceImpl implements ContentService {
 			toWrite = new ContentStreamImpl(contentStream.getFileName(),
 					contentStream.getBigLength(), contentStream.getMimeType(), digesting);
 		}
+		// The revision the store says the new bytes went in at (the DAO puts it on the node — R229). The one the node came with
+		// is the row's revision BEFORE this write, and taking it for this write's place would put the write one place early:
+		// a revision the write did not change is not one it reported.
+		String before = node == null ? null : node.getRevision();
 		contentDaoService.updateAttachment(repositoryId, node, toWrite);
+		String after = node == null ? null : node.getRevision();
 		long length = contentStream == null ? -1 : contentStream.getLength();
 		String digest = digesting == null ? null : digesting.digestIfTrustworthy(length);
 		return new jp.aegif.nemaki.businesslogic.impl.delegate.AttachmentServiceDelegate.Written(
-				node == null ? null : node.getId(), digest, length);
+				node == null ? null : node.getId(), digest, length,
+				after != null && !after.equals(before) ? after : null);
 	}
 
 	private String createAttachment(CallContext callContext, String repositoryId, ContentStream contentStream) {
@@ -5820,6 +5827,14 @@ public class ContentServiceImpl implements ContentService {
 					+ " could not be digested on the write");
 			return;
 		}
+		// Without the revision the write left the content's row at, the statement has no place among the row's writes: closed
+		// without one, a write recorded late took the newest place from a later write of the same row on another replica
+		// (R229). Left unrecorded, the row stays open and the write is counted.
+		if (written.revision() == null) {
+			recordContentState.leaveUnrecorded(pending, "the store did not say which revision the content of " + created.getId()
+					+ " was written at, so where its statement stands among the writes of that content is not known");
+			return;
+		}
 		jp.aegif.nemaki.evidence.RecordContentStatementV1 statement;
 		try {
 			statement = new jp.aegif.nemaki.evidence.RecordContentStatementV1(
@@ -5838,7 +5853,7 @@ public class ContentServiceImpl implements ContentService {
 		}
 		try {
 			jp.aegif.nemaki.evidence.RecordContentStateRecorder.Result result =
-					recordContentState.recordAndClose(pending, statement);
+					recordContentState.recordAndClose(pending == null ? null : pending.writtenAt(written.revision()), statement);
 			if (!result.inChain()) {
 				log.warn("E1: the content statement for {} is not in the chain ({}).",
 						created.getId(), result.outcome());

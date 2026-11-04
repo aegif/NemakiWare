@@ -542,6 +542,11 @@ public class AttachmentDaoDelegate {
 					}
 				}
 
+				// The revision the bytes were stored at, for the caller: the place of this write among the writes of the row
+				// (R229). The length correction below may save the row once more; any later write of it reads that revision
+				// first and stores past it, so the order of the row's writes is the order of these.
+				attachment.setRevision(finalRevision);
+
 				// Always verify and correct metadata length after successful binary save
 				if (finalRevision != null) {
 					try {
@@ -735,6 +740,9 @@ public class AttachmentDaoDelegate {
 						contentType
 					);
 					log.debug("STAGE2: Updated binary content for: " + attachment.getId() + " (revision: " + newRevision + ")");
+					// The revision the new bytes were stored at, for the caller: the place of this write among the writes of the
+					// row (R229 — E1's newest statement of a row rewritten on two replicas).
+					attachment.setRevision(newRevision);
 				} catch (Exception binaryEx) {
 					// STAGE 2 failed: Compensating rollback of metadata to original values
 					if (metadataUpdated) {
