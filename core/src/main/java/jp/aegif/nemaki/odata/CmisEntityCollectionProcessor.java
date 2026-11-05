@@ -602,7 +602,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     unquotedValue = value.substring(1, value.length() - 1);
                 }
                 
-                // The value's own % and _ are characters, not wildcards: only the one this method adds is.
+                // The value's own % and _ are characters, not wildcards: only the ones this method adds are.
                 String likeValue = unquotedValue.replace("%", "\\%").replace("_", "\\_");
                 switch (methodKind) {
                     case STARTSWITH:
@@ -610,7 +610,11 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     case ENDSWITH:
                         return property + " LIKE '%" + likeValue + "'";
                     case CONTAINS:
-                        return "CONTAINS(" + property + ", '" + unquotedValue + "')";
+                        // A substring of the property, by the same rule as startswith and endswith (3.4.2). It was
+                        // written CONTAINS(property, 'value'), which CMIS does not have — CONTAINS takes a full-text
+                        // expression, not a property — so OpenCMIS could not parse the WHERE clause: the server
+                        // answered such a clause without its conditions up to 3.4.0 and refuses it since R188 (3.4.1).
+                        return property + " LIKE '%" + likeValue + "%'";
                     default:
                         throw new ODataApplicationException(
                                 "Unsupported method: " + methodKind,

@@ -150,14 +150,19 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithFilterContains() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'folder')")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("folder"), "a name containing 'folder'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.contains("folder"), "a name containing 'folder'");
     }
     
     /**
@@ -182,14 +187,19 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithFilterCompound() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "name eq 'TestFolder' or contains(name,'test')")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
     }
     
     /**
@@ -712,16 +722,22 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithSearchAndFilter() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of("$search", "project", "$top", 10);
+        Response response = given()
             .spec(requestSpec)
-            .queryParam("$search", "project")
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'archive')")
-            .queryParam("$top", 10)
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("archive"), "a name containing 'archive'");
+        // Not asked: the same request without the filter has a name outside it. It never does — full-text search
+        // matches no folder (measured 2026-11-05 on bedroom: $search=close47 and CONTAINS('close47') on
+        // cmis:folder return nothing while folders named close47-... exist), so this cannot tell a dropped
+        // filter from an applied one; it holds that the statement is answered, not refused (3.4.2).
     }
     
     /**

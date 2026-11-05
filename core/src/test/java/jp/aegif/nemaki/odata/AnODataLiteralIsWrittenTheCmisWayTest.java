@@ -82,6 +82,33 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         assertEquals("cmis:name LIKE '100\\%\\_x%'", convert.invoke(processor, startsWith));
     }
     @Test
+    @DisplayName("contains is a LIKE on both sides by the same rule — the value's own % and _ and its quote are characters")
+    void containsIsALikeThatKeepsTheValuesWildcardsLiteral() throws Exception {
+        // It was CONTAINS(cmis:name, '...'), which CMIS does not have: OpenCMIS could not parse the WHERE clause, and
+        // since R188 (3.4.1) the server refuses such a clause with a 400 — every $filter with contains() did (3.4.2).
+        CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
+                null);
+        Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertExpressionToCmis",
+                Expression.class);
+        convert.setAccessible(true);
+        assertEquals("cmis:name LIKE '%100\\%\\_x%'", convert.invoke(processor, containsOn("'100%_x'")));
+        assertEquals("cmis:name LIKE '%O\\'Neil%'", convert.invoke(processor, containsOn("'O''Neil'")));
+    }
+
+    private static org.apache.olingo.server.api.uri.queryoption.expression.Method containsOn(String odataLiteral) {
+        Member member = mock(Member.class, org.mockito.Answers.RETURNS_DEEP_STUBS);
+        UriResource part = mock(UriResource.class);
+        when(part.toString()).thenReturn("name");
+        when(member.getResourcePath().getUriResourceParts()).thenReturn(java.util.List.of(part));
+        Literal literal = mock(Literal.class);
+        when(literal.getText()).thenReturn(odataLiteral);
+        org.apache.olingo.server.api.uri.queryoption.expression.Method contains =
+                mock(org.apache.olingo.server.api.uri.queryoption.expression.Method.class);
+        when(contains.getMethod()).thenReturn(MethodKind.CONTAINS);
+        when(contains.getParameters()).thenReturn(java.util.List.of(member, literal));
+        return contains;
+    }
+    @Test
     @DisplayName("a $search term's quote and backslash are escaped twice — the text search expression's, then the literal's")
     void aSearchTermsQuoteIsEscapedTheCmisWay() throws Exception {
         // Escaped once, CONTAINS('it\'s') was refused by OpenCMIS's text search lexer — a 400; escaped twice it is

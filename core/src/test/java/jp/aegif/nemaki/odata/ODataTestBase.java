@@ -151,4 +151,46 @@ public abstract class ODataTestBase {
     protected String metadataPath() {
         return serviceRoot() + "/$metadata";
     }
+
+    /**
+     * No item of a filtered collection has a name the filter does not admit. A test that checked only the status
+     * passed when the server answered a $filter it could not translate without its conditions (up to 3.4.0), and the
+     * contains() tests were green on that (3.4.2). An empty answer passes: this does not catch a translation that
+     * matches nothing (R248).
+     *
+     * @param filtered the filtered response, already checked for 200
+     * @param admitted whether the filter admits a name (case-sensitive, as OData's contains() is)
+     * @param what     the admitted names, for the message
+     */
+    protected void assertOnlyAdmittedNames(io.restassured.response.Response filtered,
+            java.util.function.Predicate<String> admitted, String what) {
+        java.util.List<String> names = filtered.jsonPath().getList("value.name", String.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(names, "the response has no value array");
+        java.util.List<String> outside = names.stream().filter(n -> n == null || !admitted.test(n)).toList();
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of(), outside,
+                "the filter returned items whose name is not " + what);
+    }
+
+    /**
+     * The same request without its $filter returns a name the filter does not admit. Without one, a filter the
+     * server applied and a filter it dropped give the same answer, and {@link #assertOnlyAdmittedNames} holds either
+     * way (3.4.2).
+     *
+     * @param collectionPath   the collection the filtered request was sent to
+     * @param withoutTheFilter the filtered request's other query options, as they were sent
+     * @param admitted         whether the filter admits a name
+     * @param what             the admitted names, for the message
+     */
+    protected void assertTheRequestWithoutTheFilterReturnsANameOutside(String collectionPath,
+            java.util.Map<String, ?> withoutTheFilter, java.util.function.Predicate<String> admitted, String what) {
+        java.util.List<String> names = RestAssured.given().spec(requestSpec)
+                .queryParams(withoutTheFilter)
+                .when().get(collectionPath)
+                .then().statusCode(200)
+                .extract().jsonPath().getList("value.name", String.class);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                names != null && names.stream().anyMatch(n -> n != null && !admitted.test(n)),
+                "the same request without the filter returns no name that is not " + what + " " + names
+                        + ", so this cannot tell a filter the server applied from one it dropped");
+    }
 }

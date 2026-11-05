@@ -150,14 +150,19 @@ public class ODataDocumentsIT extends ODataTestBase {
      */
     @Test
     public void testGetDocumentsWithFilterContains() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'test')")
         .when()
             .get(documentsPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("test"), "a name containing 'test'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.contains("test"), "a name containing 'test'");
     }
     
     /**
@@ -182,14 +187,19 @@ public class ODataDocumentsIT extends ODataTestBase {
      */
     @Test
     public void testGetDocumentsWithFilterCompound() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "name eq 'test.pdf' or contains(name,'draft')")
         .when()
             .get(documentsPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.equals("test.pdf") || name.contains("draft"), "'test.pdf' or a name containing 'draft'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.equals("test.pdf") || name.contains("draft"), "'test.pdf' or a name containing 'draft'");
     }
     
     /**
@@ -475,16 +485,19 @@ public class ODataDocumentsIT extends ODataTestBase {
      */
     @Test
     public void testGetDocumentsWithExpandAndFilter() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of("$expand", "parent", "$top", 5);
+        Response response = given()
             .spec(requestSpec)
-            .queryParam("$expand", "parent")
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'test')")
-            .queryParam("$top", 5)
         .when()
             .get(documentsPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("test"), "a name containing 'test'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.contains("test"), "a name containing 'test'");
     }
     
     // ==================== OData Actions Tests ====================
@@ -678,16 +691,22 @@ public class ODataDocumentsIT extends ODataTestBase {
      */
     @Test
     public void testGetDocumentsWithSearchAndFilter() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of("$search", "invoice", "$top", 10);
+        Response response = given()
             .spec(requestSpec)
-            .queryParam("$search", "invoice")
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'report')")
-            .queryParam("$top", 10)
         .when()
             .get(documentsPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("report"), "a name containing 'report'");
+        // Not asked: the same request without the filter has a name outside it. Whether it does depends on
+        // the content: on bedroom it does (measured 2026-11-05 — a server that dropped the filter returned
+        // "CMIS 1.1 Specification Resources.pdf" and this failed). On CI's fresh database it was not measured —
+        // Patch_InitialContentSetup creates the same PDF there, so it may (3.4.2).
     }
     
     /**
