@@ -541,6 +541,9 @@ public class CloudantClientWrapper {
 
 			java.net.URL httpUrl = new java.net.URL(purgeUrl);
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection) httpUrl.openConnection();
+			// Not followed: HttpURLConnection re-sends a buffered POST's body on a 307 to an address nobody configured,
+			// and that address's 200 would be reported as the purge (3.4.2). A 3xx is not 200/201, so it is a failure.
+			conn.setInstanceFollowRedirects(false);
 			conn.setRequestMethod("POST");
 			conn.setRequestProperty("Content-Type", "application/json");
 			// Use credentials stored in this wrapper

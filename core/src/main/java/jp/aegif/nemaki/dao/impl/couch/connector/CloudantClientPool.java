@@ -371,6 +371,8 @@ public class CloudantClientPool {
 
 			// Fallback to HTTP connection test
 			HttpURLConnection connection = (HttpURLConnection) couchUrl.openConnection();
+			// With the CouchDB credentials: a followed redirect's 200 would be counted as this CouchDB answering (3.4.2).
+			connection.setInstanceFollowRedirects(false);
 			connection.setRequestMethod("GET");
 			connection.setConnectTimeout(connectionTimeout);
 			connection.setReadTimeout(socketTimeout);
