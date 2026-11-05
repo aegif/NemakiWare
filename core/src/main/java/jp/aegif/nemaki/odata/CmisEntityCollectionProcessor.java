@@ -18,6 +18,7 @@ import org.apache.olingo.commons.api.data.Property;
 import org.apache.olingo.commons.api.data.ValueType;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
+import org.apache.olingo.commons.api.edm.EdmType;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
@@ -142,7 +143,22 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
 
         UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
-        
+
+        // Olingo keeps the cast of Objects/NemakiWare.CMIS.Policy on the entity set segment. Read the entity set alone,
+        // the cast was dropped and every entity of the set was answered, of the cast's type or not — every document
+        // for a type that has none (R250, 3.4.2). A cast is answered only when it is the entity set's own type, where
+        // it changes nothing; no other is narrowed to, so it is refused.
+        EdmType collectionCast = uriResourceEntitySet.getTypeFilterOnCollection();
+        if (collectionCast != null
+                && !edmEntitySet.getEntityType().getFullQualifiedName().equals(collectionCast.getFullQualifiedName())) {
+            throw new ODataApplicationException(
+                    "a type cast on the entity set is answered only for the entity set's own type, not for "
+                            + collectionCast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH
+            );
+        }
+
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
