@@ -593,14 +593,39 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             List<Expression> parameters = method.getParameters();
             
             if (parameters.size() >= 2) {
+                // A LIKE is written for a property and a string literal only (R248, 3.4.2). The second argument
+                // used to go through the same conversion and lose its quotes if it had them: a property became its
+                // name and a function Olingo's toString() — {tolower ['...']} — so the LIKE searched for that text,
+                // and a function's raw literal closed the CMIS literal and wrote conditions of its own (measured:
+                // every document for a filter that matches none). The decision is the expression's kind and the
+                // literal's EDM type, not whether its text is quoted.
+                if (!isLikeMethod(methodKind)) {
+                    throw new ODataApplicationException(
+                            "Unsupported method: " + methodKind,
+                            HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
+                            Locale.ENGLISH
+                    );
+                }
+                if (parameters.size() != 2
+                        || !(parameters.get(0) instanceof Member) || !isStringLiteral(parameters.get(1))) {
+                    throw new ODataApplicationException(
+                            methodKind + " is translated only with a property first and a string literal second",
+                            HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
+                            Locale.ENGLISH
+                    );
+                }
                 String property = convertExpressionToCmis(parameters.get(0));
                 String value = convertExpressionToCmis(parameters.get(1));
-                
-                // Remove quotes from value for LIKE patterns
-                String unquotedValue = value;
-                if (value.startsWith("'") && value.endsWith("'")) {
-                    unquotedValue = value.substring(1, value.length() - 1);
+                // A string literal is written quoted by cmisLiteral; the quotes come off for the pattern. One that
+                // is not is refused rather than trimmed of two characters it does not have.
+                if (value == null || value.length() < 2 || !value.startsWith("'") || !value.endsWith("'")) {
+                    throw new ODataApplicationException(
+                            methodKind + " got a string literal that is not written quoted",
+                            HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                            Locale.ENGLISH
+                    );
                 }
+                String unquotedValue = value.substring(1, value.length() - 1);
                 
                 // The value's own % and _ are characters, not wildcards: only the ones this method adds are.
                 String likeValue = unquotedValue.replace("%", "\\%").replace("_", "\\_");
@@ -657,6 +682,27 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         return exprStr;
     }
     
+    /** The three methods written as a LIKE (R248). */
+    private static boolean isLikeMethod(MethodKind methodKind) {
+        return methodKind == MethodKind.STARTSWITH || methodKind == MethodKind.ENDSWITH
+                || methodKind == MethodKind.CONTAINS;
+    }
+
+    /**
+     * Whether the expression is a literal whose EDM type is Edm.String — the type Olingo gives a quoted literal;
+     * a {@code null} literal has no type (R248).
+     */
+    static boolean isStringLiteral(Expression expression) {
+        if (!(expression instanceof org.apache.olingo.server.api.uri.queryoption.expression.Literal)) {
+            return false;
+        }
+        org.apache.olingo.commons.api.edm.EdmType type =
+                ((org.apache.olingo.server.api.uri.queryoption.expression.Literal) expression).getType();
+        return type != null && type.getKind() == org.apache.olingo.commons.api.edm.constants.EdmTypeKind.PRIMITIVE
+                && org.apache.olingo.commons.api.edm.EdmPrimitiveTypeKind.String.getFullQualifiedName()
+                        .equals(type.getFullQualifiedName());
+    }
+
     /**
      * An OData string literal's text as a CMIS string literal. OData writes a quote inside a string by doubling it
      * ({@code 'O''Neil'}); CMIS escapes a quote and a backslash with a backslash ({@code 'O\'Neil'}). The text went into

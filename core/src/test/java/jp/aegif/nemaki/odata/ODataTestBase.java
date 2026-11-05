@@ -155,8 +155,8 @@ public abstract class ODataTestBase {
     /**
      * No item of a filtered collection has a name the filter does not admit. A test that checked only the status
      * passed when the server answered a $filter it could not translate without its conditions (up to 3.4.0), and the
-     * contains() tests were green on that (3.4.2). An empty answer passes: this does not catch a translation that
-     * matches nothing (R248).
+     * contains() tests were green on that (3.4.2). An empty answer passes this on its own; the tests without $search
+     * also call {@link #assertNoAdmittedNameIsLeftOut} (R248).
      *
      * @param filtered the filtered response, already checked for 200
      * @param admitted whether the filter admits a name (case-sensitive, as OData's contains() is)
@@ -169,6 +169,68 @@ public abstract class ODataTestBase {
         java.util.List<String> outside = names.stream().filter(n -> n == null || !admitted.test(n)).toList();
         org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of(), outside,
                 "the filter returned items whose name is not " + what);
+    }
+
+    /**
+     * The filtered answer is not empty when the collection has a name the filter admits. {@link #assertOnlyAdmittedNames}
+     * holds for an empty answer, so a translation that matched nothing was green with it (R248, 3.4.2). The collection
+     * is read whole, unfiltered, a page at a time. Where it has no admitted name an empty answer is the right one, and
+     * this holds either way — {@link #assertContainsFindsANameFromAPartOfIt} does not depend on the data.
+     */
+    protected void assertNoAdmittedNameIsLeftOut(String collectionPath, io.restassured.response.Response filtered,
+            java.util.function.Predicate<String> admitted, String what) {
+        java.util.List<String> answered = filtered.jsonPath().getList("value.name", String.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(answered, "the response has no value array");
+        java.util.List<String> admittedThere = new java.util.ArrayList<>();
+        final int page = 500;
+        for (int skip = 0; ; skip += page) {
+            java.util.List<String> names = RestAssured.given().spec(requestSpec)
+                    .queryParam("$select", "name").queryParam("$top", page).queryParam("$skip", skip)
+                    .when().get(collectionPath)
+                    .then().statusCode(200)
+                    .extract().jsonPath().getList("value.name", String.class);
+            org.junit.jupiter.api.Assertions.assertNotNull(names, "a page of " + collectionPath + " has no value array");
+            names.stream().filter(n -> n != null && admitted.test(n)).forEach(admittedThere::add);
+            if (names.size() < page) {
+                break;
+            }
+            org.junit.jupiter.api.Assertions.assertTrue(skip < 200_000,
+                    collectionPath + " did not end within 200,000 items, so it was not read whole");
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(!admittedThere.isEmpty() && answered.isEmpty(),
+                collectionPath + " has " + admittedThere.size() + " names that are " + what + " (" + admittedThere.subList(0,
+                        Math.min(3, admittedThere.size())) + ") and the filter returned none");
+    }
+
+    /**
+     * contains() with a part of a name the collection has returns that name — whatever the data, as long as the
+     * collection has an item with a plain name (CI's seed documents and the repository's own folders do). The tests
+     * that filter by fixed words cannot show a translation that matches nothing where nothing has those words (R248,
+     * 3.4.2).
+     */
+    protected void assertContainsFindsANameFromAPartOfIt(String collectionPath) {
+        java.util.List<String> names = RestAssured.given().spec(requestSpec)
+                .queryParam("$select", "name").queryParam("$top", 500)
+                .when().get(collectionPath)
+                .then().statusCode(200)
+                .extract().jsonPath().getList("value.name", String.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(names, "the response has no value array");
+        String name = names.stream().filter(n -> n != null && n.matches("[A-Za-z0-9._-]{5,}"))
+                .max(java.util.Comparator.comparingInt(String::length)).orElse(null);
+        org.junit.jupiter.api.Assertions.assertNotNull(name,
+                collectionPath + " has no item with a plain name to take a part of: " + names);
+        String part = name.substring(1, name.length() - 1);
+        java.util.List<String> found = RestAssured.given().spec(requestSpec)
+                .queryParam("$filter", "contains(name,'" + part + "')")
+                .queryParam("$select", "name").queryParam("$top", 500)
+                .when().get(collectionPath)
+                .then().statusCode(200)
+                .extract().jsonPath().getList("value.name", String.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(found, "the filtered response has no value array");
+        org.junit.jupiter.api.Assertions.assertTrue(found.contains(name),
+                "contains(name,'" + part + "') did not return " + name + ": " + found);
+        org.junit.jupiter.api.Assertions.assertTrue(found.stream().allMatch(n -> n != null && n.contains(part)),
+                "contains(name,'" + part + "') returned a name without it: " + found);
     }
 
     /**

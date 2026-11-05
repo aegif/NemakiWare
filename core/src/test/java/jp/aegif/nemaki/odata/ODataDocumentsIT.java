@@ -163,6 +163,16 @@ public class ODataDocumentsIT extends ODataTestBase {
             .extract().response();
         assertOnlyAdmittedNames(response, name -> name.contains("test"), "a name containing 'test'");
         assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.contains("test"), "a name containing 'test'");
+        assertNoAdmittedNameIsLeftOut(documentsPath(), response, name -> name.contains("test"), "a name containing 'test'");
+    }
+
+    /**
+     * Test GET /odata/{repositoryId}/Documents with $filter=contains() on a part of a name the collection has:
+     * the name is returned, whatever the data (R248, 3.4.2).
+     */
+    @Test
+    public void testDocumentsContainsFindsANameFromAPartOfIt() {
+        assertContainsFindsANameFromAPartOfIt(documentsPath());
     }
     
     /**
@@ -200,6 +210,7 @@ public class ODataDocumentsIT extends ODataTestBase {
             .extract().response();
         assertOnlyAdmittedNames(response, name -> name.equals("test.pdf") || name.contains("draft"), "'test.pdf' or a name containing 'draft'");
         assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.equals("test.pdf") || name.contains("draft"), "'test.pdf' or a name containing 'draft'");
+        assertNoAdmittedNameIsLeftOut(documentsPath(), response, name -> name.equals("test.pdf") || name.contains("draft"), "'test.pdf' or a name containing 'draft'");
     }
     
     /**
@@ -498,6 +509,7 @@ public class ODataDocumentsIT extends ODataTestBase {
             .extract().response();
         assertOnlyAdmittedNames(response, name -> name.contains("test"), "a name containing 'test'");
         assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.contains("test"), "a name containing 'test'");
+        assertNoAdmittedNameIsLeftOut(documentsPath(), response, name -> name.contains("test"), "a name containing 'test'");
     }
     
     // ==================== OData Actions Tests ====================

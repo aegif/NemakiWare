@@ -163,6 +163,16 @@ public class ODataFoldersIT extends ODataTestBase {
             .extract().response();
         assertOnlyAdmittedNames(response, name -> name.contains("folder"), "a name containing 'folder'");
         assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.contains("folder"), "a name containing 'folder'");
+        assertNoAdmittedNameIsLeftOut(foldersPath(), response, name -> name.contains("folder"), "a name containing 'folder'");
+    }
+
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $filter=contains() on a part of a name the collection has:
+     * the name is returned, whatever the data (R248, 3.4.2).
+     */
+    @Test
+    public void testFoldersContainsFindsANameFromAPartOfIt() {
+        assertContainsFindsANameFromAPartOfIt(foldersPath());
     }
     
     /**
@@ -200,6 +210,7 @@ public class ODataFoldersIT extends ODataTestBase {
             .extract().response();
         assertOnlyAdmittedNames(response, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
         assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
+        assertNoAdmittedNameIsLeftOut(foldersPath(), response, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
     }
     
     /**
