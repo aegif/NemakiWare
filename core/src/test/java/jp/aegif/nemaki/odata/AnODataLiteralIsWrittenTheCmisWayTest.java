@@ -55,11 +55,11 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
                 null);
         Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertExpressionToCmis",
-                Expression.class);
+                Expression.class, org.apache.olingo.commons.api.edm.EdmEntityType.class);
         convert.setAccessible(true);
         Literal literal = mock(Literal.class);
         when(literal.getText()).thenReturn("'O''Neil\\'");
-        assertEquals("'O\\'Neil\\\\'", convert.invoke(processor, literal));
+        assertEquals("'O\\'Neil\\\\'", convert.invoke(processor, literal, null));
     }
     @Test
     @DisplayName("startswith and endswith write the value's own % and _ as characters; only the wildcard they add is one")
@@ -67,18 +67,19 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
                 null);
         Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertExpressionToCmis",
-                Expression.class);
+                Expression.class, org.apache.olingo.commons.api.edm.EdmEntityType.class);
         convert.setAccessible(true);
         Member member = mock(Member.class, org.mockito.Answers.RETURNS_DEEP_STUBS);
         UriResource part = mock(UriResource.class);
         when(part.toString()).thenReturn("name");
         when(member.getResourcePath().getUriResourceParts()).thenReturn(java.util.List.of(part));
+        when(member.getStartTypeFilter()).thenReturn(null);
         Literal literal = stringLiteral("'100%_x'");
         org.apache.olingo.server.api.uri.queryoption.expression.Method startsWith =
                 mock(org.apache.olingo.server.api.uri.queryoption.expression.Method.class);
         when(startsWith.getMethod()).thenReturn(MethodKind.STARTSWITH);
         when(startsWith.getParameters()).thenReturn(java.util.List.of(member, literal));
-        assertEquals("cmis:name LIKE '100\\%\\_x%'", convert.invoke(processor, startsWith));
+        assertEquals("cmis:name LIKE '100\\%\\_x%'", convert.invoke(processor, startsWith, null));
     }
     @Test
     @DisplayName("contains is a LIKE on both sides by the same rule — the value's own % and _ and its quote are characters")
@@ -88,10 +89,10 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
                 null);
         Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertExpressionToCmis",
-                Expression.class);
+                Expression.class, org.apache.olingo.commons.api.edm.EdmEntityType.class);
         convert.setAccessible(true);
-        assertEquals("cmis:name LIKE '%100\\%\\_x%'", convert.invoke(processor, containsOn("'100%_x'")));
-        assertEquals("cmis:name LIKE '%O\\'Neil%'", convert.invoke(processor, containsOn("'O''Neil'")));
+        assertEquals("cmis:name LIKE '%100\\%\\_x%'", convert.invoke(processor, containsOn("'100%_x'"), null));
+        assertEquals("cmis:name LIKE '%O\\'Neil%'", convert.invoke(processor, containsOn("'O''Neil'"), null));
     }
 
     private static org.apache.olingo.server.api.uri.queryoption.expression.Method containsOn(String odataLiteral) {
@@ -147,9 +148,9 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         CmisEntityCollectionProcessor processor = new CmisEntityCollectionProcessor(null, null, null, null, "bedroom",
                 null);
         Method convert = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertExpressionToCmis",
-                Expression.class);
+                Expression.class, org.apache.olingo.commons.api.edm.EdmEntityType.class);
         convert.setAccessible(true);
-        return (String) convert.invoke(processor, expression);
+        return (String) convert.invoke(processor, expression, null);
     }
 
     private static Member member(String name) {
@@ -157,6 +158,8 @@ class AnODataLiteralIsWrittenTheCmisWayTest {
         UriResource part = mock(UriResource.class);
         when(part.toString()).thenReturn(name);
         when(member.getResourcePath().getUriResourceParts()).thenReturn(java.util.List.of(part));
+        // No type cast (R249): a deep stub would answer one.
+        when(member.getStartTypeFilter()).thenReturn(null);
         return member;
     }
 

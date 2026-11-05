@@ -151,7 +151,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         FilterOption filterOption = uriInfo.getFilterOption();
         String filterClause = null;
         if (filterOption != null) {
-            filterClause = convertFilterToWhereClause(filterOption);
+            filterClause = convertFilterToWhereClause(filterOption, edmEntitySet.getEntityType());
         }
         
         // Get orderby option
@@ -519,15 +519,19 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     
     /**
      * Convert OData filter expression to CMIS WHERE clause.
+     *
+     * @param entitySetType the type of the entity set the filter is asked of — a property cast to any other type is
+     *                      refused (R249)
      */
-    private String convertFilterToWhereClause(FilterOption filterOption) throws ODataApplicationException {
+    private String convertFilterToWhereClause(FilterOption filterOption, EdmEntityType entitySetType)
+            throws ODataApplicationException {
         if (filterOption == null || filterOption.getExpression() == null) {
             return null;
         }
         
         try {
             Expression expression = filterOption.getExpression();
-            return convertExpressionToCmis(expression);
+            return convertExpressionToCmis(expression, entitySetType);
         } catch (Exception e) {
             throw new ODataApplicationException(
                     "Error converting filter expression: " + e.getMessage(),
@@ -542,7 +546,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
      * Convert OData expression to CMIS query expression.
      * Supports basic comparison operators and string functions.
      */
-    private String convertExpressionToCmis(Expression expression) throws ODataApplicationException {
+    private String convertExpressionToCmis(Expression expression, EdmEntityType entitySetType)
+            throws ODataApplicationException {
         if (expression == null) {
             return null;
         }
@@ -554,8 +559,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             org.apache.olingo.server.api.uri.queryoption.expression.Binary binary = 
                     (org.apache.olingo.server.api.uri.queryoption.expression.Binary) expression;
             
-            String left = convertExpressionToCmis(binary.getLeftOperand());
-            String right = convertExpressionToCmis(binary.getRightOperand());
+            String left = convertExpressionToCmis(binary.getLeftOperand(), entitySetType);
+            String right = convertExpressionToCmis(binary.getRightOperand(), entitySetType);
             BinaryOperatorKind operator = binary.getOperator();
             
             switch (operator) {
@@ -614,8 +619,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                             Locale.ENGLISH
                     );
                 }
-                String property = convertExpressionToCmis(parameters.get(0));
-                String value = convertExpressionToCmis(parameters.get(1));
+                String property = convertExpressionToCmis(parameters.get(0), entitySetType);
+                String value = convertExpressionToCmis(parameters.get(1), entitySetType);
                 // A string literal is written quoted by cmisLiteral; the quotes come off for the pattern. One that
                 // is not is refused rather than trimmed of two characters it does not have.
                 if (value == null || value.length() < 2 || !value.startsWith("'") || !value.endsWith("'")) {
@@ -653,6 +658,21 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Handle member expressions (property references)
         if (expression instanceof Member) {
             Member member = (Member) expression;
+            // Olingo keeps a leading type cast (NemakiWare.CMIS.Policy/name) here, not in the resource path, which
+            // starts with the property. Read the path alone, the cast was dropped and the condition asked of every
+            // entity, of the cast's type or not — every document for a filter that matches none (R249, 3.4.2). A
+            // cast is translated only when it is the entity set's own type, where it changes nothing; Olingo refuses
+            // one the entity set's type is not a base of, so it is a type derived from it that is refused here.
+            org.apache.olingo.commons.api.edm.EdmType cast = member.getStartTypeFilter();
+            if (cast != null && (entitySetType == null
+                    || !entitySetType.getFullQualifiedName().equals(cast.getFullQualifiedName()))) {
+                throw new ODataApplicationException(
+                        "a type cast is translated only to the entity set's own type, not to "
+                                + cast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                        HttpStatusCode.NOT_IMPLEMENTED.getStatusCode(),
+                        Locale.ENGLISH
+                );
+            }
             String propertyName = member.getResourcePath().getUriResourceParts().get(0).toString();
             String cmisProperty = mapODataPropertyToCmis(propertyName);
             return cmisProperty != null ? cmisProperty : propertyName;
@@ -670,7 +690,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             org.apache.olingo.server.api.uri.queryoption.expression.Unary unary = 
                     (org.apache.olingo.server.api.uri.queryoption.expression.Unary) expression;
             
-            String operand = convertExpressionToCmis(unary.getOperand());
+            String operand = convertExpressionToCmis(unary.getOperand(), entitySetType);
             UnaryOperatorKind operator = unary.getOperator();
             
             if (operator == UnaryOperatorKind.NOT) {
