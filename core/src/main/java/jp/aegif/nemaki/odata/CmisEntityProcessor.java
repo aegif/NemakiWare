@@ -111,6 +111,9 @@ public class CmisEntityProcessor implements EntityProcessor {
         this.functionProcessor = functionProcessor;
     }
 
+    private static final String NAVIGATION_AFTER_THE_KEY_REFUSED =
+            "a single entity is read only by its entity set and key — a navigation after the key is not read";
+
     @Override
     public void readEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
             throws ODataApplicationException, SerializerException {
@@ -128,6 +131,14 @@ public class CmisEntityProcessor implements EntityProcessor {
                     return;
                 }
             }
+        }
+
+        // Only the key of the first segment was read: Folders('F')/parent answered F itself, Documents('D')/parent D
+        // itself and Folders('F')/children('R') F for an R that is not F's child (R255, 3.4.2). A navigation after the
+        // key is not translated; it is refused.
+        if (resourcePaths.size() > 1) {
+            throw new ODataApplicationException(NAVIGATION_AFTER_THE_KEY_REFUSED,
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
         }
 
         UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
