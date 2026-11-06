@@ -36,6 +36,8 @@ import org.apache.olingo.server.api.uri.UriInfo;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.UriResourceFunction;
+import org.apache.olingo.server.api.uri.UriResourceNavigation;
+import org.apache.olingo.server.api.uri.UriParameter;
 import org.apache.olingo.server.api.uri.queryoption.CountOption;
 import org.apache.olingo.server.api.uri.queryoption.FilterOption;
 import org.apache.olingo.server.api.uri.queryoption.OrderByOption;
@@ -159,6 +161,14 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             );
         }
 
+        // Neither the key nor a navigation segment after it was read: Folders('F')/children answered every folder,
+        // Documents('D')/parents every document, and a key that names nothing the same (R251, 3.4.2). Only the two a
+        // CMIS navigation answers are read — a folder's children and a document's parents.
+        if (resourcePaths.size() > 1 || !uriResourceEntitySet.getKeyPredicates().isEmpty()) {
+            readNavigation(request, response, uriInfo, responseFormat, resourcePaths, uriResourceEntitySet, edmEntitySet);
+            return;
+        }
+
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
@@ -223,6 +233,142 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
     }
     
+    private static final String NAVIGATION_REFUSED =
+            "a path with a key or a navigation is answered only for Folders('<id>')/children and Documents('<id>')/parents";
+    private static final String NAVIGATION_NOT_TRANSLATED =
+            "$filter, $search, $orderby, $apply and $expand are not translated on a navigation path";
+
+    /**
+     * Answer a path with a key or a navigation segment (R251, 3.4.2): {@code Folders('<id>')/children} with the children
+     * of that folder and {@code Documents('<id>')/parents} with the parents of that document. Any other such path is
+     * refused (400), a key that names no entity of the set is not found (404), and a query option this path cannot
+     * translate is refused rather than dropped.
+     */
+    private void readNavigation(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat,
+            List<UriResource> resourcePaths, UriResourceEntitySet entitySetSegment, EdmEntitySet edmEntitySet)
+            throws ODataApplicationException, SerializerException {
+        String setName = edmEntitySet.getName();
+        UriResourceNavigation navigation = resourcePaths.size() == 2 && resourcePaths.get(1) instanceof UriResourceNavigation
+                ? (UriResourceNavigation) resourcePaths.get(1) : null;
+        String navigationName = navigation != null ? navigation.getProperty().getName() : null;
+        boolean children = CmisEdmProvider.ES_FOLDERS_NAME.equals(setName) && "children".equals(navigationName);
+        boolean parents = CmisEdmProvider.ES_DOCUMENTS_NAME.equals(setName) && "parents".equals(navigationName);
+        if (!(children || parents)
+                || entitySetSegment.getKeyPredicates().size() != 1
+                || !isAbsentOrOwnType(entitySetSegment.getTypeFilterOnEntry(), edmEntitySet.getEntityType())
+                || !navigation.getKeyPredicates().isEmpty()
+                || navigation.getTypeFilterOnEntry() != null
+                || !isAbsentOrOwnType(navigation.getTypeFilterOnCollection(), navigation.getProperty().getType())) {
+            throw new ODataApplicationException(NAVIGATION_REFUSED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        if (uriInfo.getFilterOption() != null || uriInfo.getSearchOption() != null
+                || uriInfo.getOrderByOption() != null || uriInfo.getApplyOption() != null
+                || uriInfo.getExpandOption() != null) {
+            throw new ODataApplicationException(NAVIGATION_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        UriParameter keyPredicate = entitySetSegment.getKeyPredicates().get(0);
+        String key = stringKey(keyPredicate);
+
+        // The key must name an entity of the set: a folder for Folders, a document for Documents.
+        ObjectData keyed;
+        try {
+            keyed = objectService.getObject(callContext, repositoryId, key, "cmis:objectId,cmis:baseTypeId",
+                    Boolean.FALSE, IncludeRelationships.NONE, null, Boolean.FALSE, Boolean.FALSE, null);
+        } catch (Exception e) {
+            throw ODataExceptions.map("Error reading " + setName, e);
+        }
+        String wanted = children ? "cmis:folder" : "cmis:document";
+        if (keyed == null || !wanted.equals(getPropertyValue(keyed, "cmis:baseTypeId"))) {
+            throw new ODataApplicationException("Entity not found: " + key, HttpStatusCode.NOT_FOUND.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+
+        int top = getTopOption(uriInfo);
+        int skip = getSkipOption(uriInfo);
+        SelectOption selectOption = uriInfo.getSelectOption();
+        Set<String> selectedProperties = selectOption != null ? getSelectedProperties(selectOption) : null;
+        String baseUri = request.getRawBaseUri();
+        EntityCollection entityCollection = new EntityCollection();
+        try {
+            if (children) {
+                ObjectInFolderList list = navigationService.getChildren(callContext, repositoryId, key, "*", null,
+                        Boolean.TRUE, IncludeRelationships.NONE, null, Boolean.FALSE, BigInteger.valueOf(top),
+                        BigInteger.valueOf(skip), new Holder<ObjectData>(), null);
+                if (list != null && list.getObjects() != null) {
+                    for (ObjectInFolderData child : list.getObjects()) {
+                        if (child.getObject() != null) {
+                            entityCollection.getEntities().add(navigationEntity(child.getObject(), selectedProperties, baseUri));
+                        }
+                    }
+                }
+                entityCollection.setCount(list != null && list.getNumItems() != null
+                        ? list.getNumItems().intValue() : entityCollection.getEntities().size());
+            } else {
+                List<ObjectParentData> list = navigationService.getObjectParents(callContext, repositoryId, key, "*",
+                        Boolean.TRUE, IncludeRelationships.NONE, null, Boolean.FALSE, null);
+                List<ObjectData> all = new ArrayList<>();
+                if (list != null) {
+                    for (ObjectParentData parent : list) {
+                        if (parent.getObject() != null) {
+                            all.add(parent.getObject());
+                        }
+                    }
+                }
+                long end = Math.min((long) all.size(), (long) skip + top);
+                for (int i = skip; i < end; i++) {
+                    entityCollection.getEntities().add(navigationEntity(all.get(i), selectedProperties, baseUri));
+                }
+                entityCollection.setCount(all.size());
+            }
+        } catch (Exception e) {
+            throw ODataExceptions.map("Error fetching data", e);
+        }
+
+        ContextURL contextUrl = ContextURL.with().entitySet(edmEntitySet).keyPath(keyPredicate.getText())
+                .navOrPropertyPath(navigationName).build();
+        EntityCollectionSerializerOptions opts = EntityCollectionSerializerOptions.with()
+                .id(baseUri + "/" + setName + "(" + keyPredicate.getText() + ")/" + navigationName)
+                .contextURL(contextUrl)
+                .count(uriInfo.getCountOption())
+                .select(selectOption)
+                .build();
+        SerializerResult serializerResult = odata.createSerializer(responseFormat)
+                .entityCollection(serviceMetadata, navigation.getProperty().getType(), entityCollection, opts);
+        response.setContent(serializerResult.getContent());
+        response.setStatusCode(HttpStatusCode.OK.getStatusCode());
+        response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
+    }
+
+    private static boolean isAbsentOrOwnType(EdmType cast, EdmType own) {
+        return cast == null || own.getFullQualifiedName().equals(cast.getFullQualifiedName());
+    }
+
+    /** The value of a string key, its quotes taken off and a doubled quote read as one. */
+    private static String stringKey(UriParameter keyPredicate) throws ODataApplicationException {
+        String text = keyPredicate.getText();
+        if (text == null || text.length() < 2 || !text.startsWith("'") || !text.endsWith("'")) {
+            throw new ODataApplicationException(NAVIGATION_REFUSED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        return text.substring(1, text.length() - 1).replace("''", "'");
+    }
+
+    /** An entity of a navigation's answer, its id written under the entity set of its base type. */
+    private Entity navigationEntity(ObjectData objectData, Set<String> selectedProperties, String baseUri) {
+        String baseTypeId = getPropertyValue(objectData, "cmis:baseTypeId");
+        String entitySetName;
+        if ("cmis:folder".equals(baseTypeId)) {
+            entitySetName = CmisEdmProvider.ES_FOLDERS_NAME;
+        } else if ("cmis:document".equals(baseTypeId)) {
+            entitySetName = CmisEdmProvider.ES_DOCUMENTS_NAME;
+        } else {
+            entitySetName = CmisEdmProvider.ES_OBJECTS_NAME;
+        }
+        return convertToEntity(objectData, selectedProperties, baseUri, entitySetName);
+    }
+
     /**
      * Get data from CMIS based on the entity set name.
      */
