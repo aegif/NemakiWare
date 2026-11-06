@@ -161,6 +161,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             );
         }
 
+        // A $skiptoken was neither read nor refused, so the first page was answered for it (R256, 3.4.2). The next
+        // link this processor writes pages with $skip, so a $skiptoken is refused on both readers.
+        if (uriInfo.getSkipTokenOption() != null) {
+            throw new ODataApplicationException(SKIPTOKEN_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+
         // Neither the key nor a navigation segment after it was read: Folders('F')/children answered every folder,
         // Documents('D')/parents every document, and a key that names nothing the same (R251, 3.4.2). Only the two a
         // CMIS navigation answers are read — a folder's children and a document's parents.
@@ -210,7 +217,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         
         // Fetch the data from CMIS
         String baseUri = request.getRawBaseUri();
-        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties, searchTerm, baseUri);
+        Page page = new Page(top);
+        EntityCollection entityCollection = getData(edmEntitySet, top, skip, filterClause, orderByClause, selectedProperties, expandProperties, searchTerm, baseUri, page);
+        finishPage(entityCollection, page, uriInfo, request, top, skip);
         
         // Serialize the response
         ODataSerializer serializer = odata.createSerializer(responseFormat);
@@ -291,6 +300,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         Set<String> selectedProperties = selectOption != null ? getSelectedProperties(selectOption) : null;
         String baseUri = request.getRawBaseUri();
         EntityCollection entityCollection = new EntityCollection();
+        Page page = new Page(top);
         try {
             if (children) {
                 ObjectInFolderList list = navigationService.getChildren(callContext, repositoryId, key, "*", null,
@@ -303,8 +313,12 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                         }
                     }
                 }
-                entityCollection.setCount(list != null && list.getNumItems() != null
-                        ? list.getNumItems().intValue() : entityCollection.getEntities().size());
+                if (list == null) {
+                    page.complete = true;
+                } else {
+                    page.hasMoreItems = list.hasMoreItems();
+                    page.numItems = list.getNumItems();
+                }
             } else {
                 List<ObjectParentData> list = navigationService.getObjectParents(callContext, repositoryId, key, "*",
                         Boolean.TRUE, IncludeRelationships.NONE, null, Boolean.FALSE, null);
@@ -320,11 +334,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 for (int i = skip; i < end; i++) {
                     entityCollection.getEntities().add(navigationEntity(all.get(i), selectedProperties, baseUri));
                 }
-                entityCollection.setCount(all.size());
+                page.numItems = BigInteger.valueOf(all.size());
+                page.hasMoreItems = end < all.size();
             }
         } catch (Exception e) {
             throw ODataExceptions.map("Error fetching data", e);
         }
+        finishPage(entityCollection, page, uriInfo, request, top, skip);
 
         ContextURL contextUrl = ContextURL.with().entitySet(edmEntitySet).keyPath(keyPredicate.getText())
                 .navOrPropertyPath(navigationName).build();
@@ -373,7 +389,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
      * Get data from CMIS based on the entity set name.
      */
     private EntityCollection getData(EdmEntitySet edmEntitySet, int maxItems, int skipCount, 
-            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties, String searchTerm, String baseUri) throws ODataApplicationException {
+            String filterClause, String orderByClause, Set<String> selectedProperties, Set<String> expandProperties, String searchTerm, String baseUri,
+            Page page) throws ODataApplicationException {
         EntityCollection entityCollection = new EntityCollection();
         String entitySetName = edmEntitySet.getName();
         
@@ -406,17 +423,15 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                         entityCollection.getEntities().add(entity);
                     }
                     
-                    if (objectList.getNumItems() != null) {
-                        entityCollection.setCount(objectList.getNumItems().intValue());
-                    } else {
-                        // Backend did not report a total; fall back to the number
-                        // of entities returned so a requested @odata.count is still
-                        // emitted (accurate for a non-paginated result). The count
-                        // is only serialized when $count=true, so setting it
-                        // unconditionally here is harmless otherwise.
-                        entityCollection.setCount(entityCollection.getEntities().size());
-                    }
                 }
+                if (objectList == null) {
+                    page.complete = true;
+                } else {
+                    page.hasMoreItems = objectList.hasMoreItems();
+                    page.numItems = objectList.getNumItems();
+                }
+            } else {
+                page.complete = true;
             }
         } catch (Exception e) {
             // Map CMIS exceptions to correct HTTP status; a genuine 500 is logged
@@ -424,14 +439,97 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             throw ODataExceptions.map("Error fetching data", e);
         }
 
-        // Guarantee a non-null count so @odata.count is always emitted when the
-        // client asked for it ($count=true), even when the backend returned no
-        // ObjectList (e.g. an empty result). Only serialized when $count=true.
-        if (entityCollection.getCount() == null) {
-            entityCollection.setCount(entityCollection.getEntities().size());
-        }
-
         return entityCollection;
+    }
+
+    private static final String SKIPTOKEN_NOT_TRANSLATED = "$skiptoken is not translated — page with $skip";
+    private static final String COUNT_NOT_KNOWN = "the number of entities is not known, so $count=true is not answered";
+
+    /** What the backend said of the page it answered: whether more follow and how many there are (R256, 3.4.2). */
+    private static final class Page {
+        final int asked;
+        Boolean hasMoreItems;
+        BigInteger numItems;
+        /** The answer is the whole set whatever the backend reported — no query was made, or no list came back. */
+        boolean complete;
+
+        Page(int asked) {
+            this.asked = asked;
+        }
+    }
+
+    /**
+     * Write the count only when it is known and say where an answer cut short continues (R256, 3.4.2). A listing cut at
+     * the default page or at the backend's own limit used to read as the whole set; {@code $top=0} answered the backend's
+     * default page; and a backend that did not know the total had the page's size written as the count.
+     */
+    private void finishPage(EntityCollection collection, Page page, UriInfo uriInfo, ODataRequest request, int top,
+            int skip) throws ODataApplicationException {
+        boolean topGiven = uriInfo.getTopOption() != null;
+        int fetched = collection.getEntities().size();
+        Integer count = null;
+        if (page.complete) {
+            count = fetched;
+        } else if (page.numItems != null) {
+            count = page.numItems.intValue();
+        } else if (skip == 0 && Boolean.FALSE.equals(page.hasMoreItems)) {
+            count = fetched;
+        }
+        if (count != null) {
+            collection.setCount(count);
+        } else if (getCountOption(uriInfo)) {
+            throw new ODataApplicationException(COUNT_NOT_KNOWN, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        // $top=0 asks for no entity; the backend reads a page of 0 as its default page.
+        if (topGiven && top == 0) {
+            collection.getEntities().clear();
+            return;
+        }
+        int returned = collection.getEntities().size();
+        if (page.complete || (topGiven && returned >= top)) {
+            return;
+        }
+        boolean more = Boolean.TRUE.equals(page.hasMoreItems)
+                || (page.numItems != null && page.numItems.longValue() > (long) skip + returned)
+                || (page.hasMoreItems == null && page.numItems == null && returned >= page.asked);
+        if (more) {
+            collection.setNext(nextPage(request, skip + returned, topGiven ? top - returned : null));
+        }
+    }
+
+    /** The same request with $skip moved past what was answered, and $top lessened by it if one was given. */
+    private static URI nextPage(ODataRequest request, int nextSkip, Integer remainingTop) throws ODataApplicationException {
+        StringBuilder query = new StringBuilder();
+        String raw = request.getRawQueryPath();
+        if (raw != null) {
+            for (String part : raw.split("&")) {
+                if (part.isEmpty()) {
+                    continue;
+                }
+                int eq = part.indexOf('=');
+                String name = eq < 0 ? part : part.substring(0, eq);
+                try {
+                    name = java.net.URLDecoder.decode(name, StandardCharsets.UTF_8);
+                } catch (IllegalArgumentException e) {
+                    // left as written; it is not $skip or $top either way
+                }
+                if ("$skip".equals(name) || "$top".equals(name)) {
+                    continue;
+                }
+                query.append(query.length() > 0 ? "&" : "").append(part);
+            }
+        }
+        query.append(query.length() > 0 ? "&" : "").append("$skip=").append(nextSkip);
+        if (remainingTop != null) {
+            query.append("&$top=").append(remainingTop);
+        }
+        try {
+            return URI.create(request.getRawBaseUri() + request.getRawODataPath() + "?" + query);
+        } catch (IllegalArgumentException e) {
+            throw new ODataApplicationException("the answer is cut short and where it continues cannot be written",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH, e);
+        }
     }
     
     /**
