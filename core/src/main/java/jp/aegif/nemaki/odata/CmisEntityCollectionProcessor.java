@@ -131,6 +131,23 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         // Get the entity set from the URI
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
 
+        // Olingo parses the $id of $entity/NemakiWare.CMIS.Policy?$id=Objects again and keeps the cast in the UriInfo —
+        // the type the $id answers when none is written. It was not read, so every entity of the set was answered,
+        // documents for a type that has none (R253, 3.4.2). A cast is answered only when it is the type of what the $id
+        // answers: the entity set, the navigation or the function at the end of its path. It is read before a function
+        // is handed on, since the function processor does not read it. Only a $entity request is held to it: Olingo
+        // also puts a path's own cast (Objects/NemakiWare.CMIS.Policy) there, and that is the guard below (R250).
+        EdmEntityType entityCast = uriInfo.getEntityTypeCast();
+        if (uriInfo.getKind() == org.apache.olingo.server.api.uri.UriInfoKind.entityId && entityCast != null) {
+            EdmType answered = typeAnsweredBy(resourcePaths);
+            if (answered == null || !answered.getFullQualifiedName().equals(entityCast.getFullQualifiedName())) {
+                throw new ODataApplicationException(
+                        "a type cast on $entity is answered only for the type its $id answers, not for "
+                                + entityCast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
+
         // A function (or unbound function import) that returns a collection is
         // dispatched here by Olingo as well; hand it to the function processor
         // instead of treating the first path segment as an entity set.
@@ -367,6 +384,22 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
 
     private static boolean isAbsentOrOwnType(EdmType cast, EdmType own) {
         return cast == null || own.getFullQualifiedName().equals(cast.getFullQualifiedName());
+    }
+
+    /** The declared type of what a path answers: its last entity set, navigation or function; null for anything else. */
+    private static EdmType typeAnsweredBy(List<UriResource> resourcePaths) {
+        UriResource last = resourcePaths.isEmpty() ? null : resourcePaths.get(resourcePaths.size() - 1);
+        if (last instanceof UriResourceEntitySet) {
+            return ((UriResourceEntitySet) last).getEntitySet().getEntityType();
+        }
+        if (last instanceof UriResourceNavigation) {
+            return ((UriResourceNavigation) last).getProperty().getType();
+        }
+        if (last instanceof UriResourceFunction) {
+            org.apache.olingo.commons.api.edm.EdmFunction function = ((UriResourceFunction) last).getFunction();
+            return function != null && function.getReturnType() != null ? function.getReturnType().getType() : null;
+        }
+        return null;
     }
 
     /** The value of a string key, its quotes taken off and a doubled quote read as one. */
