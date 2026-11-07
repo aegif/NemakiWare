@@ -143,6 +143,22 @@ public class CmisEntityProcessor implements EntityProcessor {
 
         UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
+
+        // None of the casts Olingo keeps for one entity was read — after the key (Objects('D')/NemakiWare.CMIS.Policy),
+        // before it (Objects/NemakiWare.CMIS.Policy('D')) or on $entity ($entity/NemakiWare.CMIS.Policy?$id=Objects('D')) —
+        // so the document was answered for a type it is not (R254, 3.4.2). A cast is answered only when it is the entity
+        // set's own type; the type of the entity read does not decide the answer. Olingo reports the cast on $entity in
+        // place of the one after the key, so all three are read.
+        for (org.apache.olingo.commons.api.edm.EdmType cast : new org.apache.olingo.commons.api.edm.EdmType[] {
+                uriInfo.getEntityTypeCast(), uriResourceEntitySet.getTypeFilterOnCollection(),
+                uriResourceEntitySet.getTypeFilterOnEntry()}) {
+            if (cast != null && !edmEntitySet.getEntityType().getFullQualifiedName().equals(cast.getFullQualifiedName())) {
+                throw new ODataApplicationException(
+                        "a type cast on one entity is answered only for its entity set's own type, not for "
+                                + cast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
         
         // Get the key parameter (objectId)
         List<UriParameter> keyPredicates = uriResourceEntitySet.getKeyPredicates();
