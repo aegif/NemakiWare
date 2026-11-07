@@ -176,6 +176,14 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
             return;
         }
 
+        // Types, Users and Groups have no CMIS query behind them: the listing made none and answered an empty set with a
+        // count of 0, though the repository has types, users and groups (R257, 3.4.2). Their contents are not translated;
+        // the listing is refused.
+        if (getBaseTypeForEntitySet(edmEntitySet.getName()) == null) {
+            throw new ODataApplicationException("the entity set " + edmEntitySet.getName() + " is not translated",
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
+
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
