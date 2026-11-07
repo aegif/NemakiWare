@@ -107,9 +107,20 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         this.serviceMetadata = serviceMetadata;
     }
     
+    private static final String FILTER_NOT_TRANSLATED =
+            "$filter is not translated on a function — put the condition in the statement";
+
     @Override
     public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType responseFormat) throws ODataApplicationException, SerializerException {
+
+        // A $filter was not read: Query(...)?$filter=name eq 'zz-none' answered the same as without it, and so did a bound
+        // function such as GetAllVersions (R252, 3.4.2). The filter is not translated into CMIS; it is refused. (A function
+        // that answers one entity is given no $filter — Olingo refuses it before this processor.)
+        if (uriInfo.getFilterOption() != null) {
+            throw new ODataApplicationException(FILTER_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
         
         // Check if this is a function call
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
