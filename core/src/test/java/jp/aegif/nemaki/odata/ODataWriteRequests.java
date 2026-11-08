@@ -18,6 +18,8 @@ package jp.aegif.nemaki.odata;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -30,7 +32,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -60,8 +65,11 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 
 /**
  * Sends a write or an action through Olingo's own handler — its parser and its dispatcher — to the NemakiWare processors,
- * registered as {@code ODataServlet} registers them (R261, R262, R270 — 3.4.2). The CMIS services are mocks that record what
- * was called with which object id; the body is a stream that records whether it was read.
+ * registered as {@code ODataServlet} registers them (R261, R262, R270, R271, R272 — 3.4.2). The CMIS services are mocks that
+ * record what was called with which object id; the body is a stream that records whether it was read.
+ *
+ * <p>{@code getObject} answers an object whose base type the id names ({@link #baseTypeOf}), unless {@link #onRead} says
+ * otherwise for that id.
  */
 final class ODataWriteRequests {
 
@@ -83,6 +91,8 @@ final class ODataWriteRequests {
     final DiscoveryService discovery = mock(DiscoveryService.class);
     final VersioningService versioning = mock(VersioningService.class);
     final AclService acls = mock(AclService.class);
+    /** What {@code getObject} does for an id in place of answering {@link #object}: throw, or answer something else. */
+    final Map<String, Callable<Object>> onRead = new HashMap<>();
     private final boolean singletons;
     private boolean bodyRead;
 
@@ -99,7 +109,10 @@ final class ODataWriteRequests {
     ODataWriteRequests(boolean singletons) {
         this.singletons = singletons;
         when(objects.getObject(any(), eq("bedroom"), anyString(), any(), any(), any(), any(), any(), any(), any()))
-                .thenAnswer(call -> object(call.getArgument(2)));
+                .thenAnswer(call -> {
+                    Callable<Object> read = onRead.get(call.getArgument(2));
+                    return read != null ? read.call() : object(call.getArgument(2));
+                });
         RepositoryInfo info = new RepositoryInfo();
         info.setRootFolder("ROOT");
         when(repository.getRepositoryInfo("bedroom")).thenReturn(info);
@@ -217,6 +230,19 @@ final class ODataWriteRequests {
         return writes;
     }
 
+    /** The ids {@code getObject} was called for, each with the request's call context and repository. */
+    List<String> reads() {
+        List<String> reads = new ArrayList<>();
+        for (Invocation call : mockingDetails(objects).getInvocations()) {
+            if (call.getMethod().getName().equals("getObject")) {
+                assertEquals(callContext, call.getArgument(0), "getObject was not called with the request's call context");
+                assertEquals("bedroom", call.getArgument(1), "getObject was not called for the request's repository");
+                reads.add(call.getArgument(2));
+            }
+        }
+        return reads;
+    }
+
     /** Every call any service received, by method name. */
     List<String> calls() {
         List<String> calls = new ArrayList<>();
@@ -243,12 +269,59 @@ final class ODataWriteRequests {
         assertEquals(List.of(), calls, answer.request() + " called a CMIS service before it was refused");
     }
 
+    /**
+     * The request was answered 404 because {@code entitySet} does not hold the entity {@code id} names: the entity was read
+     * once with the request's call context, and neither the body nor the action's parameters were read, and no other CMIS
+     * service was called (R271).
+     */
+    void assertNotHeld(Answer answer, String entitySet, String id) {
+        assertEquals(404, answer.status(), answer.request() + " was answered " + answer.body());
+        assertEquals(WriteTarget.NOT_HELD + entitySet + ": " + id, answer.message(), answer.request() + " was answered by another arm");
+        assertFalse(bodyWasRead(), answer.request() + " read its body before it was answered 404");
+        assertEquals(List.of(), writes(), answer.request() + " wrote to an entity its entity set does not hold");
+        assertEquals(List.of("getObject"), calls(), answer.request() + " called a CMIS service besides the read of its entity");
+        assertEquals(List.of(id), reads(), answer.request() + " did not read the entity its key names");
+    }
+
+    /**
+     * The entity could not be read, or its base type could not: the request was answered {@code status} with a message that
+     * says so — not the 404 of an entity that is not there — and neither the body was read nor anything written (R271).
+     */
+    void assertNotWritten(Answer answer, int status) {
+        assertEquals(status, answer.status(), answer.request() + " was answered " + answer.body());
+        assertNotEquals(404, answer.status(), answer.request() + " answered a failed read as an absent entity");
+        assertTrue(answer.message() != null && answer.message().startsWith(WriteTarget.UNREADABLE),
+                answer.request() + " was answered by another arm: " + answer.body());
+        assertFalse(bodyWasRead(), answer.request() + " read its body although its entity could not be read");
+        assertEquals(List.of(), writes(), answer.request() + " wrote although its entity could not be read");
+        assertEquals(List.of("getObject"), calls(), answer.request() + " called a CMIS service besides the read of its entity");
+    }
+
+    /** The base type of the object an id names: F…, ROOT and NEWFOLDER folders, REL… relationships, POL… policies, ITEM… items. */
+    static String baseTypeOf(String id) {
+        if (id.startsWith("F") || id.equals("ROOT") || id.equals("NEWFOLDER")) {
+            return "cmis:folder";
+        }
+        if (id.startsWith("REL")) {
+            return "cmis:relationship";
+        }
+        if (id.startsWith("POL")) {
+            return "cmis:policy";
+        }
+        return id.startsWith("ITEM") ? "cmis:item" : "cmis:document";
+    }
+
     static ObjectDataImpl object(String id) {
-        String base = id.startsWith("F") || id.equals("ROOT") || id.equals("NEWFOLDER") ? "cmis:folder" : "cmis:document";
+        String base = baseTypeOf(id);
         PropertiesImpl properties = new PropertiesImpl();
         properties.addProperty(new PropertyIdImpl("cmis:objectId", id));
         properties.addProperty(new PropertyIdImpl("cmis:baseTypeId", base));
         properties.addProperty(new PropertyIdImpl("cmis:objectTypeId", base));
+        if (base.equals("cmis:relationship")) {
+            // As a relationship is: the Relationship type's sourceId and targetId are not nullable.
+            properties.addProperty(new PropertyIdImpl("cmis:sourceId", "D"));
+            properties.addProperty(new PropertyIdImpl("cmis:targetId", "D2"));
+        }
         properties.addProperty(new PropertyStringImpl("cmis:name", id + ".name"));
         ObjectDataImpl object = new ObjectDataImpl();
         object.setProperties(properties);

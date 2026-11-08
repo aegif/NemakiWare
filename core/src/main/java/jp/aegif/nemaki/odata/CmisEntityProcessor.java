@@ -222,6 +222,9 @@ public class CmisEntityProcessor implements EntityProcessor {
         // Only the first segment was read: POST Folders('F')/children created the folder under the root, not under F (R261),
         // and a cast on the entity set was dropped (R270, 3.4.2). Refused with a 400 before the body is read.
         UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
+        // POST Users answered a 500 after the body and the repository were read (R272, 3.4.2). Types, Users and Groups are
+        // not CMIS objects; refused with a 400 before either is read.
+        WriteTarget.translated(uriResourceEntitySet);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         String entitySetName = edmEntitySet.getName();
         
@@ -293,6 +296,8 @@ public class CmisEntityProcessor implements EntityProcessor {
         // PATCH Objects('D')/NemakiWare.CMIS.Policy updated the document D (R270, 3.4.2). Refused with a 400 before the body
         // is read.
         UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
+        // PATCH Users('admin') answered a 500 after the body was read (R272, 3.4.2). Refused with a 400 before it is read.
+        WriteTarget.translated(uriResourceEntitySet);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         String entitySetName = edmEntitySet.getName();
         
@@ -307,6 +312,10 @@ public class CmisEntityProcessor implements EntityProcessor {
                     Locale.ENGLISH
             );
         }
+
+        // PATCH Folders('<document>') updated the document (R271, 3.4.2). The entity is read before the body, and one its
+        // entity set does not hold is answered 404.
+        WriteTarget.holds(uriResourceEntitySet, objectId, objectService, callContext, repositoryId, "Entity not found: ");
         
         try {
             // Deserialize the request body
@@ -379,6 +388,8 @@ public class CmisEntityProcessor implements EntityProcessor {
         // Only the key of the first segment was read: DELETE Folders('F')/children('D') deleted F (R261), and
         // DELETE Objects('D')/NemakiWare.CMIS.Folder deleted the document D (R270, 3.4.2). Refused with a 400.
         UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
+        // DELETE Users('admin') called deleteObject("admin") (R272, 3.4.2). Refused with a 400 before anything is read.
+        WriteTarget.translated(uriResourceEntitySet);
         
         // Get the key parameter (objectId)
         List<UriParameter> keyPredicates = uriResourceEntitySet.getKeyPredicates();
@@ -391,6 +402,9 @@ public class CmisEntityProcessor implements EntityProcessor {
                     Locale.ENGLISH
             );
         }
+
+        // DELETE Folders('<document>') deleted the document (R271, 3.4.2). One its entity set does not hold is answered 404.
+        WriteTarget.holds(uriResourceEntitySet, objectId, objectService, callContext, repositoryId, "Entity not found: ");
         
         try {
             // Delete the object from CMIS
