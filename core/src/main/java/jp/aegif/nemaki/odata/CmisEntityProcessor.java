@@ -219,9 +219,9 @@ public class CmisEntityProcessor implements EntityProcessor {
     public void createEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType requestFormat, ContentType responseFormat)
             throws ODataApplicationException, SerializerException {
         
-        // Get the entity set from the URI
-        List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
-        UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
+        // Only the first segment was read: POST Folders('F')/children created the folder under the root, not under F (R261),
+        // and a cast on the entity set was dropped (R270, 3.4.2). Refused with a 400 before the body is read.
+        UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         String entitySetName = edmEntitySet.getName();
         
@@ -289,9 +289,10 @@ public class CmisEntityProcessor implements EntityProcessor {
     public void updateEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType requestFormat, ContentType responseFormat)
             throws ODataApplicationException, SerializerException {
         
-        // Get the entity set and key from the URI
-        List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
-        UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
+        // Only the key of the first segment was read: PATCH Folders('F')/children('D') updated F (R261), and
+        // PATCH Objects('D')/NemakiWare.CMIS.Policy updated the document D (R270, 3.4.2). Refused with a 400 before the body
+        // is read.
+        UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
         EdmEntitySet edmEntitySet = uriResourceEntitySet.getEntitySet();
         String entitySetName = edmEntitySet.getName();
         
@@ -375,9 +376,9 @@ public class CmisEntityProcessor implements EntityProcessor {
     public void deleteEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo)
             throws ODataApplicationException {
         
-        // Get the entity set and key from the URI
-        List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
-        UriResourceEntitySet uriResourceEntitySet = (UriResourceEntitySet) resourcePaths.get(0);
+        // Only the key of the first segment was read: DELETE Folders('F')/children('D') deleted F (R261), and
+        // DELETE Objects('D')/NemakiWare.CMIS.Folder deleted the document D (R270, 3.4.2). Refused with a 400.
+        UriResourceEntitySet uriResourceEntitySet = WriteTarget.aimedAt(uriInfo, false);
         
         // Get the key parameter (objectId)
         List<UriParameter> keyPredicates = uriResourceEntitySet.getKeyPredicates();
