@@ -1398,6 +1398,20 @@ public class ZipImporter {
 
     // ========== Relationship Import ==========
 
+    /**
+     * Throws what CMIS answers for an id that does not exist when {@code id} names nothing or a row that is not a CMIS
+     * object ({@code ObjectServiceImpl.isCmisObject}), as CMIS {@code createRelationship} does for each end (R290, 3.4.2).
+     * A read that fails is thrown as it is.
+     */
+    private static void refuseAnEndThatIsNotACmisObject(ContentService cs, String repositoryId, String id) {
+        Content end = cs.getContent(repositoryId, id);
+        if (end == null || !jp.aegif.nemaki.cmis.service.impl.ObjectServiceImpl.isCmisObject(end)) {
+            // The product's own answer for an id that does not exist; it reads nothing.
+            new jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl()
+                    .objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, id);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void importRelationships(String repositoryId, ZipFile zf,
             Map<String, String> oldIdToNewId, CallContext callContext, ImportResult result) {
@@ -1481,6 +1495,12 @@ public class ZipImporter {
                     }
                 }
 
+                // The import saves the relationship through ContentService, not CMIS createRelationship, so the check
+                // that refuses an end that is not a CMIS object is made here too (R290, 3.4.2): an id the archive does
+                // not map is kept as it is, and a parentChild relationship to an internal row — an attachment, a version
+                // series, a passkey — made the parent's delete cascade to the row. Refused as an id that does not exist.
+                refuseAnEndThatIsNotACmisObject(cs, repositoryId, newSourceId);
+                refuseAnEndThatIsNotACmisObject(cs, repositoryId, newTargetId);
                 Relationship newRel = cs.createRelationship(callContext, repositoryId, props, null, null, null, null);
                 created++;
 

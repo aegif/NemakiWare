@@ -213,7 +213,7 @@ public class ObjectServiceImpl implements ObjectService {
 	 * no objectType that only begins with or resembles it is refused. The one-object readers that do not go through getObject
 	 * ask it too, right after their own {@code getContent} (R279, 3.4.2).
 	 */
-	static boolean isCmisObject(Content content) {
+	public static boolean isCmisObject(Content content) {
 		if (PASSKEY_OBJECT_TYPE.equals(content.getObjectType())) {
 			return false;
 		}
@@ -1040,6 +1040,10 @@ public class ObjectServiceImpl implements ObjectService {
 			Content source = contentService.getContent(repositoryId, sourceId);
 			if (source == null) {
 				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, source, sourceId);
+			} else if (!isCmisObject(source)) {
+				// Not a CMIS object (R290, 3.4.2): a relationship to an internal row is not saved — a parentChild one made
+				// the parent's delete cascade to the row. Answered as an id that does not exist, before anything is checked.
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, sourceId);
 			} else {
 				exceptionService.constraintAllowedSourceTypes(td, source);
 				exceptionService.permissionDenied(callContext, repositoryId,
@@ -1051,6 +1055,9 @@ public class ObjectServiceImpl implements ObjectService {
 			Content target = contentService.getContent(repositoryId, targetId);
 			if (target == null) {
 				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, target, targetId);
+			} else if (!isCmisObject(target)) {
+				// Not a CMIS object (R290, 3.4.2): the same as the source.
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, targetId);
 			} else {
 				exceptionService.constraintAllowedTargetTypes(td, target);
 				exceptionService.permissionDenied(callContext, repositoryId,
@@ -1696,9 +1703,27 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
+		// The check deleteObjectInternal makes first, made before the content is read: an id that is not given is not
+		// answered as an id that does not exist.
+		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 
 		// Check if the object is a folder before deletion (for cache invalidation)
 		Content content = contentService.getContent(repositoryId, objectId);
+		// An id that does not exist is answered 404 (R288, 3.4.2). deleteObjectInternal skipped a null content with a
+		// warning, so the API v1 delete answered 204 for it, while the Browser binding's answered 404. A getContent that
+		// cannot read throws, and that is thrown as it is.
+		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+		if (content == null) {
+			return;
+		}
+		// getContent answers any CouchDB document by its id. One that is not a CMIS object — a version series, an
+		// attachment, a passkey — was deleted as an object: an administrator's API v1 delete of a document's content
+		// stream id removed the attachment row and left the document pointing at it (R281, 3.4.2). It is answered as an
+		// id that does not exist, before the permission check and before anything is deleted — to every user.
+		if (!isCmisObject(content)) {
+			exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+			return;
+		}
 		boolean isFolder = (content instanceof Folder);
 
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);

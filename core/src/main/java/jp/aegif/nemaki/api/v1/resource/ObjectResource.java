@@ -46,6 +46,7 @@ import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.Action;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ContentStreamImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -302,15 +303,15 @@ public class ObjectResource {
             
         } catch (ApiException e) {
             throw e;
-        } catch (CmisPermissionDeniedException | CmisConstraintException refused) {
+        } catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException refused) {
             // The caller's answer, not a server fault — a protected user's item is refused so
-            // (R115). ApiExceptionMapper answers each as itself: 403, 422.
+            // (R115), and an id that does not exist or is not a CMIS object is answered as one
+            // (R281, R288 — 3.4.2). ApiExceptionMapper answers each as itself: 403, 422, 404.
             throw refused;
         } catch (Exception e) {
+            // Not read for "not found": a 404 is the type's answer above, and a failure whose
+            // text happens to say "not found" is a failure, not an absence (R288, 3.4.2).
             logger.severe("Error deleting object " + objectId + ": " + e.getMessage());
-            if (e.getMessage() != null && e.getMessage().contains("not found")) {
-                throw ApiException.objectNotFound(objectId, repositoryId);
-            }
             throw ApiException.internalError("Failed to delete object: " + e.getMessage(), e);
         }
     }

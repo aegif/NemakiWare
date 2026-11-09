@@ -111,6 +111,14 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 					if (childContent == null) {
 						continue;
 					}
+					// A parentChild child that is not a CMIS object — a version series, an attachment, a passkey — is not
+					// deleted with its parent (R290, 3.4.2): deleteObject answers such an id as one that does not exist
+					// (R281), and the cascade handed it to the generic delete below, which removed the row and left the
+					// document that points at it. The parent's own delete is not refused for it.
+					if (!ObjectServiceImpl.isCmisObject(childContent)) {
+						log.warn("deleteObjectInternal: Skipping a parentChild child that is not a CMIS object. childId=" + childId);
+						continue;
+					}
 					log.debug("deleteObjectInternal: Cascading to parentChild child objectId=" + childId);
 					try {
 						deleteObjectInternal(callContext, repositoryId, childContent, allVersions, true);

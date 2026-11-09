@@ -327,6 +327,15 @@ class ZipImporterEvidenceStripTest {
         createdRel.setId("rel-1");
         when(cs.createRelationship(any(), eq("bedroom"), any(Properties.class), any(), any(),
                 any(), any())).thenReturn(createdRel);
+        // Both ends are stored CMIS objects: the import refuses a relationship to an id that
+        // does not exist or to an internal row (R290, 3.4.2), and this lock is about the strip.
+        for (String end : List.of("old-s", "old-t")) {
+            Document stored = new Document();
+            stored.setId(end);
+            stored.setType("cmis:document");
+            stored.setObjectType("cmis:document");
+            when(cs.getContent("bedroom", end)).thenReturn(stored);
+        }
 
         ImportResult result = new ZipImporter().importCustomFormat("bedroom", "target", zip,
                 mock(org.apache.chemistry.opencmis.commons.server.CallContext.class));
