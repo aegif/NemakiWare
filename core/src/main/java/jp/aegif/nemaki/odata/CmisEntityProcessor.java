@@ -113,6 +113,11 @@ public class CmisEntityProcessor implements EntityProcessor {
 
     private static final String NAVIGATION_AFTER_THE_KEY_REFUSED =
             "a single entity is read only by its entity set and key — a navigation after the key is not read";
+    static final String READ_NOT_TRANSLATED =
+            "a single entity is read only from an entity set whose entities are CMIS objects — it is not translated: ";
+    static final String READ_NOT_HELD =
+            "a single entity is answered only from an entity set that holds its base type — there is no such entity in ";
+    static final String READ_UNREADABLE = "the base type of the entity read could not be read";
 
     @Override
     public void readEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
@@ -159,6 +164,14 @@ public class CmisEntityProcessor implements EntityProcessor {
                         HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
             }
         }
+
+        // Types('cmis:document') and Users('admin') were looked up as CMIS objects — 404 for a type and a user that exist, and
+        // the object itself for a key that is an object id (R264, 3.4.2). Their entities are not CMIS objects and are not
+        // translated: refused with a 400 before anything is read.
+        if (WriteTarget.entitiesAreNotCmisObjects(edmEntitySet.getName())) {
+            throw new ODataApplicationException(READ_NOT_TRANSLATED + edmEntitySet.getName(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
         
         // Get the key parameter (objectId)
         List<UriParameter> keyPredicates = uriResourceEntitySet.getKeyPredicates();
@@ -181,6 +194,19 @@ public class CmisEntityProcessor implements EntityProcessor {
                     HttpStatusCode.NOT_FOUND.getStatusCode(),
                     Locale.ENGLISH
             );
+        }
+
+        // Folders('<document>') answered the document, Documents('<folder>') the folder (R268, 3.4.2). An entity whose base
+        // type its entity set does not hold is not in it: 404, and the entity is not answered. Objects holds every object base
+        // type. A base type that cannot be read is an error, not a 404.
+        WriteTarget.OnRead found = WriteTarget.onRead(edmEntitySet.getName(), objectData);
+        if (found == WriteTarget.OnRead.CANNOT_TELL) {
+            throw ODataExceptions.map(READ_UNREADABLE,
+                    new IllegalStateException("the base type of " + objectId + " cannot be told for " + edmEntitySet.getName()));
+        }
+        if (found == WriteTarget.OnRead.NOT_HELD_BY_IT) {
+            throw new ODataApplicationException(READ_NOT_HELD + edmEntitySet.getName() + ": " + objectId,
+                    HttpStatusCode.NOT_FOUND.getStatusCode(), Locale.ENGLISH);
         }
         
         // Convert to OData entity with absolute URI for @odata.id

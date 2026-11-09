@@ -19,6 +19,7 @@ package jp.aegif.nemaki.odata;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -65,8 +66,9 @@ import jp.aegif.nemaki.cmis.service.VersioningService;
 
 /**
  * Sends a write or an action through Olingo's own handler — its parser and its dispatcher — to the NemakiWare processors,
- * registered as {@code ODataServlet} registers them (R261, R262, R270, R271, R272 — 3.4.2). The CMIS services are mocks that
- * record what was called with which object id; the body is a stream that records whether it was read.
+ * registered as {@code ODataServlet} registers them (R261, R262, R270, R271, R272 — 3.4.2), and so does a single-entity read
+ * (R264, R268). The CMIS services are mocks that record what was called with which object id; the body is a stream that
+ * records whether it was read.
  *
  * <p>{@code getObject} answers an object whose base type the id names ({@link #baseTypeOf}), unless {@link #onRead} says
  * otherwise for that id.
@@ -295,6 +297,19 @@ final class ODataWriteRequests {
         assertFalse(bodyWasRead(), answer.request() + " read its body although its entity could not be read");
         assertEquals(List.of(), writes(), answer.request() + " wrote although its entity could not be read");
         assertEquals(List.of("getObject"), calls(), answer.request() + " called a CMIS service besides the read of its entity");
+    }
+
+    /**
+     * A single-entity read was answered 404 because {@code entitySet} does not hold the entity {@code id} names: the entity
+     * was read once, with the request's call context, and is not in the answer (R268).
+     */
+    void assertNotHeldOnRead(Answer answer, String entitySet, String id) {
+        assertEquals(404, answer.status(), answer.request() + " was answered " + answer.body());
+        assertEquals(CmisEntityProcessor.READ_NOT_HELD + entitySet + ": " + id, answer.message(),
+                answer.request() + " was answered by another arm");
+        assertNull(answer.objectId(), answer.request() + " answered the entity its entity set does not hold");
+        assertEquals(List.of("getObject"), calls(), answer.request() + " called a CMIS service besides the read of its entity");
+        assertEquals(List.of(id), reads(), answer.request() + " did not read the entity its key names");
     }
 
     /** The base type of the object an id names: F…, ROOT and NEWFOLDER folders, REL… relationships, POL… policies, ITEM… items. */

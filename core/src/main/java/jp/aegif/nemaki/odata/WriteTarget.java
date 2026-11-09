@@ -163,6 +163,33 @@ final class WriteTarget {
         return baseType != null && baseType.getFirstValue() instanceof String value ? value : null;
     }
 
+    /**
+     * Whether a single-entity read of {@code entitySetName} is refused because its entities are not CMIS objects — the same
+     * three entity sets a write is refused for (R264).
+     */
+    static boolean entitiesAreNotCmisObjects(String entitySetName) {
+        return NOT_TRANSLATED_SETS.contains(entitySetName);
+    }
+
+    /** What a single-entity read found, against the entity set it read from (R268). */
+    enum OnRead {
+        HELD_BY_IT, NOT_HELD_BY_IT, CANNOT_TELL
+    }
+
+    /**
+     * Whether {@code entitySetName} holds {@code found}, the entity a single-entity read found, by the table the writes use:
+     * Objects holds the five object base types, each other entity set of CMIS objects its own (R268). A base type that is
+     * none of the five, or none at all, and an entity set the table does not have cannot be told.
+     */
+    static OnRead onRead(String entitySetName, ObjectData found) {
+        Set<String> itHolds = HELD.get(entitySetName);
+        String type = baseTypeOf(found);
+        if (itHolds == null || type == null || !OBJECT_BASE_TYPES.contains(type)) {
+            return OnRead.CANNOT_TELL;
+        }
+        return itHolds.contains(type) ? OnRead.HELD_BY_IT : OnRead.NOT_HELD_BY_IT;
+    }
+
     private static ODataApplicationException refused(String message) {
         return new ODataApplicationException(message, HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
     }
