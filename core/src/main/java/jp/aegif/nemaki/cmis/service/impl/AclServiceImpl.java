@@ -180,6 +180,11 @@ public class AclServiceImpl implements AclService {
 
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !ObjectServiceImpl.isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			exceptionService.permissionDenied(callContext,repositoryId, PermissionMapping.CAN_GET_ACL_OBJECT, content);
 
 			// //////////////////

@@ -210,9 +210,10 @@ public class ObjectServiceImpl implements ObjectService {
 	/**
 	 * Whether {@code content} is a CMIS object: its stored type is one of the five object base types (R275), and it is not a
 	 * passkey (R277). The passkey is told by its objectType, compared exactly: no other item, no other {@code nemaki:} type and
-	 * no objectType that only begins with or resembles it is refused.
+	 * no objectType that only begins with or resembles it is refused. The one-object readers that do not go through getObject
+	 * ask it too, right after their own {@code getContent} (R279, 3.4.2).
 	 */
-	private static boolean isCmisObject(Content content) {
+	static boolean isCmisObject(Content content) {
 		if (PASSKEY_OBJECT_TYPE.equals(content.getObjectType())) {
 			return false;
 		}
@@ -235,6 +236,11 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
 
@@ -435,6 +441,28 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			lock.lock();
 
+			// An id that does not exist is answered with an empty list, as before. A getContent that cannot read throws, and
+			// that is thrown as it is.
+			Content content = contentService.getContent(repositoryId, objectId);
+			if (content == null) {
+				return new ArrayList<RenditionData>();
+			}
+			// Not a CMIS object (R279, 3.4.2) — a version series, an attachment, a passkey: it is answered the empty list an id
+			// that does not exist is answered, before anything is checked or read for it (getObject answers it 404, R275 and
+			// R277).
+			if (!isCmisObject(content)) {
+				return new ArrayList<RenditionData>();
+			}
+			// A CMIS object's renditions are answered only to a user getObject answers it to (R282, 3.4.2): a rendition's title
+			// is the file name of the stream it was made from. Refused before any rendition is read.
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+					content);
+			// Only a document and a folder carry renditions. An item, a relationship and a policy have none, and are answered
+			// with an empty list (R283, 3.4.2): contentService.getRenditions answers null for them, and that was a 500.
+			if (!Boolean.TRUE.equals(content.isDocument()) && !Boolean.TRUE.equals(content.isFolder())) {
+				return new ArrayList<RenditionData>();
+			}
+
 			List<Rendition> renditions = contentService.getRenditions(repositoryId, objectId);
 
 			List<RenditionData> results = new ArrayList<RenditionData>();
@@ -466,6 +494,11 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			// NOTE: The permission key doesn't exist according to CMIS
 			// specification.
 
