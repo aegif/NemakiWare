@@ -38,7 +38,6 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
@@ -165,16 +164,22 @@ public class ObjectServiceImpl implements ObjectService {
 			Content content = contentService.getContent(repositoryId, objectId);
 			if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
 
-			// WORK AROUND: getObject(versionSeriesId) is interpreted as
-			// getDocumentOflatestVersion
-			if (content == null) {
-				VersionSeries versionSeries = contentService.getVersionSeries(repositoryId, objectId);
-				if (versionSeries != null) {
-					content = contentService.getDocumentOfLatestVersion(repositoryId, objectId);
-				}
-			}
+			// An id with no content is an id that does not exist. It is not read as a version series id: getObject used to
+			// answer a version series id as that series' latest version (a work-around), and a version series id is not
+			// another name for an object — the latest version is read by getObjectOfLatestVersion (R275, 3.4.2). A
+			// getContent that cannot read throws, and that is thrown as it is: a read that failed is not an id that does
+			// not exist.
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			if (content == null) {
+				return null;
+			}
+			// getContent answers any CouchDB document by its id, and the ones that are not CMIS objects — a version series,
+			// an attachment, a change event, a type definition, a user or a group row, a passkey — were compiled as
+			// cmis:item: a document's version series id answered the version series, its content stream id the attachment
+			// with the file name (R275, 3.4.2), and a passkey's id the passkey (R277). Any content that is not a CMIS object
+			// is answered as an id that does not exist, before the permission check and before anything is compiled.
+			if (!isCmisObject(content)) {
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
 				return null;
 			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
@@ -193,6 +198,27 @@ public class ObjectServiceImpl implements ObjectService {
 		} finally {
 			lock.unlock();
 		}
+	}
+
+	/**
+	 * The objectType of a passkey (a WebAuthn credential). Its writers ({@code WebAuthnResource} and the
+	 * {@code WebAuthnCredential} constructor) store a passkey with type {@code cmis:item}, so its stored type does not tell it
+	 * from an item (R277, 3.4.2).
+	 */
+	private static final String PASSKEY_OBJECT_TYPE = "nemaki:webauthnCredential";
+
+	/**
+	 * Whether {@code content} is a CMIS object: its stored type is one of the five object base types (R275), and it is not a
+	 * passkey (R277). The passkey is told by its objectType, compared exactly: no other item, no other {@code nemaki:} type and
+	 * no objectType that only begins with or resembles it is refused.
+	 */
+	private static boolean isCmisObject(Content content) {
+		if (PASSKEY_OBJECT_TYPE.equals(content.getObjectType())) {
+			return false;
+		}
+		return Boolean.TRUE.equals(content.isDocument()) || Boolean.TRUE.equals(content.isFolder())
+				|| Boolean.TRUE.equals(content.isRelationship()) || Boolean.TRUE.equals(content.isPolicy())
+				|| Boolean.TRUE.equals(content.isItem());
 	}
 
 	@Override
