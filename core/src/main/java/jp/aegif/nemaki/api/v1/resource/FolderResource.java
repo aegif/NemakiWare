@@ -41,6 +41,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectInFolderData;
 import org.apache.chemistry.opencmis.commons.data.ObjectInFolderList;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
@@ -215,6 +216,20 @@ public class FolderResource {
             
             if (objectData == null) {
                 throw ApiException.objectNotFound(folderId, repositoryId);
+            }
+            // getObject answers any CMIS object by its id: /folders/<another base type> answered that object (R276, 3.4.2).
+            // Judged by the base type, so a subtype is its base type's. A base type that cannot be read is a failure,
+            // not an object of another type.
+            BaseTypeId baseType = objectData.getBaseTypeId();
+            if (baseType == null) {
+                throw new IllegalStateException("the base type of object " + folderId + " could not be read");
+            }
+            if (baseType != BaseTypeId.CMIS_FOLDER) {
+                // Answered as an id that does not exist is answered here: the product's not-found, which the catch below
+                // answers as it answers it for an id that does not exist.
+                new jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl()
+                        .objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, folderId);
+                throw new IllegalStateException("the answer for an id that does not exist was not thrown");
             }
             
             ObjectResponse response = mapToObjectResponse(objectData, repositoryId, includeAllowableActions);
