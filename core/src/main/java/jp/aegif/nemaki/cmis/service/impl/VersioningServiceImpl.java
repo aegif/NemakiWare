@@ -38,6 +38,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.lang3.StringUtils;
@@ -400,6 +401,12 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 	}
 
+	static final String VERSION_SERIES_OF_ANOTHER_DOCUMENT_REFUSED =
+			"versionSeriesId is answered only when it is the version series of the document objectId names";
+
+	static final String VERSIONS_OF_AN_OBJECT_THAT_IS_NOT_A_DOCUMENT_REFUSED =
+			"versionSeriesId is answered only with the objectId of a document";
+
 	@Override
 	public List<ObjectData> getAllVersions(CallContext callContext,
 			String repositoryId, String objectId, String versionSeriesId,
@@ -425,6 +432,24 @@ public class VersioningServiceImpl implements VersioningService {
 			}
 
 			versionSeriesId = d.getVersionSeriesId();
+		} else if (StringUtils.isNotBlank(objectId)) {
+			// R307 (3.4.2): with both an objectId and a versionSeriesId, the versionSeriesId was read and the objectId was
+			// not, so AtomPub's versions?id=<D>&versionSeries=<another series> answered the other series' versions — for a
+			// folder's id and an id that names nothing too. The objectId names the document: the series is answered only when
+			// it is that document's own; any other is refused before a version is read. An id that is no CMIS object is not
+			// found; an object that is not a document has no series to answer.
+			Content named = contentService.getContent(repositoryId, objectId);
+			if (named == null || !ObjectServiceImpl.isCmisObject(named)) {
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				throw new IllegalStateException("objectNotFound did not refuse " + objectId);
+			}
+			if (!Boolean.TRUE.equals(named.isDocument())) {
+				throw new CmisInvalidArgumentException(VERSIONS_OF_AN_OBJECT_THAT_IS_NOT_A_DOCUMENT_REFUSED);
+			}
+			Document document = contentService.getDocument(repositoryId, objectId);
+			if (document == null || !versionSeriesId.equals(document.getVersionSeriesId())) {
+				throw new CmisInvalidArgumentException(VERSION_SERIES_OF_ANOTHER_DOCUMENT_REFUSED);
+			}
 		}
 		
 		List<Document> allVersions = contentService
