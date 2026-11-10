@@ -774,18 +774,43 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
 
         if ("GET".equals(method) && pathInfo != null && cmisselector != null) {
-            String[] pathParts = pathInfo.split("/");
-            // pathParts: ["", "bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
-            if (pathParts.length >= 3 && pathParts[0].isEmpty()) {
+            // R298 (3.4.2): the segments are read as OpenCMIS reads them — HttpUtils.splitPath of the request URI as it was sent,
+            // each segment decoded once — and the path after root is read from the same segments. pathInfo is not read here:
+            // the container normalizes it, dropping "." and ".." segments and ";" parameters, so root/., root/<x>/.. and
+            // root/;x=1 were routed as the root and root/../<id> as <id>. A dot segment and a parameter are read as the names
+            // they are, folded neither into the root nor into an object id. Empty segments are skipped, as the container merges
+            // them.
+            final String[] segments;
+            try {
+                segments = segmentsAsSent(finalRequest);
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException invalidPath) {
+                try {
+                    writeErrorResponse(response, invalidPath);
+                } catch (IOException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new ServletException("Error answering a path that could not be read", e);
+                }
+                return;
+            }
+            // segments: ["bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
+            if (segments.length >= 2) {
                 // We have repository ID and object ID in path
-                String[] pathFragments = new String[]{pathParts[1], pathParts[2]}; // [repositoryId, objectId]
+                String[] pathFragments = new String[]{segments[0], segments[1]}; // [repositoryId, objectId]
 
                 if (log.isDebugEnabled()) {
                     log.debug("Object-specific GET request detected: repositoryId=" + pathFragments[0] + ", objectId=" + pathFragments[1] + ", cmisselector=" + cmisselector);
                 }
 
                 try {
-                    handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
+                    // R297 (3.4.2): /browser/{repo}/root/<path> names the object at <path> — the URL the OpenCMIS client's
+                    // getObjectByPath builds. Only the first two segments were read, so the path was dropped and the root
+                    // folder was answered, for a path that names nothing too.
+                    if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(segments[1]) && segments.length > 2) {
+                        handleObjectByPathGetOperation(finalRequest, response, segments, cmisselector);
+                    } else {
+                        handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
+                    }
                     return; // Don't call super.service()
                 } catch (ServletException | IOException e) {
                     log.error("Error in object-specific GET operation: " + e.getMessage(), e);
@@ -924,6 +949,103 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
+     * The segments of the request's path as it was sent (R298, 3.4.2): {@code HttpUtils.splitPath} — the request URI after the
+     * servlet, each segment decoded once, as OpenCMIS reads it — with the empty segments skipped. "." and ".." segments and ";"
+     * parameters are kept as they were sent.
+     */
+    private static String[] segmentsAsSent(HttpServletRequest request) {
+        java.util.List<String> kept = new java.util.ArrayList<String>();
+        for (String segment : HttpUtils.splitPath(request)) {
+            if (!segment.isEmpty()) {
+                kept.add(segment);
+            }
+        }
+        return kept.toArray(new String[0]);
+    }
+
+    /**
+     * A GET of {@code /browser/{repo}/root/<path>} with a selector (R297, 3.4.2): the object at {@code <path>} is read with
+     * {@code getObjectByPath} and the selector is answered for it, as for {@code /browser/{repo}/{objectId}}. The path is the
+     * segments after {@code root} the route was decided on ({@link #segmentsAsSent} — R298), as OpenCMIS reads it for the same
+     * URL with no selector. A path that names nothing is answered as {@code getObjectByPath} answers it (404) — never with the
+     * root folder — and so is a read that failed. The path names the object, so the {@code objectId} parameter is not read.
+     */
+    private void handleObjectByPathGetOperation(HttpServletRequest request, HttpServletResponse response, String[] segments,
+            String cmisselector) throws Exception {
+        final String repositoryId = segments[0];
+        final String objectPath = "/" + String.join("/", Arrays.asList(segments).subList(2, segments.length));
+        final String objectId;
+        try {
+            CallContext callContext = createContext(getServletContext(), request, response, null);
+            CmisService service = getServiceFactory().getService(callContext);
+            ObjectData named = service.getObjectByPath(repositoryId, objectPath,
+                    "cmis:objectId,cmis:objectTypeId,cmis:baseTypeId", false,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE, "cmis:none", false, false, null);
+            if (named == null || named.getId() == null || named.getId().isEmpty()) {
+                throw new IllegalStateException("the object at path " + objectPath + " was read without an id");
+            }
+            objectId = named.getId();
+        } catch (Exception e) {
+            log.error("Error reading the object at a path", e);
+            writeErrorResponse(response, e);
+            return;
+        }
+        handleObjectSpecificGetOperation(withoutObjectIdParameter(request), response, new String[] { repositoryId, objectId },
+                cmisselector);
+    }
+
+    /**
+     * The request without its {@code objectId} parameter, in any case (OpenCMIS reads parameter names case-insensitively): when a
+     * path follows {@code root} the path names the object (R297, 3.4.2). The names are compared as the container decoded them
+     * (R299) — OBJECTI%44 is OBJECTID. The query string as sent is left as it is: what OpenCMIS reads is the query string of
+     * {@link #handleObjectSpecificGetOperation}'s request, built from these parameters (R301).
+     */
+    private static HttpServletRequest withoutObjectIdParameter(HttpServletRequest request) {
+        return new HttpServletRequestWrapper(request) {
+            @Override
+            public String getParameter(String name) {
+                return Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name) ? null : super.getParameter(name);
+            }
+
+            @Override
+            public String[] getParameterValues(String name) {
+                return Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name) ? null : super.getParameterValues(name);
+            }
+
+            @Override
+            public Map<String, String[]> getParameterMap() {
+                Map<String, String[]> parameters = new java.util.LinkedHashMap<String, String[]>(super.getParameterMap());
+                parameters.keySet().removeIf(Constants.PARAM_OBJECT_ID::equalsIgnoreCase);
+                return Collections.unmodifiableMap(parameters);
+            }
+
+            @Override
+            public java.util.Enumeration<String> getParameterNames() {
+                return Collections.enumeration(getParameterMap().keySet());
+            }
+        };
+    }
+
+    /**
+     * A query string of {@code parameters}, each name and value encoded (R301, 3.4.2): OpenCMIS splits the query string it is
+     * handed at {@code &} and {@code =} and then decodes each part, so a decoded name or value written as it is would be split
+     * where the container had not split it. {@code null} when there are none.
+     */
+    private static String queryStringOf(Map<String, String[]> parameters) {
+        StringBuilder query = new StringBuilder();
+        for (Map.Entry<String, String[]> parameter : parameters.entrySet()) {
+            String[] values = parameter.getValue();
+            for (String value : values == null || values.length == 0 ? new String[] { "" } : values) {
+                query.append(query.length() == 0 ? "" : "&")
+                        .append(java.net.URLEncoder.encode(parameter.getKey(), java.nio.charset.StandardCharsets.UTF_8))
+                        .append('=')
+                        .append(java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8));
+            }
+        }
+        return query.length() == 0 ? null : query.toString();
+    }
+
+    /**
      * Handle object-specific GET operations by delegating to standard OpenCMIS mechanism
      * with proper parameter wrapping for object-specific operations.
      */
@@ -1002,24 +1124,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 
                 @Override
                 public String getQueryString() {
-                    // Rebuild query string with injected parameters
-                    StringBuilder queryBuilder = new StringBuilder();
-                    queryBuilder.append("cmisselector=").append(cmisselector);
-                    queryBuilder.append("&").append(Constants.PARAM_OBJECT_ID).append("=").append(objectId);
-                    
-                    // Add original parameters
-                    String originalQuery = super.getQueryString();
-                    if (originalQuery != null && !originalQuery.isEmpty()) {
-                        // Remove cmisselector if it exists to avoid duplication
-                        String[] params = originalQuery.split("&");
-                        for (String param : params) {
-                            if (!param.startsWith("cmisselector=") && !param.startsWith(Constants.PARAM_OBJECT_ID + "=")) {
-                                queryBuilder.append("&").append(param);
-                            }
-                        }
-                    }
-                    
-                    return queryBuilder.toString();
+                    // R301 (3.4.2): built from the parameters above only — the selector read, the objectId resolved and the
+                    // others as the container decoded them — each name and value encoded. The query string as sent is not
+                    // joined. The selector was put in front as the container had decoded it, so a selector sent as
+                    // object%26objectId%3D<id> was read by OpenCMIS, which answers the selectors this servlet does not, as
+                    // the selector object and a first objectId <id> ahead of the resolved one.
+                    return queryStringOf(getParameterMap());
                 }
             };
             
