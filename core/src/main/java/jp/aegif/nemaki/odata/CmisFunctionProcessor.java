@@ -110,6 +110,9 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     private static final String FILTER_NOT_TRANSLATED =
             "$filter is not translated on a function — put the condition in the statement";
 
+    static final String CAST_ON_A_FUNCTION_REFUSED =
+            "a type cast on $entity is answered only for the type its function returns, not for ";
+
     static final String FUNCTION_AFTER_A_NAVIGATION_REFUSED =
             "a function is answered only on the entity its entity set and key name — a navigation before it is not translated";
 
@@ -255,6 +258,16 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         EdmFunction function = uriResourceFunction.getFunction();
         String functionName = function.getName();
         String baseUri = request.getRawBaseUri();
+
+        // The cast of $entity/NemakiWare.CMIS.Policy?$id=GetObjectByPath(path='/') was not read, so the root folder was answered
+        // for a type it is not (R269, 3.4.2). Olingo gives the type the function returns when no cast is written; a cast is
+        // answered only when it is that type, and any other — a narrower one too — is refused before anything is read.
+        org.apache.olingo.commons.api.edm.EdmType cast = uriInfo.getEntityTypeCast();
+        if (cast != null
+                && !function.getReturnType().getType().getFullQualifiedName().equals(cast.getFullQualifiedName())) {
+            throw new ODataApplicationException(CAST_ON_A_FUNCTION_REFUSED + cast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
         
         try {
             Entity entity;
