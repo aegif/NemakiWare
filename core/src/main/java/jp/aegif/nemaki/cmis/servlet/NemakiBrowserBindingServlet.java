@@ -1170,10 +1170,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
         Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
         // returnVersion (R278, 3.4.2): an old version's id with returnVersion=latest answered that old version. Read before
-        // the object is read, so a value that is none of the three is refused (400) rather than answered as "this".
+        // the object is read, so a value that is none of the three is refused (400) rather than answered as "this". An empty
+        // value is no value (R295, 3.4.2), as AtomPub and OpenCMIS read it; a value that is not empty and none of the three is
+        // still refused.
         String returnVersion = request.getParameter(Constants.PARAM_RETURN_VERSION);
         final Boolean latestMajor;
-        if (returnVersion == null || "this".equals(returnVersion)) {
+        if (returnVersion == null || returnVersion.isEmpty() || "this".equals(returnVersion)) {
             latestMajor = null;
         } else if ("latest".equals(returnVersion)) {
             latestMajor = Boolean.FALSE;

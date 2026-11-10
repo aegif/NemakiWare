@@ -63,12 +63,12 @@ import jp.aegif.nemaki.util.constant.DomainType;
 /**
  * The browser binding's {@code cmisselector=object} reads {@code returnVersion} (R278 — 3.4.2). An old version's id with
  * {@code returnVersion=latest} (or {@code latestmajor}) answered that old version; AtomPub answered the latest one. With no
- * {@code returnVersion} or {@code this} the selector reads {@code getObject} as before; with {@code latest} and
- * {@code latestmajor} it reads the id with {@code getObject} first — so an id that does not exist and an internal row (a
- * version series id among them) stay 404 — and, for a document, answers {@code getObjectOfLatestVersion} with the id it was
- * given and {@code major} false and true, passing the selector's other arguments through. Any other value is refused (400). A
- * failure of {@code getObjectOfLatestVersion} is answered as that failure, never as the old version. The properties selector is
- * not changed.
+ * {@code returnVersion}, an empty one (R295 — 3.4.2) or {@code this} the selector reads {@code getObject} as before; with
+ * {@code latest} and {@code latestmajor} it reads the id with {@code getObject} first — so an id that does not exist and an
+ * internal row (a version series id among them) stay 404 — and, for a document, answers {@code getObjectOfLatestVersion} with
+ * the id it was given and {@code major} false and true, passing the selector's other arguments through. Any other value — one
+ * that is not empty — is refused (400). A failure of {@code getObjectOfLatestVersion} is answered as that failure, never as
+ * the old version. The properties selector is not changed.
  *
  * <p>The servlet is the product's, driven through its object-specific GET dispatcher ({@code handleObjectSpecificGetOperation}
  * — the routing by {@code cmisselector}, the parameter parsing and the JSON and error writers); only the call context and the
@@ -213,7 +213,8 @@ class TheObjectSelectorReadsReturnVersionTest {
 
     @Test
     void withNoReturnVersionOrThisTheIdItselfIsAnswered() {
-        for (String value : new String[] { null, "this" }) {
+        // An empty value is no value (R295), as AtomPub and OpenCMIS read it.
+        for (String value : new String[] { null, "", "this" }) {
             CmisService service = aService();
             Answered answered = get(service, "object", OLD, returnVersion(value));
             assertEquals(200, answered.status(), "returnVersion=" + value + ": " + answered.body());
@@ -255,9 +256,8 @@ class TheObjectSelectorReadsReturnVersionTest {
 
     @Test
     void aValueThatIsNoneOfTheThreeIsRefused() {
-        // An empty value is not asserted either way: whether it is "no value" (as AtomPub and OpenCMIS read it) or an unknown
-        // one is the owner's to decide (R295).
-        for (String value : new String[] { "newest", "LATEST", "latest major" }) {
+        // Only an empty value is no value (R295): one that is blank but not empty is unknown, and refused.
+        for (String value : new String[] { "newest", "LATEST", "latest major", " ", "\t" }) {
             CmisService service = aService();
             Answered answered = get(service, "object", OLD, returnVersion(value));
             assertEquals(400, answered.status(), "returnVersion=\"" + value + "\" was not refused: " + answered.body());
