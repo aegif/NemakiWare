@@ -1169,6 +1169,20 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
         Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
         Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
+        // returnVersion (R278, 3.4.2): an old version's id with returnVersion=latest answered that old version. Read before
+        // the object is read, so a value that is none of the three is refused (400) rather than answered as "this".
+        String returnVersion = request.getParameter(Constants.PARAM_RETURN_VERSION);
+        final Boolean latestMajor;
+        if (returnVersion == null || "this".equals(returnVersion)) {
+            latestMajor = null;
+        } else if ("latest".equals(returnVersion)) {
+            latestMajor = Boolean.FALSE;
+        } else if ("latestmajor".equals(returnVersion)) {
+            latestMajor = Boolean.TRUE;
+        } else {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                    "returnVersion must be this, latest or latestmajor");
+        }
 
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.ObjectData object = service.getObject(
@@ -1176,6 +1190,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             includeAllowableActions, includeRelationships, renditionFilter,
             includePolicyIds, includeACL, null
         );
+
+        // The id is read by getObject first, so an id that does not exist and an internal row — a version series id among
+        // them — are answered 404 as before (R275, R277), and getObjectOfLatestVersion is asked only for a document, with the
+        // id of the version it was given. Its answer, or its failure, is the answer: the old version is not answered for it.
+        if (latestMajor != null && object != null
+                && object.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_DOCUMENT) {
+            return service.getObjectOfLatestVersion(
+                repositoryId, objectId, null, latestMajor, filter,
+                includeAllowableActions, includeRelationships, renditionFilter,
+                includePolicyIds, includeACL, null
+            );
+        }
 
         return object;
     }
