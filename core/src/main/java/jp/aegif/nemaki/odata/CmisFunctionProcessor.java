@@ -113,6 +113,9 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     static final String APPLY_OR_SEARCH_NOT_TRANSLATED =
             "$apply and $search are not translated on a function — put the condition in the statement";
 
+    static final String OPTION_NOT_TRANSLATED =
+            " is not translated on a function — page and shape the answer with the function's own parameters";
+
     static final String CAST_ON_A_FUNCTION_REFUSED =
             "a type cast on $entity is answered only for the type its function returns, not for ";
 
@@ -152,6 +155,7 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
             throw new ODataApplicationException(APPLY_OR_SEARCH_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
                     Locale.ENGLISH);
         }
+        refuseTheOptionsNotTranslated(uriInfo);
         
         // Check if this is a function call
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
@@ -271,6 +275,8 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         String functionName = function.getName();
         String baseUri = request.getRawBaseUri();
 
+        refuseTheOptionsNotTranslated(uriInfo);
+
         // The cast of $entity/NemakiWare.CMIS.Policy?$id=GetObjectByPath(path='/') was not read, so the root folder was answered
         // for a type it is not (R269, 3.4.2). Olingo gives the type the function returns when no cast is written; a cast is
         // answered only when it is that type, and any other — a narrower one too — is refused before anything is read.
@@ -342,6 +348,27 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         }
     }
     
+    /**
+     * The paging and shaping options were dropped: Query(...)?$top=1, $skip=2, $skiptoken, $top=0 and $count=true answered the
+     * same 3 with no count, and $orderby, $select and $expand were not read either (R259, 3.4.2). None is translated; a function
+     * given any of them refuses the request. A function that answers one entity is given only $select and $expand — Olingo
+     * refuses the others before this processor. $filter is refused on its own (R252).
+     */
+    private static void refuseTheOptionsNotTranslated(UriInfo uriInfo) throws ODataApplicationException {
+        String given = uriInfo.getTopOption() != null ? "$top"
+                : uriInfo.getSkipOption() != null ? "$skip"
+                : uriInfo.getSkipTokenOption() != null ? "$skiptoken"
+                : uriInfo.getCountOption() != null ? "$count"
+                : uriInfo.getOrderByOption() != null ? "$orderby"
+                : uriInfo.getSelectOption() != null ? "$select"
+                : uriInfo.getExpandOption() != null ? "$expand"
+                : null;
+        if (given != null) {
+            throw new ODataApplicationException(given + OPTION_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+    }
+
     @Override
     public void createEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType requestFormat, ContentType responseFormat)
