@@ -110,6 +110,9 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     private static final String FILTER_NOT_TRANSLATED =
             "$filter is not translated on a function — put the condition in the statement";
 
+    static final String APPLY_OR_SEARCH_NOT_TRANSLATED =
+            "$apply and $search are not translated on a function — put the condition in the statement";
+
     static final String CAST_ON_A_FUNCTION_REFUSED =
             "a type cast on $entity is answered only for the type its function returns, not for ";
 
@@ -138,6 +141,15 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         // that answers one entity is given no $filter — Olingo refuses it before this processor.)
         if (uriInfo.getFilterOption() != null) {
             throw new ODataApplicationException(FILTER_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+
+        // The same condition written as $apply=filter(...) or $search was dropped as the $filter was, and the function answered
+        // as without it: Query(...)?$apply=filter(name eq 'zz-none') and ?$search=zznone answered the same 3 (R266, 3.4.2).
+        // Neither is translated; a function given either refuses the request. (A function that answers one entity is given
+        // neither — Olingo refuses both before this processor.)
+        if (uriInfo.getApplyOption() != null || uriInfo.getSearchOption() != null) {
+            throw new ODataApplicationException(APPLY_OR_SEARCH_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
                     Locale.ENGLISH);
         }
         
