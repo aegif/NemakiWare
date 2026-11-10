@@ -1387,6 +1387,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         return acl;
     }
 
+    static final String VERSION_SERIES_OF_ANOTHER_OBJECT_REFUSED =
+            "versionSeriesId is answered only when it is the version series of the object the URL names";
+
     /**
      * Handle versions operation - equivalent to getAllVersions CMIS service call
      * CMIS 1.1 Browser Binding: Implements cmisselector=versions for version history retrieval.
@@ -1395,13 +1398,32 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Optional parameters:
      *   - filter: comma-separated list of property IDs to include
      *   - includeAllowableActions: boolean to include allowable actions
-     *   - versionSeriesId: optional, will be derived from objectId if not provided
+     *   - versionSeriesId: optional; answered only when it is the version series of the object the URL names (R302)
      */
     private Object handleVersionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // Parse optional parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
         Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
         String versionSeriesId = HttpUtils.getStringParameter(request, "versionSeriesId");
+
+        // R302 (3.4.2): the URL names the object whose versions are answered. The versionSeriesId parameter was handed to
+        // getAllVersions, which reads it before the object id, so a URL that named D answered the versions of whatever series
+        // the parameter named. It is answered only when it is the named object's own version series; any other is refused
+        // before the versions are read. The parameter's value is not written back in the refusal.
+        if (versionSeriesId != null) {
+            org.apache.chemistry.opencmis.commons.data.ObjectData named = service.getObject(repositoryId, objectId,
+                    org.apache.chemistry.opencmis.commons.PropertyIds.VERSION_SERIES_ID, false,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE, "cmis:none", false, false, null);
+            if (named == null || named.getProperties() == null || named.getProperties().getProperties() == null) {
+                throw new IllegalStateException("the object the URL names was read without its properties");
+            }
+            org.apache.chemistry.opencmis.commons.data.PropertyData<?> series = named.getProperties().getProperties()
+                    .get(org.apache.chemistry.opencmis.commons.PropertyIds.VERSION_SERIES_ID);
+            if (series == null || !versionSeriesId.equals(series.getFirstValue())) {
+                throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                        VERSION_SERIES_OF_ANOTHER_OBJECT_REFUSED);
+            }
+        }
 
         log.info("NEMAKI CMIS versions: repositoryId=" + repositoryId + ", objectId=" + objectId
             + ", versionSeriesId=" + versionSeriesId + ", filter=" + filter);
