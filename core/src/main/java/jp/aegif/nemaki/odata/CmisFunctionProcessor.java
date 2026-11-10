@@ -110,9 +110,25 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     private static final String FILTER_NOT_TRANSLATED =
             "$filter is not translated on a function — put the condition in the statement";
 
+    static final String FUNCTION_AFTER_A_NAVIGATION_REFUSED =
+            "a function is answered only on the entity its entity set and key name — a navigation before it is not translated";
+
     @Override
     public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType responseFormat) throws ODataApplicationException, SerializerException {
+
+        // A function after a navigation was bound to the entity of the first key: Folders('F')/children('D2')/…/GetAllVersions()
+        // read the versions of F (a 404 — F is a folder), and Objects('D')/NemakiWare.CMIS.Folder/children('D2')/… answered
+        // those of D (R263, 3.4.2). The navigation is not translated; the request is refused before anything is read.
+        for (UriResource part : uriInfo.getUriResourceParts()) {
+            if (part instanceof UriResourceFunction) {
+                break;
+            }
+            if (part instanceof org.apache.olingo.server.api.uri.UriResourceNavigation) {
+                throw new ODataApplicationException(FUNCTION_AFTER_A_NAVIGATION_REFUSED,
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
 
         // A $filter was not read: Query(...)?$filter=name eq 'zz-none' answered the same as without it, and so did a bound
         // function such as GetAllVersions (R252, 3.4.2). The filter is not translated into CMIS; it is refused. (A function
