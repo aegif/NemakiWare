@@ -201,6 +201,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                     HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
         }
 
+        // $apply was neither read nor refused: Documents?$apply=filter(name eq 'zz-none') answered every document, with the
+        // count of all of them (R267, 3.4.2). It is not translated; a listing given it refuses the request. (A navigation path
+        // and a function refuse it already.)
+        if (uriInfo.getApplyOption() != null) {
+            throw new ODataApplicationException(APPLY_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
+
         // Get pagination options
         int top = getTopOption(uriInfo);
         int skip = getSkipOption(uriInfo);
@@ -267,6 +274,9 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
     }
     
+    static final String APPLY_NOT_TRANSLATED =
+            "$apply is not translated on an entity set — write the condition as $filter";
+
     private static final String NAVIGATION_REFUSED =
             "a path with a key or a navigation is answered only for Folders('<id>')/children and Documents('<id>')/parents";
     private static final String NAVIGATION_NOT_TRANSLATED =
