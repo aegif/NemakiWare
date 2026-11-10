@@ -116,6 +116,9 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
     static final String OPTION_NOT_TRANSLATED =
             " is not translated on a function — page and shape the answer with the function's own parameters";
 
+    static final String ALIASED_PARAMETER_REFUSED =
+            " is given as an alias — a function parameter is read only as the value written in the call";
+
     static final String CAST_ON_A_FUNCTION_REFUSED =
             "a type cast on $entity is answered only for the type its function returns, not for ";
 
@@ -179,6 +182,7 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         }
+        refuseAliasedParameters(uriResourceFunction);
         
         EdmFunction function = uriResourceFunction.getFunction();
         String functionName = function.getName();
@@ -270,6 +274,7 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         }
+        refuseAliasedParameters(uriResourceFunction);
         
         EdmFunction function = uriResourceFunction.getFunction();
         String functionName = function.getName();
@@ -348,6 +353,21 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         }
     }
     
+    /**
+     * A parameter given as an alias was not read: Query(..., maxItems=@m, ...)?@m=1 answered 195 folders rather than 1, and
+     * skipCount=@k?@k=1 skipped none (R305, 3.4.2). Olingo gives an aliased parameter no text, and the function read only
+     * the text. An alias is not resolved to its value; a function given one refuses the request before anything is read.
+     * The name refused is the parameter's, which Olingo has matched to the function's own.
+     */
+    private static void refuseAliasedParameters(UriResourceFunction function) throws ODataApplicationException {
+        for (UriParameter parameter : function.getParameters()) {
+            if (parameter.getAlias() != null) {
+                throw new ODataApplicationException(parameter.getName() + ALIASED_PARAMETER_REFUSED,
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
+    }
+
     /**
      * The paging and shaping options were dropped: Query(...)?$top=1, $skip=2, $skiptoken, $top=0 and $count=true answered the
      * same 3 with no count, and $orderby, $select and $expand were not read either (R259, 3.4.2). None is translated; a function
