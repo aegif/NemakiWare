@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -54,10 +55,11 @@ import jp.aegif.nemaki.util.lock.ThreadLockService;
  * (measured on nb33). The series is now answered only when it is the named document's own; another document's series and any
  * series with the id of an object that is not a document are refused with a 400, and an id that names no CMIS object is not
  * found — before a version is read. Without a versionSeriesId, or with a blank one, the named document's versions are answered as
- * before, and a versionSeriesId without an objectId is not changed.
+ * before, and a versionSeriesId without an objectId is not changed. The caller here may read everything (R316 — 3.4.2 — asks
+ * the caller's permission of the object that is named and of each version; that is locked elsewhere).
  *
- * <p>The service is the product's {@code VersioningServiceImpl} with the product's {@code ExceptionServiceImpl}; only the content
- * service, the compile and the locks are stood in for.
+ * <p>The service is the product's {@code VersioningServiceImpl} with the product's {@code ExceptionServiceImpl}; the content
+ * service, the permission service (which lets this caller read everything), the compile and the locks are stood in for.
  */
 class AllVersionsAnswerOnlyTheSeriesOfTheDocumentObjectIdNamesTest {
 
@@ -83,7 +85,18 @@ class AllVersionsAnswerOnlyTheSeriesOfTheDocumentObjectIdNamesTest {
                 .thenAnswer(invocation -> new Compiled(((Content) invocation.getArgument(2)).getId()));
         service.setContentService(contentService);
         service.setCompileService(compileService);
-        service.setExceptionService(spy(new ExceptionServiceImpl()));
+        // The caller here may read everything it names and every version (R316 asks; what it is answered is locked in
+        // TheVersionListAnswersOnlyWhatTheCallerMayReadTest).
+        PermissionService permissions = mock(PermissionService.class);
+        when(permissions.checkPermission(any(), eq(REPO), anyString(), any(), any(), any(Content.class))).thenReturn(Boolean.TRUE);
+        when(permissions.checkPermissionAtTopLevel(any(), any(), any(), any())).thenReturn(true);
+        when(permissions.getFiltered(any(), eq(REPO), any())).thenAnswer(invocation -> invocation.getArgument(2));
+        when(callContext.getUsername()).thenReturn("reader");
+        ExceptionServiceImpl exceptions = spy(new ExceptionServiceImpl());
+        exceptions.setContentService(contentService);
+        exceptions.setPermissionService(permissions);
+        service.setExceptionService(exceptions);
+        service.setPermissionService(permissions);
         service.setThreadLockService(mock(ThreadLockService.class));
         // D is a document of the series DS, with the versions D-1.0 and D; E's series ES has E-1.0 and E; F is a folder.
         stored("D", "cmis:document", "DS");
