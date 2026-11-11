@@ -33295,6 +33295,36 @@ CONTROLS = [
         test='AParentFolderIsAnsweredOnlyToACallerWhoMayReadItTest',
         expect_fail=['theParentsOfAnObjectAreNotAnsweredToACallerWhoMayNotReadThem'],
     ),
+    dict(
+        id='QD6',
+        what='the change log is answered to any caller again (R313, 3.4.2)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/DiscoveryServiceImpl.java',
+        find="\t\t// The change log is answered to an administrator only (R313, 3.4.2). Nothing here asked what the caller may\n\t\t// read: a caller who is no administrator was answered a row — id, name and type, and with includeACL the ACL —\n\t\t// for every object, the ones getObject refuses the caller among them. A row for a deleted object has nothing\n\t\t// left to ask the caller's permission of, so the log is not narrowed to what the caller may read; it is refused.\n\t\texceptionService.perimissionAdmin(callContext, repositoryId);\n\n",
+        replace='',
+        test='TheChangeLogIsAnsweredOnlyToAnAdministratorTest',
+        expect_fail=['aCallerWhoIsNoAdministratorIsRefusedBeforeARowIsRead'],
+    ),
+    dict(
+        id='QE6',
+        what='the change rows are read before the caller is asked to be an administrator (R313, 3.4.2)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/DiscoveryServiceImpl.java',
+        find="\t\t// The change log is answered to an administrator only (R313, 3.4.2). Nothing here asked what the caller may\n\t\t// read: a caller who is no administrator was answered a row — id, name and type, and with includeACL the ACL —\n\t\t// for every object, the ones getObject refuses the caller among them. A row for a deleted object has nothing\n\t\t// left to ask the caller's permission of, so the log is not narrowed to what the caller may read; it is refused.\n\t\texceptionService.perimissionAdmin(callContext, repositoryId);\n\n\t\t// Ensure changeLogToken holder exists (first poll may pass null)\n\t\tif (changeLogToken == null) {\n\t\t\tchangeLogToken = new Holder<String>();\n\t\t}\n\t\t\n\t\t// Default maxItems to 100 if not specified\n\t\tif (maxItems == null) {\n\t\t\tmaxItems = BigInteger.valueOf(100);\n\t\t}\n\t\t\n\t\t// ContentService経由で変更イベント取得\n\t\tList<Change> changes = contentService.getLatestChanges(\n\t\t\trepositoryId, callContext, changeLogToken,\n\t\t\tincludeProperties, filter, includePolicyIds,\n\t\t\tincludeAcl, maxItems, extension);\n",
+        replace='\t\t// Ensure changeLogToken holder exists (first poll may pass null)\n\t\tif (changeLogToken == null) {\n\t\t\tchangeLogToken = new Holder<String>();\n\t\t}\n\t\t\n\t\t// Default maxItems to 100 if not specified\n\t\tif (maxItems == null) {\n\t\t\tmaxItems = BigInteger.valueOf(100);\n\t\t}\n\t\t\n\t\t// ContentService経由で変更イベント取得\n\t\tList<Change> changes = contentService.getLatestChanges(\n\t\t\trepositoryId, callContext, changeLogToken,\n\t\t\tincludeProperties, filter, includePolicyIds,\n\t\t\tincludeAcl, maxItems, extension);\n\n\t\texceptionService.perimissionAdmin(callContext, repositoryId);\n',
+        test='TheChangeLogIsAnsweredOnlyToAnAdministratorTest',
+        expect_fail=['aCallerWhoIsNoAdministratorIsRefusedBeforeARowIsRead'],
+    ),
+    dict(
+        id='QF6',
+        what='the change log is refused to every caller, the administrator too (R313, 3.4.2; the review found no control on that side)',
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/DiscoveryServiceImpl.java',
+        find='\t\texceptionService.perimissionAdmin(callContext, repositoryId);\n\n',
+        replace='\t\tif (true) {\n\t\t\tthrow new org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException(\n\t\t\t\t\t"refused", java.math.BigInteger.valueOf(403));\n\t\t}\n\n',
+        test='TheChangeLogIsAnsweredOnlyToAnAdministratorTest',
+        expect_fail=['anAdministratorIsAnsweredAsBefore'],
+    ),
 ]
 
 
