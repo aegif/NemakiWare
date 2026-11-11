@@ -305,9 +305,6 @@
         <property name="contentService">
             <ref bean="ContentService" />
         </property>
-        <property name="permissionService">
-            <ref bean="PermissionService" />
-        </property>
         <property name="typeManager">
             <ref bean="TypeManager" />
         </property>
