@@ -771,7 +771,7 @@ public class DocumentResource {
     @Path("/checkedout")
     @Operation(
             summary = "Get checked out documents",
-            description = "Gets all documents that are currently checked out"
+            description = "Gets the checked-out documents (working copies) the caller may read: an administrator is answered all of them, any other caller their own"
     )
     @ApiResponses(value = {
             @ApiResponse(
