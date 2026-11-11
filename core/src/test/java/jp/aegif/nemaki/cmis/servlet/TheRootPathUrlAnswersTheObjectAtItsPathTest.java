@@ -111,7 +111,9 @@ class TheRootPathUrlAnswersTheObjectAtItsPathTest {
             try {
                 init(config);
             } catch (ServletException harness) {
-                throw new IllegalStateException("the servlet could not be initialized", harness);
+                // Said as breakage: every request of this lock is sent inside assertDoesNotThrow, which would report any
+                // other type thrown here as the lock's own assertion.
+                throw new HarnessBroken("the servlet could not be initialized", harness);
             }
         }
     }
