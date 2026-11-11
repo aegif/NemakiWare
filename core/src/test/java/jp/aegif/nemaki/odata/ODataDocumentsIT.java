@@ -517,37 +517,50 @@ public class ODataDocumentsIT extends ODataTestBase {
     /**
      * Test POST /odata/{repositoryId}/Documents('objectId')/NemakiWare.CMIS.CheckOut
      * CheckOut action should return the Private Working Copy (PWC).
+     *
+     * <p>The document is this test's own. It used to ask the listing for one that is not checked out
+     * ({@code $filter=isVersionSeriesCheckedOut eq false}); the search index does not hold that property, and since
+     * 3.4.1 a query on it is refused with a 400 instead of being answered with the condition dropped — so the test
+     * failed on its first request and never reached the action (red on CI from 2026-10-27). It also checked out
+     * whichever document came first and left it so.
      */
     @Test
     public void testCheckOutAction() {
-        // First, get a document to check out
-        Response listResponse = given()
+        String name = "odata-checkout-" + System.nanoTime() + ".txt";
+        String objectId = given()
             .spec(requestSpec)
-            .queryParam("$top", 1)
-            .queryParam("$filter", "isVersionSeriesCheckedOut eq false")
+            .body("{\"name\": \"" + name + "\", \"objectTypeId\": \"cmis:document\"}")
         .when()
-            .get(documentsPath())
+            .post(documentsPath())
         .then()
-            .statusCode(200)
-            .extract().response();
-        
-        java.util.List<?> documents = listResponse.jsonPath().getList("value");
-        if (documents == null || documents.isEmpty()) {
-            // No documents available for checkout test
-            return;
+            .statusCode(201)
+            .extract().response().jsonPath().getString("objectId");
+        org.junit.jupiter.api.Assertions.assertNotNull(objectId, "the document this test checks out was not created");
+
+        String pwcId = null;
+        try {
+            Response checkedOut = given()
+                .spec(requestSpec)
+            .when()
+                .post(documentPath(objectId) + "/NemakiWare.CMIS.CheckOut")
+            .then()
+                .statusCode(200)
+                .contentType(containsString("application/json"))
+                .extract().response();
+            pwcId = checkedOut.jsonPath().getString("objectId");
+            org.junit.jupiter.api.Assertions.assertNotNull(pwcId, "CheckOut answered no entity: " + checkedOut.asString());
+            org.junit.jupiter.api.Assertions.assertNotEquals(objectId, pwcId, "CheckOut answered the document, not its working copy");
+            org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, checkedOut.jsonPath().getBoolean("isPrivateWorkingCopy"),
+                    "CheckOut did not answer a private working copy: " + checkedOut.asString());
+            org.junit.jupiter.api.Assertions.assertEquals(name, checkedOut.jsonPath().getString("name"),
+                    "CheckOut answered the working copy of another document");
+        } finally {
+            // Leave the repository as it was: the working copy first, then the document.
+            if (pwcId != null) {
+                given().spec(requestSpec).when().post(documentPath(pwcId) + "/NemakiWare.CMIS.CancelCheckOut");
+            }
+            given().spec(requestSpec).when().delete(documentPath(objectId));
         }
-        
-        String objectId = listResponse.jsonPath().getString("value[0].objectId");
-        
-        // Execute CheckOut action
-        given()
-            .spec(requestSpec)
-            .contentType("application/json")
-        .when()
-            .post(documentsPath() + "('" + objectId + "')/NemakiWare.CMIS.CheckOut")
-        .then()
-            .statusCode(anyOf(equalTo(200), equalTo(204)))
-            .contentType(anyOf(containsString("application/json"), emptyOrNullString()));
     }
     
     /**

@@ -38,6 +38,34 @@ public class CloudDirectorySyncServiceImplTest {
 	@InjectMocks
 	private CloudDirectorySyncServiceImpl service;
 
+	/** Released when a test ends; until then a sync body that a test holds stays at its first property read. */
+	private final CountDownLatch releaseSyncBodies = new CountDownLatch(1);
+
+	@AfterEach
+	public void releaseTheSyncBodies() {
+		releaseSyncBodies.countDown();
+	}
+
+	/**
+	 * The sync is enabled, and its body is HELD at its first property read until the test ends.
+	 *
+	 * <p>{@code startSync} answers RUNNING and hands the work to another thread. With a mocked provider that work
+	 * ends in microseconds — in ERROR, the provider having no credentials — so a test that started a sync and then
+	 * asserted RUNNING was asserting that the other thread had not got there yet. On a developer's machine it had
+	 * not; on CI (release/3.4.2, 2026-11) it had, and two of these tests read ERROR. This is the defect
+	 * {@link #testStartSync_ConcurrentSameKey_OnlyOneRuns} records and arranges away for itself; the tests that call
+	 * this arrange it away the same way.
+	 *
+	 * <p>{@code isProviderEnabled} reads this property first and only the sync body calls it, so holding it pins the
+	 * sync in RUNNING without delaying any caller. The wait is bounded.
+	 */
+	private void theSyncIsEnabledAndItsBodyIsHeld() {
+		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenAnswer(invocation -> {
+			releaseSyncBodies.await(10, TimeUnit.SECONDS);
+			return "true";
+		});
+	}
+
 	@Test
 	public void testGetSyncStatus_NoExistingSync_ReturnsIdle() {
 		CloudSyncResult result = service.getSyncStatus(TEST_REPO, "google");
@@ -49,7 +77,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartDeltaSync_ReturnsRunningResult() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
 
 		CloudSyncResult result = service.startDeltaSync(TEST_REPO, "google");
@@ -62,7 +90,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartFullReconciliation_ReturnsRunningResult() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("microsoft");
 
 		CloudSyncResult result = service.startFullReconciliation(TEST_REPO, "microsoft");
@@ -74,7 +102,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testGetSyncStatus_AfterStart_ReturnsRunningResult() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
 
 		service.startDeltaSync(TEST_REPO, "google");
@@ -189,7 +217,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartSync_DuplicateCall_ReusesRunningResult() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
 
 		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
@@ -203,7 +231,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartSync_DifferentKeys_RunInParallel() {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google,microsoft");
 
 		CloudSyncResult google = service.startDeltaSync(TEST_REPO, "google");
@@ -354,7 +382,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartSync_AfterCompletion_CreatesNewResult() throws Exception {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
 
 		// First start
@@ -373,7 +401,7 @@ public class CloudDirectorySyncServiceImplTest {
 	@Test
 	public void testStartSync_AfterError_CreatesNewResult() throws Exception {
 		lenient().when(propertyManager.readValue(anyString())).thenReturn(null);
-		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_ENABLED)).thenReturn("true");
+		theSyncIsEnabledAndItsBodyIsHeld();
 		when(propertyManager.readValue(PropertyKey.CLOUD_DIRECTORY_SYNC_PROVIDERS)).thenReturn("google");
 
 		CloudSyncResult first = service.startDeltaSync(TEST_REPO, "google");
