@@ -1398,13 +1398,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Optional parameters:
      *   - filter: comma-separated list of property IDs to include
      *   - includeAllowableActions: boolean to include allowable actions
-     *   - versionSeriesId: optional; answered only when it is the version series of the object the URL names (R302)
+     *   - versionSeriesId: optional; answered only when it is the named object's version series (R302); blank is none (R308)
      */
     private Object handleVersionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // Parse optional parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
         Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
         String versionSeriesId = HttpUtils.getStringParameter(request, "versionSeriesId");
+
+        // R308 (3.4.2): an empty or blank versionSeriesId is read as none, as getAllVersions reads it — it was compared with
+        // the named object's series and refused, where the named object's versions had been answered before R302.
+        if (versionSeriesId != null && org.apache.commons.lang3.StringUtils.isBlank(versionSeriesId)) {
+            versionSeriesId = null;
+        }
 
         // R302 (3.4.2): the URL names the object whose versions are answered. The versionSeriesId parameter was handed to
         // getAllVersions, which reads it before the object id, so a URL that named D answered the versions of whatever series

@@ -61,7 +61,7 @@ import jp.aegif.nemaki.util.constant.DomainType;
  * named the document D answered the versions of whatever series the parameter named. A {@code versionSeriesId} is now answered
  * only when it is the named object's own version series, as before; any other — of another document, or for an object that has
  * no version series — is refused with a 400 before any version is read. Without it the named object's versions are answered as
- * before. The three forms of URL that name an object are held to it: the path after root, the object id, and
+ * before, and so they are for an empty or blank value, which is no series (R308). The three forms of URL that name an object are held to it: the path after root, the object id, and
  * {@code root?objectId=}. {@code VersioningServiceImpl} is not changed.
  *
  * <p>The servlet is the product's, initialized as the container initializes it and driven through its {@code service}; only
@@ -248,5 +248,21 @@ class TheVersionsSelectorAnswersOnlyTheNamedObjectsVersionsTest {
         assertEquals(404, notFound.status(), notFound.body());
         assertTrue(!notFound.body().contains("R302-OTHER"), notFound.body());
         noVersionWasRead(missing);
+    }
+
+    @Test
+    void anEmptyOrBlankVersionSeriesIdIsReadAsNone() {
+        // R308: an empty or blank value is no version series: the named object's versions are answered as when there is none —
+        // getAllVersions is handed no series — not refused as another object's.
+        for (String[] form : FORMS) {
+            for (String blank : new String[] { "", " ", "\t" }) {
+                CmisService service = aService();
+                Answered answered = assertDoesNotThrow(() -> versions(service, form, "versionSeriesId", blank));
+                assertEquals(200, answered.status(), form[0] + " [" + blank + "]: " + answered.body());
+                assertTrue(answered.body().contains("R302-D-1.0") && !answered.body().contains("R302-OTHER"),
+                        form[0] + " [" + blank + "]: " + answered.body());
+                verify(service).getAllVersions(eq(REPO), eq(D), org.mockito.ArgumentMatchers.isNull(), any(), any(), any());
+            }
+        }
     }
 }
