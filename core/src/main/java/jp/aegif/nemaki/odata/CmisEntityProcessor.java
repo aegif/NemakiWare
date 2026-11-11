@@ -26,6 +26,7 @@ import org.apache.olingo.commons.api.data.Property;
 import org.apache.olingo.commons.api.data.ValueType;
 import org.apache.olingo.commons.api.edm.EdmEntitySet;
 import org.apache.olingo.commons.api.edm.EdmEntityType;
+import org.apache.olingo.commons.api.edm.FullQualifiedName;
 import org.apache.olingo.commons.api.format.ContentType;
 import org.apache.olingo.commons.api.http.HttpHeader;
 import org.apache.olingo.commons.api.http.HttpStatusCode;
@@ -44,6 +45,7 @@ import org.apache.olingo.server.api.uri.UriParameter;
 import org.apache.olingo.server.api.uri.UriResource;
 import org.apache.olingo.server.api.uri.UriResourceEntitySet;
 import org.apache.olingo.server.api.uri.UriResourceFunction;
+import org.apache.olingo.server.api.uri.UriResourceNavigation;
 import org.apache.olingo.server.api.uri.queryoption.ExpandItem;
 import org.apache.olingo.server.api.uri.queryoption.ExpandOption;
 
@@ -118,6 +120,17 @@ public class CmisEntityProcessor implements EntityProcessor {
     static final String READ_NOT_HELD =
             "a single entity is answered only from an entity set that holds its base type — there is no such entity in ";
     static final String READ_UNREADABLE = "the base type of the entity read could not be read";
+    static final String EXPAND_NOT_TRANSLATED =
+            "$expand is answered only for children and parent of a folder, parents and parent of a document, and source and "
+                    + "target of a relationship, each with no option, cast or path of its own — it is not translated: ";
+    static final String EXPAND_MORE_THAN_ONE_PARENT =
+            "the document has more than one parent, so parent is not answered — read them with $expand=parents";
+    static final String EXPAND_DOES_NOT_FIT =
+            "the children do not fit in one expanded answer — read them at the folder's children navigation "
+                    + "(Folders('<id>')/children)";
+    static final String EXPAND_UNREADABLE = "what $expand asks for could not be read: ";
+    /** The children one expanded answer carries. A folder with more is refused, not cut (R260, 3.4.2). */
+    static final int EXPANDED_CHILDREN = 100;
 
     @Override
     public void readEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo, ContentType responseFormat)
@@ -172,7 +185,13 @@ public class CmisEntityProcessor implements EntityProcessor {
             throw new ODataApplicationException(READ_NOT_TRANSLATED + edmEntitySet.getName(),
                     HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
         }
-        
+
+        // $expand=children answered a folder that has children as one that has none, $expand=* and
+        // Documents('D')?$expand=parent a parent that exists as null, and the options of an item ($top, $levels, …)
+        // were dropped (R260, 3.4.2). The items this processor translates are named; any other refuses the request
+        // before anything is read.
+        List<String> expansions = translatedExpansions(uriInfo.getExpandOption());
+
         // Get the key parameter (objectId)
         List<UriParameter> keyPredicates = uriResourceEntitySet.getKeyPredicates();
         String objectId = getKeyValue(keyPredicates, "objectId");
@@ -214,13 +233,10 @@ public class CmisEntityProcessor implements EntityProcessor {
         String entitySetName = edmEntitySet.getName();
         Entity entity = convertToEntity(objectData, baseUri, entitySetName);
         
-        // Handle $expand for navigation properties
+        // What each expansion asks for is read, or the request fails (R260, 3.4.2).
         ExpandOption expandOption = uriInfo.getExpandOption();
-        if (expandOption != null) {
-            java.util.Set<String> expandProperties = getExpandProperties(expandOption);
-            if (!expandProperties.isEmpty()) {
-                expandNavigationProperties(entity, objectData, expandProperties);
-            }
+        for (String expansion : expansions) {
+            expand(entity, objectData, objectId, expansion, edmEntitySet.getEntityType().getFullQualifiedName());
         }
         
         // Serialize the response
@@ -887,221 +903,201 @@ public class CmisEntityProcessor implements EntityProcessor {
     }
     
     /**
-     * Extract navigation property names from $expand option.
+     * The navigation properties a request's $expand names, in the order given, when every item is a navigation property
+     * and nothing else. Any other item refuses the request (R260, 3.4.2). Olingo lets through only the navigation
+     * properties the entity's type defines — children and parent of a folder, parents and parent of a document, source
+     * and target of a relationship — and {@link #expand} reads each of them.
      */
-    private java.util.Set<String> getExpandProperties(ExpandOption expandOption) {
-        java.util.Set<String> expandProperties = new java.util.HashSet<>();
-        if (expandOption != null && expandOption.getExpandItems() != null) {
-            for (ExpandItem expandItem : expandOption.getExpandItems()) {
-                if (expandItem.getResourcePath() != null && !expandItem.getResourcePath().getUriResourceParts().isEmpty()) {
-                    UriResource uriResource = expandItem.getResourcePath().getUriResourceParts().get(0);
-                    expandProperties.add(uriResource.getSegmentValue());
-                }
+    private static List<String> translatedExpansions(ExpandOption expandOption) throws ODataApplicationException {
+        List<String> names = new ArrayList<>();
+        if (expandOption == null || expandOption.getExpandItems() == null) {
+            return names;
+        }
+        for (ExpandItem item : expandOption.getExpandItems()) {
+            String name = plainNavigation(item);
+            if (name == null) {
+                throw new ODataApplicationException(
+                        EXPAND_NOT_TRANSLATED + (item.isStar() ? "*" : "an item with an option, a cast or a path of its own"),
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+            if (!names.contains(name)) {
+                names.add(name);
             }
         }
-        return expandProperties;
+        return names;
     }
-    
+
     /**
-     * Expand navigation properties for an entity based on $expand option.
+     * The navigation property an $expand item names when the item is that name and nothing else; null for any other. The
+     * item {@code *} has no path, which is how it is told here.
      */
-    private void expandNavigationProperties(Entity entity, ObjectData objectData, java.util.Set<String> expandProperties) {
-        if (expandProperties == null || expandProperties.isEmpty()) {
-            return;
+    private static String plainNavigation(ExpandItem item) {
+        if (item.isRef() || item.hasCountPath() || item.getStartTypeFilter() != null
+                || item.getLevelsOption() != null || item.getFilterOption() != null || item.getSearchOption() != null
+                || item.getOrderByOption() != null || item.getSkipOption() != null || item.getTopOption() != null
+                || item.getCountOption() != null || item.getSelectOption() != null || item.getExpandOption() != null
+                || item.getApplyOption() != null || item.getResourcePath() == null) {
+            return null;
         }
-        
+        List<UriResource> parts = item.getResourcePath().getUriResourceParts();
+        if (parts.size() != 1 || !(parts.get(0) instanceof UriResourceNavigation)) {
+            return null;
+        }
+        UriResourceNavigation navigation = (UriResourceNavigation) parts.get(0);
+        if (navigation.getTypeFilterOnCollection() != null || navigation.getTypeFilterOnEntry() != null
+                || !navigation.getKeyPredicates().isEmpty()) {
+            return null;
+        }
+        return navigation.getProperty().getName();
+    }
+
+    /**
+     * Reads what one expansion asks for and puts it on the entity. A read that fails, or that does not say what it was
+     * asked, fails the request: it is never written as no children, no parents or no parent (R260, 3.4.2).
+     */
+    private void expand(Entity entity, ObjectData objectData, String objectId, String name, FullQualifiedName type)
+            throws ODataApplicationException {
+        try {
+            switch (name) {
+                case "children":
+                    entity.getNavigationLinks().add(inlineSet(name, childrenOf(objectId)));
+                    return;
+                case "parents":
+                    entity.getNavigationLinks().add(inlineSet(name, parentsOf(objectId)));
+                    return;
+                case "parent":
+                    if (CmisEdmProvider.ET_DOCUMENT_FQN.equals(type)) {
+                        // A document names no parent of its own; its parents are read. One is the parent, none is no
+                        // parent (null), and more than one cannot be answered as one.
+                        List<ObjectData> parents = parentsOf(objectId);
+                        if (parents.size() > 1) {
+                            throw new ODataApplicationException(EXPAND_MORE_THAN_ONE_PARENT,
+                                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+                        }
+                        if (!parents.isEmpty()) {
+                            entity.getNavigationLinks().add(inline(name, parents.get(0)));
+                        }
+                        return;
+                    }
+                    String parentId = idNamedBy(objectData, "cmis:parentId");
+                    if (parentId == null) {
+                        // Only the root folder has no parent, and that is answered as null (no link). Any other folder
+                        // that names none was not read well enough to say so.
+                        if (!objectId.equals(repositoryService.getRepositoryInfo(repositoryId).getRootFolderId())) {
+                            throw new IllegalStateException("the folder names no parent and is not the root folder");
+                        }
+                        return;
+                    }
+                    entity.getNavigationLinks().add(inline(name, readForExpansion(parentId)));
+                    return;
+                case "source":
+                case "target":
+                    String relatedId = idNamedBy(objectData, "source".equals(name) ? "cmis:sourceId" : "cmis:targetId");
+                    if (relatedId == null) {
+                        throw new IllegalStateException("the relationship names no " + name);
+                    }
+                    entity.getNavigationLinks().add(inline(name, readForExpansion(relatedId)));
+                    return;
+                default:
+                    throw new IllegalStateException("not an expansion this processor translates: " + name);
+            }
+        } catch (ODataApplicationException refused) {
+            throw refused;
+        } catch (CmisObjectNotFoundException gone) {
+            // What the entity names is not there. The entity itself was read, so this is not the request's 404.
+            throw ODataExceptions.map(EXPAND_UNREADABLE + name + " of " + objectId,
+                    new IllegalStateException(gone.getMessage(), gone));
+        } catch (Exception e) {
+            throw ODataExceptions.map(EXPAND_UNREADABLE + name + " of " + objectId, e);
+        }
+    }
+
+    /** All the children of a folder, or a refusal when they do not fit in one answer. */
+    private List<ObjectData> childrenOf(String folderId) throws ODataApplicationException {
+        // getChildren hands the folder itself back through this holder. Given none it throws, and that used to be caught
+        // and written as no children.
+        ObjectInFolderList list = navigationService.getChildren(callContext, repositoryId, folderId, "*", null,
+                Boolean.FALSE, IncludeRelationships.NONE, null, Boolean.FALSE, BigInteger.valueOf(EXPANDED_CHILDREN),
+                BigInteger.ZERO, new Holder<ObjectData>(), null);
+        if (list == null || list.getObjects() == null) {
+            throw new IllegalStateException("the children were not answered");
+        }
+        // Complete when the listing says so; when it says nothing, only when it is shorter than what was asked for.
+        boolean complete = list.hasMoreItems() == null ? list.getObjects().size() < EXPANDED_CHILDREN
+                : !list.hasMoreItems().booleanValue();
+        if (!complete) {
+            throw new ODataApplicationException(EXPAND_DOES_NOT_FIT, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        List<ObjectData> children = new ArrayList<>();
+        for (ObjectInFolderData child : list.getObjects()) {
+            if (child == null || child.getObject() == null) {
+                throw new IllegalStateException("a child was answered without its object");
+            }
+            children.add(child.getObject());
+        }
+        return children;
+    }
+
+    /** All the parent folders of an object, each as the caller may read it. */
+    private List<ObjectData> parentsOf(String objectId) {
+        List<ObjectParentData> list = navigationService.getObjectParents(callContext, repositoryId, objectId, "*",
+                Boolean.FALSE, IncludeRelationships.NONE, null, Boolean.FALSE, null);
+        if (list == null) {
+            throw new IllegalStateException("the parents were not answered");
+        }
+        List<ObjectData> parents = new ArrayList<>();
+        for (ObjectParentData parent : list) {
+            if (parent == null || parent.getObject() == null) {
+                throw new IllegalStateException("a parent was answered without its object");
+            }
+            // getObjectParents asks whether the caller may read the object's parents, not whether the caller may read
+            // each of them: it answers a folder the caller cannot read. Each parent is read again as getObject answers
+            // it, so such a folder fails the request here, as it does for $expand=parent on a folder.
+            String parentId = idNamedBy(parent.getObject(), "cmis:objectId");
+            if (parentId == null) {
+                throw new IllegalStateException("a parent was answered without its id");
+            }
+            parents.add(readForExpansion(parentId));
+        }
+        return parents;
+    }
+
+    /** The one object an expansion names by id. */
+    private ObjectData readForExpansion(String id) {
+        ObjectData related = objectService.getObject(callContext, repositoryId, id, "*", Boolean.FALSE,
+                IncludeRelationships.NONE, null, Boolean.FALSE, Boolean.FALSE, null);
+        if (related == null) {
+            throw new IllegalStateException("the object " + id + " was not answered");
+        }
+        return related;
+    }
+
+    private static String idNamedBy(ObjectData objectData, String propertyId) {
         Properties properties = objectData.getProperties();
-        if (properties == null) {
-            return;
-        }
-        
-        // Get the base type to determine which navigation properties are valid
-        PropertyData<?> baseTypeProperty = properties.getProperties().get("cmis:baseTypeId");
-        String baseTypeId = baseTypeProperty != null ? (String) baseTypeProperty.getFirstValue() : null;
-        
-        // Get object ID for fetching related objects
-        PropertyData<?> objectIdProperty = properties.getProperties().get("cmis:objectId");
-        String objectId = objectIdProperty != null ? (String) objectIdProperty.getFirstValue() : null;
-        
-        if (objectId == null) {
-            return;
-        }
-        
-        try {
-            // Handle 'parent' expansion (single parent folder)
-            if (expandProperties.contains("parent")) {
-                expandParentFolder(entity, properties);
-            }
-            
-            // Handle 'parents' expansion (collection of parent folders)
-            if (expandProperties.contains("parents")) {
-                expandParentFolders(entity, objectId);
-            }
-            
-            // Handle 'children' expansion (for folders only)
-            if (expandProperties.contains("children") && "cmis:folder".equals(baseTypeId)) {
-                expandChildren(entity, objectId);
-            }
-            
-            // Handle 'source' and 'target' expansion (for relationships only)
-            if ("cmis:relationship".equals(baseTypeId)) {
-                if (expandProperties.contains("source")) {
-                    expandRelationshipSource(entity, properties);
-                }
-                if (expandProperties.contains("target")) {
-                    expandRelationshipTarget(entity, properties);
-                }
-            }
-        } catch (Exception e) {
-            // Log error but don't fail the entire request
-        }
+        PropertyData<?> property = properties == null || properties.getProperties() == null ? null
+                : properties.getProperties().get(propertyId);
+        Object value = property == null ? null : property.getFirstValue();
+        return value == null ? null : value.toString();
     }
-    
-    /**
-     * Expand single parent folder navigation property.
-     */
-    private void expandParentFolder(Entity entity, Properties properties) {
-        PropertyData<?> parentIdProperty = properties.getProperties().get("cmis:parentId");
-        if (parentIdProperty == null || parentIdProperty.getFirstValue() == null) {
-            return;
-        }
-        
-        String parentId = (String) parentIdProperty.getFirstValue();
-        
-        try {
-            ObjectData parentObject = objectService.getObject(
-                    callContext, repositoryId, parentId, "*",
-                    Boolean.FALSE, IncludeRelationships.NONE, null,
-                    Boolean.FALSE, Boolean.FALSE, null
-            );
-            
-            if (parentObject != null) {
-                Entity parentEntity = convertToEntity(parentObject);
-                Link parentLink = new Link();
-                parentLink.setTitle("parent");
-                parentLink.setType("application/json");
-                parentLink.setInlineEntity(parentEntity);
-                entity.getNavigationLinks().add(parentLink);
-            }
-        } catch (Exception e) {
-            // Parent not accessible - intentionally ignored
-        }
+
+    private Link inline(String name, ObjectData related) {
+        Link link = new Link();
+        link.setTitle(name);
+        link.setType("application/json");
+        link.setInlineEntity(convertToEntity(related));
+        return link;
     }
-    
-    /**
-     * Expand parent folders collection.
-     */
-    private void expandParentFolders(Entity entity, String objectId) {
-        try {
-            List<ObjectParentData> parents = navigationService.getObjectParents(
-                    callContext, repositoryId, objectId, "*",
-                    Boolean.FALSE, IncludeRelationships.NONE, null,
-                    Boolean.FALSE, null
-            );
-            
-            if (parents != null && !parents.isEmpty()) {
-                EntityCollection parentsCollection = new EntityCollection();
-                for (ObjectParentData parentData : parents) {
-                    if (parentData.getObject() != null) {
-                        Entity parentEntity = convertToEntity(parentData.getObject());
-                        parentsCollection.getEntities().add(parentEntity);
-                    }
-                }
-                
-                Link parentsLink = new Link();
-                parentsLink.setTitle("parents");
-                parentsLink.setType("application/json");
-                parentsLink.setInlineEntitySet(parentsCollection);
-                entity.getNavigationLinks().add(parentsLink);
-            }
-        } catch (Exception e) {
-            // Parents not accessible
+
+    private Link inlineSet(String name, List<ObjectData> related) {
+        EntityCollection collection = new EntityCollection();
+        for (ObjectData one : related) {
+            collection.getEntities().add(convertToEntity(one));
         }
-    }
-    
-    /**
-     * Expand children collection for folders.
-     */
-    private void expandChildren(Entity entity, String folderId) {
-        try {
-            ObjectInFolderList children = navigationService.getChildren(
-                    callContext, repositoryId, folderId, "*", null,
-                    Boolean.FALSE, IncludeRelationships.NONE, null,
-                    Boolean.FALSE, BigInteger.valueOf(100), BigInteger.ZERO,
-                    null, null
-            );
-            
-            if (children != null && children.getObjects() != null) {
-                EntityCollection childrenCollection = new EntityCollection();
-                for (ObjectInFolderData childData : children.getObjects()) {
-                    if (childData.getObject() != null) {
-                        Entity childEntity = convertToEntity(childData.getObject());
-                        childrenCollection.getEntities().add(childEntity);
-                    }
-                }
-                
-                if (children.getNumItems() != null) {
-                    childrenCollection.setCount(children.getNumItems().intValue());
-                }
-                
-                Link childrenLink = new Link();
-                childrenLink.setTitle("children");
-                childrenLink.setType("application/json");
-                childrenLink.setInlineEntitySet(childrenCollection);
-                entity.getNavigationLinks().add(childrenLink);
-            }
-        } catch (Exception e) {
-            // Children not accessible
-        }
-    }
-    
-    /**
-     * Expand source object for relationships.
-     */
-    private void expandRelationshipSource(Entity entity, Properties properties) {
-        PropertyData<?> sourceIdProperty = properties.getProperties().get("cmis:sourceId");
-        if (sourceIdProperty == null || sourceIdProperty.getFirstValue() == null) {
-            return;
-        }
-        
-        String sourceId = (String) sourceIdProperty.getFirstValue();
-        expandRelatedObject(entity, sourceId, "source");
-    }
-    
-    /**
-     * Expand target object for relationships.
-     */
-    private void expandRelationshipTarget(Entity entity, Properties properties) {
-        PropertyData<?> targetIdProperty = properties.getProperties().get("cmis:targetId");
-        if (targetIdProperty == null || targetIdProperty.getFirstValue() == null) {
-            return;
-        }
-        
-        String targetId = (String) targetIdProperty.getFirstValue();
-        expandRelatedObject(entity, targetId, "target");
-    }
-    
-    /**
-     * Helper method to expand a related object by ID.
-     */
-    private void expandRelatedObject(Entity entity, String objectId, String linkTitle) {
-        try {
-            ObjectData relatedObject = objectService.getObject(
-                    callContext, repositoryId, objectId, "*",
-                    Boolean.FALSE, IncludeRelationships.NONE, null,
-                    Boolean.FALSE, Boolean.FALSE, null
-            );
-            
-            if (relatedObject != null) {
-                Entity relatedEntity = convertToEntity(relatedObject);
-                Link link = new Link();
-                link.setTitle(linkTitle);
-                link.setType("application/json");
-                link.setInlineEntity(relatedEntity);
-                entity.getNavigationLinks().add(link);
-            }
-        } catch (Exception e) {
-            // Related object not accessible - intentionally ignored
-        }
+        Link link = new Link();
+        link.setTitle(name);
+        link.setType("application/json");
+        link.setInlineEntitySet(collection);
+        return link;
     }
 }

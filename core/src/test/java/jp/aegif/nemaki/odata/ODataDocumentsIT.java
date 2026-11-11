@@ -407,109 +407,79 @@ public class ODataDocumentsIT extends ODataTestBase {
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Documents with $expand=parent query option.
-     * Expands the parent folder navigation property.
+     * GET /odata/{repositoryId}/Documents with $expand=parent is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetDocumentsWithExpandParent() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "parent")
-            .queryParam("$top", 5)
-        .when()
-            .get(documentsPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(documentsPath(), java.util.Map.of("$expand", "parent", "$top", 5));
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Documents with $expand=parents query option.
-     * Expands the parent folders collection (for multi-filed documents).
+     * GET /odata/{repositoryId}/Documents with $expand=parents is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetDocumentsWithExpandParents() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "parents")
-            .queryParam("$top", 5)
-        .when()
-            .get(documentsPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(documentsPath(), java.util.Map.of("$expand", "parents", "$top", 5));
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Documents('{objectId}') with $expand=parent.
-     * Expands the parent folder for a single document.
+     * Test GET /odata/{repositoryId}/Documents('{objectId}') with $expand=parent and with $expand=parents: the folder
+     * the document is in, as its parents navigation answers it (R260, 3.4.2). $expand=parent used to answer null for a
+     * document that is in a folder.
      */
     @Test
     public void testGetSingleDocumentWithExpandParent() {
-        // First, get a list of documents to find a valid ID
-        Response listResponse = given()
+        String objectId = given()
             .spec(requestSpec)
             .queryParam("$top", 1)
         .when()
             .get(documentsPath())
         .then()
             .statusCode(200)
-            .extract().response();
-        
-        // Check if there are any documents
-        java.util.List<?> documents = listResponse.jsonPath().getList("value");
-        if (documents != null && !documents.isEmpty()) {
-            String objectId = listResponse.jsonPath().getString("value[0].objectId");
-            if (objectId != null) {
-                // Get the single document with $expand=parent
-                given()
-                    .spec(requestSpec)
-                    .queryParam("$expand", "parent")
-                .when()
-                    .get(documentPath(objectId))
-                .then()
-                    .statusCode(200)
-                    .contentType(containsString("application/json"));
-            }
-        }
-    }
-    
-    /**
-     * Test GET /odata/{repositoryId}/Documents with combined $expand and $select.
-     */
-    @Test
-    public void testGetDocumentsWithExpandAndSelect() {
+            .extract().jsonPath().getString("value[0].objectId");
+        org.junit.jupiter.api.Assertions.assertNotNull(objectId, "there is no document to read the parent of");
+        java.util.List<String> parents = idsAt(documentPath(objectId) + "/parents");
+        org.junit.jupiter.api.Assertions.assertEquals(1, parents.size(), "the document is not in one folder: " + parents);
+
         given()
             .spec(requestSpec)
             .queryParam("$expand", "parent")
-            .queryParam("$select", "objectId,name")
-            .queryParam("$top", 5)
         .when()
-            .get(documentsPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
-    }
-    
-    /**
-     * Test GET /odata/{repositoryId}/Documents with combined $expand and $filter.
-     */
-    @Test
-    public void testGetDocumentsWithExpandAndFilter() {
-        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of("$expand", "parent", "$top", 5);
-        Response response = given()
-            .spec(requestSpec)
-            .queryParams(withoutTheFilter)
-            .queryParam("$filter", "contains(name,'test')")
-        .when()
-            .get(documentsPath())
+            .get(documentPath(objectId))
         .then()
             .statusCode(200)
             .contentType(containsString("application/json"))
-            .extract().response();
-        assertOnlyAdmittedNames(response, name -> name.contains("test"), "a name containing 'test'");
-        assertTheRequestWithoutTheFilterReturnsANameOutside(documentsPath(), withoutTheFilter, name -> name.contains("test"), "a name containing 'test'");
-        assertNoAdmittedNameIsLeftOut(documentsPath(), response, name -> name.contains("test"), "a name containing 'test'");
+            .body("parent.objectId", equalTo(parents.get(0)));
+
+        java.util.List<String> expanded = given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parents")
+        .when()
+            .get(documentPath(objectId))
+        .then()
+            .statusCode(200)
+            .extract().jsonPath().getList("parents.objectId", String.class);
+        org.junit.jupiter.api.Assertions.assertEquals(parents, expanded, "$expand=parents did not answer the document's parents");
+    }
+    
+    /**
+     * GET /odata/{repositoryId}/Documents with $expand and $select is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
+     */
+    @Test
+    public void testGetDocumentsWithExpandAndSelect() {
+        assertExpandOnAListingIsRefused(documentsPath(), java.util.Map.of("$expand", "parent", "$select", "objectId,name", "$top", 5));
+    }
+    
+    /**
+     * GET /odata/{repositoryId}/Documents with $expand and $filter is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
+     */
+    @Test
+    public void testGetDocumentsWithExpandAndFilter() {
+        assertExpandOnAListingIsRefused(documentsPath(), java.util.Map.of("$expand", "parent", "$filter", "contains(name,'test')", "$top", 5));
     }
     
     // ==================== OData Actions Tests ====================
@@ -525,7 +495,7 @@ public class ODataDocumentsIT extends ODataTestBase {
      * whichever document came first and left it so.
      */
     @Test
-    public void testCheckOutAction() {
+    public void testCheckOutAction() throws Throwable {
         String name = "odata-checkout-" + System.nanoTime() + ".txt";
         String objectId = given()
             .spec(requestSpec)
@@ -537,7 +507,7 @@ public class ODataDocumentsIT extends ODataTestBase {
             .extract().response().jsonPath().getString("objectId");
         org.junit.jupiter.api.Assertions.assertNotNull(objectId, "the document this test checks out was not created");
 
-        String pwcId = null;
+        Throwable failed = null;
         try {
             Response checkedOut = given()
                 .spec(requestSpec)
@@ -547,19 +517,48 @@ public class ODataDocumentsIT extends ODataTestBase {
                 .statusCode(200)
                 .contentType(containsString("application/json"))
                 .extract().response();
-            pwcId = checkedOut.jsonPath().getString("objectId");
+            String pwcId = checkedOut.jsonPath().getString("objectId");
             org.junit.jupiter.api.Assertions.assertNotNull(pwcId, "CheckOut answered no entity: " + checkedOut.asString());
             org.junit.jupiter.api.Assertions.assertNotEquals(objectId, pwcId, "CheckOut answered the document, not its working copy");
             org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, checkedOut.jsonPath().getBoolean("isPrivateWorkingCopy"),
                     "CheckOut did not answer a private working copy: " + checkedOut.asString());
             org.junit.jupiter.api.Assertions.assertEquals(name, checkedOut.jsonPath().getString("name"),
                     "CheckOut answered the working copy of another document");
-        } finally {
-            // Leave the repository as it was: the working copy first, then the document.
-            if (pwcId != null) {
-                given().spec(requestSpec).when().post(documentPath(pwcId) + "/NemakiWare.CMIS.CancelCheckOut");
+        } catch (Throwable thrown) {
+            failed = thrown;
+        }
+        String leftBehind = cleanUpTheCheckedOutDocument(objectId, name);
+        if (failed != null) {
+            if (leftBehind != null) {
+                failed.addSuppressed(new IllegalStateException("and this test's own document was left behind — " + leftBehind));
             }
-            given().spec(requestSpec).when().delete(documentPath(objectId));
+            throw failed;
+        }
+        org.junit.jupiter.api.Assertions.assertNull(leftBehind, "this test's own document was left behind — " + leftBehind);
+    }
+
+    /**
+     * Leaves the repository as it was: the working copy first, then the document. The working copy is the one the
+     * DOCUMENT names, never an id an answer gave — a CheckOut that answered another document's id must not have that
+     * document's check-out cancelled by this test. Answers what was left behind, or null; it does not throw.
+     */
+    private String cleanUpTheCheckedOutDocument(String objectId, String name) {
+        try {
+            Response document = given().spec(requestSpec).when().get(documentPath(objectId));
+            String workingCopy = document.statusCode() == 200 ? document.jsonPath().getString("versionSeriesCheckedOutId") : null;
+            int cancelled = workingCopy == null ? 204
+                    : given().spec(requestSpec).when().post(documentPath(workingCopy) + "/NemakiWare.CMIS.CancelCheckOut").statusCode();
+            int deleted = given().spec(requestSpec).when().delete(documentPath(objectId)).statusCode();
+            int after = given().spec(requestSpec).when().get(documentPath(objectId)).statusCode();
+            int copyAfter = workingCopy == null ? 404 : given().spec(requestSpec).when().get(documentPath(workingCopy)).statusCode();
+            if ((cancelled != 200 && cancelled != 204) || deleted != 204 || after != 404 || copyAfter != 404) {
+                return name + " (" + objectId + "): the document answered " + document.statusCode() + " and named the working copy "
+                        + workingCopy + "; CancelCheckOut " + cancelled + ", DELETE " + deleted + ", then the document answers " + after
+                        + " and the working copy " + copyAfter;
+            }
+            return null;
+        } catch (RuntimeException cleanUpFailed) {
+            return name + " (" + objectId + "): the clean-up itself failed — " + cleanUpFailed;
         }
     }
     

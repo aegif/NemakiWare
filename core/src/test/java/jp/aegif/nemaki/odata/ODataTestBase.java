@@ -255,4 +255,38 @@ public abstract class ODataTestBase {
                 "the same request without the filter returns no name that is not " + what + " " + names
                         + ", so this cannot tell a filter the server applied from one it dropped");
     }
+
+    /**
+     * A listing given {@code $expand} is refused with the processor's own words (R260, 3.4.2). It read the related
+     * objects of every row and wrote none of them: the answer was 200 with no navigation property, which a test that
+     * reads the status alone takes for the expansion.
+     */
+    protected void assertExpandOnAListingIsRefused(String collectionPath, java.util.Map<String, ?> query) {
+        String message = RestAssured.given().spec(requestSpec)
+                .queryParams(query)
+                .when().get(collectionPath)
+                .then().statusCode(400)
+                .extract().jsonPath().getString("error.message");
+        org.junit.jupiter.api.Assertions.assertEquals(CmisEntityCollectionProcessor.EXPAND_NOT_TRANSLATED_ON_A_LISTING, message,
+                collectionPath + " " + query + " was refused by another arm");
+    }
+
+    /** The ids of what a navigation path answers, read whole a page at a time. */
+    protected java.util.List<String> idsAt(String navigationPath) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (int skip = 0; skip < 100000; ) {
+            java.util.List<String> page = RestAssured.given().spec(requestSpec)
+                    .queryParam("$top", 100).queryParam("$skip", skip)
+                    .when().get(navigationPath)
+                    .then().statusCode(200)
+                    .extract().jsonPath().getList("value.objectId", String.class);
+            if (page == null || page.isEmpty()) {
+                break;
+            }
+            ids.addAll(page);
+            skip += page.size();
+        }
+        java.util.Collections.sort(ids);
+        return ids;
+    }
 }
