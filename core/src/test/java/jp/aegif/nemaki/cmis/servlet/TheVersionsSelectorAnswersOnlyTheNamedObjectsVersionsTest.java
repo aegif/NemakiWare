@@ -54,6 +54,7 @@ import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * A GET with {@code cmisselector=versions} answers only the versions of the object the URL names (R302 — 3.4.2). The
@@ -186,7 +187,7 @@ class TheVersionsSelectorAnswersOnlyTheNamedObjectsVersionsTest {
         try {
             when(response.getWriter()).thenReturn(new PrintWriter(written));
         } catch (java.io.IOException impossible) {
-            throw new AssertionError(impossible);
+            throw new HarnessBroken(impossible);
         }
         doAnswer(invocation -> {
             status[0] = invocation.getArgument(0, Integer.class);
@@ -195,7 +196,9 @@ class TheVersionsSelectorAnswersOnlyTheNamedObjectsVersionsTest {
         try {
             new Driven(service).service(request, response);
         } catch (jakarta.servlet.ServletException | java.io.IOException thrown) {
-            throw new AssertionError("the servlet threw past its own error writer", thrown);
+            // What the servlet under test threw is its answer, not this lock failing to look: it is handed on as it is,
+            // so a lock that says the request is answered fails on that and not as harness breakage.
+            throw new java.lang.reflect.UndeclaredThrowableException(thrown, "the servlet threw past its own error writer");
         }
         return new Answered(status[0], written.toString());
     }

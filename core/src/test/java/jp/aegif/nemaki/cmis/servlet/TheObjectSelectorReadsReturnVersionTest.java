@@ -59,6 +59,7 @@ import org.junit.jupiter.api.Test;
 
 import jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl;
 import jp.aegif.nemaki.util.constant.DomainType;
+import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
  * The browser binding's {@code cmisselector=object} reads {@code returnVersion} (R278 — 3.4.2). An old version's id with
@@ -115,18 +116,26 @@ class TheObjectSelectorReadsReturnVersionTest {
 
     /** What the servlet answered: the status and the body. */
     private record Answered(int status, String body) {
-        @SuppressWarnings("unchecked")
+        /**
+         * The id of the object the answer carries, or null when it carries none — a body of {@code null}, an error, or text
+         * that is not JSON. An answer that is not an object is what the servlet said, not this lock failing to look, so
+         * the caller's assertion on the id is what fails for it.
+         */
         String objectId() {
+            Object json;
             try {
-                Map<String, Object> json = (Map<String, Object>) new JSONParser().parse(body);
-                Map<String, Object> properties = (Map<String, Object>) json.get("properties");
-                Map<String, Object> id = (Map<String, Object>) properties.get(PropertyIds.OBJECT_ID);
-                // With no type cache the writer gives each value as a list.
-                Object value = id.get("value");
-                return (String) (value instanceof java.util.List<?> list ? list.get(0) : value);
-            } catch (Exception notAnObject) {
-                throw new AssertionError("the answer is not an object: " + status + " " + body, notAnObject);
+                json = new JSONParser().parse(body);
+            } catch (Exception notJson) {
+                return null;
             }
+            if (!(json instanceof Map<?, ?> object) || !(object.get("properties") instanceof Map<?, ?> properties)
+                    || !(properties.get(PropertyIds.OBJECT_ID) instanceof Map<?, ?> id)) {
+                return null;
+            }
+            // With no type cache the writer gives each value as a list.
+            Object value = id.get("value");
+            Object first = value instanceof java.util.List<?> list ? (list.isEmpty() ? null : list.get(0)) : value;
+            return first instanceof String string ? string : null;
         }
     }
 
@@ -181,7 +190,7 @@ class TheObjectSelectorReadsReturnVersionTest {
         try {
             when(response.getWriter()).thenReturn(new PrintWriter(written));
         } catch (java.io.IOException impossible) {
-            throw new AssertionError(impossible);
+            throw new HarnessBroken(impossible);
         }
         doAnswer(invocation -> {
             status[0] = invocation.getArgument(0, Integer.class);
@@ -193,12 +202,17 @@ class TheObjectSelectorReadsReturnVersionTest {
             dispatch.setAccessible(true);
             dispatch.invoke(new Driven(service), request, response, new String[] { REPO, objectId }, selector);
         } catch (InvocationTargetException thrown) {
+            // What the dispatcher under test threw is its answer, not this lock failing to look: it is handed on as it is.
             if (thrown.getCause() instanceof Error error) {
                 throw error;
             }
-            throw new AssertionError("the dispatcher threw past its own error writer", thrown.getCause());
+            if (thrown.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new java.lang.reflect.UndeclaredThrowableException(thrown.getCause(),
+                    "the dispatcher threw past its own error writer");
         } catch (ReflectiveOperationException harness) {
-            throw new AssertionError("the dispatcher could not be reached", harness);
+            throw new HarnessBroken("the dispatcher could not be reached", harness);
         }
         return new Answered(status[0], written.toString());
     }
@@ -287,7 +301,7 @@ class TheObjectSelectorReadsReturnVersionTest {
         CmisService service = aService();
         Answered answered = get(service, "object", "R278-FOLDER", returnVersion("latest"));
         assertEquals(200, answered.status(), answered.body());
-        assertEquals("R278-FOLDER", answered.objectId());
+        assertEquals("R278-FOLDER", answered.objectId(), "the folder was not answered as it is: " + answered.body());
         verify(service, never()).getObjectOfLatestVersion(any(), any(), any(), anyBoolean(), any(), any(), any(), any(), any(),
                 any(), any());
     }

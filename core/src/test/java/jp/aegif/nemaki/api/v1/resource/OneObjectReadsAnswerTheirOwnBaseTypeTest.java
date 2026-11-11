@@ -176,7 +176,8 @@ class OneObjectReadsAnswerTheirOwnBaseTypeTest {
         } catch (RuntimeException thrown) {
             return new ApiExceptionMapper().toResponse(thrown);
         } catch (Exception checked) {
-            throw new AssertionError("the resource threw a checked exception", checked);
+            // What the resource under test threw is its answer, not this lock failing to look.
+            throw new java.lang.reflect.UndeclaredThrowableException(checked, "the resource threw a checked exception");
         }
     }
 

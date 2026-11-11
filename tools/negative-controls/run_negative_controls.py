@@ -32862,7 +32862,8 @@ CONTROLS = [
         find='        if (versionSeriesId != null) {\n            org.apache.chemistry.opencmis.commons.data.ObjectData named = service.getObject(repositoryId, objectId,\n',
         replace='        if (request.getParameter("versionSeriesId") != null) {\n            org.apache.chemistry.opencmis.commons.data.ObjectData named = service.getObject(repositoryId, objectId,\n',
         test='TheVersionsSelectorAnswersOnlyTheNamedObjectsVersionsTest',
-        expect_fail=['theVersionSeriesOfAnotherDocumentIsRefusedOnEveryFormOfTheUrl'],
+        expect_fail=['theVersionSeriesOfAnotherDocumentIsRefusedOnEveryFormOfTheUrl',
+                     'anEmptyOrBlankVersionSeriesIdIsReadAsNone'],
     ),
     dict(
         id='OM6',
