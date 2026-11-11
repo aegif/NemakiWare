@@ -101,6 +101,12 @@ public class DiscoveryServiceImpl implements DiscoveryService {
 			log.debug("getContentChanges called for repository: " + repositoryId);
 		}
 		
+		// The change log is answered to an administrator only (R313, 3.4.2). Nothing here asked what the caller may
+		// read: a caller who is no administrator was answered a row — id, name and type, and with includeACL the ACL —
+		// for every object, the ones getObject refuses the caller among them. A row for a deleted object has nothing
+		// left to ask the caller's permission of, so the log is not narrowed to what the caller may read; it is refused.
+		exceptionService.perimissionAdmin(callContext, repositoryId);
+
 		// Ensure changeLogToken holder exists (first poll may pass null)
 		if (changeLogToken == null) {
 			changeLogToken = new Holder<String>();
