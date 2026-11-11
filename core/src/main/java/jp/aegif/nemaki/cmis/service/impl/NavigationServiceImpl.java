@@ -655,6 +655,11 @@ public class NavigationServiceImpl implements NavigationService {
 
 			Folder parent = hold.parent();
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
+			// The parent is answered to a caller who may read it (R311, 3.4.2). Only the folder was asked about —
+			// whether the caller may read ITS parent, which is a permission on the folder — so a caller who is
+			// refused the parent by getObject was answered the parent's properties here.
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, parent);
 
 			// //////////////////
 			// Body of the method
@@ -709,6 +714,11 @@ public class NavigationServiceImpl implements NavigationService {
 				// //////////////////
 				exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
 				exceptionService.invalidArgumentRootFolder(repositoryId, content);
+				// The parent is answered to a caller who may read it (R311, 3.4.2). Only the object was asked
+				// about — whether the caller may read ITS parents, which is a permission on the object — so a
+				// caller who is refused the parent by getObject was answered the parent's properties here.
+				exceptionService.permissionDenied(callContext, repositoryId,
+						PermissionMapping.CAN_GET_PROPERTIES_OBJECT, parent);
 
 				// //////////////////
 				// Body of the method

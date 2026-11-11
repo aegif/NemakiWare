@@ -1051,9 +1051,9 @@ public class CmisEntityProcessor implements EntityProcessor {
             if (parent == null || parent.getObject() == null) {
                 throw new IllegalStateException("a parent was answered without its object");
             }
-            // getObjectParents asks whether the caller may read the object's parents, not whether the caller may read
-            // each of them: it answers a folder the caller cannot read. Each parent is read again as getObject answers
-            // it, so such a folder fails the request here, as it does for $expand=parent on a folder.
+            // Each parent is read again as getObject answers it, so what is expanded is what the caller is answered
+            // for the parent itself, and a folder the caller cannot read fails the request as it does for $expand=parent
+            // on a folder. (getObjectParents answered such a folder until R311; it refuses it now, before this.)
             String parentId = idNamedBy(parent.getObject(), "cmis:objectId");
             if (parentId == null) {
                 throw new IllegalStateException("a parent was answered without its id");
