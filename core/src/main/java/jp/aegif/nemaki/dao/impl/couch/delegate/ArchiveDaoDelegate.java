@@ -463,6 +463,16 @@ public class ArchiveDaoDelegate {
 		if (archive.getArchiveState() != null) archiveMap.put("archiveState", archive.getArchiveState());
 		if (archive.getArchivedAt() != null) archiveMap.put("archivedAt", archive.getArchivedAt().getTimeInMillis());
 		if (archive.getArchivedBy() != null) archiveMap.put("archivedBy", archive.getArchivedBy());
+		// Who could read the object as it was deleted (R323). Removed first: a key of that name copied from the live
+		// document above must not stand for an answer this delete did not give.
+		archiveMap.remove("readableAtDeletionBy");
+		archiveMap.remove("contentReadableAtDeletionBy");
+		if (archive.getReadableAtDeletionBy() != null) {
+			archiveMap.put("readableAtDeletionBy", new java.util.ArrayList<>(archive.getReadableAtDeletionBy()));
+		}
+		if (archive.getContentReadableAtDeletionBy() != null) {
+			archiveMap.put("contentReadableAtDeletionBy", new java.util.ArrayList<>(archive.getContentReadableAtDeletionBy()));
+		}
 
 		// Remove CouchDB internal fields (new doc will get its own _id/_rev)
 		archiveMap.remove("_id");
@@ -660,6 +670,8 @@ public class ArchiveDaoDelegate {
 							!"coldMoveMode".equals(key) && !"contentRef".equals(key) &&
 							!"aclSnapshot".equals(key) && !"propsSnapshot".equals(key) &&
 							!"deletedWithParent".equals(key) && !"lastRevision".equals(key) &&
+							// who could read it as it was deleted (R323) belongs to the archive, not to the object
+							!"readableAtDeletionBy".equals(key) && !"contentReadableAtDeletionBy".equals(key) &&
 							// content_incarnation belongs to the PRE-DELETE lifetime (design §8.1).
 							// Copying it would restore a Content whose _rev restarts at 1 while Solr
 							// still holds "same incarnation, generation 50" — the content fence would

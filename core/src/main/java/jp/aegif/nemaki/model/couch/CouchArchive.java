@@ -62,6 +62,9 @@ public class CouchArchive extends CouchNodeBase{
 	private String aclSnapshot;
 	private String propsSnapshot;
 	private String archivedBy;
+	/** Who could read the object's properties, and its content, when it was deleted (R323) — {@link Archive#getReadableAtDeletionBy}. */
+	private List<String> readableAtDeletionBy;
+	private List<String> contentReadableAtDeletionBy;
 
 	public CouchArchive(){
 		super();
@@ -90,6 +93,8 @@ public class CouchArchive extends CouchNodeBase{
 		setAclSnapshot(a.getAclSnapshot());
 		setPropsSnapshot(a.getPropsSnapshot());
 		setArchivedBy(a.getArchivedBy());
+		setReadableAtDeletionBy(a.getReadableAtDeletionBy());
+		setContentReadableAtDeletionBy(a.getContentReadableAtDeletionBy());
 	}
 
 	/**
@@ -264,6 +269,22 @@ public class CouchArchive extends CouchNodeBase{
 		this.archivedBy = archivedBy;
 	}
 
+	public List<String> getReadableAtDeletionBy() {
+		return readableAtDeletionBy;
+	}
+
+	public void setReadableAtDeletionBy(List<String> readableAtDeletionBy) {
+		this.readableAtDeletionBy = readableAtDeletionBy;
+	}
+
+	public List<String> getContentReadableAtDeletionBy() {
+		return contentReadableAtDeletionBy;
+	}
+
+	public void setContentReadableAtDeletionBy(List<String> contentReadableAtDeletionBy) {
+		this.contentReadableAtDeletionBy = contentReadableAtDeletionBy;
+	}
+
 	@Override
 	public String toString() {
 		Map<String, Object> m = new HashMap<String, Object>();
@@ -346,6 +367,8 @@ public class CouchArchive extends CouchNodeBase{
 		a.setAclSnapshot(getAclSnapshot());
 		a.setPropsSnapshot(getPropsSnapshot());
 		a.setArchivedBy(getArchivedBy());
+		a.setReadableAtDeletionBy(getReadableAtDeletionBy());
+		a.setContentReadableAtDeletionBy(getContentReadableAtDeletionBy());
 
 		return a;
 	}

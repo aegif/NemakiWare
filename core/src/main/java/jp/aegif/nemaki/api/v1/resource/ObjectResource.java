@@ -281,6 +281,14 @@ public class ObjectResource {
                             mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class)
                     )
+            ),
+            @ApiResponse(
+                    responseCode = "409",
+                    description = "A document another user has checked out — nothing is deleted (R325, 3.4.2)",
+                    content = @Content(
+                            mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)
+                    )
             )
     })
     public Response deleteObject(
@@ -303,10 +311,13 @@ public class ObjectResource {
             
         } catch (ApiException e) {
             throw e;
-        } catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException refused) {
+        } catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException
+                | org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException refused) {
             // The caller's answer, not a server fault — a protected user's item is refused so
             // (R115), and an id that does not exist or is not a CMIS object is answered as one
-            // (R281, R288 — 3.4.2). ApiExceptionMapper answers each as itself: 403, 422, 404.
+            // (R281, R288 — 3.4.2). A document another user has checked out is refused as a
+            // versioning conflict (R325, 3.4.2). ApiExceptionMapper answers each as itself: 403,
+            // 422, 404, 409.
             throw refused;
         } catch (Exception e) {
             // Not read for "not found": a 404 is the type's answer above, and a failure whose

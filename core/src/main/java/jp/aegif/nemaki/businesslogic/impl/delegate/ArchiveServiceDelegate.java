@@ -49,6 +49,12 @@ public class ArchiveServiceDelegate {
 	private final BiConsumer<CallContext, NodeBase> signatureSetter;
 	/** E1's recorder, or a supplier of null where none is wired (then nothing is recorded). */
 	private final Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier;
+	/**
+	 * The permission service, asked who could read an object as it is deleted (R323), or a supplier of null where none
+	 * is wired (then nothing is recorded, and the archive is answered to an administrator only). An archive is not asked
+	 * about afterwards: who could read it was fixed as it was deleted.
+	 */
+	private final Supplier<jp.aegif.nemaki.cmis.aspect.PermissionService> permissionServiceSupplier;
 
 	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
 			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter) {
@@ -58,11 +64,19 @@ public class ArchiveServiceDelegate {
 	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
 			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter,
 			Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier) {
+		this(contentDaoService, contentService, solrUtilSupplier, signatureSetter, recorderSupplier, () -> null);
+	}
+
+	public ArchiveServiceDelegate(ContentDaoService contentDaoService, ContentService contentService,
+			Supplier<SolrUtil> solrUtilSupplier, BiConsumer<CallContext, NodeBase> signatureSetter,
+			Supplier<jp.aegif.nemaki.evidence.RecordContentStateRecorder> recorderSupplier,
+			Supplier<jp.aegif.nemaki.cmis.aspect.PermissionService> permissionServiceSupplier) {
 		this.contentDaoService = contentDaoService;
 		this.contentService = contentService;
 		this.solrUtilSupplier = solrUtilSupplier;
 		this.signatureSetter = signatureSetter;
 		this.recorderSupplier = recorderSupplier == null ? () -> null : recorderSupplier;
+		this.permissionServiceSupplier = permissionServiceSupplier == null ? () -> null : permissionServiceSupplier;
 	}
 
 	// ///////////////////////////////////////
@@ -299,6 +313,10 @@ public class ArchiveServiceDelegate {
 		// Record who actually performed the deletion.
 		a.setArchivedBy(callContext.getUsername());
 
+		// Who could read the object as it is deleted (R323, 3.4.2) — asked now, while its ACL, its parents, its version
+		// series, its ends and the users' groups are as they are at the delete.
+		recordReadersAtDeletion(repositoryId, content, a);
+
 		// Set retention lifecycle fields
 		a.setArchiveState(Archive.STATE_ARCHIVED_LOCAL);
 		a.setArchivedAt(new GregorianCalendar());
@@ -322,6 +340,106 @@ public class ArchiveServiceDelegate {
 		}
 
 		return a;
+	}
+
+	/**
+	 * Records who could read the object as it is deleted (R323, 3.4.2): the users the permission service answers, now,
+	 * that they may read its properties ({@code CAN_GET_PROPERTIES_OBJECT}), and of them, its content
+	 * ({@code CAN_VIEW_CONTENT_OBJECT} — stricter than {@code getContentStream}, which asks the first only; the default
+	 * mapping gives both by {@code cmis:read}). Each registered user is asked, with the object, its effective ACL and its
+	 * base type, as a read of the object asks — so its groups, anyone, what it inherited, a relationship's ends are as
+	 * they are at the delete. A private working copy is asked of its holder alone: it is answered to its holder, and to
+	 * an administrator as one when it is read. The answer is fixed: a user who joins a group, or is made, after the delete
+	 * is not answered, and one who leaves a group after it still is. Being the object's creator or the one who deleted it
+	 * is not enough, nor needed.
+	 *
+	 * <p>When it cannot be recorded — no permission service, a failure, an answer that is no answer — nothing is, which
+	 * answers the archive to an administrator only. The delete itself goes on.
+	 */
+	private void recordReadersAtDeletion(String repositoryId, Content content, Archive a) {
+		a.setReadableAtDeletionBy(null);
+		a.setContentReadableAtDeletionBy(null);
+		jp.aegif.nemaki.cmis.aspect.PermissionService permissions = permissionServiceSupplier.get();
+		if (permissions == null) {
+			log.warn("Archive of {}: no permission service to ask who could read it as it was deleted; the archive is"
+					+ " answered to an administrator only", content.getId());
+			return;
+		}
+		try {
+			jp.aegif.nemaki.model.Acl acl = contentService.calculateAcl(repositoryId, content);
+			List<String> properties = new java.util.ArrayList<>();
+			List<String> contents = new java.util.ArrayList<>();
+			for (String user : whoIsAsked(repositoryId, content)) {
+				CallContext asked = contextOf(user);
+				if (granted(permissions, asked, repositoryId,
+						org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_GET_PROPERTIES_OBJECT, acl, content)) {
+					properties.add(user);
+					if (granted(permissions, asked, repositoryId,
+							org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_VIEW_CONTENT_OBJECT, acl, content)) {
+						contents.add(user);
+					}
+				}
+			}
+			a.setReadableAtDeletionBy(properties);
+			a.setContentReadableAtDeletionBy(contents);
+		} catch (RuntimeException e) {
+			log.warn("Archive of {}: who could read it as it was deleted could not be recorded ({}); the archive is answered"
+					+ " to an administrator only", content.getId(), e.toString());
+			a.setReadableAtDeletionBy(null);
+			a.setContentReadableAtDeletionBy(null);
+		}
+	}
+
+	/** The users asked: a private working copy's holder alone; else every registered user. */
+	private List<String> whoIsAsked(String repositoryId, Content content) {
+		if (content.isDocument() && Boolean.TRUE.equals(((Document) content).isPrivateWorkingCopy())) {
+			VersionSeries series = contentService.getVersionSeries(repositoryId, (Document) content);
+			if (series == null) {
+				throw new IllegalStateException("the working copy " + content.getId() + " has no version series to name its holder");
+			}
+			String holder = series.getVersionSeriesCheckedOutBy();
+			return holder == null ? List.of() : List.of(holder);
+		}
+		List<jp.aegif.nemaki.model.UserItem> users = contentService.getUserItems(repositoryId);
+		if (users == null) {
+			throw new IllegalStateException("the users were answered as nothing");
+		}
+		List<String> ids = new java.util.ArrayList<>();
+		for (jp.aegif.nemaki.model.UserItem user : users) {
+			ids.add(user.getUserId());
+		}
+		return ids;
+	}
+
+	/**
+	 * Whether {@code username} could read {@code archive} as it was deleted (R323, 3.4.2): its properties, and with
+	 * {@code withContent} its content — as the permission service answered when it was deleted
+	 * ({@link #recordReadersAtDeletion}). Nothing is asked now: a user's groups now do not change the answer. False when
+	 * the archive recorded nothing (written before 3.4.2, or the record could not be made) — an administrator is answered
+	 * by the caller, not here.
+	 */
+	public boolean wasReadableAtDeletion(Archive archive, String username, boolean withContent) {
+		if (archive == null || username == null) {
+			return false;
+		}
+		List<String> readers = withContent ? archive.getContentReadableAtDeletionBy() : archive.getReadableAtDeletionBy();
+		return readers != null && readers.contains(username);
+	}
+
+	private static boolean granted(jp.aegif.nemaki.cmis.aspect.PermissionService permissions, CallContext caller,
+			String repositoryId, String key, jp.aegif.nemaki.model.Acl acl, Content content) {
+		Boolean answer = permissions.checkPermission(caller, repositoryId, key, acl, content.getType(), content);
+		if (answer == null) {
+			throw new IllegalStateException("the permission service answered nothing about " + key + " of " + content.getId()
+					+ " for " + caller.getUsername());
+		}
+		return answer;
+	}
+
+	private static CallContext contextOf(String username) {
+		CallContextImpl context = new CallContextImpl(null, CmisVersion.CMIS_1_1, null, null, null, null, null, null);
+		context.put(CallContext.USERNAME, username);
+		return context;
 	}
 
 	public Archive createAttachmentArchive(CallContext callContext, String repositoryId, String attachmentId) {

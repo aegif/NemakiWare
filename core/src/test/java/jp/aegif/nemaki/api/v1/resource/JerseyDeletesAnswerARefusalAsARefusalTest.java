@@ -59,6 +59,7 @@ class JerseyDeletesAnswerARefusalAsARefusalTest {
     private static final String REPO = "bedroom";
     private static final String PROTECTED = "user 'admin' is never deleted: it is the built-in administrator";
     private static final String UNDECIDED = "which document is the user cannot be decided here, so nothing was deleted";
+    private static final String HELD = "The version series is checked out by another user";
 
     private ObjectService objectService;
     private RepositoryService repositoryService;
@@ -73,6 +74,10 @@ class JerseyDeletesAnswerARefusalAsARefusalTest {
                 .when(objectService).deleteObject(any(), eq(REPO), eq("admin-doc"), any(), any());
         doThrow(new CmisConstraintException(UNDECIDED))
                 .when(objectService).deleteObject(any(), eq(REPO), eq("second-doc"), any(), any());
+        // R325 (3.4.2): what deleteObjectInternal throws for a document another user has checked out
+        doThrow(new org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException(HELD + ". Nothing was deleted.",
+                java.math.BigInteger.valueOf(409)))
+                .when(objectService).deleteObject(any(), eq(REPO), eq("held-doc"), any(), any());
 
         repositoryService = mock(RepositoryService.class);
         when(repositoryService.getRepositoryInfo(REPO)).thenReturn(mock(RepositoryInfo.class));
@@ -118,5 +123,14 @@ class JerseyDeletesAnswerARefusalAsARefusalTest {
         wire(objects);
         answeredAs(403, PROTECTED, () -> objects.deleteObject(REPO, "admin-doc", true));
         answeredAs(422, UNDECIDED, () -> objects.deleteObject(REPO, "second-doc", true));
+    }
+
+    @Test
+    @DisplayName("/objects/{id} answers a document another user has checked out as 409 (R325, 3.4.2)")
+    void theObjectsDeleteAnswersAnotherUsersCheckOutAs409() throws Exception {
+        ObjectResource objects = new ObjectResource();
+        wire(objects);
+        answeredAs(409, HELD, () -> objects.deleteObject(REPO, "held-doc", true));
+        answeredAs(409, HELD, () -> objects.deleteObject(REPO, "held-doc", false));
     }
 }

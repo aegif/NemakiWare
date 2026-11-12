@@ -97,6 +97,25 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 							? refusedAsCmis(() -> contentService.checkUserItemDeletion(callContext, repositoryId, user))
 							: null;
 
+			// Every version a delete removes is asked first (R323, 3.4.2). Unless allVersions is false, the whole version
+			// series goes — deleteDocument removes each version getAllVersions answers this caller — and only the named
+			// object used to be asked: a caller who may delete the latest version removed versions it may neither delete
+			// nor read, and was then answered their content from the archive. Each of them is asked here, before the
+			// parentChild cascade below and before anything is deleted, so one refusal deletes nothing. With allVersions
+			// false only the named version is deleted, and only it is asked, as before.
+			if (content.isDocument() && !Boolean.FALSE.equals(allVersions)) {
+				askEveryVersionItDeletes(callContext, repositoryId, (jp.aegif.nemaki.model.Document) content);
+			}
+
+			// A delete that would leave a private working copy without its version series is not made (R325, R329 — 3.4.2):
+			// the series went and the working copy stayed, without it, and its holder's reads and every non-administrator's
+			// checked-out listing answered 500. Refused here, before the parentChild cascade and before anything is deleted,
+			// so the document, the series and the working copy all stay.
+			if (content.isDocument()) {
+				refuseADeleteThatLeavesAWorkingCopyWithoutItsSeries(callContext, repositoryId,
+						(jp.aegif.nemaki.model.Document) content, allVersions);
+			}
+
 			// //////////////////
 			// ParentChild cascade: delete children via deleteObjectInternal so each
 			// child gets permission check, lock, and cache invalidation.
@@ -122,7 +141,10 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 					log.debug("deleteObjectInternal: Cascading to parentChild child objectId=" + childId);
 					try {
 						deleteObjectInternal(callContext, repositoryId, childContent, allVersions, true);
-					} catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException e) {
+					} catch (CmisPermissionDeniedException | CmisConstraintException | CmisObjectNotFoundException
+							| org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException e) {
+						// A child whose delete would leave a working copy without its series (R325, R329) is skipped as a
+						// refused child is: it stays.
 						log.warn("deleteObjectInternal: Skipping child delete due to non-fatal error. childId=" +
 								childId + ", error=" + e.getMessage());
 						continue;
@@ -215,6 +237,88 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 			lock.unlock();
 			releaseCascadeVisited(objectId, visited);
 		}
+	}
+
+	/**
+	 * Asks {@code CAN_DELETE_OBJECT} of every version a delete of the whole version series removes (R323, 3.4.2): the
+	 * versions {@code ContentService.getAllVersions} answers this caller, which is the list
+	 * {@code ContentService.deleteDocument} deletes. The named document has been asked already. A listing that cannot be
+	 * read is thrown as it is, and a listing that answers nothing or holds a row it cannot name is refused — nothing has
+	 * been deleted yet.
+	 */
+	private void askEveryVersionItDeletes(CallContext callContext, String repositoryId,
+			jp.aegif.nemaki.model.Document named) {
+		List<jp.aegif.nemaki.model.Document> versions =
+				contentService.getAllVersions(callContext, repositoryId, named.getVersionSeriesId());
+		if (versions == null) {
+			throw new IllegalStateException("the versions of '" + named.getId() + "' were answered as nothing, so"
+					+ " whether the caller may delete each of them cannot be asked; nothing was deleted");
+		}
+		for (jp.aegif.nemaki.model.Document version : versions) {
+			if (version == null || version.getId() == null) {
+				throw new IllegalStateException("the versions of '" + named.getId() + "' hold a row without an id, so"
+						+ " whether the caller may delete it cannot be asked; nothing was deleted");
+			}
+			if (!version.getId().equals(named.getId())) {
+				exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, version);
+			}
+		}
+	}
+
+	/**
+	 * Refuses, as a versioning conflict (409), a delete that would leave a private working copy without its version
+	 * series — before anything is deleted. A versioning exception, not a constraint: the Browser binding answers every
+	 * constraint 400, and this refusal is answered 409 in the CMIS bindings and API v1. Whether the series is checked out,
+	 * and by whom, is read from the version series, as the permission service reads a working copy's holder.
+	 *
+	 * <p>Another user's (R325): a delete of a document whose series is checked out by a user other than the caller — an
+	 * administrator included, with any {@code allVersions}, since a delete of the only version removes the series too.
+	 * A series checked out with no holder named is refused too. So is the other user's working copy named itself:
+	 * deleteDocument deletes the versions this caller is listed and then the series, and the list leaves that working copy
+	 * out — an administrator cancels another user's check-out by cancelCheckOut instead.
+	 *
+	 * <p>The caller's own (R329): a delete by the holder, with {@code allVersions} false, of a version whose series would
+	 * keep no checked-in version without it — deleteDocument then deletes the series, and the holder's working copy, which
+	 * it does not delete, stays without it. Refused only while that working copy is there; one the series names that is
+	 * not there is not kept. A series checked out with no working copy named is taken to have one. Where a checked-in
+	 * version is left, the delete goes on as before (another version becomes the latest), and so do the holder's delete of
+	 * every version (its working copy is deleted with them) and its own working copy named (with {@code allVersions} false
+	 * that is refused below as a version that is not the latest; Browser and AtomPub cancel the check-out instead).
+	 *
+	 * <p>A series, a version listing or a working copy that cannot be read is thrown as it is; a document without a
+	 * series, or whose series is not there, has no working copy to leave behind.
+	 */
+	private void refuseADeleteThatLeavesAWorkingCopyWithoutItsSeries(CallContext callContext, String repositoryId,
+			jp.aegif.nemaki.model.Document named, Boolean allVersions) {
+		if (named.getVersionSeriesId() == null) {
+			return;
+		}
+		jp.aegif.nemaki.model.VersionSeries series = contentService.getVersionSeries(repositoryId, named);
+		if (series == null || !Boolean.TRUE.equals(series.isVersionSeriesCheckedOut())) {
+			return;
+		}
+		String holder = series.getVersionSeriesCheckedOutBy();
+		if (holder == null || !holder.equals(callContext.getUsername())) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException("The version series is"
+					+ " checked out by another user. Deleting the document would leave that user's private working copy"
+					+ " without its version series, so nothing was deleted; the check-out has to be cancelled or checked in"
+					+ " first. [objectId=" + named.getId() + "]", java.math.BigInteger.valueOf(409));
+		}
+		if (Boolean.FALSE.equals(allVersions)
+				&& contentService.committedVersionsLeftAfterDeleting(repositoryId, named).isEmpty()
+				&& workingCopyIsThere(repositoryId, series)) {
+			throw new org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException("The version series is"
+					+ " checked out by the caller, and this is its only checked-in version. Deleting it alone would delete the"
+					+ " version series and leave the caller's private working copy without it, so nothing was deleted; cancel"
+					+ " the check-out or check it in first, or delete every version. [objectId=" + named.getId() + "]",
+					java.math.BigInteger.valueOf(409));
+		}
+	}
+
+	/** Whether the working copy {@code series} names is there — taken to be, when the series names none. */
+	private boolean workingCopyIsThere(String repositoryId, jp.aegif.nemaki.model.VersionSeries series) {
+		String workingCopyId = series.getVersionSeriesCheckedOutId();
+		return workingCopyId == null || contentService.getContent(repositoryId, workingCopyId) != null;
 	}
 
 	/** A protected user's refusal (R115), answered as CMIS answers a permission it does not grant. */

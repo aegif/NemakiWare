@@ -321,8 +321,11 @@ public class ArchiveResource extends ResourceBase {
 			Archive archive = getContentService().getArchive(repositoryId, id);
 			// Authorize before revealing existence — return ERR_NOTFOUND for
 			// both "not found" and "not authorized" to prevent ID enumeration.
-			// Both the original document creator and the deleting user can access.
-			if (archive == null || (!adminUser && !getContentService().isArchiveAccessible(username, archive))) {
+			// An administrator, and a user who could read the object when it was deleted (R323, 3.4.2) — as the permission
+			// service answered then, kept in the archive; being its creator or the one who deleted it is neither enough
+			// nor needed. The restore below still answers those two.
+			if (archive == null || (!adminUser
+					&& !getContentService().wasArchiveReadableAtDeletion(repositoryId, archive, username, false))) {
 				status = false;
 				addErrMsg(errMsg, ITEM_ARCHIVE, ErrorCode.ERR_NOTFOUND);
 			} else {
