@@ -480,6 +480,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 } else {
                     page.hasMoreItems = objectList.hasMoreItems();
                     page.numItems = objectList.getNumItems();
+                    page.cutShortByAclScanLimit = isCutShortByAclScanLimit(objectList);
                 }
             } else {
                 page.complete = true;
@@ -495,6 +496,10 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
 
     private static final String SKIPTOKEN_NOT_TRANSLATED = "$skiptoken is not translated — page with $skip";
     private static final String COUNT_NOT_KNOWN = "the number of entities is not known, so $count=true is not answered";
+    static final String CUT_SHORT_COUNT_NOT_KNOWN = "the answer is cut short by the ACL scan limit, so the number of"
+            + " entities is not known and $count=true is not answered — narrow the query";
+    static final String CUT_SHORT_NOT_ANSWERED = "the answer is cut short by the ACL scan limit, so neither its order nor"
+            + " where it continues is the whole set's — narrow the query";
 
     /** What the backend said of the page it answered: whether more follow and how many there are (R256, 3.4.2). */
     private static final class Page {
@@ -503,6 +508,11 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         BigInteger numItems;
         /** The answer is the whole set whatever the backend reported — no query was made, or no list came back. */
         boolean complete;
+        /**
+         * The backend cut the answer at its ACL scan window: the count is a lower bound, the window ends the pages, and its
+         * order is the window's only (R258, R345).
+         */
+        boolean cutShortByAclScanLimit;
 
         Page(int asked) {
             this.asked = asked;
@@ -517,6 +527,24 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     private void finishPage(EntityCollection collection, Page page, UriInfo uriInfo, ODataRequest request, int top,
             int skip) throws ODataApplicationException {
         boolean topGiven = uriInfo.getTopOption() != null;
+        // While the ACL propagation has not converged, a large query is answered with what the scan window could confirm:
+        // hasMoreItems goes false at the end of the window and numItems is a lower bound, and the answer is marked
+        // truncatedByAclScanLimit. The count and the end of the pages read as the whole set (R258, 3.4.2). And the window is
+        // the first rows of the backend's own order (modified desc); $orderby, or the repository's default order, is applied
+        // inside it only, so a page of it is not a page of the whole set's order either (R345, 3.4.2). The count is not known,
+        // so $count=true is refused; $top=0 asks for no row and is answered with none; every other page is refused.
+        if (page.cutShortByAclScanLimit) {
+            if (getCountOption(uriInfo)) {
+                throw new ODataApplicationException(CUT_SHORT_COUNT_NOT_KNOWN, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                        Locale.ENGLISH);
+            }
+            if (topGiven && top == 0) {
+                collection.getEntities().clear();
+                return;
+            }
+            throw new ODataApplicationException(CUT_SHORT_NOT_ANSWERED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
         int fetched = collection.getEntities().size();
         Integer count = null;
         if (page.complete) {
@@ -547,6 +575,20 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         if (more) {
             collection.setNext(nextPage(request, skip + returned, topGiven ? top - returned : null));
         }
+    }
+
+    /** Whether the backend marked the answer as cut at its ACL scan window ({@code SolrQueryProcessor.markTruncated}). */
+    private static boolean isCutShortByAclScanLimit(ObjectList objectList) {
+        if (objectList.getExtensions() == null) {
+            return false;
+        }
+        for (org.apache.chemistry.opencmis.commons.data.CmisExtensionElement extension : objectList.getExtensions()) {
+            if (extension != null && "truncatedByAclScanLimit".equals(extension.getName())
+                    && "true".equals(extension.getValue())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The same request with $skip moved past what was answered, and $top lessened by it if one was given. */
