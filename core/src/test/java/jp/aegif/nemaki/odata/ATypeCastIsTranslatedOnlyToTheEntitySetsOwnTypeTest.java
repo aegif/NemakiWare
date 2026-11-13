@@ -54,7 +54,11 @@ import jp.aegif.nemaki.cmis.service.DiscoveryService;
  * type is a base type (Objects) let one through.
  *
  * <p>The requests go through Olingo's own parser and the processor's {@code readEntityCollection}, so the cast is where
- * Olingo puts it and the entity set's type is the one the request names — not a mock of either.
+ * Olingo puts it and the entity set's type is the one the request names — not a mock of either. Since R265 (3.4.2) a
+ * listing of Objects is refused before its filter is translated, so for Objects the entry is asked that it refuses with
+ * the words for a listing of Objects, and
+ * the translation's own rule is driven below it with the entity type readEntityCollection hands it — Objects is still
+ * the only entity set a cast to another type parses on.
  */
 class ATypeCastIsTranslatedOnlyToTheEntitySetsOwnTypeTest {
 
@@ -72,7 +76,7 @@ class ATypeCastIsTranslatedOnlyToTheEntitySetsOwnTypeTest {
     void aCastToAnotherTypeIsRefusedInEachLikeMethod() {
         assertRefused("Objects", "contains(NemakiWare.CMIS.Policy/name,'')", "NemakiWare.CMIS.Policy");
         assertRefused("Objects", "startswith(NemakiWare.CMIS.Folder/name,'acltest')", "NemakiWare.CMIS.Folder");
-        // The type Objects queries is cmis:document, but the rule is the entity set's own type, not the query's.
+        // Document derives from Objects' type, but the rule is the entity set's own type, not one it is a base of.
         assertRefused("Objects", "endswith(NemakiWare.CMIS.Document/name,'.txt')", "NemakiWare.CMIS.Document");
     }
 
@@ -84,7 +88,7 @@ class ATypeCastIsTranslatedOnlyToTheEntitySetsOwnTypeTest {
         assertTrue(plain.endsWith(" WHERE cmis:name = 'x'"), plain);
         assertAnsweredAsWithout("Documents", "NemakiWare.CMIS.Document/name eq 'x'", "name eq 'x'");
         assertAnsweredAsWithout("Documents", "'x' eq NemakiWare.CMIS.Document/name", "'x' eq name");
-        assertAnsweredAsWithout("Objects", "NemakiWare.CMIS.Object/name ne 'x'", "name ne 'x'");
+        assertTranslatedAsWithout("Objects", "NemakiWare.CMIS.Object/name ne 'x'", "name ne 'x'");
     }
 
     @Test
@@ -92,7 +96,7 @@ class ATypeCastIsTranslatedOnlyToTheEntitySetsOwnTypeTest {
     void aCastToTheEntitySetsOwnTypeIsAnsweredInEachLikeMethod() {
         assertAnsweredAsWithout("Documents", "contains(NemakiWare.CMIS.Document/name,'test')", "contains(name,'test')");
         assertAnsweredAsWithout("Folders", "startswith(NemakiWare.CMIS.Folder/name,'Test')", "startswith(name,'Test')");
-        assertAnsweredAsWithout("Objects", "endswith(NemakiWare.CMIS.Object/name,'.txt')", "endswith(name,'.txt')");
+        assertTranslatedAsWithout("Objects", "endswith(NemakiWare.CMIS.Object/name,'.txt')", "endswith(name,'.txt')");
     }
 
     private static void assertAnsweredAsWithout(String entitySet, String withTheCast, String withoutIt) {
@@ -103,14 +107,49 @@ class ATypeCastIsTranslatedOnlyToTheEntitySetsOwnTypeTest {
         assertEquals(without, with, entitySet + "?$filter=" + withTheCast);
     }
 
+    /** In the translation an Objects listing would be given (below the entry), the cast is equivalent to none. */
+    private static void assertTranslatedAsWithout(String entitySet, String withTheCast, String withoutIt) {
+        String without = assertDoesNotThrow(() -> whereClauseFor(entitySet, withoutIt), withoutIt + " was refused");
+        assertTrue(without != null && !without.isEmpty(), without);
+        String with = assertDoesNotThrow(() -> whereClauseFor(entitySet, withTheCast), withTheCast + " was refused");
+        assertEquals(without, with, entitySet + "?$filter=" + withTheCast);
+    }
+
     private static void assertRefused(String entitySet, String filter, String cast) {
+        // The entry: a listing of Objects is refused before its filter is translated (R265), nothing queried.
         DiscoveryService discovery = mock(DiscoveryService.class);
-        ODataApplicationException refused = assertThrows(ODataApplicationException.class,
+        ODataApplicationException atTheEntry = assertThrows(ODataApplicationException.class,
                 () -> statementSentFor(entitySet, filter, discovery), entitySet + "?$filter=" + filter + " was answered");
+        assertEquals(HttpStatusCode.BAD_REQUEST.getStatusCode(), atTheEntry.getStatusCode(), atTheEntry.getMessage());
+        assertEquals(CmisEntityCollectionProcessor.OBJECTS_LISTING_NOT_TRANSLATED, atTheEntry.getMessage(),
+                entitySet + "?$filter=" + filter + " was refused at the entry by another arm");
+        verify(discovery, never()).query(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        // The translation's own rule, with the entity type readEntityCollection hands it.
+        ODataApplicationException refused = assertThrows(ODataApplicationException.class,
+                () -> whereClauseFor(entitySet, filter), entitySet + "?$filter=" + filter + " was translated");
         assertEquals(HttpStatusCode.BAD_REQUEST.getStatusCode(), refused.getStatusCode(), refused.getMessage());
         assertEquals("Error converting filter expression: a type cast is translated only to the entity set's own type, not to "
                 + cast, refused.getMessage(), entitySet + "?$filter=" + filter + " was refused by another arm");
-        verify(discovery, never()).query(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /** The WHERE clause readEntityCollection's filter translation writes for the entity set's own type. */
+    private static String whereClauseFor(String entitySet, String filter) throws Throwable {
+        OData odata = OData.newInstance();
+        ServiceMetadata metadata = odata.createServiceMetadata(new CmisEdmProvider(), List.of());
+        UriInfo uriInfo = new Parser(metadata.getEdm(), odata).parseUri("/" + entitySet,
+                "$filter=" + filter.replace(" ", "%20"), null, BASE);
+        CmisEntityCollectionProcessor processor =
+                new CmisEntityCollectionProcessor(null, null, null, mock(DiscoveryService.class), "bedroom", null);
+        processor.init(odata, metadata);
+        java.lang.reflect.Method translate = CmisEntityCollectionProcessor.class.getDeclaredMethod("convertFilterToWhereClause",
+                org.apache.olingo.server.api.uri.queryoption.FilterOption.class, org.apache.olingo.commons.api.edm.EdmEntityType.class);
+        translate.setAccessible(true);
+        try {
+            return (String) translate.invoke(processor, uriInfo.getFilterOption(),
+                    metadata.getEdm().getEntityContainer().getEntitySet(entitySet).getEntityType());
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
     }
 
     private static String statementSentFor(String entitySet, String filter) throws Exception {

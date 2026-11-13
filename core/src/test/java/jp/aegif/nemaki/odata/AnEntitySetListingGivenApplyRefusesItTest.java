@@ -44,7 +44,7 @@ class AnEntitySetListingGivenApplyRefusesItTest {
 
     @Test
     void aListingGivenApplyIsRefusedBeforeAnythingIsRead() throws Exception {
-        for (String set : new String[] { "Documents", "Objects", "Folders", "Relationships", "Policies", "Items" }) {
+        for (String set : new String[] { "Documents", "Folders", "Relationships", "Policies", "Items" }) {
             for (String apply : new String[] { "$apply=filter(name%20eq%20'zz-none')", "$apply=aggregate($count%20as%20n)",
                     "$apply=filter(name%20eq%20'zz-none')&$count=true&$top=2" }) {
                 ODataWriteRequests requests = new ODataWriteRequests();
@@ -66,6 +66,11 @@ class AnEntitySetListingGivenApplyRefusesItTest {
         ODataWriteRequests.Answer notTranslated = types.send("GET", "/Types?$apply=aggregate($count%20as%20n)", null);
         assertEquals(400, notTranslated.status(), notTranslated.body());
         assertEquals("the entity set Types is not translated", notTranslated.message(), notTranslated.body());
+        ODataWriteRequests objects = new ODataWriteRequests();
+        // Objects is not listed (R265), so its refusal comes before $apply is looked at.
+        ODataWriteRequests.Answer everyObject = objects.send("GET", "/Objects?$apply=filter(name%20eq%20'zz-none')", null);
+        assertEquals(400, everyObject.status(), everyObject.body());
+        assertEquals(CmisEntityCollectionProcessor.OBJECTS_LISTING_NOT_TRANSLATED, everyObject.message(), everyObject.body());
     }
 
     @Test

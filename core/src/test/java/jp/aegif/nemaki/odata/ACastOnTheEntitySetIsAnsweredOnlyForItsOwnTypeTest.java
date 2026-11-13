@@ -74,31 +74,40 @@ class ACastOnTheEntitySetIsAnsweredOnlyForItsOwnTypeTest {
     }
 
     @Test
-    @DisplayName("the rule is the entity set's own type, not the type Objects happens to query — a Document cast is refused")
+    @DisplayName("the rule is the entity set's own type, not a type derived from it — a Document cast is refused")
     void objectsCastToDocumentIsRefused() {
         assertRefused("Objects/NemakiWare.CMIS.Document", null, "NemakiWare.CMIS.Document");
     }
 
     @Test
-    @DisplayName("Objects without a cast is answered as before")
-    void objectsWithoutACastIsAnsweredAsBefore() {
+    @DisplayName("a listing without a cast is answered as before (Objects itself is not listed — R265)")
+    void aListingWithoutACastIsAnsweredAsBefore() {
         assertEquals("SELECT * FROM cmis:document",
-                assertDoesNotThrow(() -> statementSentFor("Objects", "$count=true", mock(DiscoveryService.class)),
-                        "Objects?$count=true was refused"));
-        assertEquals("SELECT * FROM cmis:document",
-                assertDoesNotThrow(() -> statementSentFor("Objects", null, mock(DiscoveryService.class)),
-                        "Objects was refused"));
+                assertDoesNotThrow(() -> statementSentFor("Documents", "$count=true", mock(DiscoveryService.class)),
+                        "Documents?$count=true was refused"));
+        assertEquals("SELECT * FROM cmis:folder",
+                assertDoesNotThrow(() -> statementSentFor("Folders", null, mock(DiscoveryService.class)),
+                        "Folders was refused"));
         assertEquals("SELECT * FROM cmis:document WHERE cmis:name = 'x'",
-                assertDoesNotThrow(() -> statementSentFor("Objects", "$filter=name%20eq%20'x'", mock(DiscoveryService.class)),
-                        "Objects?$filter=name eq 'x' was refused"));
+                assertDoesNotThrow(() -> statementSentFor("Documents", "$filter=name%20eq%20'x'", mock(DiscoveryService.class)),
+                        "Documents?$filter=name eq 'x' was refused"));
     }
 
     @Test
     @DisplayName("a cast to the entity set's own type is answered as the same request without it")
     void aCastToTheEntitySetsOwnTypeIsAnsweredAsWithout() {
-        assertAnsweredAsWithout("Objects/NemakiWare.CMIS.Object", "Objects", "$count=true");
+        assertRefusedAsWithout("Objects/NemakiWare.CMIS.Object", "Objects", "$count=true");
         assertAnsweredAsWithout("Documents/NemakiWare.CMIS.Document", "Documents", null);
         assertAnsweredAsWithout("Folders/NemakiWare.CMIS.Folder", "Folders", "$filter=name%20eq%20'x'");
+    }
+
+    /** Objects is not listed (R265): its own type's cast is refused with the same words as Objects without it. */
+    private static void assertRefusedAsWithout(String withTheCast, String withoutIt, String query) {
+        ODataApplicationException without = assertThrows(ODataApplicationException.class,
+                () -> statementSentFor(withoutIt, query, mock(DiscoveryService.class)), withoutIt + " was answered");
+        ODataApplicationException with = assertThrows(ODataApplicationException.class,
+                () -> statementSentFor(withTheCast, query, mock(DiscoveryService.class)), withTheCast + " was answered");
+        assertEquals(without.getMessage(), with.getMessage(), withTheCast + (query == null ? "" : "?" + query));
     }
 
     private static void assertAnsweredAsWithout(String withTheCast, String withoutIt, String query) {

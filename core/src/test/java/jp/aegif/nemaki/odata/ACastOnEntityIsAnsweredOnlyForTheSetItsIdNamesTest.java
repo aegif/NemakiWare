@@ -99,9 +99,10 @@ class ACastOnEntityIsAnsweredOnlyForTheSetItsIdNamesTest {
     @Test
     @DisplayName("$entity without a cast, or with the type its $id answers, is answered as the $id is")
     void aCastOnEntityToWhatItsIdAnswersIsAnswered() {
-        assertEquals(new Fixture().statementFor("Objects", null), new Fixture().statementFor("$entity", "$id=Objects"));
-        assertEquals(new Fixture().statementFor("Objects", null),
-                new Fixture().statementFor("$entity/NemakiWare.CMIS.Object", "$id=Objects"));
+        // Objects is not listed (R265 — AListingOfEveryObjectIsRefusedTest); Documents and Folders are.
+        assertEquals(new Fixture().statementFor("Documents", null), new Fixture().statementFor("$entity", "$id=Documents"));
+        assertEquals(new Fixture().statementFor("Folders", null),
+                new Fixture().statementFor("$entity/NemakiWare.CMIS.Folder", "$id=Folders"));
         assertEquals(new Fixture().statementFor("Documents", null),
                 new Fixture().statementFor("$entity/NemakiWare.CMIS.Document", "$id=Documents"));
         assertEquals(List.of("c1", "c2", "c3"), new Fixture().idsFor("$entity", "$id=Folders('F')/children"));

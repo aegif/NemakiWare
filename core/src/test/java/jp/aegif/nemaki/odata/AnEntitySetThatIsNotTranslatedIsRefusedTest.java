@@ -79,7 +79,7 @@ class AnEntitySetThatIsNotTranslatedIsRefusedTest {
     @DisplayName("an entity set with a CMIS query behind it is answered as before")
     void anEntitySetWithAQueryIsAnsweredAsBefore() {
         assertEquals("SELECT * FROM cmis:folder", assertDoesNotThrow(() -> statementFor("Folders", null, mock(DiscoveryService.class))));
-        assertEquals("SELECT * FROM cmis:document", assertDoesNotThrow(() -> statementFor("Objects", null, mock(DiscoveryService.class))));
+        assertEquals("SELECT * FROM cmis:document", assertDoesNotThrow(() -> statementFor("Documents", null, mock(DiscoveryService.class))));
         assertEquals("SELECT * FROM cmis:policy", assertDoesNotThrow(() -> statementFor("Policies", null, mock(DiscoveryService.class))));
         assertEquals("SELECT * FROM cmis:item", assertDoesNotThrow(() -> statementFor("Items", null, mock(DiscoveryService.class))));
         assertEquals("SELECT * FROM cmis:relationship",

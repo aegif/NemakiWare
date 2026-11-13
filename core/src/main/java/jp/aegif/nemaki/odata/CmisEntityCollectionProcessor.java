@@ -191,9 +191,13 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
 
         // Types, Users and Groups have no CMIS query behind them: the listing made none and answered an empty set with a
         // count of 0, though the repository has types, users and groups (R257, 3.4.2). Their contents are not translated;
-        // the listing is refused.
+        // the listing is refused. Objects, the entity set of every object, was listed as documents alone: no folder, item,
+        // relationship or policy, and a count of the documents (R265, 3.4.2). A listing of every object is not translated
+        // either; it is refused here too, naming the entity sets of each base type. One object read by its key,
+        // Objects('<id>'), is answered as before.
         if (getBaseTypeForEntitySet(edmEntitySet.getName()) == null) {
-            throw new ODataApplicationException("the entity set " + edmEntitySet.getName() + " is not translated",
+            throw new ODataApplicationException(CmisEdmProvider.ES_OBJECTS_NAME.equals(edmEntitySet.getName())
+                    ? OBJECTS_LISTING_NOT_TRANSLATED : "the entity set " + edmEntitySet.getName() + " is not translated",
                     HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
         }
 
@@ -272,6 +276,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         response.setHeader(HttpHeader.CONTENT_TYPE, responseFormat.toContentTypeString());
     }
     
+    static final String OBJECTS_LISTING_NOT_TRANSLATED = "a listing of the entity set Objects is not translated — list"
+            + " Documents, Folders, Items, Relationships or Policies; one object is read as Objects('<id>')";
     static final String APPLY_NOT_TRANSLATED =
             "$apply is not translated on an entity set — write the condition as $filter";
     static final String EXPAND_NOT_TRANSLATED_ON_A_LISTING =
@@ -801,7 +807,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
     }
     
     /**
-     * Get the CMIS base type for an entity set.
+     * Get the CMIS base type for an entity set — null for one that is not one base type's (Objects, Types, Users, Groups).
      */
     private String getBaseTypeForEntitySet(String entitySetName) {
         switch (entitySetName) {
@@ -815,9 +821,8 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 return "cmis:policy";
             case CmisEdmProvider.ES_ITEMS_NAME:
                 return "cmis:item";
-            case CmisEdmProvider.ES_OBJECTS_NAME:
-                return "cmis:document";
             default:
+                // Objects too: it is every object, not one base type (R265) — its listing is refused
                 return null;
         }
     }
