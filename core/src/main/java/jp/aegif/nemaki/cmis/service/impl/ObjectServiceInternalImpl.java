@@ -315,6 +315,13 @@ public class ObjectServiceInternalImpl implements jp.aegif.nemaki.cmis.service.O
 		}
 	}
 
+	@Override
+	public void refuseADeleteOfEveryVersion(CallContext callContext, String repositoryId, jp.aegif.nemaki.model.Document document) {
+		exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_DELETE_OBJECT, document);
+		askEveryVersionItDeletes(callContext, repositoryId, document);
+		refuseADeleteThatLeavesAWorkingCopyWithoutItsSeries(callContext, repositoryId, document, Boolean.TRUE);
+	}
+
 	/** Whether the working copy {@code series} names is there — taken to be, when the series names none. */
 	private boolean workingCopyIsThere(String repositoryId, jp.aegif.nemaki.model.VersionSeries series) {
 		String workingCopyId = series.getVersionSeriesCheckedOutId();

@@ -586,6 +586,48 @@ public final class ImportExportUtils {
     }
 
     /**
+     * The CMIS delete's own service, which asks what a delete may not make before it is made (R326, 3.4.2) — or
+     * {@code null} when there is none, and then the import replaces nothing.
+     */
+    public static jp.aegif.nemaki.cmis.service.ObjectServiceInternal getObjectServiceInternal() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("objectServiceInternal", jp.aegif.nemaki.cmis.service.ObjectServiceInternal.class);
+        } catch (Exception e) {
+            log.warn("The object service could not be looked up for an import's replace: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The exception service the CMIS create asks whether a create may be made by (R333, 3.4.2) — or {@code null} when there
+     * is none, and then the import creates nothing.
+     */
+    public static jp.aegif.nemaki.cmis.aspect.ExceptionService getExceptionService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class);
+        } catch (Exception e) {
+            log.warn("The exception service could not be looked up for an import: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * The lock service a check-out and the CMIS delete take a document's write lock by (R334, 3.4.2) — or {@code null}
+     * when there is none, and then the import replaces nothing.
+     */
+    public static jp.aegif.nemaki.util.lock.ThreadLockService getThreadLockService() {
+        try {
+            return SpringContext.getApplicationContext()
+                    .getBean("ThreadLockService", jp.aegif.nemaki.util.lock.ThreadLockService.class);
+        } catch (Exception e) {
+            log.warn("The lock service could not be looked up for an import's replace: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * Gate for applying archive-supplied ACLs on import. Archive ACEs are
      * attacker-controlled data: the metadata/ACP inside an uploaded package can
      * name arbitrary principals and permissions. Restore them only for

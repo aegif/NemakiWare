@@ -403,6 +403,16 @@ public class ZipImporter {
                     props.addProperty(new PropertyStringImpl(PropertyIds.NAME, name));
 
                     Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+                    // Asked of the folder it is created in, as the CMIS create asks it (R333, 3.4.2) — each time, since
+                    // a folder this import made may carry the archive's ACL by the time its children are created.
+                    try {
+                        refuseACreateItMayNotMake(callContext, repositoryId, org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_CREATE_FOLDER_FOLDER,
+                                parentFolder, "folder '" + name + "'");
+                    } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException refused) {
+                        result.errors.add("Not created (no permission to create folders in its folder): folder " + name
+                                + ", and what is in it");
+                        continue;
+                    }
                     Folder newFolder = cs.createFolder(callContext, repositoryId, props, parentFolder,
                             null, null, null, null);
 
@@ -452,6 +462,17 @@ public class ZipImporter {
                         log.info(message);
                     }
 
+                    Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+                    // Asked of the folder it is created in, as the CMIS create asks it (R333, 3.4.2), before the entry
+                    // is opened.
+                    try {
+                        refuseACreateItMayNotMake(callContext, repositoryId, org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
+                                parentFolder, "'" + name + "'");
+                    } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException refused) {
+                        result.errors.add("Not created (no permission to create documents in its folder): " + name);
+                        continue;
+                    }
+
                     ContentStream contentStream = null;
                     if (contentRef != null) {
                         String filePath = packageName + "/" + contentRef;
@@ -461,7 +482,6 @@ public class ZipImporter {
                         }
                     }
 
-                    Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
                     Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
                             contentStream, VersioningState.MAJOR, null, null, null);
 
@@ -554,7 +574,7 @@ public class ZipImporter {
         });
 
         try (ZipFile zf = new ZipFile(zipFile)) {
-            importTypeDefinitions(repositoryId, zf, result);
+            importTypeDefinitions(repositoryId, zf, result, callContext);
 
             for (String path : entryNames) {
                 if (path.endsWith(META_SUFFIX) || isVersionFile(path)
@@ -570,8 +590,14 @@ public class ZipImporter {
 
                 try {
                     String parentPath = getParentPath(path);
-                    String parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
-                            pathToFolderId, callContext, result, metadataMap, oldIdToNewId);
+                    String parentFolderId;
+                    try {
+                        parentFolderId = ensureFolderPath(repositoryId, parentPath, targetFolderId,
+                                pathToFolderId, callContext, result, metadataMap, oldIdToNewId);
+                    } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException refused) {
+                        result.errors.add("Not created (no permission to create its folder): " + path);
+                        continue;
+                    }
 
                     String fileName = getFileName(path);
 
@@ -634,12 +660,6 @@ public class ZipImporter {
                         contentEntryPath = path;
                     }
 
-                    ContentStream contentStream = createContentStreamFromZip(zf, contentEntryPath, fileName, mimeType);
-                    if (contentStream == null) {
-                        result.warnings.add("Could not read file content: " + path);
-                        continue;
-                    }
-
                     String objectTypeId = "cmis:document";
                     if (metadata != null) {
                         JSONObject metaProps = (JSONObject) metadata.get("properties");
@@ -652,6 +672,19 @@ public class ZipImporter {
                     }
 
                     boolean isOverwrite = (existingChild != null && existingChild instanceof Document);
+                    // The document is created in the folder its path names, which may have been there already (R333,
+                    // 3.4.2): the import asked to create in the target folder only, and created in an existing subfolder
+                    // the importer may neither read nor create in. What the CMIS create asks is asked of the folder it is
+                    // created in, for every entry — the replace's temporary document too — before the entry is opened.
+                    Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+                    try {
+                        refuseACreateItMayNotMake(callContext, repositoryId, org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER,
+                                parentFolder, "'" + fileName + "'");
+                    } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException refused) {
+                        result.errors.add("Not created (no permission to create documents in its folder): " + path);
+                        continue;
+                    }
+
                     String createName = isOverwrite
                             ? ".importing-" + System.currentTimeMillis() + "-" + fileName
                             : fileName;
@@ -667,27 +700,81 @@ public class ZipImporter {
                         applyCustomProperties(metadata, props, objectTypeId, repositoryId);
                     }
 
-                    Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
-                    Document newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
-                            contentStream, VersioningState.MAJOR, null, null, null);
-
+                    jp.aegif.nemaki.cmis.service.ObjectServiceInternal deletes = null;
+                    java.util.concurrent.locks.Lock replaceLock = null;
                     if (isOverwrite) {
-                        String existingDocId = existingChild.getId();
-                        log.info("Import: overwriting existing document '" + fileName + "' (id=" + existingDocId + ")");
-                        try {
-                            cs.deleteDocument(callContext, repositoryId, existingDocId, true, false);
-                        } catch (Exception e) {
-                            log.warn("Failed to delete existing document for overwrite: " + fileName + " - " + e.getMessage());
-                            result.warnings.add("Failed to overwrite (cannot delete existing): " + fileName);
-                            try {
-                                cs.deleteDocument(callContext, repositoryId, newDoc.getId(), true, false);
-                            } catch (Exception cleanupEx) {
-                                log.warn("Failed to clean up temp document: " + createName + " - " + cleanupEx.getMessage());
-                                result.warnings.add("Orphaned temp document: " + createName);
+                        // The replace deletes every version of the document of the same name (R326, 3.4.2). It
+                        // deleted it without asking: an importer who may only create in the folder replaced documents
+                        // it could neither delete nor read, every version of them, and another user's working copy
+                        // was left without its series. What the CMIS delete asks is asked, before anything is created
+                        // or deleted; a refusal leaves the document as it is and imports nothing for the entry. The
+                        // question, the temporary document and the delete are made under the document's write lock
+                        // (R334, 3.4.2) — the one a check-out of it and the CMIS delete take — and the document is read
+                        // again under it: a check-out between the question and the delete left another user's working
+                        // copy without its series, as R325 did.
+                        deletes = ImportExportUtils.getObjectServiceInternal();
+                        jp.aegif.nemaki.util.lock.ThreadLockService locks = ImportExportUtils.getThreadLockService();
+                        if (deletes == null || locks == null) {
+                            throw new IllegalStateException("whether '" + fileName + "' may be replaced cannot be asked"
+                                    + " (no object service or lock service), so it was not replaced");
+                        }
+                        replaceLock = locks.getWriteLock(repositoryId, existingChild.getId());
+                        replaceLock.lock();
+                    }
+                    Document newDoc;
+                    try {
+                        Document replaced = null;
+                        if (isOverwrite) {
+                            replaced = cs.getDocument(repositoryId, existingChild.getId());
+                            if (replaced == null || !Boolean.TRUE.equals(replaced.isLatestVersion())
+                                    || !fileName.equals(replaced.getName())) {
+                                result.errors.add("Not replaced (the existing document changed while it was imported): " + path);
+                                continue;
                             }
+                            try {
+                                deletes.refuseADeleteOfEveryVersion(callContext, repositoryId, replaced);
+                            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException
+                                    | org.apache.chemistry.opencmis.commons.exceptions.CmisVersioningException refused) {
+                                log.info("Import: not replacing '" + fileName + "' (id=" + replaced.getId() + "): "
+                                        + refused.getMessage());
+                                result.errors.add("Not replaced (the existing document may not be deleted): " + path);
+                                continue;
+                            }
+                        }
+
+                        ContentStream contentStream = createContentStreamFromZip(zf, contentEntryPath, fileName, mimeType);
+                        if (contentStream == null) {
+                            result.warnings.add("Could not read file content: " + path);
                             continue;
                         }
 
+                        newDoc = cs.createDocument(callContext, repositoryId, props, parentFolder,
+                                contentStream, VersioningState.MAJOR, null, null, null);
+
+                        if (isOverwrite) {
+                            String existingDocId = replaced.getId();
+                            log.info("Import: overwriting existing document '" + fileName + "' (id=" + existingDocId + ")");
+                            try {
+                                cs.deleteDocument(callContext, repositoryId, existingDocId, true, false);
+                            } catch (Exception e) {
+                                log.warn("Failed to delete existing document for overwrite: " + fileName + " - " + e.getMessage());
+                                result.warnings.add("Failed to overwrite (cannot delete existing): " + fileName);
+                                try {
+                                    cs.deleteDocument(callContext, repositoryId, newDoc.getId(), true, false);
+                                } catch (Exception cleanupEx) {
+                                    log.warn("Failed to clean up temp document: " + createName + " - " + cleanupEx.getMessage());
+                                    result.warnings.add("Orphaned temp document: " + createName);
+                                }
+                                continue;
+                            }
+                        }
+                    } finally {
+                        if (replaceLock != null) {
+                            replaceLock.unlock();
+                        }
+                    }
+
+                    if (isOverwrite) {
                         try {
                             PropertiesImpl renameProps = new PropertiesImpl();
                             renameProps.addProperty(new PropertyStringImpl(PropertyIds.NAME, fileName));
@@ -1041,6 +1128,10 @@ public class ZipImporter {
         props.addProperty(new PropertyStringImpl(PropertyIds.NAME, folderName));
 
         Folder parentFolder = cs.getFolder(repositoryId, parentFolderId);
+        // A folder the path names that is not there is created in its parent (R333, 3.4.2): asked of that parent as the
+        // CMIS create asks it — the import asked of the target folder only. A refusal is thrown to the entry.
+        refuseACreateItMayNotMake(callContext, repositoryId, org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_CREATE_FOLDER_FOLDER, parentFolder,
+                "folder '" + folderName + "'");
         Folder newFolder = cs.createFolder(callContext, repositoryId, props, parentFolder,
                 null, null, null, null);
 
@@ -1160,13 +1251,7 @@ public class ZipImporter {
     // ========== Type Definition Import ==========
 
     @SuppressWarnings("unchecked")
-    private void importTypeDefinitions(String repositoryId, ZipFile zf, ImportResult result) {
-        TypeService ts = getTypeService();
-        if (ts == null) {
-            log.debug("TypeService not available, skipping type definition import");
-            return;
-        }
-
+    private void importTypeDefinitions(String repositoryId, ZipFile zf, ImportResult result, CallContext callContext) {
         List<String> typeEntries = new ArrayList<>();
         Enumeration<? extends ZipEntry> entries = zf.entries();
         while (entries.hasMoreElements()) {
@@ -1178,6 +1263,38 @@ public class ZipImporter {
         }
 
         if (typeEntries.isEmpty()) {
+            return;
+        }
+
+        // Type definitions are the repository's, and the CMIS createType makes them for an administrator only (R335,
+        // 3.4.2). The import made them for whoever imported — a non-administrator who may create in one folder made a
+        // repository-wide type with one ZIP. Asked as createType asks it, before an entry is read, before an existing type
+        // is looked up (which would tell the importer which types there are) and before anything is created. A refusal,
+        // or a question that cannot be asked, makes no type and names each type entry in the errors; the other entries go
+        // on.
+        try {
+            jp.aegif.nemaki.cmis.aspect.ExceptionService exceptions = ImportExportUtils.getExceptionService();
+            if (exceptions == null) {
+                throw new IllegalStateException("no exception service");
+            }
+            exceptions.perimissionAdmin(callContext, repositoryId);
+        } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException refused) {
+            for (String entryName : typeEntries) {
+                result.errors.add("Not imported (type definitions are imported by an administrator only): " + entryName);
+            }
+            return;
+        } catch (RuntimeException unasked) {
+            log.warn("Import: whether the importer may create type definitions could not be asked: " + unasked);
+            for (String entryName : typeEntries) {
+                result.errors.add("Not imported (whether the importer may create type definitions could not be asked): "
+                        + entryName);
+            }
+            return;
+        }
+
+        TypeService ts = getTypeService();
+        if (ts == null) {
+            log.debug("TypeService not available, skipping type definition import");
             return;
         }
 
@@ -1397,6 +1514,27 @@ public class ZipImporter {
     }
 
     // ========== Relationship Import ==========
+
+    /**
+     * Refuses, before anything is created, a create the CMIS create would refuse (R333, 3.4.2): {@code key} —
+     * {@code CAN_CREATE_DOCUMENT_FOLDER} or {@code CAN_CREATE_FOLDER_FOLDER} — of {@code parent}, the folder it is created
+     * in, asked as the importer by the exception service the CMIS create asks by (an administrator passes as there). A
+     * refusal is thrown as the CMIS create throws it; a question that cannot be asked — no service, a folder that could
+     * not be read — is thrown as {@code IllegalStateException}, and the entry creates nothing either way.
+     */
+    private static void refuseACreateItMayNotMake(CallContext callContext, String repositoryId, String key, Folder parent,
+            String what) {
+        if (parent == null) {
+            throw new IllegalStateException("the folder " + what + " would be created in could not be read, so whether it"
+                    + " may be created cannot be asked; it was not created");
+        }
+        jp.aegif.nemaki.cmis.aspect.ExceptionService exceptions = ImportExportUtils.getExceptionService();
+        if (exceptions == null) {
+            throw new IllegalStateException("whether " + what + " may be created cannot be asked (no exception service);"
+                    + " it was not created");
+        }
+        exceptions.permissionDenied(callContext, repositoryId, key, parent);
+    }
 
     /**
      * Throws what CMIS answers for an id that does not exist when {@code id} names nothing or a row that is not a CMIS

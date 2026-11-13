@@ -539,6 +539,9 @@ class ParentChildReachesOnlyCmisObjectsTest {
         ContentService cs = mock(ContentService.class);
         ApplicationContext ctx = mock(ApplicationContext.class);
         when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        // the import asks whether it may create, as the CMIS create does (R333, 3.4.2) — a stand-in that allows it
+        when(ctx.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(org.mockito.Mockito.mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
         new SpringContext().setApplicationContext(ctx);
         when(cs.getFolder(REPO, "R290-TARGET")).thenReturn(aFolder("R290-TARGET"));
         when(cs.getChildren(eq(REPO), anyString())).thenReturn(new ArrayList<>());
