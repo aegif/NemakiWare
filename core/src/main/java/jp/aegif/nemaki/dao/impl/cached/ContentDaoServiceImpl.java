@@ -584,6 +584,18 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public VersionSeries getVersionSeriesFresh(String repositoryId, String versionSeriesId) {
+		if (nonCachedContentDaoService == null) {
+			throw new IllegalStateException(
+					"nonCachedContentDaoService is not wired; getVersionSeriesFresh cannot answer");
+		}
+		// The cache is neither read nor written (R341): the question is what the store holds now, and this replica's
+		// cache does not see another replica's check-out. No catch, as getDocumentFresh — a failure below is not the
+		// absence answer here.
+		return nonCachedContentDaoService.getVersionSeries(repositoryId, versionSeriesId);
+	}
+
+	@Override
 	public List<Document> getAllVersions(String repositoryId, String versionSeriesId) {
 		return nonCachedContentDaoService.getAllVersions(repositoryId, versionSeriesId);
 	}

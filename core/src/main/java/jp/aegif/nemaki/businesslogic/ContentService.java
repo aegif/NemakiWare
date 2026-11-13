@@ -784,6 +784,17 @@ public interface ContentService {
 	List<Document> committedVersionsLeftAfterDeleting(String repositoryId, Document document);
 
 	/**
+	 * Whether {@code document}'s version series is checked out, by anyone (R331, 3.4.2). The system's deletes of every
+	 * version — force-archive, the retention job — delete the versions {@link #getAllVersions} answers the system, which
+	 * hides every user's working copy, and then the series: a checked-out document's working copy was left without it.
+	 * They ask this first and do not delete what it answers true. It is read from the store, not from a cache (R341): true
+	 * when the store's series is marked checked out, or when the store's version list of the series holds a working copy
+	 * whatever the mark says. A document without a series is not checked out (the store is not asked); a series or a
+	 * version list that cannot be read is thrown, and the caller deletes nothing.
+	 */
+	boolean isCheckedOut(String repositoryId, Document document);
+
+	/**
 	 * Delete an attachment node
 	 *
 	 * @param callContext

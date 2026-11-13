@@ -762,6 +762,7 @@ public class ArchiveResource extends ResourceBase {
 
 		Lock lock = lockService.getWriteLock(repositoryId, objectId);
 		boolean acquired = false;
+		boolean checkedOut = false;
 		try {
 			acquired = lock.tryLock(10, java.util.concurrent.TimeUnit.SECONDS);
 		} catch (InterruptedException e) {
@@ -792,14 +793,22 @@ public class ArchiveResource extends ResourceBase {
 				log.warn("Could not read document name for lineage (archive continues): "
 						+ e.getMessage());
 			}
-			// Use deleteDocument to properly handle attachments, renditions, and version series
-			getContentService().deleteDocument(systemContext, repositoryId, objectId, true, false);
-			if (cachePool != null) {
-				cachePool.get(repositoryId).removeCmisCache(objectId);
-			}
+			// A document someone has checked out is not archived (R331, 3.4.2): the system's delete of every version left
+			// that user's working copy without its series, and every non-administrator's checked-out listing answered 500.
+			// Answered 409 below, nothing created or deleted — an administrator cancels the check-out first. A document or a
+			// series that cannot be read is thrown to the catch: a failure, nothing deleted.
+			jp.aegif.nemaki.model.Document toArchive = getContentService().getDocument(repositoryId, objectId);
+			checkedOut = toArchive != null && getContentService().isCheckedOut(repositoryId, toArchive);
+			if (!checkedOut) {
+				// Use deleteDocument to properly handle attachments, renditions, and version series
+				getContentService().deleteDocument(systemContext, repositoryId, objectId, true, false);
+				if (cachePool != null) {
+					cachePool.get(repositoryId).removeCmisCache(objectId);
+				}
 
-			// Lineage: one version-free fact; the emitter projects it (v1 today, v2 after §6-a).
-			emitLineageEvent(repositoryId, objectId, documentName, lineageOperationId, httpRequest);
+				// Lineage: one version-free fact; the emitter projects it (v1 today, v2 after §6-a).
+				emitLineageEvent(repositoryId, objectId, documentName, lineageOperationId, httpRequest);
+			}
 		} catch (Exception e) {
 			log.error("Failed to force-archive document " + objectId, e);
 			status = false;
@@ -808,6 +817,11 @@ public class ArchiveResource extends ResourceBase {
 			lock.unlock();
 		}
 
+		if (checkedOut) {
+			addErrMsg(errMsg, ITEM_ARCHIVE, "checkedOut");
+			throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(409)
+					.entity(makeResult(false, result, errMsg).toJSONString()).type(MediaType.APPLICATION_JSON).build());
+		}
 		return makeResult(status, result, errMsg).toJSONString();
 	}
 
