@@ -391,6 +391,15 @@
 			<version>6.1.2</version>
 			<scope>test</scope>
 		</dependency>
+		<!-- Tomcat, test only: TheUiIsNotKeptAcrossAnUpgradeTest drives Tomcat's own DefaultServlet (its strong ETag and
+		     conditional requests) and the SPA fallback, wired as web.xml wires them (R348). The image runs Tomcat 11.0
+		     (nb33: 11.0.24, 2026-11-15). -->
+		<dependency>
+			<groupId>org.apache.tomcat.embed</groupId>
+			<artifactId>tomcat-embed-core</artifactId>
+			<version>11.0.24</version>
+			<scope>test</scope>
+		</dependency>
 		<!-- Rhino, test only: LineageJournalViewCoverageTest executes the CouchDB map functions
 		     against synthetic v1/v2 documents. Pattern-matching the view source for both type
 		     literals would pass on a view whose emit is still guarded by a v1-only field — the
