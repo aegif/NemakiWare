@@ -480,7 +480,7 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
                 } else {
                     page.hasMoreItems = objectList.hasMoreItems();
                     page.numItems = objectList.getNumItems();
-                    page.cutShortByAclScanLimit = isCutShortByAclScanLimit(objectList);
+                    page.cutShortByAclScanLimit = jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(objectList);
                 }
             } else {
                 page.complete = true;
@@ -575,20 +575,6 @@ public class CmisEntityCollectionProcessor implements EntityCollectionProcessor 
         if (more) {
             collection.setNext(nextPage(request, skip + returned, topGiven ? top - returned : null));
         }
-    }
-
-    /** Whether the backend marked the answer as cut at its ACL scan window ({@code SolrQueryProcessor.markTruncated}). */
-    private static boolean isCutShortByAclScanLimit(ObjectList objectList) {
-        if (objectList.getExtensions() == null) {
-            return false;
-        }
-        for (org.apache.chemistry.opencmis.commons.data.CmisExtensionElement extension : objectList.getExtensions()) {
-            if (extension != null && "truncatedByAclScanLimit".equals(extension.getName())
-                    && "true".equals(extension.getValue())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** The same request with $skip moved past what was answered, and $top lessened by it if one was given. */

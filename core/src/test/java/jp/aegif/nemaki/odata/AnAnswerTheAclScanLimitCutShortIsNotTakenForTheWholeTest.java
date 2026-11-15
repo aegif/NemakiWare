@@ -72,8 +72,8 @@ import jp.aegif.nemaki.cmis.service.DiscoveryService;
  * fixture.)
  *
  * <p>What is locked, on the product's {@code readEntityCollection} through Olingo's own parser, with the backend's answer
- * a stand-in: a marked answer refuses {@code $count=true}; it is answered only as {@code $top=0} without {@code $count} — no
- * row, no count — and every other page of it is refused, with no rows and no nextLink; an answer without the mark, or with
+ * a stand-in: a marked answer refuses {@code $count=true}; it is answered only as {@code $top=0} without {@code $count=true}
+ * ({@code $count=false} is that too) — no row, no count — and every other page of it is refused, with no rows and no nextLink; an answer without the mark, or with
  * it not true, is answered as before.
  */
 class AnAnswerTheAclScanLimitCutShortIsNotTakenForTheWholeTest {
@@ -122,10 +122,21 @@ class AnAnswerTheAclScanLimitCutShortIsNotTakenForTheWholeTest {
     }
 
     @Test
-    @DisplayName("$top=0 without $count is answered with no row, no count and no nextLink")
+    @DisplayName("$top=0 without $count=true is answered with no row, no count and no nextLink")
     void aTopOfZeroIsAnsweredWithNoRow() {
         Answer none = assertDoesNotThrow(() -> new Fixture().listing(10, Boolean.TRUE, 300, "true").read("Documents", "$top=0"),
                 "$top=0 of a cut-short answer was refused");
+        assertEquals(List.of(), none.ids);
+        assertNull(none.count);
+        assertNull(none.next);
+    }
+
+    @Test
+    @DisplayName("$top=0 with $count=false is answered with no row, no count and no nextLink — $count=false is not $count=true")
+    void aTopOfZeroWithCountFalseIsAnsweredWithNoRow() {
+        Answer none = assertDoesNotThrow(
+                () -> new Fixture().listing(10, Boolean.TRUE, 300, "true").read("Documents", "$top=0&$count=false"),
+                "$top=0&$count=false of a cut-short answer was refused");
         assertEquals(List.of(), none.ids);
         assertNull(none.count);
         assertNull(none.next);

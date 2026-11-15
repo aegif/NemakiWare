@@ -1815,7 +1815,8 @@
       "enterProperty": "Enter {{name}}"
     },
     "messages": {
-      "searchFailed": "Search failed"
+      "searchFailed": "Search failed",
+      "incompleteResults": "The complete search results could not be confirmed. Narrow the search conditions and try again."
     },
     "purviewGovernance": {
       "title": "Purview Governance Summary",

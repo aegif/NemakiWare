@@ -129,6 +129,8 @@ public class QueryResource {
                     callContext, repositoryId, statement, searchAllVersions,
                     includeAllowableActions, IncludeRelationships.NONE,
                     null, BigInteger.valueOf(maxItems), BigInteger.valueOf(skipCount), null);
+            // R344: refused before a row or numItems of the POST answer is written.
+            refuseAnAnswerCutShortByTheAclScanLimit(results);
             
             List<ObjectResponse> objectResponses = new ArrayList<>();
             if (results != null && results.getObjects() != null) {
@@ -211,6 +213,8 @@ public class QueryResource {
                     callContext, repositoryId, statement, searchAllVersions,
                     includeAllowableActions, IncludeRelationships.NONE,
                     null, BigInteger.valueOf(maxItems), BigInteger.valueOf(skipCount), null);
+            // R344: refused before a row, numItems or a next link of the GET answer is written.
+            refuseAnAnswerCutShortByTheAclScanLimit(results);
             
             List<ObjectResponse> objectResponses = new ArrayList<>();
             if (results != null && results.getObjects() != null) {
@@ -339,6 +343,17 @@ public class QueryResource {
         }
     }
     
+    /**
+     * An answer the ACL scan limit cut short can tell neither the whole set's count, order nor where it continues (R344,
+     * 3.4.2): it is refused with a 400 that names no row, no id and no count, before anything of it is written into the
+     * response. The judgement is the shared one ({@code CutShortByAclScanLimit}).
+     */
+    static void refuseAnAnswerCutShortByTheAclScanLimit(ObjectList results) {
+        if (jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(results)) {
+            throw ApiException.invalidArgument(jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.REFUSAL);
+        }
+    }
+
     /**
      * What a failed query is to the client. A statement the repository REFUSED — an untranslatable WHERE clause (R188),
      * a property that cannot be queried — is the client's 400 whatever its message says; reading the words "parse" or

@@ -626,6 +626,11 @@ public class McpToolsProvider {
                 null    // extension
             );
 
+            // An answer the ACL scan limit cut short can tell neither the whole set's count, order nor where it continues
+            // (R344, 3.4.2) — not even that nothing was found: it is a tool error, never handed to the formatter.
+            if (jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(results)) {
+                return resultFactory.error(jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.REFUSAL);
+            }
             return resultFactory.success(formatCmisQueryResults(query, results, repositoryId));
 
         } catch (Exception e) {

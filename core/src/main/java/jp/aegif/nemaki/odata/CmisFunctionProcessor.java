@@ -588,6 +588,12 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                 skipCount,
                 null   // extension
         );
+        // An answer the ACL scan limit cut short can tell neither the whole set's count, order nor where it continues
+        // (R344, 3.4.2): it is refused before an entity is converted or the count is set.
+        if (jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(queryResult)) {
+            throw new ODataApplicationException(jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.REFUSAL,
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
         
         EntityCollection entityCollection = new EntityCollection();
         if (queryResult != null && queryResult.getObjects() != null) {

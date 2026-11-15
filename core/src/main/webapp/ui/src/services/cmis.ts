@@ -272,6 +272,7 @@ import { getCmisAuthHeaders } from './auth/CmisAuthHeaderProvider';
 import { CmisHttpClient } from './http';
 import { parseJsonResponseBody } from './http/jsonFetch';
 import { getResourceBaseErrorMessage } from './http/restResult';
+import { isCutShortByAclScanLimit, SearchCutShortError } from './searchCutShort';
 import { AtomPubClient } from './clients';
 import { ParsedAtomEntry } from './parsers';
 import { CMISObject, SearchResult, VersionHistory, Relationship, TypeDefinition, PropertyDefinition, User, Group, ACL, AllowableActions, CoercionWarning, RetentionSettings, MigrationLog, PendingArchive } from '../types/cmis';
@@ -1379,6 +1380,12 @@ export class CMISService {
         try {
           const data = JSON.parse(response.responseText);
 
+          // An answer the ACL scan limit cut short (R344, 3.4.2) is refused before a row is transformed: its count, order
+          // and end are the scan window's, not the search's.
+          if (isCutShortByAclScanLimit(data)) {
+            throw new SearchCutShortError();
+          }
+
           // CRITICAL FIX (2025-11-19): Transform search results to extract CMIS properties
           // The CMIS Browser Binding returns properties in format: {"cmis:name": {"value": "x"}}
           // The UI expects flat format: {name: "x", objectType: "y", ...}
@@ -1413,6 +1420,9 @@ export class CMISService {
             numItems: data.numItems || 0
           };
         } catch (e) {
+          if (e instanceof SearchCutShortError) {
+            throw e;
+          }
           throw new Error('Invalid response format');
         }
       }
