@@ -1,5 +1,6 @@
-import { it, expect, vi, afterEach } from 'vitest';
+import { it, expect, vi, afterEach, afterAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
+import { turnAntdMotionOff, turnAntdMotionBackOn, destroyAntdNotices } from '../../test/antdNotices';
 
 /** Waits until {@code text} is on the screen; a timeout fails this lock's own expect(), not the query's harness error. */
 async function shown(text: string) {
@@ -46,11 +47,20 @@ const PREVIOUS = {
   hasMoreItems: true,
 };
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   service.search.mockReset();
   router.setParams.mockReset();
   router.params = new URLSearchParams();
+  // Last, after the resets: a HarnessBroken raised here has left the stand-ins reset; the notice it reports stays,
+  // and later locks of this file report it too.
+  await destroyAntdNotices();
+});
+
+// antd's static notices must not outlive a lock: see src/test/antdNotices.tsx.
+turnAntdMotionOff();
+afterAll(() => {
+  turnAntdMotionBackOn();
 });
 
 async function searchFor(container: HTMLElement, placeholder: string, keyword: string) {

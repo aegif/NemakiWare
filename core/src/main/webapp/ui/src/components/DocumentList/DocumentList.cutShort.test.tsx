@@ -1,5 +1,6 @@
-import { it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
+import { turnAntdMotionOff, turnAntdMotionBackOn, destroyAntdNotices } from '../../test/antdNotices';
 import i18n from '../../i18n';
 import { DocumentList } from './DocumentList';
 import { SearchCutShortError } from '../../services/searchCutShort';
@@ -91,13 +92,22 @@ beforeEach(async () => {
   service.getFolderTypes.mockResolvedValue([]);
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   sessionStorage.clear();
   // Every stand-in starts afresh: an answer queued by a lock that stopped early does not answer the next lock.
   for (const stand of Object.values(service)) {
     stand.mockReset();
   }
+  // Last, after the resets: a HarnessBroken raised here has left the stand-ins reset; the notice it reports stays,
+  // and later locks of this file report it too.
+  await destroyAntdNotices();
+});
+
+// antd's static notices must not outlive a lock: see src/test/antdNotices.tsx.
+turnAntdMotionOff();
+afterAll(() => {
+  turnAntdMotionBackOn();
 });
 
 /** Waits until {@code text} is on the screen; a timeout fails this lock's own expect(), not the query's harness error. */
