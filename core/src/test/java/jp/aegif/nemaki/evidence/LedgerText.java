@@ -99,15 +99,27 @@ public final class LedgerText {
     private static final Pattern FOUR_DIGIT_COUNT = Pattern.compile("(?<![0-9,])([0-9]{4})\\*{0,2} ?本");
 
     /**
-     * The four-digit 「N 本」 figures in {@code text} that are NOT a sweep figure in its form nor
+     * How the documents state the count added since the last sweep: 「11 回目以後に足した control
+     * は 1012 本」, the number bold or not. Its figure is NOT a total — it is compared with the
+     * runner's declared count minus what the last sweep ran (ReleaseReadinessIsMeasuredTest's
+     * aFinishedSweepOfFewerControlsDoesNotReadAsTodays, in every document) and with the unswept set
+     * (EverySupportedCouchDbIsMeasuredTest's unswept forms), each in the same form. Read as a total
+     * it was refused the day it reached four digits (994 to 1012, R292, 2026-11-16).
+     */
+    private static final Pattern ADDED_SINCE_FIGURE =
+            Pattern.compile("以後に足した control は \\*{0,2}\\d+ 本");
+
+    /**
+     * The four-digit 「N 本」 figures in {@code text} that are NOT a sweep figure in its form, nor
      * inside text shaped like a line of the canon's sweep record (「6 回目 2026-09-25〜26（1551 本」
-     * — masked in whichever document it appears, not only the canon) — each of which, in these
-     * documents, is today's control total. Comma-grouped numbers (「7,706 本」) are the unit and
-     * verifier test totals by this tree's convention and are not read.
+     * — masked in whichever document it appears, not only the canon), nor an added-since-sweep
+     * count in its form ({@link #ADDED_SINCE_FIGURE}) — each of which, in these documents, is today's
+     * control total. Comma-grouped numbers (「7,706 本」) are the unit and verifier test totals by
+     * this tree's convention and are not read.
      */
     public static List<Figure> figuresOutsideSweeps(String text) {
         StringBuilder rest = new StringBuilder(text);
-        for (Pattern sweep : new Pattern[] {SWEEP_FIGURE, SWEEP_RECORD}) {
+        for (Pattern sweep : new Pattern[] {SWEEP_FIGURE, SWEEP_RECORD, ADDED_SINCE_FIGURE}) {
             Matcher m = sweep.matcher(text);
             while (m.find()) {
                 for (int i = m.start(); i < m.end(); i++) {
