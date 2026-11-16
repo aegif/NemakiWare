@@ -995,10 +995,12 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
 
     /**
-     * The request without its {@code objectId} parameter, in any case (OpenCMIS reads parameter names case-insensitively): when a
-     * path follows {@code root} the path names the object (R297, 3.4.2). The names are compared as the container decoded them
-     * (R299) — OBJECTI%44 is OBJECTID. The query string as sent is left as it is: what OpenCMIS reads is the query string of
-     * {@link #handleObjectSpecificGetOperation}'s request, built from these parameters (R301).
+     * The request without its {@code objectId} parameter: when a path follows {@code root} the path names the object (R297, 3.4.2).
+     * This servlet's own selectors read {@code objectId} by its exact name, and that is the read this view hides. The names are
+     * compared in any case, as the container decoded them (R299 — OBJECTI%44 is OBJECTID), but no reader asks for another case
+     * now: the query string as sent is left as it is, and what OpenCMIS reads is built by {@link #queryStringHandedOn}, which
+     * leaves out every {@code objectId} of the query string by its decoded name, in any case, whether or not this view has hidden
+     * it (R301, R304).
      */
     private static HttpServletRequest withoutObjectIdParameter(HttpServletRequest request) {
         return new HttpServletRequestWrapper(request) {
@@ -1026,23 +1028,114 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         };
     }
 
+    /** One parameter of a query string as it was sent: its name as the container decodes it, and whether it had an {@code =}. */
+    private record SentParameter(String name, boolean hadEquals) {
+    }
+
     /**
-     * A query string of {@code parameters}, each name and value encoded (R301, 3.4.2): OpenCMIS splits the query string it is
-     * handed at {@code &} and {@code =} and then decodes each part, so a decoded name or value written as it is would be split
-     * where the container had not split it. {@code null} when there are none.
+     * The query string handed on to OpenCMIS, which answers the selectors this servlet does not (R301, R304 — 3.4.2). It is
+     * built from the parameters as the container decoded them, each name and value encoded: OpenCMIS splits the query string
+     * it is handed at {@code &} and {@code =} and then decodes each part, so a decoded name or value written as it is would be
+     * split where the container had not split it (R301). The query string as sent is read only for its shape — which
+     * parameters it had, in which order, and whether each had an {@code =} — never for a name or a value to write: the
+     * container holds {@code x} and {@code x=} alike as the empty value, and OpenCMIS reads {@code x} as no value and
+     * {@code x=} as the empty one, so {@code dateTimeFormat}, {@code callback} and {@code streamId} with no value had become
+     * explicitly empty — 400, a JSONP with no function name, 409 (R304). Each parameter is written as it was sent, {@code x}
+     * or {@code x=}, its duplicates in the order they were sent.
+     *
+     * <p>{@code cmisselector} and {@code objectId} are written once each, the selector this servlet read and the object it
+     * resolved; every one of them in the query string, in any case and however encoded, is left out (OpenCMIS reads names
+     * case-insensitively). A query string that does not match the container's parameters — a parameter the container does
+     * not hold, or holds a different number of times, a parameter with no name, a name that does not decode, a parameter
+     * with no {@code =} the container holds a value for — is refused, not guessed at.
      */
-    private static String queryStringOf(Map<String, String[]> parameters) {
-        StringBuilder query = new StringBuilder();
-        for (Map.Entry<String, String[]> parameter : parameters.entrySet()) {
-            String[] values = parameter.getValue();
-            for (String value : values == null || values.length == 0 ? new String[] { "" } : values) {
-                query.append(query.length() == 0 ? "" : "&")
-                        .append(java.net.URLEncoder.encode(parameter.getKey(), java.nio.charset.StandardCharsets.UTF_8))
-                        .append('=')
-                        .append(java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8));
+    private static String queryStringHandedOn(String sent, Map<String, String[]> decoded, String selector, String objectId) {
+        java.util.List<SentParameter> shape = new java.util.ArrayList<>();
+        if (sent != null) {
+            for (String part : sent.split("&", -1)) {
+                if (part.isEmpty()) {
+                    continue; // the container skips an empty part: a&&b, a trailing &
+                }
+                int equals = part.indexOf('=');
+                String encodedName = equals < 0 ? part : part.substring(0, equals);
+                if (encodedName.isEmpty()) {
+                    throw unmatched("a parameter has no name");
+                }
+                shape.add(new SentParameter(decodedAsTheContainerDecodes(encodedName), equals >= 0));
             }
         }
-        return query.length() == 0 ? null : query.toString();
+        Map<String, String[]> others = new java.util.LinkedHashMap<>();
+        decoded.forEach((name, values) -> {
+            if (!replacedHere(name)) {
+                others.put(name, values);
+            }
+        });
+        StringBuilder query = new StringBuilder();
+        query.append("cmisselector=").append(java.net.URLEncoder.encode(selector, java.nio.charset.StandardCharsets.UTF_8));
+        query.append('&').append(Constants.PARAM_OBJECT_ID).append('=')
+                .append(java.net.URLEncoder.encode(objectId, java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Integer> written = new HashMap<>();
+        for (SentParameter parameter : shape) {
+            if (replacedHere(parameter.name())) {
+                continue;
+            }
+            String[] values = others.get(parameter.name());
+            int occurrence = written.merge(parameter.name(), 1, Integer::sum) - 1;
+            if (values == null || occurrence >= values.length) {
+                throw unmatched("a parameter the container does not hold as often");
+            }
+            query.append('&').append(java.net.URLEncoder.encode(parameter.name(), java.nio.charset.StandardCharsets.UTF_8));
+            if (parameter.hadEquals()) {
+                query.append('=').append(java.net.URLEncoder.encode(values[occurrence], java.nio.charset.StandardCharsets.UTF_8));
+            } else if (!values[occurrence].isEmpty()) {
+                throw unmatched("a parameter with no value the container holds a value for");
+            }
+        }
+        for (Map.Entry<String, String[]> parameter : others.entrySet()) {
+            int held = parameter.getValue() == null ? 0 : parameter.getValue().length;
+            if (written.getOrDefault(parameter.getKey(), 0) != held) {
+                throw unmatched("a parameter the query string does not have as often");
+            }
+        }
+        return query.toString();
+    }
+
+    /** {@code cmisselector} and {@code objectId}, in any case: this servlet writes them, once each (R304). */
+    private static boolean replacedHere(String name) {
+        return "cmisselector".equalsIgnoreCase(name) || Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name);
+    }
+
+    /**
+     * A name of the query string as the container decodes a parameter's name: {@code +} is a space, {@code %XX} a byte, the
+     * bytes UTF-8, a sequence that is not UTF-8 the replacement character. A {@code %} that is not followed by two hexadecimal
+     * digits is refused (the container does not hold that parameter). Where the container decodes a name otherwise, the names
+     * do not match and the query string is refused by {@link #queryStringHandedOn} — never read as another parameter.
+     */
+    private static String decodedAsTheContainerDecodes(String encoded) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        byte[] sent = encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (int i = 0; i < sent.length; i++) {
+            byte b = sent[i];
+            if (b == '+') {
+                bytes.write(' ');
+            } else if (b == '%') {
+                int high = i + 1 < sent.length ? Character.digit(sent[i + 1], 16) : -1;
+                int low = i + 2 < sent.length ? Character.digit(sent[i + 2], 16) : -1;
+                if (high < 0 || low < 0) {
+                    throw unmatched("a parameter name does not decode");
+                }
+                bytes.write(high * 16 + low);
+                i += 2;
+            } else {
+                bytes.write(b);
+            }
+        }
+        return new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException unmatched(String what) {
+        return new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                "The query string does not match its parameters (" + what + ")");
     }
 
     /**
@@ -1121,16 +1214,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     return paramMap;
                 }
-                
-                @Override
-                public String getQueryString() {
-                    // R301 (3.4.2): built from the parameters above only — the selector read, the objectId resolved and the
-                    // others as the container decoded them — each name and value encoded. The query string as sent is not
-                    // joined. The selector was put in front as the container had decoded it, so a selector sent as
-                    // object%26objectId%3D<id> was read by OpenCMIS, which answers the selectors this servlet does not, as
-                    // the selector object and a first objectId <id> ahead of the resolved one.
-                    return queryStringOf(getParameterMap());
-                }
             };
             
             // Create call context with proper authentication handling
@@ -1167,8 +1250,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // URL format: /browser/{repositoryId}/{objectId}?cmisselector=versions
                 result = handleVersionsOperation(service, repositoryId, objectId, request);
             } else {
-                // For other selectors, fall back to standard OpenCMIS dispatcher
-                super.service(wrappedRequest, response);
+                // For other selectors, fall back to standard OpenCMIS dispatcher. It reads the parameters from the query
+                // string it is handed, built here before it is handed on, so a query string that does not match its
+                // parameters is answered 400 and OpenCMIS reads nothing (R304). The selector this servlet read and the
+                // objectId it resolved are written once each, and every parameter as it was sent, x or x= (R301, R304).
+                final String handedOn = queryStringHandedOn(request.getQueryString(), request.getParameterMap(), cmisselector,
+                        objectId);
+                super.service(new HttpServletRequestWrapper(wrappedRequest) {
+                    @Override
+                    public String getQueryString() {
+                        return handedOn;
+                    }
+                }, response);
                 return;
             }
 
