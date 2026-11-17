@@ -353,31 +353,80 @@ test.describe('H2: Simulate (audit) button UI flow', () => {
     // Find the simulate-removal Select (Ant Design multi-select).
     // It only renders when result.expandedPrincipals contains principals
     // other than the queried user — i.e., the user belongs to at least
-    // one group. Open the dropdown by clicking the visible selector.
+    // one group.
     const simulateLabel = page.getByText(/Simulate removing|削除をシミュレート/);
     await expect(simulateLabel).toBeVisible({ timeout: 10000 });
-    // The Select is the next sibling control; click its container to open.
-    const simulateSelect = page.locator('.ant-select-multiple').first();
+
+    // The regression this test locks (private gate 2, 2026-11-18): the
+    // principal search's popup stays in the DOM after it closes, hidden but
+    // still holding its options. A page-wide `.ant-select-item-option` then
+    // resolved to THAT popup's hidden option (`admin`) instead of the simulate
+    // dropdown's, and the step failed three times out of three. Whether the
+    // closed popup still held options depended on when the principal list
+    // arrived, so the scenario is made here every time: open the principal
+    // search again, wait until its popup shows options, and close it by
+    // clicking elsewhere (not with Escape — allowClear binds it to "clear").
+    await principalInput.click();
+    await expect(principalInput).toHaveAttribute('aria-expanded', 'true');
+    const principalListId = await principalInput.getAttribute('aria-controls');
+    expect(principalListId, 'the open principal search names the listbox it controls').toBeTruthy();
+    const principalPopup = page.locator('.ant-select-dropdown')
+      .filter({ has: page.locator(`[id="${principalListId}"]`) });
+    await expect(principalPopup).toHaveCount(1);
+    await expect(principalPopup.locator('.ant-select-item-option').first()).toBeVisible({ timeout: 10000 });
+    await simulateLabel.click();
+    await expect(principalInput).toHaveAttribute('aria-expanded', 'false');
+    await expect(principalInput).toHaveValue(TEST_USER);
+    // The scenario holds: the closed popup is hidden and still has options.
+    await expect(principalPopup).toHaveClass(/ant-select-dropdown-hidden/);
+    await expect(principalPopup.locator('.ant-select-item-option')).not.toHaveCount(0);
+
+    // The simulate Select of this panel — exactly one — and its combobox.
+    const simulateSelect = governancePanel.locator('.ant-select-multiple');
+    await expect(simulateSelect).toHaveCount(1);
+    const simulateCombobox = simulateSelect.locator('input[role="combobox"]');
+    await expect(simulateCombobox).toHaveCount(1);
     await simulateSelect.click();
-    // Pick the FIRST option in the simulate-removal dropdown. GROUP_EVERYONE
-    // is excluded by the UI (G3), so the provisioned group is the option.
-    // The button-flow test only needs SOME principal selected so the audit
-    // button appears; which principal doesn't matter.
-    const firstOption = page.locator('.ant-select-item-option').first();
-    await expect(firstOption).toBeVisible({ timeout: 10000 });
+    await expect(simulateCombobox).toHaveAttribute('aria-expanded', 'true');
+    await expect(simulateCombobox).toBeFocused();
+    // Its dropdown is the ONE popup holding the listbox this combobox
+    // controls (aria-controls) — never "the first option on the page".
+    const simulateListId = await simulateCombobox.getAttribute('aria-controls');
+    expect(simulateListId, 'the open simulate combobox names the listbox it controls').toBeTruthy();
+    expect(simulateListId).not.toBe(principalListId);
+    const simulateListbox = page.locator(`[id="${simulateListId}"]`);
+    const simulatePopup = page.locator('.ant-select-dropdown').filter({ has: simulateListbox });
+    await expect(simulatePopup).toHaveCount(1);
+    await expect(simulatePopup).not.toHaveClass(/ant-select-dropdown-hidden/);
+    await expect(simulatePopup).toBeVisible();
+    // The option, by role and exact name in that listbox, and as shown in that
+    // popup: exactly one, the provisioned group (GROUP_EVERYONE is excluded by
+    // the UI — G3 — and the queried user is not removable).
+    const groupOption = simulateListbox.getByRole('option', { name: TEST_GROUP, exact: true });
+    await expect(groupOption).toHaveCount(1);
+    const shownOption = simulatePopup.locator('.ant-select-item-option');
+    await expect(shownOption).toHaveCount(1);
+    await expect(shownOption).toHaveAttribute('title', TEST_GROUP);
+    await expect(shownOption).toBeVisible();
     // Keyboard selection, not a mouse click: on slow CI runners the async principal
     // load re-renders the option list mid-click and Playwright retries "element is
     // not stable" until the dropdown collapses (shard run 2026-08-17, 57 retries).
     // ArrowDown+Enter drives AntD's own active-item path and needs no positional
-    // stability; the tag-count assertion below still discriminates the selection.
+    // stability. Enter is pressed only once THIS combobox's active option is the
+    // group's option, so the key cannot select anything else.
     await page.keyboard.press('ArrowDown');
+    const groupOptionId = await groupOption.getAttribute('id');
+    expect(groupOptionId, 'the group option has an id the combobox can point at').toBeTruthy();
+    await expect(simulateCombobox).toHaveAttribute('aria-activedescendant', groupOptionId as string);
     await page.keyboard.press('Enter');
-    // Confirm the selection registered as a tag BEFORE closing the overlay.
-    // Clicking the select container a second time can toggle-deselect in
-    // AntD's multi-select, so we assert the tag, then close the dropdown
-    // with Escape (which only dismisses the overlay, it does not clear the
-    // committed tags).
-    await expect(simulateSelect.locator('.ant-select-selection-item')).toHaveCount(1);
+    // Confirm the selection registered as a tag — the group, and only it —
+    // BEFORE closing the overlay. Clicking the select container a second time
+    // can toggle-deselect in AntD's multi-select, so we assert the tag, then
+    // close the dropdown with Escape (which only dismisses the overlay, it does
+    // not clear the committed tags).
+    const chosen = simulateSelect.locator('.ant-select-selection-item');
+    await expect(chosen).toHaveCount(1);
+    await expect(chosen).toHaveAttribute('title', TEST_GROUP);
     await page.keyboard.press('Escape');
 
     // Now the audit button must appear, enabled.
@@ -392,6 +441,15 @@ test.describe('H2: Simulate (audit) button UI flow', () => {
     await auditButton.click();
     const resp = await respP;
     expect(resp.status()).toBe(200);
+    // What was asked is the queried user with the chosen group removed, and the
+    // answer is about that question: the test connector also grants the user
+    // directly, so it is kept.
+    expect(new URL(resp.url()).pathname)
+      .toBe(`/core/api/v1/admin/connectors/by-principal/${encodeURIComponent(TEST_USER)}/simulate-remove`);
+    expect(resp.request().postDataJSON()).toMatchObject({ removePrincipalIds: [TEST_GROUP] });
+    const answered = await resp.json();
+    expect(answered.kept.some((m: { connectorId: string }) => m.connectorId === TEST_CONNECTOR_ID))
+      .toBeTruthy();
 
     // Button transitions to the "Audited" / "監査済み" disabled state.
     const auditedButton = page.getByRole('button', {
