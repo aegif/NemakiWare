@@ -3179,7 +3179,40 @@ class ReleaseReadinessIsMeasuredTest {
         }
         HarnessBroken.unless(rows > 0, "the RC gate's table carries no rows: " + gate);
 
-        boolean introDeclares = Pattern.compile("条件 11 は 20\\d\\d-\\d\\d-\\d\\d に満たした")
+        // The declaration is read from the WHOLE introduction, which is the widest and therefore the safe
+        // reading. Three narrower readings were tried in R355 and each left a hole: the particle (round 6 —
+        // the pattern read 「条件 11 は …」 only, and the withdrawal was written by changing that one character
+        // to 「を」), the word order (round 7 — 「<date> には条件 11 を満たした」 says the same thing with the date
+        // first and a widened particle class still did not see it), and a slice at the first 「以下は」 (round 8,
+        // both reviewers independently — an arbitrary string is not a structural boundary: it fell inside one
+        // paragraph and hid the next, and a sentence that means something else by those characters moves it).
+        // "The whole introduction" is what the variable above IS, and it is narrower than the section: the
+        // split stops at the section's first table row, so the 33 lines of prose BELOW the table are not read (counted as the lines that do
+        // not START with a pipe and are not blank - which keeps the eight indented rows of a nested table in; "the
+        // table rows left out" was the rule written first and it gives 25, not 33, round 15)
+        // at all. A declaration written there is not seen — measured, with a blocking row and no withholding
+        // sentence, the lock goes green on it (round 10). That is R356 along with the phrasings; it is the scope
+        // this lock has had since before this batch. What is checked here, and not asserted in general, is that
+        // the introduction as it stands carries no match: the two history rows the gate's text points at are
+        // written as COUNTS, and 「条件 11 は 2026-11-05 に未達に戻り…」 does not match. The verdict-shaped
+        // 「2026-09-29 に満たした」 sits below the table, so the pattern has never been applied to it — not
+        // reading it is not the same as reading it and finding no match (round 10, P3).
+        //
+        // A date must be inside the match, so the withholding sentence — which pairs 条件 11 with 満たした and
+        // carries no date between them — is not read as a declaration. BOTH gaps are four characters, which is
+        // what the real declaring forms need (「に」) and not enough for the withholding wording as it is
+        // written (「確認が済むまで」, seven): with eight, a dated withholding shortened by one word was read as
+        // a declaration (round 8 P3 for the one arm, round 9 P3 for the other). It is NOT enough to rule the
+        // wording out in general — a dated withholding contracted to four characters
+        // (「2026-11-17 に条件 11 は確認まで満たしたと書かない」) still matches the date-first arm (round 10, P3,
+        // measured). That direction is over-rejection: it ends red, with a message about the zero section rather
+        // than about the wording, which is why it is written down here.
+        //
+        // Still not read: 「満たしている」「達した」「満たした（<date>）」 and other phrasings — true of this lock
+        // since before this batch as well (measured against the pattern at 2530e5422). That is R356: the verdict
+        // is prose here, and only writing it as a field would settle which sentences count.
+        boolean introDeclares = Pattern.compile("条件 11 [はをがも] ?20\\d\\d-\\d\\d-\\d\\d[^。]{0,4}満たした"
+                + "|20\\d\\d-\\d\\d-\\d\\d[^。]{0,8}条件 11 [はをがも][^。]{0,4}満たした")
                 .matcher(intro).find();
         String zero = slice(readiness, "## 0. 現在地", "## 1.", "the readiness document's §0");
         boolean zeroLists = zero.contains("/ 11 open P0/P1 = 0（");
@@ -3197,6 +3230,10 @@ class ReleaseReadinessIsMeasuredTest {
             assertTrue(zeroLists, "every row of the RC gate's table allows condition 11, and §0 "
                     + "does not list it among the met conditions");
         } else {
+            // Of this branch, only the first arm has a control while the declaration is withheld: a control makes
+            // ONE edit, and reaching the other two needs a blocking row AND a declaration (or §0 listing it) at the
+            // same time. OH4 reaches this arm today; when condition 11 is declared again it must be re-pointed to
+            // the declaration-over-a-P1-row shape, which is what this branch mainly exists for (round 9, P3).
             assertFalse(introWithholds, "the gate withholds condition 11 for a review over rows that block it anyway: "
                     + blocking);
             assertFalse(introDeclares, "the gate's introduction declares condition 11 met over "

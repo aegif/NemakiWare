@@ -100,6 +100,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
 
+        // A CMIS action is accepted on POST only. What precedes this is the debug log
+        // above and nothing else: that line asks whether debug is on and, if it is, reads
+        // the method and the request URI and writes them. Everything that acts on the
+        // request comes after — this servlet's own router, the selector branches,
+        // super.service() and every service call — so a refused request has reached no
+        // service at all.
+        if (refuseCmisActionOnAMethodThatIsNotPost(request, response)) {
+            return;
+        }
+
         // Malformed multipart (e.g. a NUL byte or other control char in a part's
         // filename) makes the container's file-upload parser throw during the
         // first parameter/parts access; without this it escapes as a raw HTTP 500.
@@ -113,8 +123,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // CMIS clients), but a forged cross-site POST from a browser IS
             // rejected — reject Sec-Fetch-Site: cross-site and a cross-origin
             // Origin. Header-less non-browser clients (cmislib / TCK / scripts)
-            // send neither and are allowed. All Browser Binding mutations are
-            // POST; GET reads are not state-changing.
+            // send neither and are allowed. A CMIS action is accepted on the method
+            // POST only, so this check is the one every action passes:
+            // refuseCmisActionOnAMethodThatIsNotPost above turns any other method
+            // away before it reaches a service whenever the parameters the container
+            // decoded name an action — which is where every reader of the action
+            // downstream reads it from (see that method, which says what that scope
+            // rests on). Of the requests that name an action, the only method that
+            // reaches this branch is POST written exactly: every other spelling has
+            // already left by the arm's 405 and does not arrive here. So the arm is
+            // the narrower of the two and this branch reading the method ignoring
+            // case adds no way past it. (A spelling this branch would also accept,
+            // such as a lowercase one, never gets here while it names an action; one
+            // that names no action is not this arm's subject and is handed on.)
             String csrfReason = jp.aegif.nemaki.rest.CsrfValidator.validateBrowserBindingCsrf(request);
             if (csrfReason != null) {
                 log.warn("Rejected cross-site Browser Binding POST: " + csrfReason
@@ -2737,7 +2758,124 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         return isMultipart;
     }
-    
+
+    /**
+     * Refuse a CMIS action on any method that is not POST, before the request reaches a service.
+     *
+     * <p>In the Browser Binding an action is what is sent by POST, and most of them change state:
+     * {@code delete}, {@code applyACL}, {@code updateProperties}, {@code createFolder},
+     * {@code checkOut}, {@code deleteContent}, {@code deleteTree} and the rest. A few only read:
+     * {@code query}, which the specification does post, and {@code getTypeChildren} /
+     * {@code getTypesChildren}, which the specification does not name as actions at all — they are
+     * this class's own router's addition, and the same read is asked for by a selector on a GET.
+     * Those read as well, so refusing them on a method that is not POST narrows what the binding
+     * answers; what makes that acceptable is measured rather than assumed — no sender in this
+     * repository puts an action on a GET (the UI, the tools, the fixtures and the OpenCMIS client
+     * all post). The {@code cmisaction} parameter used to be read on every method,
+     * and neither this servlet's own router ({@code routeCmisAction}) nor the handlers it calls look
+     * at the method, so a request that was not a POST carried the action out. The cross-site check
+     * above sits inside the POST branch, so such a request was not checked at all: a browser attaches
+     * the reader's own ambient credential (a cached Basic realm, a session) to a plain sub-resource
+     * load, and the mutation ran as that reader.
+     *
+     * <p>The refusal is by method and by the presence of the parameter, not by the value: no list
+     * of mutating actions is kept here. A list would leak the actions the parent servlet dispatches
+     * without this class naming them, and every action added later. An action that is unknown, is
+     * named more than once, has no value or an empty one is refused the same way — what matters is
+     * that a method which is not POST named an action at all.
+     *
+     * <p>The parameter name is the one the container has already decoded, compared without regard
+     * to case, because the readers downstream are themselves lenient: OpenCMIS's
+     * {@code HttpUtils.getStringParameter} compares the name ignoring case, so {@code CMISACTION}
+     * reaches a reader even though {@code ServletRequest#getParameter} would not find it. The
+     * container decodes the name, so a percent-encoded spelling is only a problem when what it
+     * decodes to differs in case — the case is the whole of the gap, not the encoding.
+     *
+     * <p>A GET or HEAD that carries only {@code cmisselector} — every ordinary read — is not
+     * touched, and a POST is left to the cross-site check and the routing below.
+     *
+     * @return true when the request was refused and answered, and the caller must return at once
+     */
+    private boolean refuseCmisActionOnAMethodThatIsNotPost(HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
+
+        String method = request.getMethod();
+        // The next check lets through the method POST and nothing else. An HTTP method is
+        // case-sensitive, so a lowercase "post" is a different method and is refused: it used to
+        // be let through here, which made the contract ("an action is accepted on POST only") and
+        // this code disagree, and a non-conformant spelling must not be the way in (both reviewers,
+        // R355 rounds 9 and 10 — one from each side of the disagreement). A method that cannot be
+        // read at all (null) is likewise not POST, so it leaves by the refusal after it: letting it
+        // through would be answering a read that failed with the value that means "this is the one
+        // method that may carry an action". A method that is not POST and names no action is not
+        // this arm's subject, and the second check hands it on.
+        if ("POST".equals(method)) {
+            return false;
+        }
+        if (!namesACmisAction(request)) {
+            return false;
+        }
+
+        log.warn("Refused a CMIS action on " + method + " (a CMIS action is accepted on POST only): "
+                + request.getRequestURI());
+
+        response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        response.setHeader("Allow", "POST");
+        // HEAD read exactly, for the same reason as POST above: a lowercase spelling is a
+        // different method, and the promise "a HEAD is answered with the header alone" is about
+        // HEAD. Writing the body for a spelling that is not HEAD is the conservative side anyway.
+        if (!"HEAD".equals(method)) {
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            try (java.io.PrintWriter w = response.getWriter()) {
+                w.write("{\"exception\":\"notSupported\",\"message\":"
+                        + "\"A CMIS action is accepted on POST only\"}");
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether the request names a CMIS action at all, by the container-decoded parameter name
+     * compared without regard to case. The value is not read: an action that is empty, unknown or
+     * given more than once is still an action named.
+     *
+     * <p>The names are taken from {@code getParameterMap()} — which, for the methods this arm judges,
+     * is the same map every reader of the action downstream of this one reads:
+     * {@code ServletRequest#getParameter}, which compares the name exactly, and OpenCMIS's
+     * {@code HttpUtils.getStringParameter}, which walks that map comparing it ignoring case —
+     * reading what they read is the whole reason the map is what is read here. On a POST it would
+     * not be the same map: OpenCMIS wraps the request and parses a multipart body itself, so an
+     * action sent in a body is not in the container's map at all. A POST never reaches this method - the
+     * caller returns on it before asking - so that path is not this question's subject. The map and {@code getParameterNames()} can disagree, and this class holds a
+     * wrapper that makes them disagree (it rewrites the map alone, adding a selector and dropping
+     * the action); that wrapper is built after this question is asked, and note that for it the map
+     * is the NARROWER of the two, so it is an example of the disagreement and not an argument that
+     * the map is always the wider side. The question stops being at least as wide as the readers' if
+     * a reader of the action is added that parses the query string as it was sent instead (OpenCMIS
+     * has such a parser for the GET path, and it does not read the action); a reader added there
+     * needs this one widened with it.
+     *
+     * <p>A map that answers null gives "an action may be named", not "none is": the caller refuses
+     * on this answer, and reporting a read that failed as "no action" would let the request
+     * through. The servlet contract does not allow a null here, so that arm is unreachable through
+     * a container; it is written this way so that its answer is not the permissive one. An accessor
+     * that throws instead of answering is not turned into a refusal here — the exception leaves
+     * this method, and the request reaches no service either way.
+     */
+    private static boolean namesACmisAction(HttpServletRequest request) {
+        Map<String, String[]> parameters = request.getParameterMap();
+        if (parameters == null) {
+            return true;
+        }
+        for (String name : parameters.keySet()) {
+            if (name != null && "cmisaction".equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * CMIS Operations Router: Handle missing Browser Binding operations that cause "Unknown operation" errors.
      * This method intercepts CMIS actions that NemakiWare's Browser Binding doesn't handle properly and
