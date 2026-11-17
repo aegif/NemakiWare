@@ -3230,10 +3230,11 @@ class ReleaseReadinessIsMeasuredTest {
             assertTrue(zeroLists, "every row of the RC gate's table allows condition 11, and §0 "
                     + "does not list it among the met conditions");
         } else {
-            // Of this branch, only the first arm has a control while the declaration is withheld: a control makes
-            // ONE edit, and reaching the other two needs a blocking row AND a declaration (or §0 listing it) at the
-            // same time. OH4 reaches this arm today; when condition 11 is declared again it must be re-pointed to
-            // the declaration-over-a-P1-row shape, which is what this branch mainly exists for (round 9, P3).
+            // Which arm of this branch a control reaches depends on the document's state, not on the control: OH4
+            // makes one row P1. While the declaration is withheld that reaches the first arm; while it is declared
+            // (since 2026-11-18) the same edit is a P1 row under the declaration and reaches the second, which is
+            // what this branch mainly exists for. A control makes ONE edit, so the arm that is not reached in the
+            // current state has no control of its own (R355 round 9, P3; Phase 5 round 1, P3).
             assertFalse(introWithholds, "the gate withholds condition 11 for a review over rows that block it anyway: "
                     + blocking);
             assertFalse(introDeclares, "the gate's introduction declares condition 11 met over "
