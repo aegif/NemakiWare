@@ -257,6 +257,15 @@ CouchDB の purge と接続の確認、Google Docs の承認の読み、RFC 3161
 
 ## 独立 verifier の CLI は 3.4.2 の版で配ります（中身は 3.4.1 と同じです）
 
+verifier のコードは 3.4.1 から変えていません。配布物の名前だけが 3.4.2 になります。
+
+```
+java -jar evidence-verifier-cli-3.4.2.jar verify <package.zip> --profile RECORD_LEDGER_V1
+```
+
+配布物は `evidence-verifier-cli-3.4.2.jar` と、**同じ場所に置く `lib/`**
+（`evidence-verifier-core-3.4.2.jar` と BouncyCastle 1.85 の `bcpkix` / `bcprov` / `bcutil`）です。
+
 ## 既知の欠陥（3.4.3 以降で扱います）
 
 主なものだけを挙げます。全部は [`docs/design/v3.4-release-readiness.md`](docs/design/v3.4-release-readiness.md) の表に
