@@ -355,8 +355,8 @@ class SharedTypeCacheDoesNotStarveTheSchedulerTest {
                         + SharedTypeCacheProbe.DEADLINE_MS + " ms while one miss was held inside"
                         + " the registry (it took " + r.get("otherStripeMs") + " ms): with one"
                         + " lock for every key, a miss for a type the registry does not know"
-                        + " rebuilds the whole registry inside that lock and every other miss in"
-                        + " the server waits for it");
+                        + " rebuilds the whole registry inside that lock, and every other miss"
+                        + " in the server has to take that same lock to be answered");
     }
 
     private static void aMissOnTheSameStripeWaits(String entry) {
@@ -422,12 +422,9 @@ class SharedTypeCacheDoesNotStarveTheSchedulerTest {
                 () -> "no second key on the held stripe (" + r.get("holderStripe") + ") was found"
                         + " among the ten thousand tried, so nothing here measures two keys"
                         + " sharing a stripe");
-        HarnessBroken.unless("true".equals(r.get("theOtherStripeTypeIsNotOnTheHoldersStripe")),
-                () -> "no key off the held stripe (" + r.get("holderStripe") + ") was found among"
-                        + " the ten thousand tried: with " + r.get("stripes") + " stripes, either"
-                        + " there is one stripe for everything — which is what this scenario is"
-                        + " about and would be measured, not refused — or the product's own"
-                        + " stripe function could not be read");
+        // NOT a precondition. "No key lands off the held stripe" is exactly the state this
+        // scenario is about — one lock for every key — and refusing it there made the sabotage
+        // that restores that state break the harness instead of firing the lock below.
         HarnessBroken.unless("true".equals(r.get("holderEntered")),
                 "the first request did not reach the registry, so no stripe was held while the"
                         + " other two asked");

@@ -466,8 +466,12 @@ public final class SharedTypeCacheProbe {
                 && stripeIndexOf(entry.keyFor(sameStripeType)) == holderStripe);
         report("theOtherStripeTypeIsNotOnTheHoldersStripe", otherStripeType != null
                 && stripeIndexOf(entry.keyFor(otherStripeType)) != holderStripe);
-        if (sameStripeType == null || otherStripeType == null) {
-            return;
+        // A key OFF the held stripe may not exist — that is what "one lock for every key"
+        // looks like from here, and it is the thing this scenario measures, so it is REPORTED
+        // (as a value that is not "true") rather than refused. Refusing it made the sabotage
+        // that returns one stripe for every key break the harness instead of firing the lock.
+        if (sameStripeType == null) {
+            return; // without two keys on one stripe there is no exclusion to measure
         }
 
         ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
@@ -483,17 +487,23 @@ public final class SharedTypeCacheProbe {
         report("holderEntered", holderEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS));
 
         // A miss on another stripe, while the first one is held. It must answer.
-        long otherStart = System.nanoTime();
-        CompletableFuture<Boolean> other = new CompletableFuture<>();
-        Thread.ofVirtual().name("probe-other-stripe").start(() -> {
-            try {
-                other.complete(entry.ask(service, otherStripeType) != null);
-            } catch (Throwable t) {
-                other.completeExceptionally(t);
-            }
-        });
-        report("otherStripeAnsweredWhileOneIsHeld", answered(other));
-        report("otherStripeMs", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - otherStart));
+        if (otherStripeType == null) {
+            report("otherStripeAnsweredWhileOneIsHeld", "thereIsOneStripeForEveryKey");
+            report("otherStripeMs", -1);
+        } else {
+            long otherStart = System.nanoTime();
+            CompletableFuture<Boolean> other = new CompletableFuture<>();
+            Thread.ofVirtual().name("probe-other-stripe").start(() -> {
+                try {
+                    other.complete(entry.ask(service, otherStripeType) != null);
+                } catch (Throwable t) {
+                    other.completeExceptionally(t);
+                }
+            });
+            report("otherStripeAnsweredWhileOneIsHeld", answered(other));
+            report("otherStripeMs",
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - otherStart));
+        }
 
         // A miss on the holder's own stripe, while the first one is held. It must wait.
         CountDownLatch sameStarted = new CountDownLatch(1);
