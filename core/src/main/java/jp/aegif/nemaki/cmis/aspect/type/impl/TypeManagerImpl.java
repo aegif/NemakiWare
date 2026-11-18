@@ -184,15 +184,12 @@ public class TypeManagerImpl implements TypeManager {
 	private static volatile boolean everInitialized = false;
 	// R357. The process-wide lock of the type registry. A ReentrantLock, not a monitor: on
 	// JDK 21 a virtual thread that blocks entering a monitor, or parks while holding one, pins
-	// its carrier. refreshTypes() reads the store and writes the log inside this section. With
-	// as many concurrent type creations as there are carriers, the waiters pinned every carrier
-	// but the holder's, and the holder, pinned too, parked on the log appender's lock — whose
-	// next owner was a virtual thread with no carrier left to run on. Not two monitors waiting
-	// on each other: a deadlock the scheduler made by starving itself of carriers, and the
-	// whole server stayed stopped until the JVM was restarted. A thread waiting here now parks
-	// and gives its carrier up. Reentrant because ensureInitialized() and getTypeById() call
-	// init() while holding it; non-fair and uninterruptible, like the monitor it replaces.
-	// Every acquisition is lock() / try / finally { unlock(); }.
+	// its carrier, and a pinned carrier is one the scheduler cannot use for anything else.
+	// refreshTypes() reads the store and writes the log inside this section, so the wait for it
+	// has to be one that releases the carrier: a thread waiting here parks and gives its carrier
+	// up. Reentrant because ensureInitialized() and getTypeById() call init() while holding it;
+	// non-fair and uninterruptible, like the monitor it replaces. Every acquisition is
+	// lock() / try / finally { unlock(); }.
 	private static final ReentrantLock initLock = new ReentrantLock();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
@@ -3124,8 +3121,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// still concatenates, and a WARN that a production configuration actually emits. This
 		// method is called once per object in every compiled response (241 times for a single
 		// 25-row query once ACL-in-Solr started counting the full result set), and the console
-		// appender is a process-wide serialisation point: a thread dump under load found 11 of
-		// 16 request threads queued inside that one write. Diagnostics belong behind isDebug.
+		// appender is a process-wide serialisation point: a thread dump under load found most of
+		// the request threads queued inside that one write. Diagnostics belong behind isDebug.
 		if (log.isDebugEnabled()) {
 			log.debug("OBJECT_IDENTITY: getTypeDefinition called for repositoryId=" + repositoryId
 					+ ", typeId=" + typeId); // (important-comment)

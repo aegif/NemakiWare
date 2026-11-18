@@ -55,20 +55,21 @@ import jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl;
 /**
  * The child JVM of {@link SharedTypeCacheDoesNotStarveTheSchedulerTest} (R357). Not a test.
  *
- * <p>That test starts this class in a JVM with four carriers and no compensation, once per
- * scenario and per cache, and reads the {@code PROBE key=value} lines it prints. One JVM each,
+ * <p>That test starts this class in a JVM with {@link #CARRIERS} carriers and no compensation,
+ * once per scenario and per cache, and reads the {@code PROBE key=value} lines it prints. One
+ * JVM each,
  * because the caches and their locks are process-wide. Every wait here is bounded and the main
  * thread is a platform thread, so the measurements are printed even when the virtual threads are
  * stuck; {@code System.exit} then takes them down with the JVM.
  *
  * <p>The shape is the one that stopped the server. A request asks for something the shared cache
  * does not hold, and answering the miss goes to the type registry, which takes a lock of its own
- * and, inside it, waits for something only another virtual thread can give it (in production the
- * log appender's lock; here the sentinel). The registry here is a stand-in with exactly that
- * shape, because what is measured is the caller: whether a request that waits for the registry
- * keeps its carrier. It keeps it if it holds a monitor, and filling the cache from inside
- * {@code ConcurrentHashMap.computeIfAbsent} means holding one. With as many waiting requests as
- * there are carriers, nothing is left to run the thread the holder waits for.
+ * and, inside it, waits for something only another virtual thread can give it (in production a
+ * process-wide lock of its own; here the sentinel). The registry here is a stand-in with exactly
+ * that shape, because what is measured is the caller: whether a request that waits for the
+ * registry keeps its carrier. It keeps it if it holds a monitor, and filling the cache from
+ * inside {@code ConcurrentHashMap.computeIfAbsent} means holding one. Requests that keep their
+ * carriers in there leave nothing to run the thread the holder waits for.
  *
  * <p><b>All three caches are driven.</b> The first version drove only the type definitions, and
  * a review pointed out that a regression in the children or the descendants cache — two of the
@@ -214,7 +215,7 @@ public final class SharedTypeCacheProbe {
         System.exit(0);
     }
 
-    /** Eight requests for one thing the cache does not hold, released at once. */
+    /** {@link #WORKERS} requests for one thing the cache does not hold, released at once. */
     private static void storm(RepositoryServiceImpl service, Entry entry) throws Exception {
         CountDownLatch go = new CountDownLatch(1);
         AtomicInteger finished = new AtomicInteger();
@@ -237,14 +238,14 @@ public final class SharedTypeCacheProbe {
         for (Thread w : workers) {
             w.start();
         }
-        go.countDown(); // all eight are released at once
+        go.countDown(); // all of them are released at once
 
         boolean entered = holderEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS);
         report("holderEntered", entered);
 
         // The others queue behind it ON THE STRIPE OF THEIR OWN KEY. Counting "parked on one and
         // the same blocker" was not enough: a sabotage that takes the cache lock away leaves
-        // every miss queueing on the registry's lock instead, and seven threads parked on that
+        // every miss queueing on the registry's lock instead, and the waiters parked on that
         // sibling would have satisfied the count (review of the first version). The product's own
         // lock for this key is asked, through the product's own stripe function.
         long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DEADLINE_MS);
@@ -290,7 +291,7 @@ public final class SharedTypeCacheProbe {
 
         // Rescue, so that nothing is left running: the holder is let go whether or not the
         // sentinel ever ran, and every worker is waited for — under ONE deadline, not one each,
-        // or eight stuck workers could outlast the bound the parent gives this JVM and the
+        // or the stuck workers could outlast the bound the parent gives this JVM and the
         // measurement would be reported as the harness breaking (review of the first version).
         released.countDown();
         joinByOneDeadline(workers, HOLDER_BOUND_MS);

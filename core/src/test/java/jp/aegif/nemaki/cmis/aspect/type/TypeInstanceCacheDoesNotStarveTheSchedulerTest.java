@@ -36,13 +36,15 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  * R357 — the registry's own instance-sharing cache must not stop the server either.
  *
  * <p>The caches one layer out, in {@code RepositoryServiceImpl}, were measured stopping the
- * server: four carriers pinned inside {@code ConcurrentHashMap.computeIfAbsent}, three waiting
- * for the registry's lock and the fourth holding it and parked on logback's appender lock. A
- * review of that fix found the registry's own instance cache filling itself the same way.
+ * server: requests pinned inside {@code ConcurrentHashMap.computeIfAbsent}, waiting for the
+ * registry's lock or holding it and parked on something only another virtual thread could
+ * release, with no carrier left to run that thread. A review of that fix found the registry's
+ * own instance cache filling itself the same way.
  * Nothing had been measured there, so rather than arguing that the site is safe the same rule was
  * applied to it: the instance is built outside the map, under a lock whose waiters park.
  *
- * <p>{@link TypeInstanceCacheProbe} drives it in a JVM with four carriers. The wait inside the
+ * <p>{@link TypeInstanceCacheProbe} drives it in a JVM with
+ * {@link TypeInstanceCacheProbe#CARRIERS} carriers. The wait inside the
  * computation is the registry's own type definition, whose property definitions the computation
  * reads first — <b>not</b> a log line: the first version held the builder on a {@code log.debug}
  * line and raised the logger to DEBUG to make an appender see it, which is a wait production does

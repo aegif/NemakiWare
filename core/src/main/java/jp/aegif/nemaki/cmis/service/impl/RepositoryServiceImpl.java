@@ -79,22 +79,21 @@ public class RepositoryServiceImpl implements RepositoryService,
 	// ConcurrentHashMap.computeIfAbsent, and the mapping function asked the type manager for the
 	// answer. computeIfAbsent holds the bin's monitor while it computes, so a virtual thread that
 	// went to the type registry from in there kept its carrier whatever the registry's own lock
-	// was: a thread that has a monitor on its stack cannot be unmounted. With as many concurrent
-	// misses as there were carriers, every carrier was held inside this computation and the whole
-	// server stopped answering until the JVM was restarted. The answer is now built outside the
-	// map: a hit returns from the map with no lock at all, and only a miss takes a lock, which
-	// parks its waiters and gives their carriers up.
+	// was: a thread that has a monitor on its stack cannot be unmounted. Requests that waited in
+	// there held their carriers, the scheduler was left with nothing to run what the holders were
+	// waiting for, and the whole server stopped answering until the JVM was restarted. The answer
+	// is now built outside the map: a hit returns from the map with no lock at all, and only a
+	// miss takes a lock, which parks its waiters and gives their carriers up.
 	//
 	// ONE lock for all three caches was the first shape of this fix, and a review named what that
 	// costs. Answering a miss for a type the registry does not know makes the registry rebuild
 	// itself, inside the lock, and absence is not cached — so every miss in the server, in any of
 	// the three caches and for any repository, had to take the lock those rebuilds are held in,
 	// and one signed-in user naming type ids that do not exist can keep it held. Before this fix
-	// those misses sat on different bins of the map and ran at once. WHAT WAS MEASURED, on an
-	// isolated image: the one-lock version still answered an unrelated miss quickly — the lock is
-	// non-fair, so an arriving miss barges between rebuilds, and in a small registry a rebuild is
-	// short. So this is a structural dependence, not a measured queueing delay; the waiting under
-	// a large type registry is not measured (the numbers are in the private evidence).
+	// those misses sat on different bins of the map and ran at once. What the split removes is the
+	// DEPENDENCE on whether an arriving miss can barge in between those rebuilds: the lock is
+	// non-fair, so whether an unrelated miss waits at all was never something the one-lock shape
+	// decided. The waiting under a large type registry is not measured.
 	//
 	// The lock is split BY CACHE KEY: a fixed array of stripes, the stripe chosen from the key,
 	// so that a miss excludes the misses whose key lands on the same stripe — the same question
@@ -183,7 +182,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// R357. The miss is answered under the stripe of its own key, not inside the map's
-		// mapping function and not behind the misses of other keys.
+		// mapping function. What waits behind it is a miss whose key lands on the SAME stripe.
 		ReentrantLock stripe = stripeOf(cacheKey);
 		stripe.lock();
 		try {
@@ -245,7 +244,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// R357. The miss is answered under the stripe of its own key, not inside the map's
-		// mapping function and not behind the misses of other keys.
+		// mapping function. What waits behind it is a miss whose key lands on the SAME stripe.
 		ReentrantLock stripe = stripeOf(cacheKey);
 		stripe.lock();
 		try {
@@ -284,7 +283,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 		}
 
 		// R357. The miss is answered under the stripe of its own key, not inside the map's
-		// mapping function and not behind the misses of other keys.
+		// mapping function. What waits behind it is a miss whose key lands on the SAME stripe.
 		ReentrantLock stripe = stripeOf(cacheKey);
 		stripe.lock();
 		try {

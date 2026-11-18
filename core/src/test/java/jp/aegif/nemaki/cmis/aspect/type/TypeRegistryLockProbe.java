@@ -55,18 +55,18 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 /**
  * The child JVM of {@link TypeRegistryLockDoesNotStarveTheSchedulerTest} (R357). Not a test.
  *
- * <p>That test starts this class in a JVM with four carriers and no compensation, once per
- * scenario ({@code storm}, {@code nested}, {@code failure}), and reads the
+ * <p>That test starts this class in a JVM with {@link #CARRIERS} carriers and no compensation,
+ * once per scenario ({@code storm}, {@code nested}, {@code failure}), and reads the
  * {@code PROBE key=value} lines it prints. One JVM per scenario because the lock is
  * process-wide: a scenario that leaves it held would otherwise decide the next one. Every wait here is bounded, and the main thread
  * is a platform thread, so the measurements are printed even when the virtual threads are
  * stuck; {@code System.exit} then takes the stuck ones down with the JVM.
  *
  * <p>The shape is the one that stopped the server. One refresh holds the registry lock and,
- * inside it, waits for something only another virtual thread can give it (in production the
- * log appender's lock, whose next owner had no carrier; here the sentinel). The other workers
- * queue on the same lock. A monitor pins a carrier per waiter, so with as many workers as
- * carriers nothing is left for the sentinel and the holder waits for ever.
+ * inside it, waits for something only another virtual thread can give it (in production a
+ * process-wide lock of its own, whose next owner had no carrier; here the sentinel). The other
+ * workers queue on the same lock. A monitor pins a carrier per waiter, so the waiters can leave
+ * the scheduler with nothing to run the sentinel on, and the holder waits for ever.
  */
 public final class TypeRegistryLockProbe {
 
@@ -130,7 +130,7 @@ public final class TypeRegistryLockProbe {
         System.exit(0);
     }
 
-    /** Eight refreshes released at once, one of them held inside the lock. */
+    /** {@link #WORKERS} refreshes released at once, one of them held inside the lock. */
     private static void storm(TypeManagerImpl tm, Set<String> expected) throws Exception {
         CountDownLatch go = new CountDownLatch(1);
         AtomicInteger finished = new AtomicInteger();

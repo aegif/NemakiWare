@@ -196,7 +196,7 @@ public final class TypeInstanceCacheProbe {
         System.exit(0);
     }
 
-    /** Eight requests for one shared instance the cache does not hold, released at once. */
+    /** {@link #WORKERS} requests for one shared instance the cache does not hold, released at once. */
     private static void storm(TypeManagerImpl tm) throws Exception {
         CountDownLatch go = new CountDownLatch(1);
         AtomicInteger finished = new AtomicInteger();
@@ -219,7 +219,7 @@ public final class TypeInstanceCacheProbe {
         for (Thread w : workers) {
             w.start();
         }
-        go.countDown(); // all eight are released at once
+        go.countDown(); // all of them are released at once
 
         report("holderEntered", holderEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS));
 

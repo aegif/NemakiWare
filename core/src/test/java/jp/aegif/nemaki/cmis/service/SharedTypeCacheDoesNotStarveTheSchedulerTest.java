@@ -43,28 +43,30 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  * <p>The three static caches of {@code RepositoryServiceImpl} filled themselves from inside
  * {@code ConcurrentHashMap.computeIfAbsent}, and the mapping function asked the type registry for
  * the answer. computeIfAbsent holds the bin's monitor for as long as it computes, and a virtual
- * thread with a monitor on its stack cannot be unmounted, whatever it then waits on. Eight
- * concurrent requests for a type the cache did not hold — which any signed-in user can send,
- * because the type is resolved while the request's properties are read, before the permission
- * checks — took every carrier and the whole server stopped answering, with the JVM never
- * restarted. Making the registry's own lock a parking lock (the first half of R357) did not help:
+ * thread with a monitor on its stack cannot be unmounted, whatever it then waits on. Requests
+ * for a type the cache did not hold — which any signed-in user can send, because the type is
+ * resolved while the request's properties are read, before the permission checks — held their
+ * carriers in there, nothing was left to run what they were waiting for, and the whole server
+ * stopped answering, with the JVM never restarted. Making the registry's own lock a parking lock (the first half of R357) did not help:
  * the monitor was the caller's, not the registry's.
  *
  * <p>Building the answer under ONE lock for all three caches (the second half) stopped that, and
  * a review named what it costs: a miss for a type the registry does not know makes the registry
  * rebuild itself inside the lock, and absence is not cached, so every miss in the server had to
  * take the lock those rebuilds are held in, and one signed-in user naming type ids that do not
- * exist can keep it held. <b>Measured, on an isolated image: the one-lock version still answered
- * an unrelated miss quickly</b> — the lock is non-fair, so an arriving miss barges between
- * rebuilds. The dependence is structural, not a measured delay. The lock is now one stripe per
+ * exist can keep it held. <b>What the split removes is the dependence on whether an arriving
+ * miss can barge in between those rebuilds</b> — the lock is non-fair, so whether an unrelated
+ * miss waits at all was never something the one-lock shape decided, and the waiting under a
+ * large type registry is not measured. The lock is now one stripe per
  * cache KEY, so a miss excludes the misses whose key lands on the same stripe: the same question
  * always, another question 1 in 32 of the time (and a caller who computes the public hash can
  * choose to share a stripe).
  *
  * <h2>How this measures it</h2>
  *
- * <p>{@link SharedTypeCacheProbe} runs in a JVM of its own with four carriers and no
- * compensation. Its registry stand-in takes a lock of its own for the held type and the first
+ * <p>{@link SharedTypeCacheProbe} runs in a JVM of its own, with
+ * {@link SharedTypeCacheProbe#CARRIERS} carriers and no compensation. Its registry stand-in
+ * takes a lock of its own for the held type and the first
  * answer waits inside it for a sentinel virtual thread — the shape of the production wait. With
  * the answer built outside the map, the other requests park and give their carriers up, so the
  * sentinel runs; with the answer built inside computeIfAbsent they keep them and it never does.
@@ -404,9 +406,9 @@ class SharedTypeCacheDoesNotStarveTheSchedulerTest {
      *
      * <p>"A request reached the registry" is NOT a precondition here. It was, and a sabotage that
      * puts the computation back inside the map made it false — the thread computing inside the
-     * bin's monitor parked on the log appender's lock, pinned, with the other requests pinned
-     * behind it on that monitor, so nothing was left to run the owner of the appender's lock and
-     * the registry was never reached at all. That is R357 reproducing in full, and the runner
+     * bin's monitor parked, pinned, on something only another virtual thread could release, with
+     * the other requests pinned behind it on that monitor, so nothing was left to run that
+     * thread and the registry was never reached at all. That is R357 reproducing in full, and the runner
      * rightly scored the round as the harness breaking rather than as the lock firing. It is a
      * liveness claim like the others, so it is asserted above.
      */

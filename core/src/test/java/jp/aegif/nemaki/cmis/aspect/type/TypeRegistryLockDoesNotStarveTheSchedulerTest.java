@@ -38,19 +38,21 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  *
  * <h2>What happened</h2>
  *
- * <p>On the Playwright gate a test that creates five types at once stopped the server for
- * good. Reproduced with four CPUs and eight concurrent creations, the thread dump showed every
- * carrier pinned: three virtual threads blocked entering {@code synchronized (initLock)} in
- * {@code refreshTypes()}, and the fourth holding it while parked on the log appender's lock,
- * whose next owner was a virtual thread with no carrier left to run on. Not two monitors
- * waiting on each other: the scheduler starved itself. A machine with more cores never showed
- * it, which is why nothing but a JVM with few carriers can lock it.
+ * <p>On the Playwright gate a test that creates types concurrently stopped the server for
+ * good, and it was reproduced in an isolated image. The thread dump showed the carriers
+ * pinned: virtual threads blocked entering {@code synchronized (initLock)} in
+ * {@code refreshTypes()}, and the one holding it parked on something only another virtual
+ * thread could release, with no carrier left to run that thread. Not two monitors waiting on
+ * each other: the scheduler starved itself of carriers, which is why only a JVM whose carriers
+ * can all be taken shows it — the environment the probe below builds on purpose.
  *
  * <h2>How this measures it</h2>
  *
- * <p>{@link TypeRegistryLockProbe} runs in a JVM of its own with four carriers and no
- * compensation (the scheduler's parallelism and its maximum pool size are both four). Eight
- * refreshes are released at once; the store answer of the first one waits, inside the lock,
+ * <p>{@link TypeRegistryLockProbe} runs in a JVM of its own with
+ * {@link TypeRegistryLockProbe#CARRIERS} carriers and no compensation (the scheduler's
+ * parallelism and its maximum pool size are set from that same constant).
+ * {@link TypeRegistryLockProbe#WORKERS} refreshes are released at once; the store answer of
+ * the first one waits, inside the lock,
  * for a sentinel virtual thread to let it go — the shape of the production wait. With a lock
  * that parks its waiters the sentinel runs at once; with the monitor it never gets a carrier.
  * Every wait in the probe is bounded, so it always reports, and the test JVM starts no worker
