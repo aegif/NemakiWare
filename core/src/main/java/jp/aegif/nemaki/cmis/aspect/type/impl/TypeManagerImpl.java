@@ -3806,12 +3806,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * <p><b>Nothing here was measured stopping the server.</b> The stop was measured one layer
 	 * out, in the shared caches of RepositoryServiceImpl; a review of that fix found this site
 	 * filling itself the same way with nothing measured about it, and the rule was applied rather
-	 * than an argument made for why it is safe. What the first version of this comment said —
-	 * that the computation reaches a log write which is not level-guarded — is wrong about the
-	 * appender: the unguarded calls in it are {@code log.debug}, and at the shipped level for
-	 * {@code jp.aegif.nemaki} (INFO) logback drops them before any appender sees them. Measured
-	 * in {@code TypeInstanceCacheProbe}, every run: one build of a shared instance writes nothing
-	 * at INFO or above.
+	 * than an argument made for why it is safe.
+	 *
+	 * <p>What reaches an appender from inside this computation, at the shipped level for
+	 * {@code jp.aegif.nemaki} (INFO): the two {@code log.warn} calls
+	 * {@code getSharedPropertyDefinition} makes when it has to correct a CMIS property's
+	 * inherited flag, and the {@code log.error} of this method's own catch. The {@code log.debug}
+	 * calls, guarded or not, are dropped before any appender. {@code TypeInstanceCacheProbe}
+	 * reports how many lines at INFO or above one build writes, and <b>in that probe's fixture it
+	 * is 0</b> — its type carries one property that is not a {@code cmis:} one, so the correcting
+	 * branch is never entered. That is a fact about the fixture, not about every build, and no
+	 * lock asserts it (a review of the first version of this comment, which said the unguarded
+	 * calls here are only {@code log.debug}, found both the over-claim and the missing scope).
 	 *
 	 * <p><b>The clearing side is not under this lock</b>: {@code refreshTypes()} and
 	 * {@code invalidateTypeDefinitionCache()} empty these caches holding only the registry's own
@@ -3853,8 +3859,10 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// shared caches of RepositoryServiceImpl, measured in a thread dump. A review of that
 		// fix found this site, where nothing has been measured — so the same rule is applied
 		// rather than an argument made for why it is safe here. The debug lines in this
-		// computation are NOT part of that: at the shipped level logback drops them before any
-		// appender, which TypeInstanceCacheProbe measures and reports on every run.
+		// computation are not what reaches an appender at the shipped level — the warnings
+		// getSharedPropertyDefinition writes when it corrects an inherited flag are, and so is
+		// this method's own log.error. TypeInstanceCacheProbe reports how many lines at INFO or
+		// above one build writes; 0 in ITS fixture, whose type has no cmis: property to correct.
 		TypeDefinition result = repoCache.get(cacheKey);
 		if (result == null) {
 			sharedInstanceLock.lock();

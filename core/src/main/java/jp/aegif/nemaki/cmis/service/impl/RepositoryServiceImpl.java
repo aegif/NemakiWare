@@ -85,19 +85,28 @@ public class RepositoryServiceImpl implements RepositoryService,
 	// map: a hit returns from the map with no lock at all, and only a miss takes a lock, which
 	// parks its waiters and gives their carriers up.
 	//
-	// ONE lock for all three caches was the first shape of this fix, and a review measured what
-	// that cost. Answering a miss for a type the registry does not know makes the registry
-	// rebuild itself, inside the lock, and absence is not cached — so one signed-in user naming
-	// type ids that do not exist put every miss in the server, in any of the three caches and for
-	// any repository, behind an unbounded queue of whole-registry rebuilds. Before this fix those
-	// misses sat on different bins of the map and ran at once. The lock is therefore split BY
-	// CACHE KEY: a fixed array of stripes, the stripe chosen from the key, so that a miss
-	// excludes the misses asking the same question and no others. A miss takes exactly one stripe
-	// and never a second one while it holds it; clearing takes all of them in index order.
+	// ONE lock for all three caches was the first shape of this fix, and a review named what that
+	// costs. Answering a miss for a type the registry does not know makes the registry rebuild
+	// itself, inside the lock, and absence is not cached — so every miss in the server, in any of
+	// the three caches and for any repository, had to take the lock those rebuilds are held in,
+	// and one signed-in user naming type ids that do not exist can keep it held. Before this fix
+	// those misses sat on different bins of the map and ran at once. WHAT WAS MEASURED, on an
+	// isolated image: the one-lock version still answered an unrelated miss quickly — the lock is
+	// non-fair, so an arriving miss barges between rebuilds, and in a small registry a rebuild is
+	// short. So this is a structural dependence, not a measured queueing delay; the waiting under
+	// a large type registry is not measured (the numbers are in the private evidence).
+	//
+	// The lock is split BY CACHE KEY: a fixed array of stripes, the stripe chosen from the key,
+	// so that a miss excludes the misses whose key lands on the same stripe — the same question
+	// always, and other questions 1 in 32 of the time. The hash, the spread and the mask are
+	// public, so a caller CAN compute a type id that shares a stripe with a key it wants to wait
+	// behind; what the split removes is the one lock every miss in the server had to take, not
+	// the ability to queue behind a chosen key. A miss takes exactly one stripe and never a
+	// second one while it holds it; clearing takes all of them in index order.
 	//
 	// The order between these stripes and the registry's own locks is one-way, and it is the call
 	// direction that makes it so: this class calls the type manager, and the type manager does
-	// not call this class (grep for RepositoryService in TypeManagerImpl: one comment, no code).
+	// not call this class (grep for RepositoryService in TypeManagerImpl: two comments, no code).
 	// So a stripe can be held while initLock or sharedInstanceLock is taken, and never the other
 	// way round. Nothing inside a stripe may be called from a mapping function of these maps
 	// again.
@@ -120,9 +129,14 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 * of them builds the answer.
 	 *
 	 * <p>The key's hash is spread before it is masked, as {@link ConcurrentHashMap} does with its
-	 * own: these keys are a repository id, a type id and the paging arguments joined by colons,
-	 * so they differ in their later characters, and a plain low-bit mask would put whole families
-	 * of them on one stripe. No map of locks per key — that is a second cache, with the same
+	 * own. MEASURED over 3,200 keys of each shape, because the first version of this comment gave
+	 * a reason that does not hold ("a plain mask would put whole families on one stripe" — it does
+	 * not; both forms use all 32): for the children and descendants keys, which end in the paging
+	 * arguments, spreading is markedly more even (min 68 / max 121 against min 14 / max 188); for
+	 * the type-definition keys, which end in the type id, the plain mask is slightly better (min 10
+	 * / max 201 against min 7 / max 230). Spreading is kept for the two shapes it helps and for
+	 * agreement with the map's own hashing. No map of locks per key — that is a second cache,
+	 * with the same
 	 * unbounded growth a key-space the caller chooses would give it. (The caller has to be
 	 * signed in: the type path was measured refusing anonymous requests at the door.)
 	 */

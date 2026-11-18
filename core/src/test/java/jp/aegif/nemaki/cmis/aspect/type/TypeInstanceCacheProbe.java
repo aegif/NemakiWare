@@ -80,9 +80,12 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
  * line.</b> The first version held the builder on a {@code log.debug} line the computation writes
  * without a level guard, and raised the logger to DEBUG so that an appender would see it — a wait
  * production does not have, because {@code logback.xml} ships {@code jp.aegif.nemaki} at INFO and
- * drops every one of those lines before any appender (D35 Section 5). Measured in this fixture:
- * <b>the computation writes nothing at INFO or above</b>, reported every run as
- * {@code defaultLevelLinesInOneBuild}. So the lever is the object the computation reads — the
+ * drops every one of those lines before any appender (D35 Section 5). What the shipped level DOES
+ * let through from inside the computation is the warning {@code getSharedPropertyDefinition}
+ * writes when it corrects a CMIS property's inherited flag — <b>and this fixture cannot reach
+ * it</b>: its type carries one property, which is not a {@code cmis:} one. So the count reported
+ * every run as {@code defaultLevelLinesInOneBuild} is 0 <b>for this fixture</b>, which is why the
+ * lever is the object and not a line. So the lever is the object the computation reads — the
  * TypeDefinition this probe installs in the registry, whose {@code getPropertyDefinitions()}, the
  * first thing {@code ensureConsistentPropertyDefinitions} calls, holds the first caller until it
  * is released. What production can make the builder wait on there is the other map's bin monitors

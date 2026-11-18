@@ -46,10 +46,13 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  * computation is the registry's own type definition, whose property definitions the computation
  * reads first — <b>not</b> a log line: the first version held the builder on a {@code log.debug}
  * line and raised the logger to DEBUG to make an appender see it, which is a wait production does
- * not have, because the shipped level for {@code jp.aegif.nemaki} is INFO (D35 Section 5). The
- * probe measures and reports that this computation writes nothing at INFO or above. With the
- * lock, the other requests queue on it and a sentinel virtual thread still runs; with
- * computeIfAbsent they hold a monitor each and it does not.
+ * not have, because the shipped level for {@code jp.aegif.nemaki} is INFO (D35 Section 5, which
+ * asked for a line the shipped level lets through; there is one — the inherited-flag correction
+ * warning — but this probe's fixture cannot reach it, so the lever is the object instead and the
+ * deviation is recorded rather than hidden). The probe reports how many lines at INFO or above
+ * one build writes, which is 0 <b>in this fixture</b>; nothing asserts it, and it is not a claim
+ * about every build. With the lock, the other requests queue on it and a sentinel virtual thread
+ * still runs; with computeIfAbsent they hold a monitor each and it does not.
  */
 class TypeInstanceCacheDoesNotStarveTheSchedulerTest {
 

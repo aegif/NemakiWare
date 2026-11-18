@@ -49,11 +49,15 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  * the monitor was the caller's, not the registry's.
  *
  * <p>Building the answer under ONE lock for all three caches (the second half) stopped that, and
- * a review measured what it cost: a miss for a type the registry does not know makes the registry
- * rebuild itself inside the lock, and absence is not cached, so every miss in the server queued
- * behind an unbounded line of whole-registry rebuilds that one signed-in user could keep full.
- * The lock is now one stripe per cache KEY, so a miss excludes the misses asking the same
- * question and no others.
+ * a review named what it costs: a miss for a type the registry does not know makes the registry
+ * rebuild itself inside the lock, and absence is not cached, so every miss in the server had to
+ * take the lock those rebuilds are held in, and one signed-in user naming type ids that do not
+ * exist can keep it held. <b>Measured, on an isolated image: the one-lock version still answered
+ * an unrelated miss quickly</b> — the lock is non-fair, so an arriving miss barges between
+ * rebuilds. The dependence is structural, not a measured delay. The lock is now one stripe per
+ * cache KEY, so a miss excludes the misses whose key lands on the same stripe: the same question
+ * always, another question 1 in 32 of the time (and a caller who computes the public hash can
+ * choose to share a stripe).
  *
  * <h2>How this measures it</h2>
  *
@@ -231,6 +235,26 @@ class SharedTypeCacheDoesNotStarveTheSchedulerTest {
     @DisplayName("a type descendants miss for a key on the same stripe waits for the one being answered")
     void aDescendantsMissOnTheSameStripeWaitsForTheOneBeingAnswered() {
         aMissOnTheSameStripeWaits("descendants");
+    }
+
+    // ------------------------------------------------------------------ the number of stripes
+
+    /**
+     * The stripe count itself. A review of this batch measured that <b>every one of the other
+     * tests passes with the array cut to 2</b>: the probe searches for a key on the held stripe
+     * and a key off it, and both exist at any size above 1, so the separation they measure says
+     * nothing about how many stripes there are. The fix, the owner's instruction and four places
+     * in the documents all say 32, and nothing read it.
+     */
+    @Test
+    @DisplayName("the shared type caches are striped the fixed 32 ways the fix and the documents state")
+    void theSharedTypeCachesHaveTheFixedThirtyTwoStripes() {
+        Map<String, String> r = storm("definition");
+        assertEquals("32", r.get("stripes"),
+                "the product answers its misses under " + r.get("stripes") + " stripes, and the"
+                        + " fix, the documents and the owner's instruction all say 32. With fewer,"
+                        + " the two keys the other tests look for still exist, so nothing else"
+                        + " here would notice");
     }
 
     // --------------------------------------------------- the stale entry, in the definitions only
