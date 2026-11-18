@@ -123,7 +123,8 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 * own: these keys are a repository id, a type id and the paging arguments joined by colons,
 	 * so they differ in their later characters, and a plain low-bit mask would put whole families
 	 * of them on one stripe. No map of locks per key — that is a second cache, with the same
-	 * unbounded growth a key-space an unauthenticated caller can choose would give it.
+	 * unbounded growth a key-space the caller chooses would give it. (The caller has to be
+	 * signed in: the type path was measured refusing anonymous requests at the door.)
 	 */
 	private static ReentrantLock stripeOf(String cacheKey) {
 		int h = cacheKey.hashCode();
