@@ -439,7 +439,9 @@ public final class SharedTypeCacheProbe {
     }
 
     /**
-     * What the stripes are for: a miss for one key must not wait for a miss for another.
+     * What the stripes are for: a miss for one key must not wait for a miss for a key on
+     * ANOTHER stripe. Two keys that share a stripe do wait for each other, which this scenario
+     * also measures.
      *
      * <p>One request is held inside the registry, holding the stripe of its key. A second request
      * asks for a key that lands on THAT stripe, and must wait — two requests for the same stripe

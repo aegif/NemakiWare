@@ -33,8 +33,10 @@ import org.junit.jupiter.api.Test;
 import jp.aegif.nemaki.util.test.HarnessBroken;
 
 /**
- * R357 — a miss in the shared type caches must not stop the server, and must not queue behind the
- * misses of unrelated keys.
+ * R357 — a miss in the shared type caches must not stop the server, and must not queue behind a
+ * miss for a key on ANOTHER stripe. Two keys that share a stripe still wait for each other —
+ * that is what the tests below require, and a caller who computes the public hash can choose to
+ * share one.
  *
  * <h2>What happened</h2>
  *
