@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -74,6 +75,19 @@ public class RepositoryServiceImpl implements RepositoryService,
 	private static final ConcurrentHashMap<String, TypeDefinitionList> SHARED_TYPE_CHILDREN = new ConcurrentHashMap<>();
 	private static final ConcurrentHashMap<String, List<TypeDefinitionContainer>> SHARED_TYPE_DESCENDANTS = new ConcurrentHashMap<>();
 
+	// R357. The three caches above once filled themselves from inside
+	// ConcurrentHashMap.computeIfAbsent, and the mapping function asked the type manager for the
+	// answer. computeIfAbsent holds the bin's monitor while it computes, so a virtual thread that
+	// went to the type registry from in there kept its carrier whatever the registry's own lock
+	// was: a thread that has a monitor on its stack cannot be unmounted. With as many concurrent
+	// misses as there were carriers, every carrier was held inside this computation and the whole
+	// server stopped answering until the JVM was restarted. The answer is now built outside the
+	// map: a hit returns from the map with no lock at all, and only a miss takes this lock, which
+	// parks its waiters and gives their carriers up. One lock for all three caches, because one
+	// miss can refresh the registry the other two read. Non-fair, like the registry's own lock.
+	// Nothing inside this lock may be called from a mapping function of these maps again.
+	private static final ReentrantLock SHARED_TYPE_CACHE_LOCK = new ReentrantLock();
+
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeManager typeManager;
 	private TypeService typeService;
@@ -98,11 +112,27 @@ public class RepositoryServiceImpl implements RepositoryService,
 				if (log.isDebugEnabled()) {
 					log.debug("Cache fix: TypeDefinition for " + typeId + " has 0 properties, invalidating stale cache entry");
 				}
-				SHARED_TYPE_DEFINITIONS.remove(cacheKey);
+				// Only if it is still the stale one. An unconditional remove drops whatever
+				// another request put there in the meantime, and that request has already
+				// handed its answer out — two callers would then hold different instances of
+				// one type, which is what they compare by identity (both reviews).
+				SHARED_TYPE_DEFINITIONS.remove(cacheKey, cached);
+				cached = null;
 			}
 		}
+		if (cached != null) {
+			return cached;
+		}
 
-		return SHARED_TYPE_DEFINITIONS.computeIfAbsent(cacheKey, k -> {
+		// R357. The miss is answered under the lock, not inside the map's mapping function.
+		SHARED_TYPE_CACHE_LOCK.lock();
+		try {
+			// Another miss may have filled it while this one waited.
+			TypeDefinition filled = SHARED_TYPE_DEFINITIONS.get(cacheKey);
+			if (filled != null) {
+				return filled;
+			}
+
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared TypeDefinition for " + typeId);
 			}
@@ -132,52 +162,117 @@ public class RepositoryServiceImpl implements RepositoryService,
 					log.warn("Caching custom type " + typeId + " with 0 properties - may indicate initialization issue");
 				}
 			}
+			if (td == null) {
+				// Absence is not cached: the registry may know the type after the next refresh.
+				return null;
+			}
+			SHARED_TYPE_DEFINITIONS.put(cacheKey, td);
 			return td;
-		});
+		} finally {
+			SHARED_TYPE_CACHE_LOCK.unlock();
+		}
 	}
-	
+
 	/**
 	 * Get shared TypeDefinitionList instance from cache or create and cache it
 	 */
 	private TypeDefinitionList getSharedTypeChildren(CallContext callContext, String repositoryId, String typeId,
 			Boolean includePropertyDefinitions, BigInteger maxItems, BigInteger skipCount) {
 		String cacheKey = repositoryId + ":" + typeId + ":" + includePropertyDefinitions + ":" + maxItems + ":" + skipCount;
-		return SHARED_TYPE_CHILDREN.computeIfAbsent(cacheKey, k -> {
+		TypeDefinitionList cached = SHARED_TYPE_CHILDREN.get(cacheKey);
+		if (cached != null) {
+			return cached;
+		}
+
+		// R357. The miss is answered under the lock, not inside the map's mapping function.
+		SHARED_TYPE_CACHE_LOCK.lock();
+		try {
+			// Another miss may have filled it while this one waited.
+			TypeDefinitionList filled = SHARED_TYPE_CHILDREN.get(cacheKey);
+			if (filled != null) {
+				return filled;
+			}
+
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared TypeDefinitionList for " + typeId);
 			}
-			
+
 			boolean includeProps = (includePropertyDefinitions == null) ? false : includePropertyDefinitions.booleanValue();
-			return typeManager.getTypesChildren(callContext, repositoryId, typeId, includeProps, maxItems, skipCount);
-		});
+			TypeDefinitionList children =
+					typeManager.getTypesChildren(callContext, repositoryId, typeId, includeProps, maxItems, skipCount);
+			if (children == null) {
+				return null;
+			}
+			SHARED_TYPE_CHILDREN.put(cacheKey, children);
+			return children;
+		} finally {
+			SHARED_TYPE_CACHE_LOCK.unlock();
+		}
 	}
-	
+
 	/**
 	 * Get shared TypeDefinitionContainer list instance from cache or create and cache it
 	 */
 	private List<TypeDefinitionContainer> getSharedTypeDescendants(String repositoryId, String typeId,
 			BigInteger depth, Boolean includePropertyDefinitions) {
 		String cacheKey = repositoryId + ":" + typeId + ":" + depth + ":" + includePropertyDefinitions;
-		return SHARED_TYPE_DESCENDANTS.computeIfAbsent(cacheKey, k -> {
+		List<TypeDefinitionContainer> cached = SHARED_TYPE_DESCENDANTS.get(cacheKey);
+		if (cached != null) {
+			return cached;
+		}
+
+		// R357. The miss is answered under the lock, not inside the map's mapping function.
+		SHARED_TYPE_CACHE_LOCK.lock();
+		try {
+			// Another miss may have filled it while this one waited.
+			List<TypeDefinitionContainer> filled = SHARED_TYPE_DESCENDANTS.get(cacheKey);
+			if (filled != null) {
+				return filled;
+			}
+
 			if (log.isDebugEnabled()) {
 				log.debug("Creating shared TypeDefinitionContainer list for " + typeId);
 			}
-			
-			return typeManager.getTypesDescendants(repositoryId, typeId, depth, includePropertyDefinitions);
-		});
+
+			List<TypeDefinitionContainer> descendants =
+					typeManager.getTypesDescendants(repositoryId, typeId, depth, includePropertyDefinitions);
+			if (descendants == null) {
+				return null;
+			}
+			SHARED_TYPE_DESCENDANTS.put(cacheKey, descendants);
+			return descendants;
+		} finally {
+			SHARED_TYPE_CACHE_LOCK.unlock();
+		}
 	}
-	
+
 	/**
 	 * Clear shared caches when types are modified
+	 *
+	 * <p>Under the same lock as a miss. While the answers were built inside
+	 * {@code computeIfAbsent}, the map's own bin lock held these two apart <em>for any bin the
+	 * clear had not walked past yet</em>: {@code ConcurrentHashMap.clear()} walks the table in
+	 * index order and locks each bin as it goes, so a computation in flight either made it wait or
+	 * had already been passed by it. Narrower than it sounds — the window existed before this
+	 * change too, for bins the clear had gone by — and building the answer outside the map removed
+	 * the bin lock from the picture entirely: a miss that read the registry before an
+	 * administrator's change could publish the old answer after the clear, and every later request
+	 * would read what the change removed, until the next type change or a restart. Both reviews of
+	 * this fix named it first.
 	 */
 	private void clearSharedTypeCaches() {
 		if (log.isDebugEnabled()) {
 			log.debug("Clearing all shared type caches");
 		}
-		
-		SHARED_TYPE_DEFINITIONS.clear();
-		SHARED_TYPE_CHILDREN.clear();
-		SHARED_TYPE_DESCENDANTS.clear();
+
+		SHARED_TYPE_CACHE_LOCK.lock();
+		try {
+			SHARED_TYPE_DEFINITIONS.clear();
+			SHARED_TYPE_CHILDREN.clear();
+			SHARED_TYPE_DESCENDANTS.clear();
+		} finally {
+			SHARED_TYPE_CACHE_LOCK.unlock();
+		}
 	}
 
 	@Override

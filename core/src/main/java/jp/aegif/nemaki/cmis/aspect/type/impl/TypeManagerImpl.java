@@ -3789,8 +3789,26 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Root Cause: DataUtil.copyTypeDefinition() creates new TypeDefinition instances every time,
 	 * breaking TCK object identity comparison: tree.getItem() == reloadedType
 	 */
-	private static final Map<String, Map<String, TypeDefinition>> SHARED_TYPE_DEFINITIONS = 
+	private static final Map<String, Map<String, TypeDefinition>> SHARED_TYPE_DEFINITIONS =
 		new ConcurrentHashMap<>();
+
+	/**
+	 * R357. The lock the <em>type definition</em> instance cache above is filled under — not the
+	 * PropertyDefinition one, which still fills itself inside its map's mapping function (its
+	 * computation only stores an instance that is already built, and the log line in it is
+	 * level-guarded; with the shipped level at INFO it is not written). A ReentrantLock, not the
+	 * map's own bin monitor: building a shared instance reaches a log write that is not
+	 * level-guarded, and a virtual thread that holds a monitor cannot be unmounted while it waits
+	 * for the appender. Non-fair and uninterruptible, like the registry's own lock; a hit is
+	 * answered without taking it at all.
+	 *
+	 * <p><b>The clearing side is not under this lock</b>: {@code refreshTypes()} and
+	 * {@code invalidateTypeDefinitionCache()} empty these caches holding only the registry's own
+	 * lock, so a build in flight can still publish into a map the clear has already dropped, and
+	 * a request after an invalidation can still be handed an instance the registry no longer
+	 * holds. Reviewed, measured by neither, and recorded rather than changed here.
+	 */
+	private static final ReentrantLock sharedInstanceLock = new ReentrantLock();
 	
 	/**
 	 * Get or create shared TypeDefinition instance for consistent object identity
@@ -3810,18 +3828,41 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		Map<String, TypeDefinition> repoCache = SHARED_TYPE_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
 		
-		// Return existing shared instance or create new one
-		TypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-			log.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");
-		} // (important-comment)
-			
-			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
-			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
-			log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(consistentTypeDefinition) + ")"); // (important-comment)
-			return consistentTypeDefinition;
-		});
-		
+		// Return existing shared instance or create new one.
+		//
+		// R357. The instance is built OUTSIDE the map, under sharedInstanceLock. It used to be
+		// built inside repoCache.computeIfAbsent, and the mapping function reaches
+		// ensureConsistentPropertyDefinitions, which writes the log on paths that are not
+		// level-guarded (getSharedPropertyDefinition warns whenever it has to correct an
+		// inherited flag). computeIfAbsent holds the bin's monitor while it computes, and a
+		// virtual thread with a monitor on its stack cannot be unmounted: the holder would park
+		// on the log appender's lock while pinned, and the requests for the same type would pin
+		// a carrier each on the bin's monitor behind it. That is the shape that stopped the
+		// server one layer out, in the shared caches of RepositoryServiceImpl, measured in a
+		// thread dump. A review of that fix found this site, where nothing has been measured —
+		// so the same rule is applied rather than an argument made for why it is safe here.
+		TypeDefinition result = repoCache.get(cacheKey);
+		if (result == null) {
+			sharedInstanceLock.lock();
+			try {
+				result = repoCache.get(cacheKey); // another request may have filled it
+				if (result == null) {
+					if (log.isDebugEnabled()) {
+						log.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");
+					} // (important-comment)
+
+					// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
+					result = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
+					log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+					if (result != null) {
+						repoCache.put(cacheKey, result);
+					}
+				}
+			} finally {
+				sharedInstanceLock.unlock();
+			}
+		}
+
 		if (result == repoCache.get(cacheKey)) {
 			if (log.isDebugEnabled()) {
 			log.debug("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")");
