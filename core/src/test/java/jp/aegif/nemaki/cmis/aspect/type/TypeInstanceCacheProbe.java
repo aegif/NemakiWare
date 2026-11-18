@@ -39,10 +39,17 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
+import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
+import org.apache.chemistry.opencmis.commons.enums.Cardinality;
 import org.apache.chemistry.opencmis.commons.enums.ContentStreamAllowed;
+import org.apache.chemistry.opencmis.commons.enums.PropertyType;
 import org.apache.chemistry.opencmis.commons.enums.Updatability;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.DocumentTypeDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringDefinitionImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.TypeDefinitionContainerImpl;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -61,13 +68,27 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
  * The child JVM of {@link TypeInstanceCacheDoesNotStarveTheSchedulerTest} (R357). Not a test.
  *
  * <p>The registry's own instance-sharing cache used to be filled from inside
- * {@code ConcurrentHashMap.computeIfAbsent}, and that computation writes the log — a review of
- * the fix to the caches one layer out found it. Here the wait inside the computation is the real
- * one: a logback appender of this probe's own blocks the first thread that writes the line the
- * computation writes, which is what the production appender did when the container's log pipe
- * stalled. A thread that holds a monitor cannot be unmounted, so before the fix the holder pins
- * its carrier there and the requests for the same type pin one each on the bin's monitor behind
- * it; with the lock they all park and give their carriers up.
+ * {@code ConcurrentHashMap.computeIfAbsent} — a review of the fix to the caches one layer out
+ * found it, nothing had been measured there, and the rule that closed the measured stop was
+ * applied to it rather than an argument made for why it was safe. This probe measures what that
+ * rule buys: with the instance built under a lock, the request building it parks and the requests
+ * behind it park too, so a virtual thread it waits for still gets a carrier; with the instance
+ * built inside computeIfAbsent the builder holds the bin's monitor, cannot be unmounted, and the
+ * others hold a monitor each behind it.
+ *
+ * <p><b>What makes the computation wait here is the registry's own type definition, not a log
+ * line.</b> The first version held the builder on a {@code log.debug} line the computation writes
+ * without a level guard, and raised the logger to DEBUG so that an appender would see it — a wait
+ * production does not have, because {@code logback.xml} ships {@code jp.aegif.nemaki} at INFO and
+ * drops every one of those lines before any appender (D35 Section 5). Measured in this fixture:
+ * <b>the computation writes nothing at INFO or above</b>, reported every run as
+ * {@code defaultLevelLinesInOneBuild}. So the lever is the object the computation reads — the
+ * TypeDefinition this probe installs in the registry, whose {@code getPropertyDefinitions()}, the
+ * first thing {@code ensureConsistentPropertyDefinitions} calls, holds the first caller until it
+ * is released. What production can make the builder wait on there is the other map's bin monitors
+ * inside {@code getSharedPropertyDefinition} and, on data whose inherited flag has to be
+ * corrected, the warning that method writes; neither was measured stopping the server, and this
+ * probe does not claim they were.
  *
  * <p>Every wait is bounded, the main thread is a platform thread, and {@code System.exit} takes
  * whatever is stuck down with the JVM.
@@ -81,9 +102,8 @@ public final class TypeInstanceCacheProbe {
     static final long DEADLINE_MS = 5_000L;
     static final long HOLDER_BOUND_MS = 30_000L;
 
-    /** The line the computation writes, unguarded, after it has built the shared instance. */
-    private static final String INSIDE_THE_COMPUTATION =
-            "OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions";
+    /** The level the shipped configuration gives jp.aegif.nemaki. */
+    private static final Level SHIPPED_LEVEL = Level.INFO;
 
     private static final AtomicBoolean arm = new AtomicBoolean(false);
     private static final AtomicBoolean holderClaimed = new AtomicBoolean(false);
@@ -91,6 +111,28 @@ public final class TypeInstanceCacheProbe {
     private static final CountDownLatch holderEntered = new CountDownLatch(1);
     private static final CountDownLatch released = new CountDownLatch(1);
     private static final AtomicBoolean releasedBySentinel = new AtomicBoolean(false);
+
+    /**
+     * How many times the computation read the registry instance's properties — one read per
+     * build, measured before the scenario. Identity alone cannot tell this cache working from
+     * this cache being bypassed: ensureConsistentPropertyDefinitions returns its own argument on
+     * every path, and that argument is the registry's one instance, so two callers get the same
+     * object whether the cache answered or the instance was built again. A review of the first
+     * version measured that. What does tell them apart is how often the computation ran.
+     *
+     * <p>Only the reads made INSIDE the computation are counted, and only such a read holds a
+     * thread: one request reads these properties nine times, eight of them in the code around
+     * the cache, and holding the first of those held a thread where no lock was taken yet — the
+     * waiters then sailed past and the measurement said so (0 queued).
+     */
+    private static final AtomicInteger computationReads = new AtomicInteger();
+    /** Every read, inside the computation or not, for the record. */
+    private static final AtomicInteger propertyReads = new AtomicInteger();
+
+    /** Lines the shipped configuration would hand an appender while a build runs. */
+    private static final AtomicInteger defaultLevelLines = new AtomicInteger();
+    private static final ConcurrentLinkedQueue<String> defaultLevelMessages =
+            new ConcurrentLinkedQueue<>();
 
     private TypeInstanceCacheProbe() {
     }
@@ -112,15 +154,30 @@ public final class TypeInstanceCacheProbe {
             TypeManagerImpl tm = registry();
             tm.init();
             tm.refreshTypes();
-            // The appender goes on BEFORE the warm-up, unarmed: it is also what measures that
-            // the computation writes the line at all, and it cannot see a line written before
-            // it was installed.
-            installTheBlockingAppender();
+            // At the SHIPPED level, so that what it counts is what production's appender sees.
+            installTheRecordingAppender();
             report("warmedUp", tm.getTypeDefinition(REPO, TYPE) != null);
-            report("theComputationWritesThatLine", computationRuns.get() > 0);
+
+            // From here the registry hands out a definition of this probe's own, which is what
+            // makes the computation wait.
+            installTheBlockingDefinition();
+            report("theRegistryHoldsTheProbesDefinition", registryDefinition() instanceof Held);
+            clearTheInstanceCache();
+            propertyReads.set(0);
+            defaultLevelLines.set(0);
+            defaultLevelMessages.clear();
+            report("buildAnswered", tm.getTypeDefinition(REPO, TYPE) != null);
+            report("propertyReadsInOneBuild", propertyReads.get());
+            report("computationReadsInOneBuild", computationReads.get());
+            report("defaultLevelLinesInOneBuild", defaultLevelLines.get());
+            report("defaultLevelLineSeen", defaultLevelMessages.peek());
+
             clearTheInstanceCache();
             report("startsOnAMiss", cached() == null);
-            computationRuns.set(0); // the warm-up's own run is not the scenario's
+            // The builds before the scenario are not the scenario's.
+            propertyReads.set(0);
+            computationReads.set(0);
+            defaultLevelLines.set(0);
 
             switch (scenario) {
                 case "storm" -> storm(tm);
@@ -213,7 +270,9 @@ public final class TypeInstanceCacheProbe {
             }
         }
         report("answersCollected", answered);
-        report("computationRuns", computationRuns.get());
+        report("propertyReads", propertyReads.get());
+        report("computationReads", computationReads.get());
+        report("defaultLevelLinesWhileHeld", defaultLevelLines.get());
         arm.set(false);
     }
 
@@ -260,7 +319,8 @@ public final class TypeInstanceCacheProbe {
         second.join(HOLDER_BOUND_MS);
         Object inTheCache = cached();
         report("bothAnswered", firstAnswer.get() != null && secondAnswer.get() != null);
-        report("computationRuns", computationRuns.get());
+        report("propertyReads", propertyReads.get());
+        report("computationReads", computationReads.get());
         report("theAnswerIsTheCachedInstance", inTheCache != null
                 && firstAnswer.get() == inTheCache && secondAnswer.get() == inTheCache);
         report("workerFailures", failures.size());
@@ -273,42 +333,24 @@ public final class TypeInstanceCacheProbe {
     // ------------------------------------------------------------------------------------
 
     /**
-     * How many times the computation ran. Identity alone cannot tell this cache
-     * working from this cache being bypassed: ensureConsistentPropertyDefinitions
-     * returns its own argument on every path, and that argument is the registry's one
-     * instance, so two callers get the same object whether the cache answered or the
-     * instance was built again. A review of the first version measured that. What does
-     * tell them apart is how often the computation ran.
+     * The type definition the registry hands the computation, and the wait inside it. The
+     * product's first move with it is to ask for its property definitions; the first caller to do
+     * that while the scenario is armed is held there until it is released, which is the
+     * production shape of a builder that waits inside the computation (the other map's bin
+     * monitor, or the warning written when an inherited flag has to be corrected).
      */
-    private static final AtomicInteger computationRuns = new AtomicInteger();
+    private static final class Held extends DocumentTypeDefinitionImpl {
 
-    /**
-     * The wait inside the computation, through the real logging path: commons-logging to SLF4J to
-     * logback, the way production reaches the appender whose lock pinned the carrier. The first
-     * thread writing the computation's own line is held; everything else passes straight through,
-     * so this appender itself never becomes the thing under measurement.
-     */
-    private static void installTheBlockingAppender() {
-        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(TypeManagerImpl.class);
-        logger.setLevel(Level.DEBUG);
-        logger.setAdditive(false); // the measurements stay readable
-        // UnsynchronizedAppenderBase, not AppenderBase: the latter's doAppend is
-        // synchronized, so holding one thread inside append() blocks every other
-        // thread that logs anything on that monitor and pins its carrier - the
-        // harness would then be the thing being measured. Production's appender is
-        // an UnsynchronizedAppenderBase too (the thread dump of the stop shows it).
-        // The lock caught this: the waiters came out BLOCKED instead of queued.
-        UnsynchronizedAppenderBase<ILoggingEvent> blocking =
-                new UnsynchronizedAppenderBase<ILoggingEvent>() {
-            @Override
-            protected void append(ILoggingEvent event) {
-                if (!String.valueOf(event.getFormattedMessage()).contains(INSIDE_THE_COMPUTATION)) {
-                    return;
-                }
-                computationRuns.incrementAndGet();
-                if (!arm.get() || !holderClaimed.compareAndSet(false, true)) {
-                    return;
-                }
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public Map<String, PropertyDefinition<?>> getPropertyDefinitions() {
+            propertyReads.incrementAndGet();
+            if (!insideTheComputation()) {
+                return super.getPropertyDefinitions();
+            }
+            computationReads.incrementAndGet();
+            if (arm.get() && holderClaimed.compareAndSet(false, true)) {
                 holder.set(Thread.currentThread());
                 holderEntered.countDown();
                 try {
@@ -317,11 +359,75 @@ public final class TypeInstanceCacheProbe {
                     Thread.currentThread().interrupt();
                 }
             }
+            return super.getPropertyDefinitions();
+        }
+    }
+
+    /**
+     * Whether this read is one the computation makes. The stack, not the product's lock: gating
+     * on {@code sharedInstanceLock.isHeldByCurrentThread()} would read false under the very
+     * sabotage these locks exist to catch — with the computation back inside
+     * {@code computeIfAbsent} no such lock is taken — and the locks would then report the harness
+     * as broken instead of firing. The computation is this method, in both shapes.
+     */
+    private static boolean insideTheComputation() {
+        return StackWalker.getInstance().walk(frames -> frames.anyMatch(
+                f -> "ensureConsistentPropertyDefinitions".equals(f.getMethodName())));
+    }
+
+    /**
+     * Counts what an appender would be handed while the computation runs, at the level the
+     * container ships. Nothing is held here: the first version held a thread inside an appender,
+     * and the lock caught what that cost (AppenderBase.doAppend is synchronized, so the waiters
+     * came out BLOCKED and the harness was the thing being measured).
+     */
+    private static void installTheRecordingAppender() {
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(TypeManagerImpl.class);
+        logger.setLevel(SHIPPED_LEVEL);
+        logger.setAdditive(false); // the measurements stay readable
+        UnsynchronizedAppenderBase<ILoggingEvent> recording =
+                new UnsynchronizedAppenderBase<ILoggingEvent>() {
+            @Override
+            protected void append(ILoggingEvent event) {
+                if (!event.getLevel().isGreaterOrEqual(SHIPPED_LEVEL)) {
+                    return;
+                }
+                defaultLevelLines.incrementAndGet();
+                if (defaultLevelMessages.size() < 20) {
+                    defaultLevelMessages.add(event.getLevel() + " | "
+                            + String.valueOf(event.getFormattedMessage()).replace('\n', ' '));
+                }
+            }
         };
-        blocking.setName("r357-blocking");
-        blocking.setContext(logger.getLoggerContext());
-        blocking.start();
-        logger.addAppender(blocking);
+        recording.setName("r357-recording");
+        recording.setContext(logger.getLoggerContext());
+        recording.start();
+        logger.addAppender(recording);
+    }
+
+    /** Puts this probe's definition in the registry, in place of the one it generated. */
+    private static void installTheBlockingDefinition() {
+        Held held = new Held();
+        held.setId(TYPE);
+        held.setLocalName(TYPE);
+        held.setQueryName(TYPE);
+        held.setDisplayName(TYPE);
+        held.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
+        held.setParentTypeId(BaseTypeId.CMIS_DOCUMENT.value());
+        held.setIsCreatable(true);
+        held.setIsVersionable(false);
+        held.setContentStreamAllowed(ContentStreamAllowed.ALLOWED);
+        PropertyStringDefinitionImpl prop = new PropertyStringDefinitionImpl();
+        prop.setId("probe:note");
+        prop.setLocalName("probe:note");
+        prop.setQueryName("probe:note");
+        prop.setDisplayName("probe:note");
+        prop.setPropertyType(PropertyType.STRING);
+        prop.setCardinality(Cardinality.SINGLE);
+        prop.setUpdatability(Updatability.READWRITE);
+        prop.setIsInherited(false);
+        held.addPropertyDefinition(prop);
+        types().put(TYPE, new TypeDefinitionContainerImpl(held));
     }
 
     private static void joinByOneDeadline(List<Thread> threads, long budgetMs)
@@ -364,6 +470,28 @@ public final class TypeInstanceCacheProbe {
         } catch (Exception e) {
             throw new IllegalStateException("could not read the instance cache", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, TypeDefinitionContainer> types() {
+        Map<String, Map<String, TypeDefinitionContainer>> all;
+        try {
+            Field f = TypeManagerImpl.class.getDeclaredField("TYPES");
+            f.setAccessible(true);
+            all = (Map<String, Map<String, TypeDefinitionContainer>>) f.get(null);
+        } catch (Exception e) {
+            throw new IllegalStateException("could not read the registry's types", e);
+        }
+        Map<String, TypeDefinitionContainer> repo = all == null ? null : all.get(REPO);
+        if (repo == null) {
+            throw new IllegalStateException("the registry holds no types for " + REPO);
+        }
+        return repo;
+    }
+
+    private static TypeDefinition registryDefinition() {
+        TypeDefinitionContainer container = types().get(TYPE);
+        return container == null ? null : container.getTypeDefinition();
     }
 
     private static Object cached() {

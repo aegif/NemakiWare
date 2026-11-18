@@ -38,15 +38,18 @@ import jp.aegif.nemaki.util.test.HarnessBroken;
  * <p>The caches one layer out, in {@code RepositoryServiceImpl}, were measured stopping the
  * server: four carriers pinned inside {@code ConcurrentHashMap.computeIfAbsent}, three waiting
  * for the registry's lock and the fourth holding it and parked on logback's appender lock. A
- * review of that fix found the registry's own instance cache filling itself the same way, and
- * its computation writes the log on a path that is not level-guarded. Nothing had been measured
- * there, so rather than arguing that the site is safe the same rule was applied to it: the
- * instance is built outside the map, under a lock whose waiters park.
+ * review of that fix found the registry's own instance cache filling itself the same way.
+ * Nothing had been measured there, so rather than arguing that the site is safe the same rule was
+ * applied to it: the instance is built outside the map, under a lock whose waiters park.
  *
- * <p>{@link TypeInstanceCacheProbe} drives it in a JVM with four carriers, and the wait inside
- * the computation is the real one — an appender of its own holds the first thread that writes the
- * line the computation writes. With the lock, the others queue on it and a sentinel virtual
- * thread still runs; with computeIfAbsent they hold a monitor each and it does not.
+ * <p>{@link TypeInstanceCacheProbe} drives it in a JVM with four carriers. The wait inside the
+ * computation is the registry's own type definition, whose property definitions the computation
+ * reads first — <b>not</b> a log line: the first version held the builder on a {@code log.debug}
+ * line and raised the logger to DEBUG to make an appender see it, which is a wait production does
+ * not have, because the shipped level for {@code jp.aegif.nemaki} is INFO (D35 Section 5). The
+ * probe measures and reports that this computation writes nothing at INFO or above. With the
+ * lock, the other requests queue on it and a sentinel virtual thread still runs; with
+ * computeIfAbsent they hold a monitor each and it does not.
  */
 class TypeInstanceCacheDoesNotStarveTheSchedulerTest {
 
@@ -104,9 +107,10 @@ class TypeInstanceCacheDoesNotStarveTheSchedulerTest {
         // bypassed: ensureConsistentPropertyDefinitions returns its own argument on every path,
         // and that argument is the registry's one instance, so both callers hold the same object
         // either way. A review of the first version measured that and the assertion on it was
-        // withdrawn. How often the instance was built does tell them apart.
-        assertEquals("1", r.get("computationRuns"),
-                "the shared instance was built " + r.get("computationRuns") + " times for one"
+        // withdrawn. How often the instance was built does tell them apart, and one build reads
+        // the registry instance's properties exactly once (checked before the scenario).
+        assertEquals("1", r.get("computationReads"),
+                "the shared instance was built " + r.get("computationReads") + " times for one"
                         + " type: the request that waited built its own instead of reading what"
                         + " the first one put in the cache");
         assertEquals("true", r.get("theAnswerIsTheCachedInstance"),
@@ -200,10 +204,19 @@ class TypeInstanceCacheDoesNotStarveTheSchedulerTest {
                 () -> "the probe failed outside what it measures: " + r.get("probeError"));
         HarnessBroken.unless("true".equals(r.get("warmedUp")),
                 () -> "the probe could not read the type once before the scenario: " + tail(seen));
-        HarnessBroken.unless("true".equals(r.get("theComputationWritesThatLine")),
-                () -> "the line this probe holds a thread on was never written while the shared"
-                        + " instance was built, so there is no wait inside the computation and"
-                        + " nothing here measures R357: " + tail(seen));
+        // The lever: the registry hands the computation a definition of the probe's own, and one
+        // build reads its properties exactly once — which is what makes the count of those reads
+        // a count of builds.
+        HarnessBroken.unless("true".equals(r.get("theRegistryHoldsTheProbesDefinition")),
+                () -> "the registry did not hand out the definition this probe installed, so"
+                        + " nothing holds a request inside the computation: " + tail(seen));
+        HarnessBroken.unless("true".equals(r.get("buildAnswered")),
+                () -> "a request did not answer at all before the scenario: " + tail(seen));
+        HarnessBroken.unless("1".equals(r.get("computationReadsInOneBuild")),
+                () -> "one build read the registry instance's properties from inside the"
+                        + " computation " + r.get("computationReadsInOneBuild") + " times, not"
+                        + " once (" + r.get("propertyReadsInOneBuild") + " reads in all), so a"
+                        + " count of those reads is not a count of builds: " + tail(seen));
         HarnessBroken.unless("true".equals(r.get("startsOnAMiss")),
                 () -> "the cache still held the instance when the scenario started: " + tail(seen));
         HarnessBroken.unless("true".equals(r.get("holderEntered")),

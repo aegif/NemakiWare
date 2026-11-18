@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.chemistry.opencmis.commons.definitions.PropertyDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinition;
 import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionContainer;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -56,7 +57,7 @@ import jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl;
  *
  * <p>That test starts this class in a JVM with four carriers and no compensation, once per
  * scenario and per cache, and reads the {@code PROBE key=value} lines it prints. One JVM each,
- * because the caches and their lock are process-wide. Every wait here is bounded and the main
+ * because the caches and their locks are process-wide. Every wait here is bounded and the main
  * thread is a platform thread, so the measurements are printed even when the virtual threads are
  * stuck; {@code System.exit} then takes them down with the JVM.
  *
@@ -72,10 +73,19 @@ import jp.aegif.nemaki.cmis.service.impl.RepositoryServiceImpl;
  * <p><b>All three caches are driven.</b> The first version drove only the type definitions, and
  * a review pointed out that a regression in the children or the descendants cache — two of the
  * three paths the fix changed — would have left every lock and every control green.
+ *
+ * <p><b>The registry stand-in takes its lock for the held type only.</b> One lock for every
+ * answer was right while one lock guarded all three caches, and it is wrong now: with it, a miss
+ * for ANY key would wait for the held one inside the registry, and the separation the stripes
+ * give could not be told from its absence. The real registry rebuilds itself for a type it does
+ * not know and serialises on its own lock while it does — <b>whether a miss that needs no rebuild
+ * still waits for that rebuild is NOT measured here</b>; it is measured in the real environment,
+ * where the registry is the real one (D35 Section 4).
  */
 public final class SharedTypeCacheProbe {
 
     static final String REPO = "probe";
+    /** The type whose miss is held inside the registry stand-in. */
     static final String TYPE = "probe:custom";
     static final int CARRIERS = 4;
     static final int WORKERS = 8;
@@ -86,49 +96,62 @@ public final class SharedTypeCacheProbe {
 
     /** Which of the three caches a run drives. */
     enum Entry {
-        definition("getTypeDefinition", "SHARED_TYPE_DEFINITIONS", REPO + ":" + TYPE),
-        children("getTypesChildren", "SHARED_TYPE_CHILDREN", REPO + ":" + TYPE + ":true:null:null"),
-        descendants("getTypesDescendants", "SHARED_TYPE_DESCENDANTS", REPO + ":" + TYPE + ":1:true");
+        definition("getTypeDefinition", "SHARED_TYPE_DEFINITIONS"),
+        children("getTypesChildren", "SHARED_TYPE_CHILDREN"),
+        descendants("getTypesDescendants", "SHARED_TYPE_DESCENDANTS");
 
         /** The registry method answering this cache's miss. */
         final String registryMethod;
         private final String field;
-        private final String key;
 
-        Entry(String registryMethod, String field, String key) {
+        Entry(String registryMethod, String field) {
             this.registryMethod = registryMethod;
             this.field = field;
-            this.key = key;
         }
 
         /** The request, through the service's public door. */
-        Object ask(RepositoryServiceImpl service) {
+        Object ask(RepositoryServiceImpl service, String typeId) {
             switch (this) {
                 case definition:
-                    return service.getTypeDefinition(null, REPO, TYPE, null);
+                    return service.getTypeDefinition(null, REPO, typeId, null);
                 case children:
-                    return service.getTypeChildren(null, REPO, TYPE, Boolean.TRUE, null, null, null);
+                    return service.getTypeChildren(null, REPO, typeId, Boolean.TRUE, null, null,
+                            null);
                 default:
-                    return service.getTypeDescendants(null, REPO, TYPE, BigInteger.ONE,
+                    return service.getTypeDescendants(null, REPO, typeId, BigInteger.ONE,
                             Boolean.TRUE, null);
             }
         }
 
-        /** What the cache holds for that request, read straight out of the static map. */
-        Object cached() {
-            try {
-                Field f = RepositoryServiceImpl.class.getDeclaredField(field);
-                f.setAccessible(true);
-                return ((Map<?, ?>) f.get(null)).get(key);
-            } catch (Exception e) {
-                throw new IllegalStateException("could not read " + field, e);
+        /**
+         * The key this cache answers that request under — written out here as the product writes
+         * it. That the two agree is not assumed: the warm-up's answer is read back under this key
+         * before any scenario starts, and a probe that cannot find it says so (a review of the
+         * first version found the clear scenario reading a key of the probe's own making, where a
+         * key the product never writes would have made "the clear was not undone" true by
+         * itself).
+         */
+        String keyFor(String typeId) {
+            switch (this) {
+                case definition:
+                    return REPO + ":" + typeId;
+                case children:
+                    return REPO + ":" + typeId + ":true:null:null";
+                default:
+                    return REPO + ":" + typeId + ":1:true";
             }
+        }
+
+        /** What the cache holds for that request, read straight out of the static map. */
+        Object cached(String typeId) {
+            return map(this).get(keyFor(typeId));
         }
     }
 
     /**
-     * The registry's own lock. TypeManagerImpl's stands here: answering a miss takes it, and the
-     * first answer waits inside it for something only another virtual thread can give it.
+     * The registry's own lock. TypeManagerImpl's stands here: answering a miss for the held type
+     * takes it, and the first such answer waits inside it for something only another virtual
+     * thread can give it.
      */
     private static final ReentrantLock registryLock = new ReentrantLock();
 
@@ -161,18 +184,25 @@ public final class SharedTypeCacheProbe {
         try {
             Entry entry = Entry.valueOf(parts.length == 2 ? parts[1] : "definition");
             report("entry", entry);
+            report("stripes", stripeCount());
             RepositoryServiceImpl service = service();
             // The classes of the answer path are loaded before anything contends, and the
             // warm-up's own entry is dropped again so that the scenario starts on a miss.
-            report("warmedUp", entry.ask(service) != null);
+            report("warmedUp", entry.ask(service, TYPE) != null);
+            // The product wrote the warm-up's answer under a key of its own. If this probe
+            // cannot read it back under the key it believes in, every later "the cache holds
+            // nothing" reading would be true whatever the product did.
+            report("warmUpVisibleUnderThatKey", entry.cached(TYPE) != null);
             clearTheCaches();
             built.set(0);
-            report("startsOnAMiss", entry.cached() == null);
+            report("startsOnAMiss", entry.cached(TYPE) == null);
 
             switch (scenario) {
                 case "storm" -> storm(service, entry);
                 case "identity" -> identity(service, entry);
                 case "clear" -> clearDuringAMiss(service, entry);
+                case "stripes" -> stripes(service, entry);
+                case "stale" -> staleEntryReplacedWhileItIsRead(service, entry);
                 default -> throw new IllegalArgumentException("unknown scenario: " + scenario);
             }
             report("finished", true);
@@ -196,7 +226,7 @@ public final class SharedTypeCacheProbe {
             workers.add(Thread.ofVirtual().name("probe-worker-" + i).unstarted(() -> {
                 try {
                     go.await();
-                    answers.set(slot, entry.ask(service));
+                    answers.set(slot, entry.ask(service, TYPE));
                     finished.incrementAndGet();
                 } catch (Throwable t) {
                     failures.add(t);
@@ -212,20 +242,21 @@ public final class SharedTypeCacheProbe {
         boolean entered = holderEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS);
         report("holderEntered", entered);
 
-        // The others queue behind it ON THE CACHE'S OWN LOCK. Counting "parked on one and the
-        // same blocker" was not enough: a sabotage that takes the cache lock away leaves every
-        // miss queueing on the registry's lock instead, and seven threads parked on that sibling
-        // would have satisfied the count (review of the first version). The lock itself is asked.
+        // The others queue behind it ON THE STRIPE OF THEIR OWN KEY. Counting "parked on one and
+        // the same blocker" was not enough: a sabotage that takes the cache lock away leaves
+        // every miss queueing on the registry's lock instead, and seven threads parked on that
+        // sibling would have satisfied the count (review of the first version). The product's own
+        // lock for this key is asked, through the product's own stripe function.
         long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DEADLINE_MS);
         int queued = 0;
         do {
-            queued = cacheLock().getQueueLength();
+            queued = stripeOf(entry.keyFor(TYPE)).getQueueLength();
             if (queued == WORKERS - 1) {
                 break;
             }
             Thread.sleep(10L);
         } while (System.nanoTime() < until);
-        report("waitersOnTheCacheLock", queued);
+        report("waitersOnTheStripeOfTheKey", queued);
         report("waitersParkedAnywhere", parkedAnywhere(workers));
 
         // The sentinel: a virtual thread the holder is waiting for.
@@ -250,7 +281,7 @@ public final class SharedTypeCacheProbe {
         CompletableFuture<Boolean> read = new CompletableFuture<>();
         Thread.ofVirtual().name("probe-read").start(() -> {
             try {
-                read.complete(entry.ask(service) != null);
+                read.complete(entry.ask(service, TYPE) != null);
             } catch (Throwable t) {
                 read.completeExceptionally(t);
             }
@@ -295,7 +326,7 @@ public final class SharedTypeCacheProbe {
         storm.set(true);
         Thread first = Thread.ofVirtual().name("probe-first").start(() -> {
             try {
-                firstAnswer.set(entry.ask(service));
+                firstAnswer.set(entry.ask(service, TYPE));
             } catch (Throwable t) {
                 failures.add(t);
             }
@@ -305,18 +336,18 @@ public final class SharedTypeCacheProbe {
         Thread second = Thread.ofVirtual().name("probe-second").start(() -> {
             try {
                 secondStarted.countDown();
-                secondAnswer.set(entry.ask(service));
+                secondAnswer.set(entry.ask(service, TYPE));
             } catch (Throwable t) {
                 failures.add(t);
             }
         });
         secondStarted.await(DEADLINE_MS, TimeUnit.MILLISECONDS);
 
-        // The second one is given a bounded moment to queue on the cache's lock.
+        // The second one is given a bounded moment to queue on the stripe of that key.
         long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DEADLINE_MS);
         boolean queued = false;
         do {
-            queued = cacheLock().getQueueLength() == 1;
+            queued = stripeOf(entry.keyFor(TYPE)).getQueueLength() == 1;
             if (queued) {
                 break;
             }
@@ -328,7 +359,7 @@ public final class SharedTypeCacheProbe {
         released.countDown();
         first.join(HOLDER_BOUND_MS);
         second.join(HOLDER_BOUND_MS);
-        Object inTheCache = entry.cached();
+        Object inTheCache = entry.cached(TYPE);
         report("bothAnswered", firstAnswer.get() != null && secondAnswer.get() != null);
         report("registryAnswersBuilt", built.get());
         report("theTwoAnswersAreOneInstance", firstAnswer.get() == secondAnswer.get());
@@ -348,6 +379,12 @@ public final class SharedTypeCacheProbe {
      * through the table in index order — so the window existed before as well; moving the
      * computation out of the map removed the bin lock from the picture entirely (review of the
      * first version).
+     *
+     * <p>What is read afterwards is the map's VALUES, by identity, and the size of all three
+     * maps: the first version read the one key this probe writes out for itself, and a key the
+     * product never writes would have made the reading true by itself (review of the second
+     * round). The agreement of the two keys is measured as well, in main(), where the warm-up's
+     * answer is read back under it.
      */
     private static void clearDuringAMiss(RepositoryServiceImpl service, Entry entry)
             throws Exception {
@@ -357,7 +394,7 @@ public final class SharedTypeCacheProbe {
         storm.set(true);
         Thread miss = Thread.ofVirtual().name("probe-miss").start(() -> {
             try {
-                answer.set(entry.ask(service));
+                answer.set(entry.ask(service, TYPE));
             } catch (Throwable t) {
                 failures.add(t);
             }
@@ -379,24 +416,210 @@ public final class SharedTypeCacheProbe {
             }
         });
         clearStarted.await(DEADLINE_MS, TimeUnit.MILLISECONDS);
-        // A bounded moment for the clear either to queue on the lock or to run straight through.
+        // A bounded moment for the clear either to queue on the stripe the miss holds or to run
+        // straight through it.
+        ReentrantLock held = stripeOf(entry.keyFor(TYPE));
         long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1_000L);
-        while (System.nanoTime() < until && !cleared.isDone() && cacheLock().getQueueLength() == 0) {
+        while (System.nanoTime() < until && !cleared.isDone() && held.getQueueLength() == 0) {
             Thread.sleep(10L);
         }
-        report("clearWaitedForTheLock", cacheLock().getQueueLength() == 1 && !cleared.isDone());
+        report("clearWaitedForTheLock", held.getQueueLength() == 1 && !cleared.isDone());
 
         released.countDown();
         miss.join(HOLDER_BOUND_MS);
         report("missAnswered", answer.get() != null);
         report("clearAnswered", answered(cleared));
-        report("theClearSurvivedTheMiss", entry.cached() == null);
+        report("theMissAnswerIsInTheMapAfterTheClear", isAValueOf(entry, answer.get()));
+        report("entriesLeftInTheThreeMapsAfterTheClear", entriesInAllThreeMaps());
         report("workerFailures", failures.size());
         for (Throwable t : failures) {
             report("workerFailure", t.toString().replace('\n', ' '));
         }
         storm.set(false);
     }
+
+    /**
+     * What the stripes are for: a miss for one key must not wait for a miss for another.
+     *
+     * <p>One request is held inside the registry, holding the stripe of its key. A second request
+     * asks for a key that lands on THAT stripe, and must wait — two requests for the same stripe
+     * still exclude each other, which is what keeps one answer from being built twice. A third
+     * asks for a key that lands on another stripe, and must be answered while the first is still
+     * held: with one lock for all three caches, a miss for a type the registry does not know
+     * rebuilt the whole registry inside that lock, so every miss in the server queued behind it.
+     *
+     * <p>The two extra type ids are SEARCHED FOR through the product's own stripe function, not
+     * written out here: the stripe of a key is an implementation detail, and a hard-coded pair
+     * would stop being on the same (or another) stripe the moment the function changed, with the
+     * scenario still reporting whatever it then measured. The search asks the product and the
+     * answer is reported.
+     */
+    private static void stripes(RepositoryServiceImpl service, Entry entry) throws Exception {
+        String holderKey = entry.keyFor(TYPE);
+        int holderStripe = stripeIndexOf(holderKey);
+        String sameStripeType = typeOnStripe(entry, holderStripe, true);
+        String otherStripeType = typeOnStripe(entry, holderStripe, false);
+        report("holderStripe", holderStripe);
+        report("sameStripeType", sameStripeType);
+        report("otherStripeType", otherStripeType);
+        report("theSameStripeTypeIsOnTheHoldersStripe", sameStripeType != null
+                && stripeIndexOf(entry.keyFor(sameStripeType)) == holderStripe);
+        report("theOtherStripeTypeIsNotOnTheHoldersStripe", otherStripeType != null
+                && stripeIndexOf(entry.keyFor(otherStripeType)) != holderStripe);
+        if (sameStripeType == null || otherStripeType == null) {
+            return;
+        }
+
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+        storm.set(true);
+        AtomicReference<Object> heldAnswer = new AtomicReference<>();
+        Thread heldMiss = Thread.ofVirtual().name("probe-held").start(() -> {
+            try {
+                heldAnswer.set(entry.ask(service, TYPE));
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        });
+        report("holderEntered", holderEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS));
+
+        // A miss on another stripe, while the first one is held. It must answer.
+        long otherStart = System.nanoTime();
+        CompletableFuture<Boolean> other = new CompletableFuture<>();
+        Thread.ofVirtual().name("probe-other-stripe").start(() -> {
+            try {
+                other.complete(entry.ask(service, otherStripeType) != null);
+            } catch (Throwable t) {
+                other.completeExceptionally(t);
+            }
+        });
+        report("otherStripeAnsweredWhileOneIsHeld", answered(other));
+        report("otherStripeMs", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - otherStart));
+
+        // A miss on the holder's own stripe, while the first one is held. It must wait.
+        CountDownLatch sameStarted = new CountDownLatch(1);
+        CompletableFuture<Boolean> same = new CompletableFuture<>();
+        Thread sameThread = Thread.ofVirtual().name("probe-same-stripe").start(() -> {
+            try {
+                sameStarted.countDown();
+                same.complete(entry.ask(service, sameStripeType) != null);
+            } catch (Throwable t) {
+                same.completeExceptionally(t);
+            }
+        });
+        sameStarted.await(DEADLINE_MS, TimeUnit.MILLISECONDS);
+        ReentrantLock stripe = stripeOf(holderKey);
+        long until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(DEADLINE_MS);
+        boolean queued = false;
+        do {
+            queued = stripe.getQueueLength() >= 1;
+            if (queued) {
+                break;
+            }
+            Thread.sleep(10L);
+        } while (System.nanoTime() < until);
+        report("sameStripeQueuedOnTheHoldersStripe", queued && !same.isDone());
+        report("sameStripeAnsweredWhileOneIsHeld", same.isDone());
+        report("sameStripeState", sameThread.getState());
+
+        released.countDown();
+        heldMiss.join(HOLDER_BOUND_MS);
+        sameThread.join(HOLDER_BOUND_MS);
+        report("heldMissAnswered", heldAnswer.get() != null);
+        report("sameStripeAnsweredAfterwards", answered(same));
+        report("registryAnswersBuilt", built.get());
+        report("workerFailures", failures.size());
+        for (Throwable t : failures) {
+            report("workerFailure", t.toString().replace('\n', ' '));
+        }
+        storm.set(false);
+    }
+
+    /**
+     * The one arm of this path that no lock reached (D35 Section 5). A cached type definition
+     * with no properties is dropped as stale — but only if it is still the stale one, because a
+     * request that found it stale may be overtaken by a request that has already replaced it and
+     * handed its answer out. An unconditional {@code remove} drops that fresh entry, the first
+     * request then builds a SECOND instance of one type, and the callers of the type service
+     * compare type definitions by identity.
+     *
+     * <p>Driven through the product's door twice. The stale entry is this probe's, and it is the
+     * stale entry itself that holds the first request inside the window: the product asks it for
+     * its property definitions, twice, and the second answer comes only after the other request
+     * has replaced the entry. No log level and no appender is involved — the lever is the object
+     * the product is reading.
+     */
+    private static void staleEntryReplacedWhileItIsRead(RepositoryServiceImpl service, Entry entry)
+            throws Exception {
+        if (entry != Entry.definition) {
+            report("notThisCache", true);
+            return;
+        }
+        CountDownLatch windowEntered = new CountDownLatch(1);
+        CountDownLatch replaced = new CountDownLatch(1);
+        AtomicInteger reads = new AtomicInteger();
+        AtomicBoolean claimed = new AtomicBoolean(false);
+        ConcurrentLinkedQueue<Throwable> failures = new ConcurrentLinkedQueue<>();
+
+        // A type definition with no properties at all: what the product reads as a stale entry.
+        DocumentTypeDefinitionImpl stale = new DocumentTypeDefinitionImpl() {
+            @Override
+            public Map<String, PropertyDefinition<?>> getPropertyDefinitions() {
+                // The product asks twice: `== null`, then `isEmpty()`. The second answer is
+                // given only after the other request has put a fresh entry in the map, so the
+                // entry this one is about to drop is no longer the stale one.
+                if (reads.incrementAndGet() == 2 && claimed.compareAndSet(false, true)) {
+                    windowEntered.countDown();
+                    try {
+                        replaced.await(HOLDER_BOUND_MS, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return Collections.emptyMap();
+            }
+        };
+        stale.setId(TYPE);
+        putInTheMap(entry, entry.keyFor(TYPE), stale);
+        report("startsOnAStaleEntry", entry.cached(TYPE) == stale);
+
+        AtomicReference<Object> firstAnswer = new AtomicReference<>();
+        Thread first = Thread.ofVirtual().name("probe-stale-reader").start(() -> {
+            try {
+                firstAnswer.set(entry.ask(service, TYPE));
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        });
+        report("windowEntered", windowEntered.await(DEADLINE_MS, TimeUnit.MILLISECONDS));
+
+        // The other request: the same door, the same key. It finds the entry still stale, drops
+        // it, builds the fresh answer and hands it out.
+        AtomicReference<Object> secondAnswer = new AtomicReference<>();
+        Thread second = Thread.ofVirtual().name("probe-stale-replacer").start(() -> {
+            try {
+                secondAnswer.set(entry.ask(service, TYPE));
+            } catch (Throwable t) {
+                failures.add(t);
+            }
+        });
+        second.join(DEADLINE_MS);
+        report("theOtherRequestAnswered", secondAnswer.get() != null);
+        report("theOtherRequestsAnswerIsInTheMap", entry.cached(TYPE) == secondAnswer.get());
+        replaced.countDown();
+        first.join(HOLDER_BOUND_MS);
+
+        report("theRequestThatWaitedAnswered", firstAnswer.get() != null);
+        report("registryAnswersBuilt", built.get());
+        report("theTwoAnswersAreOneInstance", firstAnswer.get() == secondAnswer.get());
+        report("theMapHoldsTheAnswerHandedOut", entry.cached(TYPE) == secondAnswer.get()
+                && entry.cached(TYPE) == firstAnswer.get());
+        report("workerFailures", failures.size());
+        for (Throwable t : failures) {
+            report("workerFailure", t.toString().replace('\n', ' '));
+        }
+    }
+
+    // ------------------------------------------------------------------------------------
 
     private static void joinByOneDeadline(List<Thread> threads, long budgetMs)
             throws InterruptedException {
@@ -419,22 +642,104 @@ public final class SharedTypeCacheProbe {
         return n;
     }
 
-    /** The product's own lock, so that what the waiters queue on is the thing under measurement. */
-    private static ReentrantLock cacheLock() {
+    /**
+     * The product's own stripe for a key, through the product's own function — so that what the
+     * waiters queue on is the thing under measurement, and a change to how the stripe is chosen
+     * cannot leave this probe watching a lock nobody takes.
+     */
+    private static ReentrantLock stripeOf(String cacheKey) {
         try {
-            Field f = RepositoryServiceImpl.class.getDeclaredField("SHARED_TYPE_CACHE_LOCK");
-            f.setAccessible(true);
-            return (ReentrantLock) f.get(null);
+            Method m = RepositoryServiceImpl.class.getDeclaredMethod("stripeOf", String.class);
+            m.setAccessible(true);
+            return (ReentrantLock) m.invoke(null, cacheKey);
         } catch (Exception e) {
-            throw new IllegalStateException("could not read the shared caches' lock", e);
+            throw new IllegalStateException("could not ask the product for the stripe of a key", e);
         }
     }
 
-    private static void clearTheCaches() throws Exception {
-        for (Entry e : Entry.values()) {
-            Field f = RepositoryServiceImpl.class.getDeclaredField(e.field);
+    private static ReentrantLock[] stripeArray() {
+        try {
+            Field f = RepositoryServiceImpl.class.getDeclaredField("SHARED_TYPE_CACHE_LOCKS");
             f.setAccessible(true);
-            ((Map<?, ?>) f.get(null)).clear();
+            return (ReentrantLock[]) f.get(null);
+        } catch (Exception e) {
+            throw new IllegalStateException("could not read the shared caches' locks", e);
+        }
+    }
+
+    private static int stripeCount() {
+        return stripeArray().length;
+    }
+
+    /** Which stripe of the product's array a key is answered under, by identity. */
+    private static int stripeIndexOf(String cacheKey) {
+        ReentrantLock lock = stripeOf(cacheKey);
+        ReentrantLock[] stripes = stripeArray();
+        for (int i = 0; i < stripes.length; i++) {
+            if (stripes[i] == lock) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * A type id, other than {@link #TYPE}, whose key for this cache lands on (or off) the given
+     * stripe. Searched, not written out: see {@link #stripes}.
+     */
+    private static String typeOnStripe(Entry entry, int stripe, boolean onIt) {
+        for (int i = 0; i < 10_000; i++) {
+            String candidate = "probe:other" + i;
+            int index = stripeIndexOf(entry.keyFor(candidate));
+            if (index < 0) {
+                return null;
+            }
+            if ((index == stripe) == onIt) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> map(Entry entry) {
+        try {
+            Field f = RepositoryServiceImpl.class.getDeclaredField(entry.field);
+            f.setAccessible(true);
+            return (Map<String, Object>) f.get(null);
+        } catch (Exception e) {
+            throw new IllegalStateException("could not read " + entry.field, e);
+        }
+    }
+
+    private static void putInTheMap(Entry entry, String key, Object value) {
+        map(entry).put(key, value);
+    }
+
+    /** Whether that very object is one of the cache's values — identity, not equality. */
+    private static boolean isAValueOf(Entry entry, Object answer) {
+        if (answer == null) {
+            return false;
+        }
+        for (Object value : map(entry).values()) {
+            if (value == answer) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int entriesInAllThreeMaps() {
+        int n = 0;
+        for (Entry e : Entry.values()) {
+            n += map(e).size();
+        }
+        return n;
+    }
+
+    private static void clearTheCaches() {
+        for (Entry e : Entry.values()) {
+            map(e).clear();
         }
     }
 
@@ -449,7 +754,7 @@ public final class SharedTypeCacheProbe {
     }
 
     /**
-     * Workers parked on anything at all, the holder apart — reported beside the lock's own queue
+     * Workers parked on anything at all, the holder apart — reported beside the stripe's own queue
      * length, never asserted on. The two differing says the waiters are parked somewhere else,
      * which is what the queue length refuses to accept as queueing here.
      */
@@ -475,9 +780,14 @@ public final class SharedTypeCacheProbe {
 
     /**
      * The type registry. A plain proxy rather than a mock, so that nothing between the shared
-     * cache and this answer holds a monitor while the holder waits in it. It takes a lock of its
-     * own, as the registry does, and the first answer waits inside that lock for a virtual
-     * thread.
+     * cache and this answer holds a monitor while the holder waits in it.
+     *
+     * <p>It takes a lock of its own for {@link #TYPE} — the type whose miss is held — as the
+     * registry does while it rebuilds itself, and the first such answer waits inside that lock
+     * for a virtual thread. Every OTHER type id is answered without that lock, as the registry
+     * answers a type it already holds. Taking it for every answer was right while one lock
+     * guarded all three caches; with the stripes it would hide the separation they give behind a
+     * lock of the harness's own.
      */
     private static TypeManager registry() {
         return (TypeManager) Proxy.newProxyInstance(TypeManager.class.getClassLoader(),
@@ -490,9 +800,14 @@ public final class SharedTypeCacheProbe {
                         }
                         return method.getReturnType().isPrimitive() ? 0 : null;
                     }
-                    registryLock.lock();
+                    String typeId = typeIdOf(name, args);
+                    boolean theHeldOne = TYPE.equals(typeId);
+                    if (theHeldOne) {
+                        registryLock.lock();
+                    }
                     try {
-                        if (storm.get() && holderClaimed.compareAndSet(false, true)) {
+                        if (theHeldOne && storm.get()
+                                && holderClaimed.compareAndSet(false, true)) {
                             holder.set(Thread.currentThread());
                             holderEntered.countDown();
                             released.await(HOLDER_BOUND_MS, TimeUnit.MILLISECONDS);
@@ -501,21 +816,34 @@ public final class SharedTypeCacheProbe {
                         switch (name) {
                             case "getTypesChildren":
                                 TypeDefinitionListImpl list = new TypeDefinitionListImpl();
-                                list.setList(new ArrayList<>(List.of(customType())));
+                                list.setList(new ArrayList<>(List.of(customType(typeId))));
                                 list.setHasMoreItems(false);
                                 list.setNumItems(BigInteger.ONE);
                                 return list;
                             case "getTypesDescendants":
                                 List<TypeDefinitionContainer> tree = new ArrayList<>();
-                                tree.add(new TypeDefinitionContainerImpl(customType()));
+                                tree.add(new TypeDefinitionContainerImpl(customType(typeId)));
                                 return Collections.unmodifiableList(tree);
                             default:
-                                return customType();
+                                return customType(typeId);
                         }
                     } finally {
-                        registryLock.unlock();
+                        if (theHeldOne) {
+                            registryLock.unlock();
+                        }
                     }
                 });
+    }
+
+    /**
+     * The type id the registry was asked for. The three methods do not take it in the same
+     * position — getTypesChildren takes the call context first — so it is read by signature
+     * rather than by index alone.
+     */
+    private static String typeIdOf(String method, Object[] args) {
+        int at = method.equals("getTypesChildren") ? 2 : 1;
+        Object value = args != null && args.length > at ? args[at] : null;
+        return value instanceof String ? (String) value : null;
     }
 
     /** The checks the service makes on its way out. None of them is what is measured here. */
@@ -533,12 +861,12 @@ public final class SharedTypeCacheProbe {
      * A type with a property of its own. Without one the service would read it back as a stale
      * entry and drop it again, and no two callers would ever see one instance.
      */
-    private static TypeDefinition customType() {
+    private static TypeDefinition customType(String typeId) {
         DocumentTypeDefinitionImpl td = new DocumentTypeDefinitionImpl();
-        td.setId(TYPE);
-        td.setLocalName(TYPE);
-        td.setQueryName(TYPE);
-        td.setDisplayName(TYPE);
+        td.setId(typeId);
+        td.setLocalName(typeId);
+        td.setQueryName(typeId);
+        td.setDisplayName(typeId);
         td.setBaseTypeId(BaseTypeId.CMIS_DOCUMENT);
         td.setParentTypeId(BaseTypeId.CMIS_DOCUMENT.value());
         td.setIsCreatable(true);

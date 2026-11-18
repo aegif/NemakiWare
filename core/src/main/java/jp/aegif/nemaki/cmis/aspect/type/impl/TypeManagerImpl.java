@@ -3797,10 +3797,21 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * PropertyDefinition one, which still fills itself inside its map's mapping function (its
 	 * computation only stores an instance that is already built, and the log line in it is
 	 * level-guarded; with the shipped level at INFO it is not written). A ReentrantLock, not the
-	 * map's own bin monitor: building a shared instance reaches a log write that is not
-	 * level-guarded, and a virtual thread that holds a monitor cannot be unmounted while it waits
-	 * for the appender. Non-fair and uninterruptible, like the registry's own lock; a hit is
-	 * answered without taking it at all.
+	 * map's own bin monitor: a virtual thread that holds a monitor cannot be unmounted while it
+	 * waits, and building a shared instance does wait — it takes the bin monitors of the
+	 * PropertyDefinition cache for every property, and on data whose inherited flag has to be
+	 * corrected it writes a warning the shipped level lets through to an appender. Non-fair and
+	 * uninterruptible, like the registry's own lock; a hit is answered without taking it at all.
+	 *
+	 * <p><b>Nothing here was measured stopping the server.</b> The stop was measured one layer
+	 * out, in the shared caches of RepositoryServiceImpl; a review of that fix found this site
+	 * filling itself the same way with nothing measured about it, and the rule was applied rather
+	 * than an argument made for why it is safe. What the first version of this comment said —
+	 * that the computation reaches a log write which is not level-guarded — is wrong about the
+	 * appender: the unguarded calls in it are {@code log.debug}, and at the shipped level for
+	 * {@code jp.aegif.nemaki} (INFO) logback drops them before any appender sees them. Measured
+	 * in {@code TypeInstanceCacheProbe}, every run: one build of a shared instance writes nothing
+	 * at INFO or above.
 	 *
 	 * <p><b>The clearing side is not under this lock</b>: {@code refreshTypes()} and
 	 * {@code invalidateTypeDefinitionCache()} empty these caches holding only the registry's own
@@ -3832,15 +3843,18 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		//
 		// R357. The instance is built OUTSIDE the map, under sharedInstanceLock. It used to be
 		// built inside repoCache.computeIfAbsent, and the mapping function reaches
-		// ensureConsistentPropertyDefinitions, which writes the log on paths that are not
-		// level-guarded (getSharedPropertyDefinition warns whenever it has to correct an
-		// inherited flag). computeIfAbsent holds the bin's monitor while it computes, and a
-		// virtual thread with a monitor on its stack cannot be unmounted: the holder would park
-		// on the log appender's lock while pinned, and the requests for the same type would pin
-		// a carrier each on the bin's monitor behind it. That is the shape that stopped the
-		// server one layer out, in the shared caches of RepositoryServiceImpl, measured in a
-		// thread dump. A review of that fix found this site, where nothing has been measured —
-		// so the same rule is applied rather than an argument made for why it is safe here.
+		// ensureConsistentPropertyDefinitions, which takes the bin monitors of the
+		// PropertyDefinition cache for every property and, on data whose inherited flag has to
+		// be corrected, writes a warning the shipped level lets through to an appender.
+		// computeIfAbsent holds the bin's monitor while it computes, and a virtual thread with a
+		// monitor on its stack cannot be unmounted: a holder that waits for either of those
+		// waits pinned, and the requests for the same type pin a carrier each on the bin's
+		// monitor behind it. That is the shape that stopped the server one layer out, in the
+		// shared caches of RepositoryServiceImpl, measured in a thread dump. A review of that
+		// fix found this site, where nothing has been measured — so the same rule is applied
+		// rather than an argument made for why it is safe here. The debug lines in this
+		// computation are NOT part of that: at the shipped level logback drops them before any
+		// appender, which TypeInstanceCacheProbe measures and reports on every run.
 		TypeDefinition result = repoCache.get(cacheKey);
 		if (result == null) {
 			sharedInstanceLock.lock();

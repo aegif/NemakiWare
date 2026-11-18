@@ -82,11 +82,54 @@ public class RepositoryServiceImpl implements RepositoryService,
 	// was: a thread that has a monitor on its stack cannot be unmounted. With as many concurrent
 	// misses as there were carriers, every carrier was held inside this computation and the whole
 	// server stopped answering until the JVM was restarted. The answer is now built outside the
-	// map: a hit returns from the map with no lock at all, and only a miss takes this lock, which
-	// parks its waiters and gives their carriers up. One lock for all three caches, because one
-	// miss can refresh the registry the other two read. Non-fair, like the registry's own lock.
-	// Nothing inside this lock may be called from a mapping function of these maps again.
-	private static final ReentrantLock SHARED_TYPE_CACHE_LOCK = new ReentrantLock();
+	// map: a hit returns from the map with no lock at all, and only a miss takes a lock, which
+	// parks its waiters and gives their carriers up.
+	//
+	// ONE lock for all three caches was the first shape of this fix, and a review measured what
+	// that cost. Answering a miss for a type the registry does not know makes the registry
+	// rebuild itself, inside the lock, and absence is not cached — so one signed-in user naming
+	// type ids that do not exist put every miss in the server, in any of the three caches and for
+	// any repository, behind an unbounded queue of whole-registry rebuilds. Before this fix those
+	// misses sat on different bins of the map and ran at once. The lock is therefore split BY
+	// CACHE KEY: a fixed array of stripes, the stripe chosen from the key, so that a miss
+	// excludes the misses asking the same question and no others. A miss takes exactly one stripe
+	// and never a second one while it holds it; clearing takes all of them in index order.
+	//
+	// The order between these stripes and the registry's own locks is one-way, and it is the call
+	// direction that makes it so: this class calls the type manager, and the type manager does
+	// not call this class (grep for RepositoryService in TypeManagerImpl: one comment, no code).
+	// So a stripe can be held while initLock or sharedInstanceLock is taken, and never the other
+	// way round. Nothing inside a stripe may be called from a mapping function of these maps
+	// again.
+	private static final int SHARED_TYPE_CACHE_STRIPES = 32;
+	private static final ReentrantLock[] SHARED_TYPE_CACHE_LOCKS = newSharedTypeCacheStripes();
+
+	private static ReentrantLock[] newSharedTypeCacheStripes() {
+		ReentrantLock[] stripes = new ReentrantLock[SHARED_TYPE_CACHE_STRIPES];
+		for (int i = 0; i < stripes.length; i++) {
+			// Non-fair, like the registry's own lock: a miss that can be served at once should
+			// not wait for a queue it does not have to join.
+			stripes[i] = new ReentrantLock();
+		}
+		return stripes;
+	}
+
+	/**
+	 * The stripe a cache key's miss is answered under — the same stripe for the same key, every
+	 * time, so that two requests asking the same question still exclude each other and only one
+	 * of them builds the answer.
+	 *
+	 * <p>The key's hash is spread before it is masked, as {@link ConcurrentHashMap} does with its
+	 * own: these keys are a repository id, a type id and the paging arguments joined by colons,
+	 * so they differ in their later characters, and a plain low-bit mask would put whole families
+	 * of them on one stripe. No map of locks per key — that is a second cache, with the same
+	 * unbounded growth a key-space an unauthenticated caller can choose would give it.
+	 */
+	private static ReentrantLock stripeOf(String cacheKey) {
+		int h = cacheKey.hashCode();
+		h ^= (h >>> 16);
+		return SHARED_TYPE_CACHE_LOCKS[h & (SHARED_TYPE_CACHE_STRIPES - 1)];
+	}
 
 	private RepositoryInfoMap repositoryInfoMap;
 	private TypeManager typeManager;
@@ -124,8 +167,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 			return cached;
 		}
 
-		// R357. The miss is answered under the lock, not inside the map's mapping function.
-		SHARED_TYPE_CACHE_LOCK.lock();
+		// R357. The miss is answered under the stripe of its own key, not inside the map's
+		// mapping function and not behind the misses of other keys.
+		ReentrantLock stripe = stripeOf(cacheKey);
+		stripe.lock();
 		try {
 			// Another miss may have filled it while this one waited.
 			TypeDefinition filled = SHARED_TYPE_DEFINITIONS.get(cacheKey);
@@ -169,7 +214,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 			SHARED_TYPE_DEFINITIONS.put(cacheKey, td);
 			return td;
 		} finally {
-			SHARED_TYPE_CACHE_LOCK.unlock();
+			stripe.unlock();
 		}
 	}
 
@@ -184,8 +229,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 			return cached;
 		}
 
-		// R357. The miss is answered under the lock, not inside the map's mapping function.
-		SHARED_TYPE_CACHE_LOCK.lock();
+		// R357. The miss is answered under the stripe of its own key, not inside the map's
+		// mapping function and not behind the misses of other keys.
+		ReentrantLock stripe = stripeOf(cacheKey);
+		stripe.lock();
 		try {
 			// Another miss may have filled it while this one waited.
 			TypeDefinitionList filled = SHARED_TYPE_CHILDREN.get(cacheKey);
@@ -206,7 +253,7 @@ public class RepositoryServiceImpl implements RepositoryService,
 			SHARED_TYPE_CHILDREN.put(cacheKey, children);
 			return children;
 		} finally {
-			SHARED_TYPE_CACHE_LOCK.unlock();
+			stripe.unlock();
 		}
 	}
 
@@ -221,8 +268,10 @@ public class RepositoryServiceImpl implements RepositoryService,
 			return cached;
 		}
 
-		// R357. The miss is answered under the lock, not inside the map's mapping function.
-		SHARED_TYPE_CACHE_LOCK.lock();
+		// R357. The miss is answered under the stripe of its own key, not inside the map's
+		// mapping function and not behind the misses of other keys.
+		ReentrantLock stripe = stripeOf(cacheKey);
+		stripe.lock();
 		try {
 			// Another miss may have filled it while this one waited.
 			List<TypeDefinitionContainer> filled = SHARED_TYPE_DESCENDANTS.get(cacheKey);
@@ -242,14 +291,15 @@ public class RepositoryServiceImpl implements RepositoryService,
 			SHARED_TYPE_DESCENDANTS.put(cacheKey, descendants);
 			return descendants;
 		} finally {
-			SHARED_TYPE_CACHE_LOCK.unlock();
+			stripe.unlock();
 		}
 	}
 
 	/**
 	 * Clear shared caches when types are modified
 	 *
-	 * <p>Under the same lock as a miss. While the answers were built inside
+	 * <p>Under the same locks as a miss — <b>every</b> stripe, because a miss on any of them may
+	 * be holding an answer it is about to publish. While the answers were built inside
 	 * {@code computeIfAbsent}, the map's own bin lock held these two apart <em>for any bin the
 	 * clear had not walked past yet</em>: {@code ConcurrentHashMap.clear()} walks the table in
 	 * index order and locks each bin as it goes, so a computation in flight either made it wait or
@@ -258,20 +308,30 @@ public class RepositoryServiceImpl implements RepositoryService,
 	 * the bin lock from the picture entirely: a miss that read the registry before an
 	 * administrator's change could publish the old answer after the clear, and every later request
 	 * would read what the change removed, until the next type change or a restart. Both reviews of
-	 * this fix named it first.
+	 * the one-lock version named it first.
+	 *
+	 * <p>The stripes are taken in index order and released in the reverse, so that two clears can
+	 * never hold them in opposite orders; a miss holds one stripe and asks for no other, so it
+	 * cannot be the other half of a cycle either.
 	 */
 	private void clearSharedTypeCaches() {
 		if (log.isDebugEnabled()) {
 			log.debug("Clearing all shared type caches");
 		}
 
-		SHARED_TYPE_CACHE_LOCK.lock();
+		int held = 0;
 		try {
+			while (held < SHARED_TYPE_CACHE_STRIPES) {
+				SHARED_TYPE_CACHE_LOCKS[held].lock();
+				held++; // only after it is held, so the release below unwinds exactly these
+			}
 			SHARED_TYPE_DEFINITIONS.clear();
 			SHARED_TYPE_CHILDREN.clear();
 			SHARED_TYPE_DESCENDANTS.clear();
 		} finally {
-			SHARED_TYPE_CACHE_LOCK.unlock();
+			while (held > 0) {
+				SHARED_TYPE_CACHE_LOCKS[--held].unlock();
+			}
 		}
 	}
 
