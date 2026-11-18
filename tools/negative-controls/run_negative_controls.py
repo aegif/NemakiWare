@@ -37126,7 +37126,7 @@ CONTROLS = [
     ),
     dict(
         id='EU7',
-        what="clearing the shared caches stops taking their lock, so an answer already being built is written into the map after the clear and every later request reads what the administrator's type change removed - inside computeIfAbsent the map's own bin lock held the two apart, and moving the computation out of the map took that away (R357, 3.4.2; the regression both review rounds named first)",
+        what="clearing the shared caches stops taking their lock, so an answer already being built is written into the map after the clear and every later request reads what the administrator's type change removed - inside computeIfAbsent the map's bin lock held the two apart only for a bin the clear had not walked past yet, and moving the computation out of the map removed the bin lock from the picture entirely (R357, 3.4.2; the regression both review rounds named first)",
         module='core',
         file='core/src/main/java/jp/aegif/nemaki/cmis/service/impl/RepositoryServiceImpl.java',
         find_span=('\tprivate void clearSharedTypeCaches() {',
@@ -37145,6 +37145,16 @@ CONTROLS = [
         replace='\t\tTypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {\n\t\t\tif (log.isDebugEnabled()) {\n\t\t\t\tlog.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");\n\t\t\t} // (important-comment)\n\n\t\t\t// Apply PropertyDefinition sharing first, then use as shared TypeDefinition\n\t\t\tTypeDefinition built = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);\n\t\t\tlog.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(built) + ")"); // (important-comment)\n\t\t\treturn built;\n\t\t});',
         test='TypeInstanceCacheDoesNotStarveTheSchedulerTest',
         expect_fail=['aVirtualThreadTheBuilderWaitsForStillRuns', 'everyRequestFinishesAndAnUnrelatedOneAnswers', 'theWaitersQueueOnTheInstanceLock'],
+    ),
+    dict(
+        id='EW7',
+        what="the request that waited for the registry's instance cache stops reading what the first one put there, so it builds a second shared instance for the same type. The identity of the two answers cannot catch this - ensureConsistentPropertyDefinitions returns its own argument on every path, and that argument is the registry's one instance, so both callers hold the same object either way, which is why the assertion on it was withdrawn and the number of times the instance is built is asserted instead (R357, 3.4.2; the vacuous lock the second review measured)",
+        module='core',
+        file='core/src/main/java/jp/aegif/nemaki/cmis/aspect/type/impl/TypeManagerImpl.java',
+        find='\t\t\t\tresult = repoCache.get(cacheKey); // another request may have filled it\n',
+        replace='\t\t\t\tresult = null; // does not read what the request before it put there\n',
+        test='TypeInstanceCacheDoesNotStarveTheSchedulerTest',
+        expect_fail=['theQueuedRequestReadsWhatTheFirstOnePutInTheCache'],
     ),
 ]
 
