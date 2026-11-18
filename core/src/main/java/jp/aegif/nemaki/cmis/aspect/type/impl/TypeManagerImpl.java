@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -181,7 +182,18 @@ public class TypeManagerImpl implements TypeManager {
 	 * on whatever thread asked for it.
 	 */
 	private static volatile boolean everInitialized = false;
-	private static final Object initLock = new Object();
+	// R357. The process-wide lock of the type registry. A ReentrantLock, not a monitor: on
+	// JDK 21 a virtual thread that blocks entering a monitor, or parks while holding one, pins
+	// its carrier. refreshTypes() reads the store and writes the log inside this section. With
+	// as many concurrent type creations as there are carriers, the waiters pinned every carrier
+	// but the holder's, and the holder, pinned too, parked on the log appender's lock — whose
+	// next owner was a virtual thread with no carrier left to run on. Not two monitors waiting
+	// on each other: a deadlock the scheduler made by starving itself of carriers, and the
+	// whole server stayed stopped until the JVM was restarted. A thread waiting here now parks
+	// and gives its carrier up. Reentrant because ensureInitialized() and getTypeById() call
+	// init() while holding it; non-fair and uninterruptible, like the monitor it replaces.
+	// Every acquisition is lock() / try / finally { unlock(); }.
+	private static final ReentrantLock initLock = new ReentrantLock();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -191,7 +203,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	// Both maps above are guarded by initLock. This counter is not — it exists so that
 	// cleanupTimedOutTypes(), which every getTypeDefinition() call runs, can decide there is
-	// nothing to clean WITHOUT taking the process-wide monitor. Deleting a type is rare and
+	// nothing to clean WITHOUT taking the process-wide lock. Deleting a type is rare and
 	// getTypeDefinition is on every response, so the common case must not serialise: on virtual
 	// threads a `synchronized` block that blocks pins its carrier, and the profile showed the
 	// ForkJoinPool compensating for exactly that. Mutated only under initLock; read unguarded,
@@ -248,7 +260,8 @@ public class TypeManagerImpl implements TypeManager {
 			return;
 		}
 		
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			if (initialized) {
 				log.debug("init() skipped - already initialized (synchronized)");
 				return;
@@ -336,6 +349,8 @@ public class TypeManagerImpl implements TypeManager {
 					StartupPhase.end();
 				}
 			}
+		} finally {
+			initLock.unlock();
 		}
 		log.info("TypeManagerImpl.init() completed successfully");
 	}
@@ -349,7 +364,8 @@ public class TypeManagerImpl implements TypeManager {
 			if (log.isDebugEnabled()) {
 				log.debug("Not initialized - acquiring lock to initialize");
 			}
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				if (!initialized) {
 					if (log.isDebugEnabled()) {
 						log.debug("Still not initialized in synchronized block - calling init()");
@@ -360,6 +376,8 @@ public class TypeManagerImpl implements TypeManager {
 						log.debug("Already initialized by another thread");
 					}
 				}
+			} finally {
+				initLock.unlock();
 			}
 		} else {
 			if (log.isDebugEnabled()) {
@@ -371,9 +389,12 @@ public class TypeManagerImpl implements TypeManager {
 		if (TYPES == null || TYPES.isEmpty()) {
 			log.error("CRITICAL ERROR: TYPES is empty after initialization!");
 			// Force re-initialization
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 					initialized = false;
 					init();
+			} finally {
+				initLock.unlock();
 			}
 		}
 		
@@ -616,7 +637,8 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	@Override
 	public void markTypeBeingDeleted(String typeId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// CRITICAL ENHANCEMENT: Add timestamp for timeout detection
 			long currentTime = System.currentTimeMillis();
 			typesBeingDeleted.add(typeId);
@@ -631,6 +653,8 @@ public class TypeManagerImpl implements TypeManager {
 			if (log.isDebugEnabled()) {
 				log.debug("NEMAKI TYPE DELETION: Stack trace for markTypeBeingDeleted call:", new Exception("Stack trace"));
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
@@ -639,7 +663,8 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	@Override
 	public void unmarkTypeBeingDeleted(String typeId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			boolean wasRemoved = typesBeingDeleted.remove(typeId);
 			Long timestamp = typesDeletionTimestamps.remove(typeId);
 			pendingDeletions = typesDeletionTimestamps.size();
@@ -652,6 +677,8 @@ public class TypeManagerImpl implements TypeManager {
 			}
 			log.debug("NEMAKI TYPE DELETION: Total types still being deleted: " + typesBeingDeleted.size());
 			log.debug("NEMAKI TYPE DELETION: Remaining types being deleted: " + typesBeingDeleted);
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
@@ -668,7 +695,8 @@ public class TypeManagerImpl implements TypeManager {
 		if (pendingDeletions == 0) {
 			return;
 		}
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			long currentTime = System.currentTimeMillis();
 			List<String> timedOutTypes = new ArrayList<>();
 
@@ -699,12 +727,15 @@ public class TypeManagerImpl implements TypeManager {
 
 				log.debug("NEMAKI TYPE DELETION: Cleanup complete - remaining types being deleted: " + typesBeingDeleted.size());
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
 	@Override
 	public void refreshTypes() {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// Cache refresh logging
 			log.info("refreshTypes() called - clearing and rebuilding cache");
 
@@ -759,6 +790,8 @@ public class TypeManagerImpl implements TypeManager {
 			// defect StartupPhase exists to remove, reached through the door the fix left
 			// open. A review found it while the reachability was still latent.
 			everInitialized = true;
+		} finally {
+			initLock.unlock();
 		}
 	}
 
@@ -2941,7 +2974,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (types == null) {
 			// CRITICAL FIX: Dynamically initialize missing repository
 			// This handles cases where repositoryInfoMap doesn't include the repository at startup
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				// Double-check after acquiring lock
 				types = TYPES.get(repositoryId);
 				if (types == null) {
@@ -2973,6 +3007,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 								+ " type does not exist", e);
 					}
 				}
+			} finally {
+				initLock.unlock();
 			}
 		}
 
@@ -3452,7 +3488,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
 			}
 			
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				// Double-check after acquiring lock
 				types = TYPES.get(repositoryId);
 				if (types == null) {
@@ -3497,6 +3534,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				} else {
 					log.info("*** DYNAMIC INIT SKIP: Repository " + repositoryId + " type cache created by another thread ***");
 				}
+			} finally {
+				initLock.unlock();
 			}
 		} else {
 			log.debug("*** TYPE CACHE OK: Repository " + repositoryId + " has " + types.size() + " types available ***");
@@ -4121,7 +4160,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 		log.info("=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
 
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// Ensure cache is initialized
 			if (!initialized) {
 				initGlobalTypes();
@@ -4233,6 +4273,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					}
 				}
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 
@@ -4424,7 +4466,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Solution: Call typeService.clearTypeCache() BEFORE generate() to force fresh DB read.
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			log.info("invalidateTypeDefinitionCache: Invalidating and regenerating cache for repository=" + repositoryId);
 
 			// Remove the specific repository's type cache
@@ -4496,6 +4539,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 
 			log.info("invalidateTypeDefinitionCache: Cache invalidation and regeneration complete for repository=" + repositoryId);
+		} finally {
+			initLock.unlock();
 		}
 	}
 
