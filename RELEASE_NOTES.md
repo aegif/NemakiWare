@@ -656,10 +656,11 @@ API v1 の認証の資源（`/api/v1/cmis/auth/...`）は、**要求が名乗っ
 
 ```bash
 python3 - <<'EOF'
-import json, subprocess
-bookmark, found = None, 0
+import json, subprocess, sys
+bookmark, found, seen = None, 0, 0
 while True:
-    body = {"selector": {"type": "userItem"},
+    # 利用者は、製品が利用者を読む view（userItemsById）と同じ形で選ぶ
+    body = {"selector": {"type": "cmis:item", "objectType": "nemaki:user"},
             "fields": ["userId", "subTypeProperties"], "limit": 500}
     if bookmark:
         body["bookmark"] = bookmark
@@ -667,8 +668,14 @@ while True:
                           "http://localhost:5984/bedroom/_find",
                           "-H", "Content-Type: application/json", "-d", json.dumps(body)],
                          capture_output=True, text=True).stdout
-    page = json.loads(out)
-    docs = page.get("docs", [])
+    try:
+        page = json.loads(out)
+    except ValueError:
+        page = None
+    docs = page.get("docs") if isinstance(page, dict) else None
+    if not isinstance(docs, list):
+        sys.exit("問えませんでした（0 件ではありません）: " + out[:200])
+    seen += len(docs)
     for d in docs:
         props = {p["key"]: p["value"] for p in (d.get("subTypeProperties") or [])}
         methods = props.get("nemaki:allowedAuthMethods") or ""
@@ -676,17 +683,28 @@ while True:
         allows_cloud = any(m.strip().lower() == "cloud" for m in methods.split(","))
         if allows_cloud and not (props.get("nemaki:authRoute") or "").strip():
             found += 1
-            print(d["userId"], methods)
+            print(d.get("userId"), methods)
     bookmark = page.get("bookmark")
     if not docs or len(docs) < 500 or not bookmark:
         break
-print("---", found, "件")
+if seen == 0:
+    sys.exit("利用者を 1 人も読めませんでした（0 件ではありません）。リポジトリの名前と資格情報を確かめてください。")
+print("---", found, "件（読んだ利用者", seen, "人）")
 EOF
 ```
 
 **リポジトリごとに `bedroom` を読み替えてください**（`canopy` など）。1 ページ 500 件で `bookmark` を
 たどるので、利用者が何人いても最後まで見ます。`cloud` の判定は**製品と同じ**（カンマで切って完全一致）
-なので、`cloud-backup` のような値を誤って拾いません。
+なので、`cloud-backup` のような値を誤って拾いません。最後の行に、読んだ利用者の人数も出します。
+**利用者を 1 人も読めないとき・CouchDB が答えを返さないときは、「0 件」ではなく失敗として終わります**
+（問えていないことと、該当が無いことを、同じ出力にしないためです）。
+
+**訂正（2026-11-20）**: 3.4.1 の公開からこの日まで、ここに載せていたクエリは、利用者を `"type": "userItem"` で
+選んでいました。製品はその型の文書を書きません（利用者は `type` が `cmis:item`、`objectType` が `nemaki:user` の
+文書です）。そのため、**該当する利用者がいても、利用者を 1 人も読まずに「--- 0 件」と出ていました。**
+**前のクエリで「0 件」を得た配備は、その結果を当てにせず、上のクエリでやり直してください。** すでに 3.4.1 以降に
+上げた配備でも、上のクエリは同じ条件の利用者を挙げます。そのうち、上げた後の SSO のログインで既に IdP に
+結ばれたものがあるかどうかは、このクエリでは分かりません。
 
 出てきた利用者のうち、**SSO で入れてよいものだけ**を残してください（残すなら何もしなくてよく、
 止めるなら `nemaki:allowedAuthMethods` から `cloud` を外します）。
