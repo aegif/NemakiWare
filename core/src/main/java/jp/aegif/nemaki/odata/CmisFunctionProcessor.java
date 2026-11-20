@@ -107,9 +107,58 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         this.serviceMetadata = serviceMetadata;
     }
     
+    private static final String FILTER_NOT_TRANSLATED =
+            "$filter is not translated on a function — put the condition in the statement";
+
+    static final String APPLY_OR_SEARCH_NOT_TRANSLATED =
+            "$apply and $search are not translated on a function — put the condition in the statement";
+
+    static final String OPTION_NOT_TRANSLATED =
+            " is not translated on a function — page and shape the answer with the function's own parameters";
+
+    static final String ALIASED_PARAMETER_REFUSED =
+            " is given as an alias — a function parameter is read only as the value written in the call";
+
+    static final String CAST_ON_A_FUNCTION_REFUSED =
+            "a type cast on $entity is answered only for the type its function returns, not for ";
+
+    static final String FUNCTION_AFTER_A_NAVIGATION_REFUSED =
+            "a function is answered only on the entity its entity set and key name — a navigation before it is not translated";
+
     @Override
     public void readEntityCollection(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType responseFormat) throws ODataApplicationException, SerializerException {
+
+        // A function after a navigation was bound to the entity of the first key: Folders('F')/children('D2')/…/GetAllVersions()
+        // read the versions of F (a 404 — F is a folder), and Objects('D')/NemakiWare.CMIS.Folder/children('D2')/… answered
+        // those of D (R263, 3.4.2). The navigation is not translated; the request is refused before anything is read.
+        for (UriResource part : uriInfo.getUriResourceParts()) {
+            if (part instanceof UriResourceFunction) {
+                break;
+            }
+            if (part instanceof org.apache.olingo.server.api.uri.UriResourceNavigation) {
+                throw new ODataApplicationException(FUNCTION_AFTER_A_NAVIGATION_REFUSED,
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
+
+        // A $filter was not read: Query(...)?$filter=name eq 'zz-none' answered the same as without it, and so did a bound
+        // function such as GetAllVersions (R252, 3.4.2). The filter is not translated into CMIS; it is refused. (A function
+        // that answers one entity is given no $filter — Olingo refuses it before this processor.)
+        if (uriInfo.getFilterOption() != null) {
+            throw new ODataApplicationException(FILTER_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+
+        // The same condition written as $apply=filter(...) or $search was dropped as the $filter was, and the function answered
+        // as without it: Query(...)?$apply=filter(name eq 'zz-none') and ?$search=zznone answered the same 3 (R266, 3.4.2).
+        // Neither is translated; a function given either refuses the request. (A function that answers one entity is given
+        // neither — Olingo refuses both before this processor.)
+        if (uriInfo.getApplyOption() != null || uriInfo.getSearchOption() != null) {
+            throw new ODataApplicationException(APPLY_OR_SEARCH_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+        refuseTheOptionsNotTranslated(uriInfo);
         
         // Check if this is a function call
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
@@ -133,6 +182,7 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         }
+        refuseAliasedParameters(uriResourceFunction);
         
         EdmFunction function = uriResourceFunction.getFunction();
         String functionName = function.getName();
@@ -224,10 +274,23 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                     Locale.ENGLISH
             );
         }
+        refuseAliasedParameters(uriResourceFunction);
         
         EdmFunction function = uriResourceFunction.getFunction();
         String functionName = function.getName();
         String baseUri = request.getRawBaseUri();
+
+        refuseTheOptionsNotTranslated(uriInfo);
+
+        // The cast of $entity/NemakiWare.CMIS.Policy?$id=GetObjectByPath(path='/') was not read, so the root folder was answered
+        // for a type it is not (R269, 3.4.2). Olingo gives the type the function returns when no cast is written; a cast is
+        // answered only when it is that type, and any other — a narrower one too — is refused before anything is read.
+        org.apache.olingo.commons.api.edm.EdmType cast = uriInfo.getEntityTypeCast();
+        if (cast != null
+                && !function.getReturnType().getType().getFullQualifiedName().equals(cast.getFullQualifiedName())) {
+            throw new ODataApplicationException(CAST_ON_A_FUNCTION_REFUSED + cast.getFullQualifiedName().getFullQualifiedNameAsString(),
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
         
         try {
             Entity entity;
@@ -290,6 +353,42 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
         }
     }
     
+    /**
+     * A parameter given as an alias was not read: Query(..., maxItems=@m, ...)?@m=1 answered 195 folders rather than 1, and
+     * skipCount=@k?@k=1 skipped none (R305, 3.4.2). Olingo gives an aliased parameter no text, and the function read only
+     * the text. An alias is not resolved to its value; a function given one refuses the request before anything is read.
+     * The name refused is the parameter's, which Olingo has matched to the function's own.
+     */
+    private static void refuseAliasedParameters(UriResourceFunction function) throws ODataApplicationException {
+        for (UriParameter parameter : function.getParameters()) {
+            if (parameter.getAlias() != null) {
+                throw new ODataApplicationException(parameter.getName() + ALIASED_PARAMETER_REFUSED,
+                        HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+            }
+        }
+    }
+
+    /**
+     * The paging and shaping options were dropped: Query(...)?$top=1, $skip=2, $skiptoken, $top=0 and $count=true answered the
+     * same 3 with no count, and $orderby, $select and $expand were not read either (R259, 3.4.2). None is translated; a function
+     * given any of them refuses the request. A function that answers one entity is given only $select and $expand — Olingo
+     * refuses the others before this processor. $filter is refused on its own (R252).
+     */
+    private static void refuseTheOptionsNotTranslated(UriInfo uriInfo) throws ODataApplicationException {
+        String given = uriInfo.getTopOption() != null ? "$top"
+                : uriInfo.getSkipOption() != null ? "$skip"
+                : uriInfo.getSkipTokenOption() != null ? "$skiptoken"
+                : uriInfo.getCountOption() != null ? "$count"
+                : uriInfo.getOrderByOption() != null ? "$orderby"
+                : uriInfo.getSelectOption() != null ? "$select"
+                : uriInfo.getExpandOption() != null ? "$expand"
+                : null;
+        if (given != null) {
+            throw new ODataApplicationException(given + OPTION_NOT_TRANSLATED, HttpStatusCode.BAD_REQUEST.getStatusCode(),
+                    Locale.ENGLISH);
+        }
+    }
+
     @Override
     public void createEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType requestFormat, ContentType responseFormat)
@@ -489,6 +588,12 @@ public class CmisFunctionProcessor implements EntityCollectionProcessor, EntityP
                 skipCount,
                 null   // extension
         );
+        // An answer the ACL scan limit cut short can tell neither the whole set's count, order nor where it continues
+        // (R344, 3.4.2): it is refused before an entity is converted or the count is set.
+        if (jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(queryResult)) {
+            throw new ODataApplicationException(jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.REFUSAL,
+                    HttpStatusCode.BAD_REQUEST.getStatusCode(), Locale.ENGLISH);
+        }
         
         EntityCollection entityCollection = new EntityCollection();
         if (queryResult != null && queryResult.getObjects() != null) {

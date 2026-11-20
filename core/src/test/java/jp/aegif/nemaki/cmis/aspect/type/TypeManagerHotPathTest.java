@@ -27,6 +27,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -82,36 +85,51 @@ class TypeManagerHotPathTest {
     }
 
     @Test
-    @DisplayName("何も削除中でなければ cleanupTimedOutTypes は monitor を取らずに帰る")
+    @DisplayName("何も削除中でなければ cleanupTimedOutTypes は registry の lock を取らずに帰る")
     void cleanupReturnsWithoutTheMonitorWhenIdle() throws Exception {
         TypeManagerImpl tm = new TypeManagerImpl();
 
         // Hold initLock from another thread. If cleanup still tried to acquire it, this call
         // would block until the holder let go — which is exactly the contention being removed.
+        //
+        // The lock itself, taken the way the registry takes it. This test used to hold the
+        // field's MONITOR; once the field became a ReentrantLock (R357) that monitor was a lock
+        // nothing else ever takes, and a cleanup that did take initLock would have passed.
         Field lockField = TypeManagerImpl.class.getDeclaredField("initLock");
         lockField.setAccessible(true);
-        Object initLock = lockField.get(null);
+        Object field = lockField.get(null);
+        HarnessBroken.unless(field instanceof ReentrantLock,
+                "initLock is no longer a ReentrantLock — hold the registry's lock the way the"
+                        + " registry takes it, or this test holds a lock nothing contends for");
+        ReentrantLock initLock = (ReentrantLock) field;
 
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch letGo = new CountDownLatch(1);
         Thread holder = new Thread(() -> {
-            synchronized (initLock) {
-                try {
-                    Thread.sleep(1500L);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            initLock.lock();
+            try {
+                held.countDown();
+                letGo.await(3000L, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                initLock.unlock();
             }
         });
         holder.setDaemon(true);
         holder.start();
-        Thread.sleep(100L); // let the holder actually get in
+        HarnessBroken.unless(held.await(5000L, TimeUnit.MILLISECONDS) && initLock.isLocked()
+                        && !initLock.isHeldByCurrentThread(),
+                "the holder thread did not get the registry lock, so nothing was contended");
 
         long start = System.nanoTime();
         tm.cleanupTimedOutTypes();
         long elapsedMs = (System.nanoTime() - start) / 1_000_000L;
+        letGo.countDown();
+        holder.join(3000L);
 
         assertTrue(elapsedMs < 500L,
                 "cleanup waited " + elapsedMs + "ms for initLock — the idle fast path is gone");
-        holder.join(3000L);
     }
 
     @Test

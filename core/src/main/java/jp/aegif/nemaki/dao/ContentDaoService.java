@@ -312,6 +312,15 @@ public interface ContentDaoService {
 	VersionSeries getVersionSeries(String repositoryId, String nodeId);
 
 	/**
+	 * A version series as the store holds it now, bypassing any cache (R341, 3.4.2). For a decision that must not follow a
+	 * copy another replica's writes do not reach — whether a document may be deleted with every version.
+	 *
+	 * @return null if the store holds no such series; a read that fails is answered as {@link #getVersionSeries} answers it
+	 *         (thrown — but while the repository is provisioning, the store's client answers a failed read as null)
+	 */
+	VersionSeries getVersionSeriesFresh(String repositoryId, String versionSeriesId);
+
+	/**
 	 * Get the latest version of a document
 	 * @param repositoryId TODO
 	 * @param versionSeriesId

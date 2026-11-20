@@ -4102,13 +4102,9 @@ public class ContentServiceImpl implements ContentService {
 						+ " succession (or that it is the last version) without the list", e);
 			}
 
-			// Filter out PWC and the document being deleted
-			List<Document> remainingVersions = new ArrayList<Document>();
-			for (Document v : allVersionsInSeries) {
-				if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
-					remainingVersions.add(v);
-				}
-			}
+			// Filter out PWC and the document being deleted — the rule a delete refusing to leave the holder's working
+			// copy without its series decides by too (R329, committedVersionsLeftAfterDeleting)
+			List<Document> remainingVersions = checkedInVersionsBesides(allVersionsInSeries, objectId);
 			if (log.isDebugEnabled()) {
 				log.debug("After filtering (excluding objectId={} and PWC), remainingVersions count: {}",
 					objectId, remainingVersions.size());
@@ -4232,6 +4228,62 @@ public class ContentServiceImpl implements ContentService {
 		}
 		// Note: Solr index deletion is handled in the delete() method for each document
 		// and Solr index update for promoted versions is handled above
+	}
+
+	@Override
+	public List<Document> committedVersionsLeftAfterDeleting(String repositoryId, Document document) {
+		List<Document> versions = contentDaoService.getAllVersions(repositoryId, document.getVersionSeriesId());
+		if (versions == null) {
+			throw new IllegalStateException("the versions of the series '" + document.getVersionSeriesId()
+					+ "' were answered as nothing, so what a delete of '" + document.getId() + "' alone leaves is unknown");
+		}
+		return checkedInVersionsBesides(versions, document.getId());
+	}
+
+	@Override
+	public boolean isCheckedOut(String repositoryId, Document document) {
+		String seriesId = document.getVersionSeriesId();
+		if (seriesId == null) {
+			return false;
+		}
+		// Read from the store, not this replica's cache (R341): another replica's check-out does not reach the cache here.
+		// And not the mark alone: a series restored with its mark cleared, or a check-out that failed after writing its
+		// working copy and before marking the series, leaves a working copy the mark does not name — so a working copy of
+		// the series in the store's version list (the list deleteDocument deletes by) answers true too.
+		VersionSeries series = contentDaoService.getVersionSeriesFresh(repositoryId, seriesId);
+		if (series != null && Boolean.TRUE.equals(series.isVersionSeriesCheckedOut())) {
+			return true;
+		}
+		List<Document> versions = contentDaoService.getAllVersions(repositoryId, seriesId);
+		if (versions == null) {
+			throw new IllegalStateException("the versions of the series '" + seriesId + "' were answered as nothing, so"
+					+ " whether the store holds a working copy of it is unknown");
+		}
+		for (Document version : versions) {
+			if (version == null) {
+				throw new IllegalStateException("a version of the series '" + seriesId + "' was answered as nothing, so"
+						+ " whether it is a working copy is unknown");
+			}
+			if (version.isPrivateWorkingCopy()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The versions of {@code versions} that are not private working copies and are not {@code objectId}: what a delete of
+	 * {@code objectId} alone leaves of its series. {@link #deleteDocument} deletes the series too when it is empty, and
+	 * {@link #committedVersionsLeftAfterDeleting} answers it (R329, 3.4.2).
+	 */
+	public static List<Document> checkedInVersionsBesides(List<Document> versions, String objectId) {
+		List<Document> left = new ArrayList<Document>();
+		for (Document v : versions) {
+			if (!v.isPrivateWorkingCopy() && !java.util.Objects.equals(v.getId(), objectId)) {
+				left.add(v);
+			}
+		}
+		return left;
 	}
 
 	// deletedWithParent flag controls whether it's deleted with the parent all
@@ -5378,6 +5430,11 @@ public class ContentServiceImpl implements ContentService {
 	}
 
 	@Override
+	public boolean wasArchiveReadableAtDeletion(String repositoryId, Archive archive, String username, boolean withContent) {
+		return archiveDelegate.wasReadableAtDeletion(archive, username, withContent);
+	}
+
+	@Override
 	public void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException {
 		// Read before restoring, for the same reason the destroy path reads before destroying:
 		// afterwards the archive row is gone and nothing says which subjects came back.
@@ -5591,6 +5648,23 @@ public class ContentServiceImpl implements ContentService {
 		initDelegates();
 	}
 
+	/**
+	 * The permission service, looked up when an archive is written (R323, 3.4.2) — it is asked who could read the object
+	 * as it is deleted, and the answer is kept in the archive. Looked up, not wired: the permission service depends on
+	 * this service. {@code null} when there is none, and then the archive is answered to an administrator only.
+	 */
+	jp.aegif.nemaki.cmis.aspect.PermissionService permissionServiceForArchives() {
+		try {
+			org.springframework.context.ApplicationContext context =
+					jp.aegif.nemaki.util.spring.SpringContext.getApplicationContext();
+			return context == null ? null
+					: context.getBean("PermissionService", jp.aegif.nemaki.cmis.aspect.PermissionService.class);
+		} catch (RuntimeException e) {
+			log.warn("The permission service could not be looked up for an archive: {}", e.toString());
+			return null;
+		}
+	}
+
 	private void initDelegates() {
 		if (contentDaoService == null) {
 			return;
@@ -5601,7 +5675,7 @@ public class ContentServiceImpl implements ContentService {
 		if (archiveDelegate == null) {
 			archiveDelegate = new ArchiveServiceDelegate(contentDaoService, this, () -> solrUtil,
 					(callContext, nodeBase) -> helper.setSignature(callContext, nodeBase),
-					() -> recordContentState);
+					() -> recordContentState, this::permissionServiceForArchives);
 		}
 		if (aclDelegate == null && nemakiCachePool != null && repositoryInfoMap != null && propertyManager != null) {
 			aclDelegate = new AclServiceDelegate(this, contentDaoService, nemakiCachePool,

@@ -655,6 +655,11 @@ public class NavigationServiceImpl implements NavigationService {
 
 			Folder parent = hold.parent();
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, parent);
+			// The parent is answered to a caller who may read it (R311, 3.4.2). Only the folder was asked about —
+			// whether the caller may read ITS parent, which is a permission on the folder — so a caller who is
+			// refused the parent by getObject was answered the parent's properties here.
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, parent);
 
 			// //////////////////
 			// Body of the method
@@ -686,6 +691,11 @@ public class NavigationServiceImpl implements NavigationService {
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !ObjectServiceImpl.isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			exceptionService.permissionDenied(callContext,
 					repositoryId, PermissionMapping.CAN_GET_PARENTS_FOLDER, content);
 
@@ -704,6 +714,11 @@ public class NavigationServiceImpl implements NavigationService {
 				// //////////////////
 				exceptionService.objectNotFoundParentFolder(repositoryId, objectId, parent);
 				exceptionService.invalidArgumentRootFolder(repositoryId, content);
+				// The parent is answered to a caller who may read it (R311, 3.4.2). Only the object was asked
+				// about — whether the caller may read ITS parents, which is a permission on the object — so a
+				// caller who is refused the parent by getObject was answered the parent's properties here.
+				exceptionService.permissionDenied(callContext, repositoryId,
+						PermissionMapping.CAN_GET_PROPERTIES_OBJECT, parent);
 
 				// //////////////////
 				// Body of the method
@@ -744,6 +759,14 @@ public class NavigationServiceImpl implements NavigationService {
 		if(StringUtils.isNotBlank(folderId)){
 			Folder folder = contentService.getFolder(repositoryId, folderId);
 			exceptionService.objectNotFoundParentFolder(repositoryId, folderId, folder);
+			// That check refuses nothing in a repository that says it supports multifiling. A folder that is not
+			// there is not found here either: there is nothing to ask the caller's permission of (R314, 3.4.2).
+			exceptionService.objectNotFound(DomainType.OBJECT, folder, folderId);
+			// The working copies in a folder are answered to a caller who may read that folder's children, which
+			// is what getChildren asks (R314, 3.4.2). Nothing was asked: a caller who is refused the folder was
+			// answered what is checked out in it.
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_CHILDREN_FOLDER, folder);
 		}
 		exceptionService.invalidArgumentOrderBy(repositoryId, orderBy);
 
@@ -751,8 +774,16 @@ public class NavigationServiceImpl implements NavigationService {
 		// Body of the method
 		// //////////////////
 		//Folder ID can be null, which means all PWCs are returned.
+		// A blank folder id names no folder — the check above reads it so, and the store is asked the same. It
+		// was handed on as it came, and the store read it as the id of a folder, one that nothing is filed in:
+		// the list was answered empty where there are working copies (R314, 3.4.2).
+		String folderRead = StringUtils.isNotBlank(folderId) ? folderId : null;
 		List<Document> checkedOuts = contentService.getCheckedOutDocs(repositoryId,
-				folderId, orderBy, extension);
+				folderRead, orderBy, extension);
+		// Only the working copies the caller may read are answered (R314, 3.4.2) — the reading getChildren gives
+		// a folder's children. Every working copy in the repository was answered to any caller, with all its
+		// properties, though getObject refuses a working copy to anyone but its owner and an administrator.
+		checkedOuts = permissionService.getFiltered(callContext, repositoryId, checkedOuts);
 		
 		List<Lock> locks = threadLockService.readLocks(repositoryId, checkedOuts);
 		

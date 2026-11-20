@@ -489,6 +489,12 @@ public class ZipExporter {
             if (allVersions == null || allVersions.size() <= 1) {
                 return;
             }
+            // R320 (3.4.2): only the versions the caller may read go into the archive — what the walk does with a
+            // folder's children, and what the version list answers (R316). Every version went in: a caller whom
+            // getObject refuses a version was handed that version's content and metadata here. A version the
+            // caller may not read is left out without a word. A permission that could not be asked is not a
+            // refusal: it stops the archive, like any other failure to read the history (the catch below).
+            allVersions = versionsTheCallerMayRead(repositoryId, callContext, allVersions);
 
             allVersions.sort((a, b) -> {
                 if (a.getCreated() != null && b.getCreated() != null) {
@@ -542,6 +548,25 @@ public class ZipExporter {
                     + " could not be exported to " + basePath + ", and an archive without it"
                     + " would be read as a document that was never revised", e);
         }
+    }
+
+    /**
+     * The versions among these that the caller may read as objects — the permission service's decision, the one
+     * getChildren and the version list put their answers through. Whatever keeps the permission from being asked is
+     * thrown, not answered as a refusal.
+     */
+    private static List<Document> versionsTheCallerMayRead(String repositoryId, CallContext callContext,
+            List<Document> versions) {
+        jp.aegif.nemaki.cmis.aspect.PermissionService permissions = getPermissionService();
+        if (permissions == null) {
+            throw new IllegalStateException("the permission service is not available, so which versions the caller"
+                    + " may read cannot be asked");
+        }
+        List<Document> readable = permissions.getFiltered(callContext, repositoryId, versions);
+        if (readable == null) {
+            throw new IllegalStateException("the permission service answered nothing about the versions");
+        }
+        return new java.util.ArrayList<>(readable);
     }
 
     /**

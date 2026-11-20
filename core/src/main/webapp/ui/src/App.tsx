@@ -396,9 +396,10 @@ function AppRoutes() {
     return <Navigate to="/documents" replace />;
   }
 
-  // Authenticated routes
+  // Authenticated routes. Keyed by the repository (R349): a sign-in to another repository — in another tab, too — starts
+  // every screen afresh, so none keeps the previous repository's rows, selection or an answer still in flight.
   return (
-    <Layout repositoryId={authToken.repositoryId}>
+    <Layout key={authToken.repositoryId} repositoryId={authToken.repositoryId}>
       <Routes>
           <Route path="/" element={<Navigate to="/documents" replace />} />
           <Route path="/index.html" element={<Navigate to="/documents" replace />} />

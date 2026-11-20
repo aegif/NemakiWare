@@ -81,6 +81,16 @@ public class Archive extends NodeBase {
 	private String aclSnapshot;
 	private String propsSnapshot;
 	private String archivedBy;
+	/**
+	 * The users who could read this object's properties when it was deleted (R323, 3.4.2) — whom the permission service
+	 * answered then, fixed then: a user who could read it is answered after it leaves a group, and one who joins a group,
+	 * or is made, afterwards is not. {@code null} when it was not recorded: an archive written before 3.4.2, an
+	 * attachment's archive, or a delete during which it could not be asked. An archive's properties are answered to an
+	 * administrator and to these users — {@code ContentService.wasArchiveReadableAtDeletion}.
+	 */
+	private List<String> readableAtDeletionBy;
+	/** The users who could read its content when it was deleted — as {@link #getReadableAtDeletionBy}, of the content. */
+	private List<String> contentReadableAtDeletionBy;
 
 
 	public Archive() {
@@ -294,6 +304,22 @@ public class Archive extends NodeBase {
 
 	public void setArchivedBy(String archivedBy) {
 		this.archivedBy = archivedBy;
+	}
+
+	public List<String> getReadableAtDeletionBy() {
+		return readableAtDeletionBy;
+	}
+
+	public void setReadableAtDeletionBy(List<String> readableAtDeletionBy) {
+		this.readableAtDeletionBy = readableAtDeletionBy;
+	}
+
+	public List<String> getContentReadableAtDeletionBy() {
+		return contentReadableAtDeletionBy;
+	}
+
+	public void setContentReadableAtDeletionBy(List<String> contentReadableAtDeletionBy) {
+		this.contentReadableAtDeletionBy = contentReadableAtDeletionBy;
 	}
 
 	@Override

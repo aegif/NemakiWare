@@ -2847,6 +2847,8 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         }
         int totalRemoved = 0;
         int totalFailed = 0;
+        int totalAlreadyAbsent = 0;
+        int totalUnestablished = 0;
         for (String relId : relationshipIds) {
             try {
                 captureScope.ensureIntentOpened();
@@ -2855,6 +2857,27 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                 totalRemoved++;
             } catch (CaptureScope.CaptureIntentFailedException failClosed) {
                 throw failClosed;
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException notFound) {
+                // An edge another writer removed between the listing and this delete (R292, 3.4.2):
+                // since R288 its delete is answered 404, and it was counted as a stale edge that
+                // remains. Gone is what this delete is for — asked of the store again, as on the
+                // replace path.
+                AfterNotFound after = askAgainAfterNotFound(repositoryId, relId);
+                if (after.absent()) {
+                    captureScope.record(REMOVE_RELATIONSHIP_ALREADY_ABSENT, MutationOutcome.SUCCEEDED,
+                            notFound.getMessage());
+                    totalAlreadyAbsent++;
+                } else {
+                    captureScope.record("removeRelationship", after.outcome(),
+                            notFound.getMessage() + "; " + after.unmet());
+                    logger.warn("Resync: the delete of relationship {} of {} was answered as not found,"
+                            + " but {}", relId, objectId, after.unmet());
+                    if (after.outcome() == MutationOutcome.FAILED) {
+                        totalFailed++;
+                    } else {
+                        totalUnestablished++;
+                    }
+                }
             } catch (Exception e) {
                 // Recorded, not only logged: the capture evidence has to carry the failed
                 // mutation. The split dropped this line and a review caught the loss.
@@ -2867,13 +2890,68 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
         if (totalRemoved > 0) {
             logger.info("Resync: removed {} relationships from {}", totalRemoved, objectId);
         }
+        if (totalAlreadyAbsent > 0) {
+            logger.info("Resync: {} relationship(s) of {} were already absent", totalAlreadyAbsent,
+                    objectId);
+        }
+        List<String> unmet = new ArrayList<>();
         if (totalFailed > 0) {
             // replace_relationships_on_resync exists to leave the object with ONLY the incoming
             // relationships. Surviving edges mean it is not in the state the policy promises.
-            return "Resync did not remove " + totalFailed + " existing relationship(s) from "
-                    + objectId + "; stale edges remain alongside the re-imported ones";
+            unmet.add("Resync did not remove " + totalFailed + " existing relationship(s) from "
+                    + objectId + "; stale edges remain alongside the re-imported ones");
         }
-        return null;
+        if (totalUnestablished > 0) {
+            // Not "stale edges remain": the store could not be read, so whether they do is what
+            // could not be established — the wording the listing failure above uses.
+            unmet.add("Resync did not establish that " + totalUnestablished + " existing"
+                    + " relationship(s) of " + objectId + " were removed: each delete was answered as"
+                    + " not found and the store could not be read again, so whether stale edges remain"
+                    + " alongside the re-imported ones was not established");
+        }
+        return unmet.isEmpty() ? null : String.join("; ", unmet);
+    }
+
+    /** The capture operation of a replace whose document the store no longer holds (R292). */
+    static final String REPLACE_DELETE_ALREADY_ABSENT = "replaceDeleteAlreadyAbsent";
+
+    /** The capture operation of a resync edge the store no longer holds (R292). */
+    static final String REMOVE_RELATIONSHIP_ALREADY_ABSENT = "removeRelationshipAlreadyAbsent";
+
+    /**
+     * The store's answer, asked again, about a target whose delete was answered not found.
+     *
+     * <p>{@code outcome} is what the delete is recorded as: {@code SUCCEEDED} only when the store holds no
+     * such row, {@code FAILED} when it still does, {@code INDETERMINATE} when it could not be read.
+     */
+    private record AfterNotFound(MutationOutcome outcome, String unmet) {
+        boolean absent() {
+            return outcome == MutationOutcome.SUCCEEDED;
+        }
+    }
+
+    /**
+     * Whether a delete answered with {@code CmisObjectNotFoundException} left the target gone (R292, 3.4.2).
+     *
+     * <p>Only that exception's TYPE leads here — never its wording, never another exception, so a refusal or a
+     * failed read is the failure it was. The type alone is not enough: the delete throws the same type for a
+     * not-found deeper in it (a relationship type being deleted, read while the children are listed), which is not
+     * about the target. So the store is asked again, and only "no such row" is the intended state.
+     *
+     * <p>The STORE, not this node's content cache: a cache that still holds a row the store no longer has would
+     * answer "still there" for a target that is gone (review, Codex P2).
+     */
+    private AfterNotFound askAgainAfterNotFound(String repositoryId, String objectId) {
+        Content still;
+        try {
+            still = contentDaoService.getContentFresh(repositoryId, objectId);
+        } catch (Exception e) {
+            return new AfterNotFound(MutationOutcome.INDETERMINATE,
+                    "whether the store still holds it could not be read (" + e.getMessage() + ")");
+        }
+        return still == null
+                ? new AfterNotFound(MutationOutcome.SUCCEEDED, null)
+                : new AfterNotFound(MutationOutcome.FAILED, "the store still holds it");
     }
 
 
@@ -3749,6 +3827,37 @@ public class CanonicalImportServiceImpl implements CanonicalImportService {
                         //  it became a warning, and on the replace path the code then fell through a
                         // nd created the replacement anyway (external review).
                         throw failClosed;
+                    } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException notFound) {
+                        // The store answered that the document is not there (R292, 3.4.2). Since R288 a
+                        // delete of an id that does not exist is answered 404 — before it the delete
+                        // returned in silence and this arm recorded SUCCEEDED — so a document another
+                        // writer had removed first came back as a failed delete, with "both now exist"
+                        // for a state in which only the replacement does. What this delete is for is that
+                        // the document is gone; whether it is, is asked of the store again, because the
+                        // answer here is only the exception's type.
+                        AfterNotFound after = askAgainAfterNotFound(repositoryId, existingDoc.getId());
+                        if (after.absent()) {
+                            // Not committedObjectId: this operation removed nothing, so a replacement
+                            // that then fails has no removed document to name.
+                            captureScope.record(REPLACE_DELETE_ALREADY_ABSENT, MutationOutcome.SUCCEEDED,
+                                    notFound.getMessage());
+                            logger.info("Dedupe replace: {} was already absent; creating the replacement",
+                                    existingDoc.getId());
+                        } else {
+                            logger.warn("Dedupe replace: the delete of {} was answered as not found, but {}",
+                                    existingDoc.getId(), after.unmet());
+                            captureScope.record("replaceDelete", after.outcome(),
+                                    notFound.getMessage() + "; " + after.unmet());
+                            dedupeWarnings.add("The document being replaced (" + existingDoc.getId() + ")"
+                                    + (after.outcome() == MutationOutcome.FAILED
+                                            ? " could not be deleted"
+                                            : " was not established as deleted")
+                                    + ": its delete was answered as not found ("
+                                    + notFound.getMessage() + "), but " + after.unmet()
+                                    + (after.outcome() == MutationOutcome.FAILED
+                                            ? ". A replacement was created, so both now exist."
+                                            : ". A replacement was created, so both may now exist."));
+                        }
                     } catch (Exception e) {
                         // Returned, not only logged. The code falls through and creates the
                         // replacement regardless, so a failed delete leaves BOTH documents —

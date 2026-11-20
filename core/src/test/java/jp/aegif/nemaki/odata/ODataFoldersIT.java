@@ -150,14 +150,29 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithFilterContains() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'folder')")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("folder"), "a name containing 'folder'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.contains("folder"), "a name containing 'folder'");
+        assertNoAdmittedNameIsLeftOut(foldersPath(), response, name -> name.contains("folder"), "a name containing 'folder'");
+    }
+
+    /**
+     * Test GET /odata/{repositoryId}/Folders with $filter=contains() on a part of a name the collection has:
+     * the name is returned, whatever the data (R248, 3.4.2).
+     */
+    @Test
+    public void testFoldersContainsFindsANameFromAPartOfIt() {
+        assertContainsFindsANameFromAPartOfIt(foldersPath());
     }
     
     /**
@@ -182,14 +197,20 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithFilterCompound() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of();
+        Response response = given()
             .spec(requestSpec)
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "name eq 'TestFolder' or contains(name,'test')")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
+        assertTheRequestWithoutTheFilterReturnsANameOutside(foldersPath(), withoutTheFilter, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
+        assertNoAdmittedNameIsLeftOut(foldersPath(), response, name -> name.equals("TestFolder") || name.contains("test"), "'TestFolder' or a name containing 'test'");
     }
     
     /**
@@ -375,138 +396,128 @@ public class ODataFoldersIT extends ODataTestBase {
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders with $expand=parent query option.
-     * Expands the parent folder navigation property.
+     * GET /odata/{repositoryId}/Folders with $expand=parent is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetFoldersWithExpandParent() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "parent")
-            .queryParam("$top", 5)
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(foldersPath(), java.util.Map.of("$expand", "parent", "$top", 5));
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders with $expand=children query option.
-     * Expands the children collection navigation property.
+     * GET /odata/{repositoryId}/Folders with $expand=children is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetFoldersWithExpandChildren() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "children")
-            .queryParam("$top", 5)
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(foldersPath(), java.util.Map.of("$expand", "children", "$top", 5));
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=children.
-     * Expands the children for a single folder.
+     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=children: every child of the folder, as its
+     * children navigation answers them — or a refusal when they do not fit in one answer (R260, 3.4.2). The folder is
+     * the root folder, which has children wherever this runs; the expansion used to answer none for it.
      */
     @Test
     public void testGetSingleFolderWithExpandChildren() {
-        // First, get a list of folders to find a valid ID
-        Response listResponse = given()
+        String rootId = given()
             .spec(requestSpec)
-            .queryParam("$top", 1)
+            .queryParam("$filter", "path eq '/'")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
+            .extract().jsonPath().getString("value[0].objectId");
+        org.junit.jupiter.api.Assertions.assertNotNull(rootId, "the root folder was not found by its path");
+        java.util.List<String> children = idsAt(folderPath(rootId) + "/children");
+        org.junit.jupiter.api.Assertions.assertFalse(children.isEmpty(),
+                "the root folder has no children here, so this cannot tell children answered from children dropped");
+
+        Response expanded = given()
+            .spec(requestSpec)
+            .queryParam("$expand", "children")
+        .when()
+            .get(folderPath(rootId))
+        .then()
             .extract().response();
-        
-        // Check if there are any folders
-        java.util.List<?> folders = listResponse.jsonPath().getList("value");
-        if (folders != null && !folders.isEmpty()) {
-            String objectId = listResponse.jsonPath().getString("value[0].objectId");
-            if (objectId != null) {
-                // Get the single folder with $expand=children
-                given()
-                    .spec(requestSpec)
-                    .queryParam("$expand", "children")
-                .when()
-                    .get(folderPath(objectId))
-                .then()
-                    .statusCode(200)
-                    .contentType(containsString("application/json"));
-            }
+        if (children.size() > CmisEntityProcessor.EXPANDED_CHILDREN) {
+            org.junit.jupiter.api.Assertions.assertEquals(400, expanded.statusCode(), expanded.asString());
+            org.junit.jupiter.api.Assertions.assertEquals(CmisEntityProcessor.EXPAND_DOES_NOT_FIT,
+                    expanded.jsonPath().getString("error.message"), "children that do not fit were refused by another arm");
+        } else {
+            org.junit.jupiter.api.Assertions.assertEquals(200, expanded.statusCode(), expanded.asString());
+            java.util.List<String> answered = new java.util.ArrayList<>(expanded.jsonPath().getList("children.objectId", String.class));
+            java.util.Collections.sort(answered);
+            org.junit.jupiter.api.Assertions.assertEquals(children, answered, "$expand=children did not answer the folder's children");
         }
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=parent.
-     * Expands the parent folder for a single folder.
+     * Test GET /odata/{repositoryId}/Folders('{objectId}') with $expand=parent: the folder its parentId names — and
+     * null for the root folder, which has none.
      */
     @Test
     public void testGetSingleFolderWithExpandParent() {
-        // First, get a list of folders to find a valid ID
         Response listResponse = given()
             .spec(requestSpec)
             .queryParam("$top", 1)
+            .queryParam("$filter", "path ne '/'")
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
             .extract().response();
-        
-        // Check if there are any folders
-        java.util.List<?> folders = listResponse.jsonPath().getList("value");
-        if (folders != null && !folders.isEmpty()) {
-            String objectId = listResponse.jsonPath().getString("value[0].objectId");
-            if (objectId != null) {
-                // Get the single folder with $expand=parent
-                given()
-                    .spec(requestSpec)
-                    .queryParam("$expand", "parent")
-                .when()
-                    .get(folderPath(objectId))
-                .then()
-                    .statusCode(200)
-                    .contentType(containsString("application/json"));
-            }
-        }
+        String objectId = listResponse.jsonPath().getString("value[0].objectId");
+        String parentId = listResponse.jsonPath().getString("value[0].parentId");
+        org.junit.jupiter.api.Assertions.assertNotNull(objectId, "there is no folder besides the root folder to read the parent of");
+        org.junit.jupiter.api.Assertions.assertNotNull(parentId, "a folder that is not the root folder names no parent: " + listResponse.asString());
+
+        given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+        .when()
+            .get(folderPath(objectId))
+        .then()
+            .statusCode(200)
+            .contentType(containsString("application/json"))
+            .body("parent.objectId", equalTo(parentId));
+
+        String rootId = given()
+            .spec(requestSpec)
+            .queryParam("$filter", "path eq '/'")
+        .when()
+            .get(foldersPath())
+        .then()
+            .statusCode(200)
+            .extract().jsonPath().getString("value[0].objectId");
+        Response ofRoot = given()
+            .spec(requestSpec)
+            .queryParam("$expand", "parent")
+        .when()
+            .get(folderPath(rootId))
+        .then()
+            .statusCode(200)
+            .extract().response();
+        org.junit.jupiter.api.Assertions.assertTrue(ofRoot.asString().contains("\"parent\":null"),
+                "the root folder was not answered a null parent: " + ofRoot.asString());
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders with combined $expand and $select.
+     * GET /odata/{repositoryId}/Folders with $expand and $select is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetFoldersWithExpandAndSelect() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "children")
-            .queryParam("$select", "objectId,name,path")
-            .queryParam("$top", 5)
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(foldersPath(), java.util.Map.of("$expand", "children", "$select", "objectId,name,path", "$top", 5));
     }
     
     /**
-     * Test GET /odata/{repositoryId}/Folders with multiple $expand properties.
+     * GET /odata/{repositoryId}/Folders with two $expand items is refused (R260, 3.4.2). It used to be answered 200 with no navigation property at all, and this test,
+     * reading the status alone, took that for the expansion.
      */
     @Test
     public void testGetFoldersWithMultipleExpand() {
-        given()
-            .spec(requestSpec)
-            .queryParam("$expand", "parent,children")
-            .queryParam("$top", 5)
-        .when()
-            .get(foldersPath())
-        .then()
-            .statusCode(200)
-            .contentType(containsString("application/json"));
+        assertExpandOnAListingIsRefused(foldersPath(), java.util.Map.of("$expand", "parent,children", "$top", 5));
     }
     
     // ==================== OData Actions Tests ====================
@@ -712,16 +723,22 @@ public class ODataFoldersIT extends ODataTestBase {
      */
     @Test
     public void testGetFoldersWithSearchAndFilter() {
-        given()
+        java.util.Map<String, Object> withoutTheFilter = java.util.Map.of("$search", "project", "$top", 10);
+        Response response = given()
             .spec(requestSpec)
-            .queryParam("$search", "project")
+            .queryParams(withoutTheFilter)
             .queryParam("$filter", "contains(name,'archive')")
-            .queryParam("$top", 10)
         .when()
             .get(foldersPath())
         .then()
             .statusCode(200)
-            .contentType(containsString("application/json"));
+            .contentType(containsString("application/json"))
+            .extract().response();
+        assertOnlyAdmittedNames(response, name -> name.contains("archive"), "a name containing 'archive'");
+        // Not asked: the same request without the filter has a name outside it. It never does — full-text search
+        // matches no folder (measured 2026-11-05 on bedroom: $search=close47 and CONTAINS('close47') on
+        // cmis:folder return nothing while folders named close47-... exist), so this cannot tell a dropped
+        // filter from an applied one; it holds that the statement is answered, not refused (3.4.2).
     }
     
     /**

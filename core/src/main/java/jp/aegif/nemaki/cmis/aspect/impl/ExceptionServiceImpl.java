@@ -97,6 +97,18 @@ import jp.aegif.nemaki.util.constant.PropertyKey;
 
 public class ExceptionServiceImpl implements ExceptionService,
 		ApplicationContextAware {
+	/**
+	 * The whole text of a general permission denial — the one {@link #permissionDenied} throws when the ACL evaluation
+	 * refuses, and the one it throws when the top-level-folder rule refuses (R286, 3.4.2).
+	 *
+	 * <p>Both used to interpolate the repository id, the permission key, the ACL ({@code Acl@<identity hash>}) and the
+	 * object's id and {@code cmis:name}, and the top-level rule the user's id too. The text is what the bindings answer a
+	 * user who may not read the object: the browser binding's 403 for {@code object}, {@code renditions}, {@code acl} and
+	 * the others named the object to a user it was refused to. Nothing about the object, its ACL or the caller is in the
+	 * text now. {@code ExternalIngestController.classifyErrorStatus} recognises an import's denial by this text.
+	 */
+	public static final String PERMISSION_DENIED_MESSAGE = "Permission Denied!";
+
 	private TypeManager typeManager;
 	private ContentService contentService;
 	private TypeService typeService;
@@ -469,16 +481,14 @@ public class ExceptionServiceImpl implements ExceptionService,
 		boolean permissionResult = permissionService.checkPermission(callContext, repositoryId, key, acl, baseTypeId, content);
 
 		if (!permissionResult) {
-			String msg = String.format( "Permission Denied! repositoryId=%s key=%s acl=%s  content={id:%s, name:%s} ", repositoryId, key, acl, content.getId(), content.getName()) ;
-			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
+			throw new CmisPermissionDeniedException(PERMISSION_DENIED_MESSAGE, HTTP_STATUS_CODE_403);
 		}
 	}
 
 	private void permissionTopLevelFolder(CallContext context, String repositoryId, String key, Content content){
 		boolean result = permissionService.checkPermissionAtTopLevel(context, repositoryId, key, content);
 		if(!result){
-			String msg = String.format( "Permission Denied to top level folders for non-admin user! repositoryId=%s key=%s userId=%s content={id:%s, name:%s} ", repositoryId, key, context.getUsername(), content.getId(), content.getName()) ;
-			throw new CmisPermissionDeniedException(msg, HTTP_STATUS_CODE_403);
+			throw new CmisPermissionDeniedException(PERMISSION_DENIED_MESSAGE, HTTP_STATUS_CODE_403);
 		}
 	}
 

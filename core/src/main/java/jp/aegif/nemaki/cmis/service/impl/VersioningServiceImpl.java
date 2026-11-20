@@ -24,6 +24,7 @@ package jp.aegif.nemaki.cmis.service.impl;
 import jp.aegif.nemaki.businesslogic.ContentService;
 import jp.aegif.nemaki.cmis.aspect.CompileService;
 import jp.aegif.nemaki.cmis.aspect.ExceptionService;
+import jp.aegif.nemaki.cmis.aspect.PermissionService;
 import jp.aegif.nemaki.cmis.service.VersioningService;
 import jp.aegif.nemaki.model.Content;
 import jp.aegif.nemaki.model.Document;
@@ -38,6 +39,7 @@ import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.PermissionMapping;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException;
 import org.apache.chemistry.opencmis.commons.server.CallContext;
 import org.apache.chemistry.opencmis.commons.spi.Holder;
 import org.apache.commons.lang3.StringUtils;
@@ -57,6 +59,7 @@ public class VersioningServiceImpl implements VersioningService {
 	private ContentService contentService;
 	private CompileService compileService;
 	private ExceptionService exceptionService;
+	private PermissionService permissionService;
 	private jp.aegif.nemaki.cmis.aspect.type.TypeManager typeManager;
 	private NemakiCachePool nemakiCachePool;
 	private ThreadLockService threadLockService;
@@ -400,6 +403,12 @@ public class VersioningServiceImpl implements VersioningService {
 		}
 	}
 
+	static final String VERSION_SERIES_OF_ANOTHER_DOCUMENT_REFUSED =
+			"versionSeriesId is answered only when it is the version series of the document objectId names";
+
+	static final String VERSIONS_OF_AN_OBJECT_THAT_IS_NOT_A_DOCUMENT_REFUSED =
+			"versionSeriesId is answered only with the objectId of a document";
+
 	@Override
 	public List<ObjectData> getAllVersions(CallContext callContext,
 			String repositoryId, String objectId, String versionSeriesId,
@@ -412,6 +421,17 @@ public class VersioningServiceImpl implements VersioningService {
 		if (StringUtils.isBlank(versionSeriesId)) {
 			exceptionService
 					.invalidArgumentRequiredString("objectId", objectId);
+			// R316 (3.4.2): the versions of a document are answered to a caller who may read what is named — what
+			// getObject asks of it. Nothing was asked: a caller who is refused the document was answered every version
+			// of it, with its properties and its ACL. The caller is asked before anything about the object is told —
+			// that it is no document too: what the caller may not read is answered here as getObject answers it.
+			Content namedAlone = contentService.getContent(repositoryId, objectId);
+			if (namedAlone == null || !ObjectServiceImpl.isCmisObject(namedAlone)) {
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				throw new IllegalStateException("objectNotFound did not refuse " + objectId);
+			}
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, namedAlone);
 			Document d = contentService.getDocument(repositoryId, objectId);
 
 			// CRITICAL FIX (2025-10-21): Check for null document before accessing properties
@@ -425,12 +445,44 @@ public class VersioningServiceImpl implements VersioningService {
 			}
 
 			versionSeriesId = d.getVersionSeriesId();
+		} else if (StringUtils.isNotBlank(objectId)) {
+			// R307 (3.4.2): with both an objectId and a versionSeriesId, the versionSeriesId was read and the objectId was
+			// not, so AtomPub's versions?id=<D>&versionSeries=<another series> answered the other series' versions — for a
+			// folder's id and an id that names nothing too. The objectId names the document: the series is answered only when
+			// it is that document's own; any other is refused before a version is read. An id that is no CMIS object is not
+			// found; an object that is not a document has no series to answer.
+			Content named = contentService.getContent(repositoryId, objectId);
+			if (named == null || !ObjectServiceImpl.isCmisObject(named)) {
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				throw new IllegalStateException("objectNotFound did not refuse " + objectId);
+			}
+			// R316 (3.4.2): asked before anything about the object is told — that it is no document, or that the
+			// series is not its own.
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, named);
+			if (!Boolean.TRUE.equals(named.isDocument())) {
+				throw new CmisInvalidArgumentException(VERSIONS_OF_AN_OBJECT_THAT_IS_NOT_A_DOCUMENT_REFUSED);
+			}
+			Document document = contentService.getDocument(repositoryId, objectId);
+			if (document == null || !versionSeriesId.equals(document.getVersionSeriesId())) {
+				throw new CmisInvalidArgumentException(VERSION_SERIES_OF_ANOTHER_DOCUMENT_REFUSED);
+			}
 		}
 		
 		List<Document> allVersions = contentService
 				.getAllVersions(callContext, repositoryId, versionSeriesId);
 		exceptionService.objectNotFoundVersionSeries(versionSeriesId,
 				allVersions);
+		// R316 (3.4.2): only the versions the caller may read are answered — each version has its own ACL, and
+		// getObject refuses the ones the caller may not read. They were all answered. A caller who may read none
+		// of them is refused the list, as getObject refuses each of them — a series named by its id alone too.
+		List<Document> everyVersion = allVersions;
+		allVersions = permissionService.getFiltered(callContext, repositoryId, everyVersion);
+		if (allVersions.isEmpty()) {
+			exceptionService.permissionDenied(callContext, repositoryId,
+					PermissionMapping.CAN_GET_PROPERTIES_OBJECT, everyVersion.get(0));
+			throw new IllegalStateException("permissionDenied did not refuse a version the caller may not read");
+		}
 		
 		List<Lock> locks = threadLockService.readLocks(repositoryId, allVersions);
 		try{
@@ -501,6 +553,10 @@ public class VersioningServiceImpl implements VersioningService {
 
 	public void setExceptionService(ExceptionService exceptionService) {
 		this.exceptionService = exceptionService;
+	}
+
+	public void setPermissionService(PermissionService permissionService) {
+		this.permissionService = permissionService;
 	}
 
 	public void setNemakiCachePool(NemakiCachePool nemakiCachePool) {

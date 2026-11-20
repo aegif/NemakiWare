@@ -1803,7 +1803,8 @@
       "enterProperty": "{{name}}を入力"
     },
     "messages": {
-      "searchFailed": "検索に失敗しました"
+      "searchFailed": "検索に失敗しました",
+      "incompleteResults": "完全な検索結果を確認できないため、条件を絞って再試行してください。"
     },
     "purviewGovernance": {
       "title": "Purview ガバナンス概要",

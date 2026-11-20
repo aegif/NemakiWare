@@ -515,6 +515,17 @@ public class RetentionScheduler {
                         + e.getMessage());
             }
 
+            // A document someone has checked out is not archived (R331, 3.4.2): the system's delete of every version
+            // left that user's working copy without its series, and every non-administrator's checked-out listing
+            // answered 500. Not counted as archived: skipped, named with the reason, and asked again on the next run.
+            // A document or a series that cannot be read is thrown to the catch below — failed, nothing deleted.
+            jp.aegif.nemaki.model.Document toArchive = contentService.getDocument(repositoryId, documentId);
+            if (toArchive != null && contentService.isCheckedOut(repositoryId, toArchive)) {
+                log.info("Skipping " + reason + " document (checked out — asked again on the next run): " + documentId);
+                result.incrementSkipped();
+                result.addSkippedDocumentId(documentId + " (checked out)");
+                return;
+            }
             contentService.deleteDocument(systemContext, repositoryId, documentId, true, false);
             nemakiCachePool.get(repositoryId).removeCmisCache(documentId);
             result.incrementSucceeded();

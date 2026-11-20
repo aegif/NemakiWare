@@ -265,6 +265,8 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
     private JsonNode post(String path, String jsonBody) throws IOException {
         URL url = URI.create(sidecarUrl + path).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        // Not followed, said here rather than left to the streaming mode below (3.4.2).
+        conn.setInstanceFollowRedirects(false);
         try {
             byte[] payload = jsonBody.getBytes(StandardCharsets.UTF_8);
             conn.setRequestMethod("POST");
@@ -277,10 +279,13 @@ public class OpenTimestampsAnchorTarget implements AnchorTarget {
                 out.write(payload);
             }
             int code = conn.getResponseCode();
-            InputStream stream = code < 400 ? conn.getInputStream() : conn.getErrorStream();
+            // Only a 2xx is the sidecar's answer. With the redirect not followed, a 3xx's own body would
+            // otherwise be read as one (3.4.2).
+            boolean answered = code >= 200 && code < 300;
+            InputStream stream = answered ? conn.getInputStream() : conn.getErrorStream();
             byte[] responseBytes = stream == null ? new byte[0]
                     : stream.readNBytes(MAX_RESPONSE_BYTES);
-            if (code >= 400) {
+            if (!answered) {
                 throw new IOException("sidecar answered HTTP " + code + ": "
                         + new String(responseBytes, StandardCharsets.UTF_8));
             }

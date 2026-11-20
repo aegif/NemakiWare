@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import jp.aegif.nemaki.businesslogic.TypeService;
 import jp.aegif.nemaki.dao.ContentDaoService;
@@ -181,7 +182,15 @@ public class TypeManagerImpl implements TypeManager {
 	 * on whatever thread asked for it.
 	 */
 	private static volatile boolean everInitialized = false;
-	private static final Object initLock = new Object();
+	// R357. The process-wide lock of the type registry. A ReentrantLock, not a monitor: on
+	// JDK 21 a virtual thread that blocks entering a monitor, or parks while holding one, pins
+	// its carrier, and a pinned carrier is one the scheduler cannot use for anything else.
+	// refreshTypes() reads the store and writes the log inside this section, so the wait for it
+	// has to be one that releases the carrier: a thread waiting here parks and gives its carrier
+	// up. Reentrant because ensureInitialized() and getTypeById() call init() while holding it;
+	// non-fair and uninterruptible, like the monitor it replaces. Every acquisition is
+	// lock() / try / finally { unlock(); }.
+	private static final ReentrantLock initLock = new ReentrantLock();
 	
 	// CRITICAL FIX: Track types being deleted to prevent infinite recursion during cache refresh
 	private final Set<String> typesBeingDeleted = new HashSet<>();
@@ -191,7 +200,7 @@ public class TypeManagerImpl implements TypeManager {
 
 	// Both maps above are guarded by initLock. This counter is not — it exists so that
 	// cleanupTimedOutTypes(), which every getTypeDefinition() call runs, can decide there is
-	// nothing to clean WITHOUT taking the process-wide monitor. Deleting a type is rare and
+	// nothing to clean WITHOUT taking the process-wide lock. Deleting a type is rare and
 	// getTypeDefinition is on every response, so the common case must not serialise: on virtual
 	// threads a `synchronized` block that blocks pins its carrier, and the profile showed the
 	// ForkJoinPool compensating for exactly that. Mutated only under initLock; read unguarded,
@@ -248,7 +257,8 @@ public class TypeManagerImpl implements TypeManager {
 			return;
 		}
 		
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			if (initialized) {
 				log.debug("init() skipped - already initialized (synchronized)");
 				return;
@@ -336,6 +346,8 @@ public class TypeManagerImpl implements TypeManager {
 					StartupPhase.end();
 				}
 			}
+		} finally {
+			initLock.unlock();
 		}
 		log.info("TypeManagerImpl.init() completed successfully");
 	}
@@ -349,7 +361,8 @@ public class TypeManagerImpl implements TypeManager {
 			if (log.isDebugEnabled()) {
 				log.debug("Not initialized - acquiring lock to initialize");
 			}
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				if (!initialized) {
 					if (log.isDebugEnabled()) {
 						log.debug("Still not initialized in synchronized block - calling init()");
@@ -360,6 +373,8 @@ public class TypeManagerImpl implements TypeManager {
 						log.debug("Already initialized by another thread");
 					}
 				}
+			} finally {
+				initLock.unlock();
 			}
 		} else {
 			if (log.isDebugEnabled()) {
@@ -371,9 +386,12 @@ public class TypeManagerImpl implements TypeManager {
 		if (TYPES == null || TYPES.isEmpty()) {
 			log.error("CRITICAL ERROR: TYPES is empty after initialization!");
 			// Force re-initialization
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 					initialized = false;
 					init();
+			} finally {
+				initLock.unlock();
 			}
 		}
 		
@@ -616,7 +634,8 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	@Override
 	public void markTypeBeingDeleted(String typeId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// CRITICAL ENHANCEMENT: Add timestamp for timeout detection
 			long currentTime = System.currentTimeMillis();
 			typesBeingDeleted.add(typeId);
@@ -631,6 +650,8 @@ public class TypeManagerImpl implements TypeManager {
 			if (log.isDebugEnabled()) {
 				log.debug("NEMAKI TYPE DELETION: Stack trace for markTypeBeingDeleted call:", new Exception("Stack trace"));
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
@@ -639,7 +660,8 @@ public class TypeManagerImpl implements TypeManager {
 	 */
 	@Override
 	public void unmarkTypeBeingDeleted(String typeId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			boolean wasRemoved = typesBeingDeleted.remove(typeId);
 			Long timestamp = typesDeletionTimestamps.remove(typeId);
 			pendingDeletions = typesDeletionTimestamps.size();
@@ -652,6 +674,8 @@ public class TypeManagerImpl implements TypeManager {
 			}
 			log.debug("NEMAKI TYPE DELETION: Total types still being deleted: " + typesBeingDeleted.size());
 			log.debug("NEMAKI TYPE DELETION: Remaining types being deleted: " + typesBeingDeleted);
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
@@ -668,7 +692,8 @@ public class TypeManagerImpl implements TypeManager {
 		if (pendingDeletions == 0) {
 			return;
 		}
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			long currentTime = System.currentTimeMillis();
 			List<String> timedOutTypes = new ArrayList<>();
 
@@ -699,12 +724,15 @@ public class TypeManagerImpl implements TypeManager {
 
 				log.debug("NEMAKI TYPE DELETION: Cleanup complete - remaining types being deleted: " + typesBeingDeleted.size());
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 	
 	@Override
 	public void refreshTypes() {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// Cache refresh logging
 			log.info("refreshTypes() called - clearing and rebuilding cache");
 
@@ -759,6 +787,8 @@ public class TypeManagerImpl implements TypeManager {
 			// defect StartupPhase exists to remove, reached through the door the fix left
 			// open. A review found it while the reachability was still latent.
 			everInitialized = true;
+		} finally {
+			initLock.unlock();
 		}
 	}
 
@@ -2941,7 +2971,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		if (types == null) {
 			// CRITICAL FIX: Dynamically initialize missing repository
 			// This handles cases where repositoryInfoMap doesn't include the repository at startup
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				// Double-check after acquiring lock
 				types = TYPES.get(repositoryId);
 				if (types == null) {
@@ -2973,6 +3004,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 								+ " type does not exist", e);
 					}
 				}
+			} finally {
+				initLock.unlock();
 			}
 		}
 
@@ -3088,8 +3121,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		// still concatenates, and a WARN that a production configuration actually emits. This
 		// method is called once per object in every compiled response (241 times for a single
 		// 25-row query once ACL-in-Solr started counting the full result set), and the console
-		// appender is a process-wide serialisation point: a thread dump under load found 11 of
-		// 16 request threads queued inside that one write. Diagnostics belong behind isDebug.
+		// appender is a process-wide serialisation point: a thread dump under load found most of
+		// the request threads queued inside that one write. Diagnostics belong behind isDebug.
 		if (log.isDebugEnabled()) {
 			log.debug("OBJECT_IDENTITY: getTypeDefinition called for repositoryId=" + repositoryId
 					+ ", typeId=" + typeId); // (important-comment)
@@ -3452,7 +3485,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				log.debug("*** THIS SHOULD NOT HAPPEN if generate() already ran! ***");
 			}
 			
-			synchronized (initLock) {
+			initLock.lock();
+			try {
 				// Double-check after acquiring lock
 				types = TYPES.get(repositoryId);
 				if (types == null) {
@@ -3497,6 +3531,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 				} else {
 					log.info("*** DYNAMIC INIT SKIP: Repository " + repositoryId + " type cache created by another thread ***");
 				}
+			} finally {
+				initLock.unlock();
 			}
 		} else {
 			log.debug("*** TYPE CACHE OK: Repository " + repositoryId + " has " + types.size() + " types available ***");
@@ -3750,8 +3786,43 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Root Cause: DataUtil.copyTypeDefinition() creates new TypeDefinition instances every time,
 	 * breaking TCK object identity comparison: tree.getItem() == reloadedType
 	 */
-	private static final Map<String, Map<String, TypeDefinition>> SHARED_TYPE_DEFINITIONS = 
+	private static final Map<String, Map<String, TypeDefinition>> SHARED_TYPE_DEFINITIONS =
 		new ConcurrentHashMap<>();
+
+	/**
+	 * R357. The lock the <em>type definition</em> instance cache above is filled under — not the
+	 * PropertyDefinition one, which still fills itself inside its map's mapping function (its
+	 * computation only stores an instance that is already built, and the log line in it is
+	 * level-guarded; with the shipped level at INFO it is not written). A ReentrantLock, not the
+	 * map's own bin monitor: a virtual thread that holds a monitor cannot be unmounted while it
+	 * waits, and building a shared instance does wait — it takes the bin monitors of the
+	 * PropertyDefinition cache for every property, and on data whose inherited flag has to be
+	 * corrected it writes a warning the shipped level lets through to an appender. Non-fair and
+	 * uninterruptible, like the registry's own lock; a hit is answered without taking it at all.
+	 *
+	 * <p><b>Nothing here was measured stopping the server.</b> The stop was measured one layer
+	 * out, in the shared caches of RepositoryServiceImpl; a review of that fix found this site
+	 * filling itself the same way with nothing measured about it, and the rule was applied rather
+	 * than an argument made for why it is safe.
+	 *
+	 * <p>What reaches an appender from inside this computation, at the shipped level for
+	 * {@code jp.aegif.nemaki} (INFO): the two {@code log.warn} calls
+	 * {@code getSharedPropertyDefinition} makes when it has to correct a CMIS property's
+	 * inherited flag, and the {@code log.error} of this method's own catch. The {@code log.debug}
+	 * calls, guarded or not, are dropped before any appender. {@code TypeInstanceCacheProbe}
+	 * reports how many lines at INFO or above one build writes, and <b>in that probe's fixture it
+	 * is 0</b> — its type carries one property that is not a {@code cmis:} one, so the correcting
+	 * branch is never entered. That is a fact about the fixture, not about every build, and no
+	 * lock asserts it (a review of the first version of this comment, which said the unguarded
+	 * calls here are only {@code log.debug}, found both the over-claim and the missing scope).
+	 *
+	 * <p><b>The clearing side is not under this lock</b>: {@code refreshTypes()} and
+	 * {@code invalidateTypeDefinitionCache()} empty these caches holding only the registry's own
+	 * lock, so a build in flight can still publish into a map the clear has already dropped, and
+	 * a request after an invalidation can still be handed an instance the registry no longer
+	 * holds. Reviewed, measured by neither, and recorded rather than changed here.
+	 */
+	private static final ReentrantLock sharedInstanceLock = new ReentrantLock();
 	
 	/**
 	 * Get or create shared TypeDefinition instance for consistent object identity
@@ -3771,18 +3842,46 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		Map<String, TypeDefinition> repoCache = SHARED_TYPE_DEFINITIONS.computeIfAbsent(
 			repositoryId, k -> new ConcurrentHashMap<>());
 		
-		// Return existing shared instance or create new one
-		TypeDefinition result = repoCache.computeIfAbsent(cacheKey, k -> {
-			if (log.isDebugEnabled()) {
-			log.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");
-		} // (important-comment)
-			
-			// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
-			TypeDefinition consistentTypeDefinition = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
-			log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(consistentTypeDefinition) + ")"); // (important-comment)
-			return consistentTypeDefinition;
-		});
-		
+		// Return existing shared instance or create new one.
+		//
+		// R357. The instance is built OUTSIDE the map, under sharedInstanceLock. It used to be
+		// built inside repoCache.computeIfAbsent, and the mapping function reaches
+		// ensureConsistentPropertyDefinitions, which takes the bin monitors of the
+		// PropertyDefinition cache for every property and, on data whose inherited flag has to
+		// be corrected, writes a warning the shipped level lets through to an appender.
+		// computeIfAbsent holds the bin's monitor while it computes, and a virtual thread with a
+		// monitor on its stack cannot be unmounted: a holder that waits for either of those
+		// waits pinned, and the requests for the same type pin a carrier each on the bin's
+		// monitor behind it. That is the shape that stopped the server one layer out, in the
+		// shared caches of RepositoryServiceImpl, measured in a thread dump. A review of that
+		// fix found this site, where nothing has been measured — so the same rule is applied
+		// rather than an argument made for why it is safe here. The debug lines in this
+		// computation are not what reaches an appender at the shipped level — the warnings
+		// getSharedPropertyDefinition writes when it corrects an inherited flag are, and so is
+		// this method's own log.error. TypeInstanceCacheProbe reports how many lines at INFO or
+		// above one build writes; 0 in ITS fixture, whose type has no cmis: property to correct.
+		TypeDefinition result = repoCache.get(cacheKey);
+		if (result == null) {
+			sharedInstanceLock.lock();
+			try {
+				result = repoCache.get(cacheKey); // another request may have filled it
+				if (result == null) {
+					if (log.isDebugEnabled()) {
+						log.debug("OBJECT_IDENTITY: Creating shared TypeDefinition instance for " + cacheKey + " (hash: " + System.identityHashCode(originalDefinition) + ")");
+					} // (important-comment)
+
+					// Apply PropertyDefinition sharing first, then use as shared TypeDefinition
+					result = ensureConsistentPropertyDefinitions(repositoryId, originalDefinition);
+					log.debug("OBJECT_IDENTITY: After ensureConsistentPropertyDefinitions for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")"); // (important-comment)
+					if (result != null) {
+						repoCache.put(cacheKey, result);
+					}
+				}
+			} finally {
+				sharedInstanceLock.unlock();
+			}
+		}
+
 		if (result == repoCache.get(cacheKey)) {
 			if (log.isDebugEnabled()) {
 			log.debug("OBJECT_IDENTITY: Returning cached TypeDefinition for " + cacheKey + " (hash: " + System.identityHashCode(result) + ")");
@@ -4121,7 +4220,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 		}
 		log.info("=== addTypeDefinition called for type: " + typeDefinition.getId() + " ===");
 
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			// Ensure cache is initialized
 			if (!initialized) {
 				initGlobalTypes();
@@ -4233,6 +4333,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 					}
 				}
 			}
+		} finally {
+			initLock.unlock();
 		}
 	}
 
@@ -4424,7 +4526,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 	 * Solution: Call typeService.clearTypeCache() BEFORE generate() to force fresh DB read.
 	 */
 	private void invalidateTypeDefinitionCache(String repositoryId) {
-		synchronized (initLock) {
+		initLock.lock();
+		try {
 			log.info("invalidateTypeDefinitionCache: Invalidating and regenerating cache for repository=" + repositoryId);
 
 			// Remove the specific repository's type cache
@@ -4496,6 +4599,8 @@ private boolean isStandardCmisProperty(String propertyId, boolean isBaseTypeDefi
 			}
 
 			log.info("invalidateTypeDefinitionCache: Cache invalidation and regeneration complete for repository=" + repositoryId);
+		} finally {
+			initLock.unlock();
 		}
 	}
 

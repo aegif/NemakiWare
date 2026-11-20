@@ -775,6 +775,26 @@ public interface ContentService {
 			String objectId, Boolean allVersions, Boolean deleteWithParent);
 
 	/**
+	 * The checked-in versions of {@code document}'s version series other than {@code document} itself (R329, 3.4.2) — what
+	 * a delete of {@code document} alone leaves. When none is left, {@link #deleteDocument} with {@code allVersions} false
+	 * deletes the version series too. Read from the store as {@link #deleteDocument} reads them, every version, and
+	 * decided by the same rule ({@link jp.aegif.nemaki.businesslogic.impl.ContentServiceImpl#checkedInVersionsBesides}).
+	 * A listing that cannot be read is thrown, and so is one answered as nothing.
+	 */
+	List<Document> committedVersionsLeftAfterDeleting(String repositoryId, Document document);
+
+	/**
+	 * Whether {@code document}'s version series is checked out, by anyone (R331, 3.4.2). The system's deletes of every
+	 * version — force-archive, the retention job — delete the versions {@link #getAllVersions} answers the system, which
+	 * hides every user's working copy, and then the series: a checked-out document's working copy was left without it.
+	 * They ask this first and do not delete what it answers true. It is read from the store, not from a cache (R341): true
+	 * when the store's series is marked checked out, or when the store's version list of the series holds a working copy
+	 * whatever the mark says. A document without a series is not checked out (the store is not asked); a series or a
+	 * version list that cannot be read is thrown, and the caller deletes nothing.
+	 */
+	boolean isCheckedOut(String repositoryId, Document document);
+
+	/**
 	 * Delete an attachment node
 	 *
 	 * @param callContext
@@ -1054,11 +1074,23 @@ public interface ContentService {
 	void restoreArchive(String repositoryId, String archiveId) throws ParentNoLongerExistException;
 
 	/**
-	 * Whether {@code username} may see/restore {@code archive}: true for the
+	 * Whether {@code username} may restore {@code archive}: true for the
 	 * archive's original creator or the user who deleted it. (Admin callers are
-	 * authorized separately and need not pass through this check.)
+	 * authorized separately and need not pass through this check. The archive index lists the same two users'
+	 * archives, by its own views.) Its properties and content are answered by
+	 * {@link #wasArchiveReadableAtDeletion} instead (R323, 3.4.2).
 	 */
 	boolean isArchiveAccessible(String username, jp.aegif.nemaki.model.Archive archive);
+
+	/**
+	 * Whether {@code username} could read {@code archive}'s object when it was deleted (R323, 3.4.2) — its properties,
+	 * and with {@code withContent} its content too: whether the permission service answered so as it was deleted
+	 * ({@link jp.aegif.nemaki.model.Archive#getReadableAtDeletionBy}). Fixed then — the user's groups now do not change
+	 * it. False when the archive recorded nothing (written before 3.4.2): an administrator is answered by the caller, not
+	 * here. An archive's properties (show) and content are answered to an administrator and to these users only.
+	 */
+	boolean wasArchiveReadableAtDeletion(String repositoryId, jp.aegif.nemaki.model.Archive archive, String username,
+			boolean withContent);
 
 	/**
 	 * Restore an archive applying the shared guards (authorization, cold-storage

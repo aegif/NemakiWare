@@ -35,6 +35,7 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
+import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisConstraintException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException;
@@ -223,6 +224,16 @@ public class ItemResource {
                     "*", false, IncludeRelationships.NONE, "cmis:none", false, false, null);
             
             if (objectData == null) {
+                throw ApiException.objectNotFound(itemId, repositoryId);
+            }
+            // getObject answers any CMIS object by its id: /items/<another base type> answered that object (R276, 3.4.2).
+            // Judged by the base type, so a subtype is its base type's. A base type that cannot be read is a failure,
+            // not an object of another type.
+            BaseTypeId baseType = objectData.getBaseTypeId();
+            if (baseType == null) {
+                throw new IllegalStateException("the base type of object " + itemId + " could not be read");
+            }
+            if (baseType != BaseTypeId.CMIS_ITEM) {
                 throw ApiException.objectNotFound(itemId, repositoryId);
             }
             

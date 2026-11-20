@@ -421,6 +421,13 @@ public class ExternalIngestController {
         return null;
     }
 
+    /**
+     * A CMIS permission denial as {@link #classifyErrorStatus} reads it: the product's own text
+     * ({@code ExceptionServiceImpl.PERMISSION_DENIED_MESSAGE}), lower-cased as the error is.
+     */
+    private static final String CMIS_DENIAL = jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl
+            .PERMISSION_DENIED_MESSAGE.toLowerCase(java.util.Locale.ROOT);
+
     // Package-private, not private: the locks that measure this join two files. They used to
     // assert only that the import's message still CARRIED the token this method keys on,
     // which stays green when an arm here is deleted. They now run the real message through
@@ -441,22 +448,24 @@ public class ExternalIngestController {
         // here. A review measured the split.
         // The THIRD checkpoint, and it has to be asked FIRST. The gate refuses at the door,
         // the write point re-asks, and the CMIS ACL evaluation inside the write refuses last —
-        // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!
-        // repositoryId=... content={id:..., name:...}". Only that last one answered 500.
+        // CmisPermissionDeniedException, wrapped as "[permanent] Permission Denied!". Only
+        // that last one answered 500.
         //
-        // Above the retryable block because isTransientError() tests "503" against the RAW
-        // message before it tests "403"/"Forbidden", and that message interpolates the
-        // repository id, the object id and the object NAME — so a folder called "err-503"
-        // made a denial come back marked "[transient]" and answer 503. A denial is never a
-        // retry. The token carries the bang and is matched against the product's own format,
-        // not the bare words, so an id or name containing "permission denied" does not land
-        // here. A review found both halves.
-        // ExceptionServiceImpl builds TWO denial formats and both have to be here; matching
-        // only the first left every top-level-folder denial on 500, which is the one a
-        // delegated profile targeting the repository root produces on EVERY import.
-        if (firstError.contains("permission denied! repositoryid=")
-                || firstError.contains("permission denied for the importing user")
-                || firstError.contains("permission denied to top level folders")) {
+        // Since R286 (3.4.2) ExceptionServiceImpl throws ONE text for both of its denials —
+        // the ACL evaluation and the top-level-folder rule (the one a delegated profile
+        // targeting the repository root produces on EVERY import) — and the text is
+        // PERMISSION_DENIED_MESSAGE and nothing else. The two formats this arm used to match
+        // interpolated the repository id, the object's id and NAME, the ACL and the user. The
+        // import puts its verdict, and on the archetype paths a prefix, IN FRONT of the
+        // exception's message, so a denial is the END of the error: matched there rather
+        // than anywhere, so an id or a name that merely contains the words does not land here.
+        //
+        // Still above the retryable block: isTransientError() tests "503" against the RAW
+        // message before it tests "403"/"Forbidden". The denial no longer carries a name
+        // (a folder called "err-503" made it "[transient]" and answer 503), but a denial is
+        // never a retry, whatever wraps it. A review found both halves of the old arm.
+        if (firstError.endsWith(CMIS_DENIAL)
+                || firstError.contains("permission denied for the importing user")) {
             return HttpStatus.FORBIDDEN;
         }
         if (firstError.contains("retry shortly") || firstError.contains("temporarily unavailable")

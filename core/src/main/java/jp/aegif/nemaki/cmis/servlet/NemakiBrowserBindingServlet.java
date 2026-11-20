@@ -100,6 +100,16 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             log.debug("Browser Binding service: " + request.getMethod() + " " + request.getRequestURI());
         }
 
+        // A CMIS action is accepted on POST only. What precedes this is the debug log
+        // above and nothing else: that line asks whether debug is on and, if it is, reads
+        // the method and the request URI and writes them. Everything that acts on the
+        // request comes after — this servlet's own router, the selector branches,
+        // super.service() and every service call — so a refused request has reached no
+        // service at all.
+        if (refuseCmisActionOnAMethodThatIsNotPost(request, response)) {
+            return;
+        }
+
         // Malformed multipart (e.g. a NUL byte or other control char in a part's
         // filename) makes the container's file-upload parser throw during the
         // first parameter/parts access; without this it escapes as a raw HTTP 500.
@@ -113,8 +123,19 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             // CMIS clients), but a forged cross-site POST from a browser IS
             // rejected — reject Sec-Fetch-Site: cross-site and a cross-origin
             // Origin. Header-less non-browser clients (cmislib / TCK / scripts)
-            // send neither and are allowed. All Browser Binding mutations are
-            // POST; GET reads are not state-changing.
+            // send neither and are allowed. A CMIS action is accepted on the method
+            // POST only, so this check is the one every action passes:
+            // refuseCmisActionOnAMethodThatIsNotPost above turns any other method
+            // away before it reaches a service whenever the parameters the container
+            // decoded name an action — which is where every reader of the action
+            // downstream reads it from (see that method, which says what that scope
+            // rests on). Of the requests that name an action, the only method that
+            // reaches this branch is POST written exactly: every other spelling has
+            // already left by the arm's 405 and does not arrive here. So the arm is
+            // the narrower of the two and this branch reading the method ignoring
+            // case adds no way past it. (A spelling this branch would also accept,
+            // such as a lowercase one, never gets here while it names an action; one
+            // that names no action is not this arm's subject and is handed on.)
             String csrfReason = jp.aegif.nemaki.rest.CsrfValidator.validateBrowserBindingCsrf(request);
             if (csrfReason != null) {
                 log.warn("Rejected cross-site Browser Binding POST: " + csrfReason
@@ -774,18 +795,43 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         }
 
         if ("GET".equals(method) && pathInfo != null && cmisselector != null) {
-            String[] pathParts = pathInfo.split("/");
-            // pathParts: ["", "bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
-            if (pathParts.length >= 3 && pathParts[0].isEmpty()) {
+            // R298 (3.4.2): the segments are read as OpenCMIS reads them — HttpUtils.splitPath of the request URI as it was sent,
+            // each segment decoded once — and the path after root is read from the same segments. pathInfo is not read here:
+            // the container normalizes it, dropping "." and ".." segments and ";" parameters, so root/., root/<x>/.. and
+            // root/;x=1 were routed as the root and root/../<id> as <id>. A dot segment and a parameter are read as the names
+            // they are, folded neither into the root nor into an object id. Empty segments are skipped, as the container merges
+            // them.
+            final String[] segments;
+            try {
+                segments = segmentsAsSent(finalRequest);
+            } catch (org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException invalidPath) {
+                try {
+                    writeErrorResponse(response, invalidPath);
+                } catch (IOException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new ServletException("Error answering a path that could not be read", e);
+                }
+                return;
+            }
+            // segments: ["bedroom", "25dcbeae8fb9cb16a29220dbc40c4150"] for /bedroom/25dcbeae8fb9cb16a29220dbc40c4150
+            if (segments.length >= 2) {
                 // We have repository ID and object ID in path
-                String[] pathFragments = new String[]{pathParts[1], pathParts[2]}; // [repositoryId, objectId]
+                String[] pathFragments = new String[]{segments[0], segments[1]}; // [repositoryId, objectId]
 
                 if (log.isDebugEnabled()) {
                     log.debug("Object-specific GET request detected: repositoryId=" + pathFragments[0] + ", objectId=" + pathFragments[1] + ", cmisselector=" + cmisselector);
                 }
 
                 try {
-                    handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
+                    // R297 (3.4.2): /browser/{repo}/root/<path> names the object at <path> — the URL the OpenCMIS client's
+                    // getObjectByPath builds. Only the first two segments were read, so the path was dropped and the root
+                    // folder was answered, for a path that names nothing too.
+                    if (AbstractBrowserServiceCall.ROOT_PATH_FRAGMENT.equals(segments[1]) && segments.length > 2) {
+                        handleObjectByPathGetOperation(finalRequest, response, segments, cmisselector);
+                    } else {
+                        handleObjectSpecificGetOperation(finalRequest, response, pathFragments, cmisselector);
+                    }
                     return; // Don't call super.service()
                 } catch (ServletException | IOException e) {
                     log.error("Error in object-specific GET operation: " + e.getMessage(), e);
@@ -924,6 +970,196 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
     }
     
     /**
+     * The segments of the request's path as it was sent (R298, 3.4.2): {@code HttpUtils.splitPath} — the request URI after the
+     * servlet, each segment decoded once, as OpenCMIS reads it — with the empty segments skipped. "." and ".." segments and ";"
+     * parameters are kept as they were sent.
+     */
+    private static String[] segmentsAsSent(HttpServletRequest request) {
+        java.util.List<String> kept = new java.util.ArrayList<String>();
+        for (String segment : HttpUtils.splitPath(request)) {
+            if (!segment.isEmpty()) {
+                kept.add(segment);
+            }
+        }
+        return kept.toArray(new String[0]);
+    }
+
+    /**
+     * A GET of {@code /browser/{repo}/root/<path>} with a selector (R297, 3.4.2): the object at {@code <path>} is read with
+     * {@code getObjectByPath} and the selector is answered for it, as for {@code /browser/{repo}/{objectId}}. The path is the
+     * segments after {@code root} the route was decided on ({@link #segmentsAsSent} — R298), as OpenCMIS reads it for the same
+     * URL with no selector. A path that names nothing is answered as {@code getObjectByPath} answers it (404) — never with the
+     * root folder — and so is a read that failed. The path names the object, so the {@code objectId} parameter is not read.
+     */
+    private void handleObjectByPathGetOperation(HttpServletRequest request, HttpServletResponse response, String[] segments,
+            String cmisselector) throws Exception {
+        final String repositoryId = segments[0];
+        final String objectPath = "/" + String.join("/", Arrays.asList(segments).subList(2, segments.length));
+        final String objectId;
+        try {
+            CallContext callContext = createContext(getServletContext(), request, response, null);
+            CmisService service = getServiceFactory().getService(callContext);
+            ObjectData named = service.getObjectByPath(repositoryId, objectPath,
+                    "cmis:objectId,cmis:objectTypeId,cmis:baseTypeId", false,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE, "cmis:none", false, false, null);
+            if (named == null || named.getId() == null || named.getId().isEmpty()) {
+                throw new IllegalStateException("the object at path " + objectPath + " was read without an id");
+            }
+            objectId = named.getId();
+        } catch (Exception e) {
+            log.error("Error reading the object at a path", e);
+            writeErrorResponse(response, e);
+            return;
+        }
+        handleObjectSpecificGetOperation(withoutObjectIdParameter(request), response, new String[] { repositoryId, objectId },
+                cmisselector);
+    }
+
+    /**
+     * The request without its {@code objectId} parameter: when a path follows {@code root} the path names the object (R297, 3.4.2).
+     * This servlet's own selectors read {@code objectId} by its exact name, and that is the read this view hides. The names are
+     * compared in any case, as the container decoded them (R299 — OBJECTI%44 is OBJECTID), but no reader asks for another case
+     * now: the query string as sent is left as it is, and what OpenCMIS reads is built by {@link #queryStringHandedOn}, which
+     * leaves out every {@code objectId} of the query string by its decoded name, in any case, whether or not this view has hidden
+     * it (R301, R304).
+     */
+    private static HttpServletRequest withoutObjectIdParameter(HttpServletRequest request) {
+        return new HttpServletRequestWrapper(request) {
+            @Override
+            public String getParameter(String name) {
+                return Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name) ? null : super.getParameter(name);
+            }
+
+            @Override
+            public String[] getParameterValues(String name) {
+                return Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name) ? null : super.getParameterValues(name);
+            }
+
+            @Override
+            public Map<String, String[]> getParameterMap() {
+                Map<String, String[]> parameters = new java.util.LinkedHashMap<String, String[]>(super.getParameterMap());
+                parameters.keySet().removeIf(Constants.PARAM_OBJECT_ID::equalsIgnoreCase);
+                return Collections.unmodifiableMap(parameters);
+            }
+
+            @Override
+            public java.util.Enumeration<String> getParameterNames() {
+                return Collections.enumeration(getParameterMap().keySet());
+            }
+        };
+    }
+
+    /** One parameter of a query string as it was sent: its name as the container decodes it, and whether it had an {@code =}. */
+    private record SentParameter(String name, boolean hadEquals) {
+    }
+
+    /**
+     * The query string handed on to OpenCMIS, which answers the selectors this servlet does not (R301, R304 — 3.4.2). It is
+     * built from the parameters as the container decoded them, each name and value encoded: OpenCMIS splits the query string
+     * it is handed at {@code &} and {@code =} and then decodes each part, so a decoded name or value written as it is would be
+     * split where the container had not split it (R301). The query string as sent is read only for its shape — which
+     * parameters it had, in which order, and whether each had an {@code =} — never for a name or a value to write: the
+     * container holds {@code x} and {@code x=} alike as the empty value, and OpenCMIS reads {@code x} as no value and
+     * {@code x=} as the empty one, so {@code dateTimeFormat}, {@code callback} and {@code streamId} with no value had become
+     * explicitly empty — 400, a JSONP with no function name, 409 (R304). Each parameter is written as it was sent, {@code x}
+     * or {@code x=}, its duplicates in the order they were sent.
+     *
+     * <p>{@code cmisselector} and {@code objectId} are written once each, the selector this servlet read and the object it
+     * resolved; every one of them in the query string, in any case and however encoded, is left out (OpenCMIS reads names
+     * case-insensitively). A query string that does not match the container's parameters — a parameter the container does
+     * not hold, or holds a different number of times, a parameter with no name, a name that does not decode, a parameter
+     * with no {@code =} the container holds a value for — is refused, not guessed at.
+     */
+    private static String queryStringHandedOn(String sent, Map<String, String[]> decoded, String selector, String objectId) {
+        java.util.List<SentParameter> shape = new java.util.ArrayList<>();
+        if (sent != null) {
+            for (String part : sent.split("&", -1)) {
+                if (part.isEmpty()) {
+                    continue; // the container skips an empty part: a&&b, a trailing &
+                }
+                int equals = part.indexOf('=');
+                String encodedName = equals < 0 ? part : part.substring(0, equals);
+                if (encodedName.isEmpty()) {
+                    throw unmatched("a parameter has no name");
+                }
+                shape.add(new SentParameter(decodedAsTheContainerDecodes(encodedName), equals >= 0));
+            }
+        }
+        Map<String, String[]> others = new java.util.LinkedHashMap<>();
+        decoded.forEach((name, values) -> {
+            if (!replacedHere(name)) {
+                others.put(name, values);
+            }
+        });
+        StringBuilder query = new StringBuilder();
+        query.append("cmisselector=").append(java.net.URLEncoder.encode(selector, java.nio.charset.StandardCharsets.UTF_8));
+        query.append('&').append(Constants.PARAM_OBJECT_ID).append('=')
+                .append(java.net.URLEncoder.encode(objectId, java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Integer> written = new HashMap<>();
+        for (SentParameter parameter : shape) {
+            if (replacedHere(parameter.name())) {
+                continue;
+            }
+            String[] values = others.get(parameter.name());
+            int occurrence = written.merge(parameter.name(), 1, Integer::sum) - 1;
+            if (values == null || occurrence >= values.length) {
+                throw unmatched("a parameter the container does not hold as often");
+            }
+            query.append('&').append(java.net.URLEncoder.encode(parameter.name(), java.nio.charset.StandardCharsets.UTF_8));
+            if (parameter.hadEquals()) {
+                query.append('=').append(java.net.URLEncoder.encode(values[occurrence], java.nio.charset.StandardCharsets.UTF_8));
+            } else if (!values[occurrence].isEmpty()) {
+                throw unmatched("a parameter with no value the container holds a value for");
+            }
+        }
+        for (Map.Entry<String, String[]> parameter : others.entrySet()) {
+            int held = parameter.getValue() == null ? 0 : parameter.getValue().length;
+            if (written.getOrDefault(parameter.getKey(), 0) != held) {
+                throw unmatched("a parameter the query string does not have as often");
+            }
+        }
+        return query.toString();
+    }
+
+    /** {@code cmisselector} and {@code objectId}, in any case: this servlet writes them, once each (R304). */
+    private static boolean replacedHere(String name) {
+        return "cmisselector".equalsIgnoreCase(name) || Constants.PARAM_OBJECT_ID.equalsIgnoreCase(name);
+    }
+
+    /**
+     * A name of the query string as the container decodes a parameter's name: {@code +} is a space, {@code %XX} a byte, the
+     * bytes UTF-8, a sequence that is not UTF-8 the replacement character. A {@code %} that is not followed by two hexadecimal
+     * digits is refused (the container does not hold that parameter). Where the container decodes a name otherwise, the names
+     * do not match and the query string is refused by {@link #queryStringHandedOn} — never read as another parameter.
+     */
+    private static String decodedAsTheContainerDecodes(String encoded) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        byte[] sent = encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (int i = 0; i < sent.length; i++) {
+            byte b = sent[i];
+            if (b == '+') {
+                bytes.write(' ');
+            } else if (b == '%') {
+                int high = i + 1 < sent.length ? Character.digit(sent[i + 1], 16) : -1;
+                int low = i + 2 < sent.length ? Character.digit(sent[i + 2], 16) : -1;
+                if (high < 0 || low < 0) {
+                    throw unmatched("a parameter name does not decode");
+                }
+                bytes.write(high * 16 + low);
+                i += 2;
+            } else {
+                bytes.write(b);
+            }
+        }
+        return new String(bytes.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException unmatched(String what) {
+        return new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                "The query string does not match its parameters (" + what + ")");
+    }
+
+    /**
      * Handle object-specific GET operations by delegating to standard OpenCMIS mechanism
      * with proper parameter wrapping for object-specific operations.
      */
@@ -999,28 +1235,6 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                     
                     return paramMap;
                 }
-                
-                @Override
-                public String getQueryString() {
-                    // Rebuild query string with injected parameters
-                    StringBuilder queryBuilder = new StringBuilder();
-                    queryBuilder.append("cmisselector=").append(cmisselector);
-                    queryBuilder.append("&").append(Constants.PARAM_OBJECT_ID).append("=").append(objectId);
-                    
-                    // Add original parameters
-                    String originalQuery = super.getQueryString();
-                    if (originalQuery != null && !originalQuery.isEmpty()) {
-                        // Remove cmisselector if it exists to avoid duplication
-                        String[] params = originalQuery.split("&");
-                        for (String param : params) {
-                            if (!param.startsWith("cmisselector=") && !param.startsWith(Constants.PARAM_OBJECT_ID + "=")) {
-                                queryBuilder.append("&").append(param);
-                            }
-                        }
-                    }
-                    
-                    return queryBuilder.toString();
-                }
             };
             
             // Create call context with proper authentication handling
@@ -1057,8 +1271,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
                 // URL format: /browser/{repositoryId}/{objectId}?cmisselector=versions
                 result = handleVersionsOperation(service, repositoryId, objectId, request);
             } else {
-                // For other selectors, fall back to standard OpenCMIS dispatcher
-                super.service(wrappedRequest, response);
+                // For other selectors, fall back to standard OpenCMIS dispatcher. It reads the parameters from the query
+                // string it is handed, built here before it is handed on, so a query string that does not match its
+                // parameters is answered 400 and OpenCMIS reads nothing (R304). The selector this servlet read and the
+                // objectId it resolved are written once each, and every parameter as it was sent, x or x= (R301, R304).
+                final String handedOn = queryStringHandedOn(request.getQueryString(), request.getParameterMap(), cmisselector,
+                        objectId);
+                super.service(new HttpServletRequestWrapper(wrappedRequest) {
+                    @Override
+                    public String getQueryString() {
+                        return handedOn;
+                    }
+                }, response);
                 return;
             }
 
@@ -1169,6 +1393,22 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         String renditionFilter = HttpUtils.getStringParameter(request, "renditionFilter");
         Boolean includePolicyIds = getBooleanParameterSafe(request, "includePolicyIds");
         Boolean includeACL = getBooleanParameterSafe(request, "includeACL");
+        // returnVersion (R278, 3.4.2): an old version's id with returnVersion=latest answered that old version. Read before
+        // the object is read, so a value that is none of the three is refused (400) rather than answered as "this". An empty
+        // value is no value (R295, 3.4.2), as AtomPub and OpenCMIS read it; a value that is not empty and none of the three is
+        // still refused.
+        String returnVersion = request.getParameter(Constants.PARAM_RETURN_VERSION);
+        final Boolean latestMajor;
+        if (returnVersion == null || returnVersion.isEmpty() || "this".equals(returnVersion)) {
+            latestMajor = null;
+        } else if ("latest".equals(returnVersion)) {
+            latestMajor = Boolean.FALSE;
+        } else if ("latestmajor".equals(returnVersion)) {
+            latestMajor = Boolean.TRUE;
+        } else {
+            throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                    "returnVersion must be this, latest or latestmajor");
+        }
 
         // Call CMIS service
         org.apache.chemistry.opencmis.commons.data.ObjectData object = service.getObject(
@@ -1176,6 +1416,18 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
             includeAllowableActions, includeRelationships, renditionFilter,
             includePolicyIds, includeACL, null
         );
+
+        // The id is read by getObject first, so an id that does not exist and an internal row — a version series id among
+        // them — are answered 404 as before (R275, R277), and getObjectOfLatestVersion is asked only for a document, with the
+        // id of the version it was given. Its answer, or its failure, is the answer: the old version is not answered for it.
+        if (latestMajor != null && object != null
+                && object.getBaseTypeId() == org.apache.chemistry.opencmis.commons.enums.BaseTypeId.CMIS_DOCUMENT) {
+            return service.getObjectOfLatestVersion(
+                repositoryId, objectId, null, latestMajor, filter,
+                includeAllowableActions, includeRelationships, renditionFilter,
+                includePolicyIds, includeACL, null
+            );
+        }
 
         return object;
     }
@@ -1249,6 +1501,9 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         return acl;
     }
 
+    static final String VERSION_SERIES_OF_ANOTHER_OBJECT_REFUSED =
+            "versionSeriesId is answered only when it is the version series of the object the URL names";
+
     /**
      * Handle versions operation - equivalent to getAllVersions CMIS service call
      * CMIS 1.1 Browser Binding: Implements cmisselector=versions for version history retrieval.
@@ -1257,13 +1512,38 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
      * Optional parameters:
      *   - filter: comma-separated list of property IDs to include
      *   - includeAllowableActions: boolean to include allowable actions
-     *   - versionSeriesId: optional, will be derived from objectId if not provided
+     *   - versionSeriesId: optional; answered only when it is the named object's version series (R302); blank is none (R308)
      */
     private Object handleVersionsOperation(CmisService service, String repositoryId, String objectId, HttpServletRequest request) {
         // Parse optional parameters
         String filter = HttpUtils.getStringParameter(request, "filter");
         Boolean includeAllowableActions = getBooleanParameterSafe(request, "includeAllowableActions");
         String versionSeriesId = HttpUtils.getStringParameter(request, "versionSeriesId");
+
+        // R308 (3.4.2): an empty or blank versionSeriesId is read as none, as getAllVersions reads it — it was compared with
+        // the named object's series and refused, where the named object's versions had been answered before R302.
+        if (versionSeriesId != null && org.apache.commons.lang3.StringUtils.isBlank(versionSeriesId)) {
+            versionSeriesId = null;
+        }
+
+        // R302 (3.4.2): the URL names the object whose versions are answered. The versionSeriesId parameter was handed to
+        // getAllVersions, which reads it before the object id, so a URL that named D answered the versions of whatever series
+        // the parameter named. It is answered only when it is the named object's own version series; any other is refused
+        // before the versions are read. The parameter's value is not written back in the refusal.
+        if (versionSeriesId != null) {
+            org.apache.chemistry.opencmis.commons.data.ObjectData named = service.getObject(repositoryId, objectId,
+                    org.apache.chemistry.opencmis.commons.PropertyIds.VERSION_SERIES_ID, false,
+                    org.apache.chemistry.opencmis.commons.enums.IncludeRelationships.NONE, "cmis:none", false, false, null);
+            if (named == null || named.getProperties() == null || named.getProperties().getProperties() == null) {
+                throw new IllegalStateException("the object the URL names was read without its properties");
+            }
+            org.apache.chemistry.opencmis.commons.data.PropertyData<?> series = named.getProperties().getProperties()
+                    .get(org.apache.chemistry.opencmis.commons.PropertyIds.VERSION_SERIES_ID);
+            if (series == null || !versionSeriesId.equals(series.getFirstValue())) {
+                throw new org.apache.chemistry.opencmis.commons.exceptions.CmisInvalidArgumentException(
+                        VERSION_SERIES_OF_ANOTHER_OBJECT_REFUSED);
+            }
+        }
 
         log.info("NEMAKI CMIS versions: repositoryId=" + repositoryId + ", objectId=" + objectId
             + ", versionSeriesId=" + versionSeriesId + ", filter=" + filter);
@@ -2478,7 +2758,124 @@ public class NemakiBrowserBindingServlet extends CmisBrowserBindingServlet {
         
         return isMultipart;
     }
-    
+
+    /**
+     * Refuse a CMIS action on any method that is not POST, before the request reaches a service.
+     *
+     * <p>In the Browser Binding an action is what is sent by POST, and most of them change state:
+     * {@code delete}, {@code applyACL}, {@code updateProperties}, {@code createFolder},
+     * {@code checkOut}, {@code deleteContent}, {@code deleteTree} and the rest. A few only read:
+     * {@code query}, which the specification does post, and {@code getTypeChildren} /
+     * {@code getTypesChildren}, which the specification does not name as actions at all — they are
+     * this class's own router's addition, and the same read is asked for by a selector on a GET.
+     * Those read as well, so refusing them on a method that is not POST narrows what the binding
+     * answers; what makes that acceptable is measured rather than assumed — no sender in this
+     * repository puts an action on a GET (the UI, the tools, the fixtures and the OpenCMIS client
+     * all post). The {@code cmisaction} parameter used to be read on every method,
+     * and neither this servlet's own router ({@code routeCmisAction}) nor the handlers it calls look
+     * at the method, so a request that was not a POST carried the action out. The cross-site check
+     * above sits inside the POST branch, so such a request was not checked at all: a browser attaches
+     * the reader's own ambient credential (a cached Basic realm, a session) to a plain sub-resource
+     * load, and the mutation ran as that reader.
+     *
+     * <p>The refusal is by method and by the presence of the parameter, not by the value: no list
+     * of mutating actions is kept here. A list would leak the actions the parent servlet dispatches
+     * without this class naming them, and every action added later. An action that is unknown, is
+     * named more than once, has no value or an empty one is refused the same way — what matters is
+     * that a method which is not POST named an action at all.
+     *
+     * <p>The parameter name is the one the container has already decoded, compared without regard
+     * to case, because the readers downstream are themselves lenient: OpenCMIS's
+     * {@code HttpUtils.getStringParameter} compares the name ignoring case, so {@code CMISACTION}
+     * reaches a reader even though {@code ServletRequest#getParameter} would not find it. The
+     * container decodes the name, so a percent-encoded spelling is only a problem when what it
+     * decodes to differs in case — the case is the whole of the gap, not the encoding.
+     *
+     * <p>A GET or HEAD that carries only {@code cmisselector} — every ordinary read — is not
+     * touched, and a POST is left to the cross-site check and the routing below.
+     *
+     * @return true when the request was refused and answered, and the caller must return at once
+     */
+    private boolean refuseCmisActionOnAMethodThatIsNotPost(HttpServletRequest request,
+            HttpServletResponse response) throws IOException {
+
+        String method = request.getMethod();
+        // The next check lets through the method POST and nothing else. An HTTP method is
+        // case-sensitive, so a lowercase "post" is a different method and is refused: it used to
+        // be let through here, which made the contract ("an action is accepted on POST only") and
+        // this code disagree, and a non-conformant spelling must not be the way in (both reviewers,
+        // R355 rounds 9 and 10 — one from each side of the disagreement). A method that cannot be
+        // read at all (null) is likewise not POST, so it leaves by the refusal after it: letting it
+        // through would be answering a read that failed with the value that means "this is the one
+        // method that may carry an action". A method that is not POST and names no action is not
+        // this arm's subject, and the second check hands it on.
+        if ("POST".equals(method)) {
+            return false;
+        }
+        if (!namesACmisAction(request)) {
+            return false;
+        }
+
+        log.warn("Refused a CMIS action on " + method + " (a CMIS action is accepted on POST only): "
+                + request.getRequestURI());
+
+        response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+        response.setHeader("Allow", "POST");
+        // HEAD read exactly, for the same reason as POST above: a lowercase spelling is a
+        // different method, and the promise "a HEAD is answered with the header alone" is about
+        // HEAD. Writing the body for a spelling that is not HEAD is the conservative side anyway.
+        if (!"HEAD".equals(method)) {
+            response.setContentType("application/json");
+            response.setCharacterEncoding("UTF-8");
+            try (java.io.PrintWriter w = response.getWriter()) {
+                w.write("{\"exception\":\"notSupported\",\"message\":"
+                        + "\"A CMIS action is accepted on POST only\"}");
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether the request names a CMIS action at all, by the container-decoded parameter name
+     * compared without regard to case. The value is not read: an action that is empty, unknown or
+     * given more than once is still an action named.
+     *
+     * <p>The names are taken from {@code getParameterMap()} — which, for the methods this arm judges,
+     * is the same map every reader of the action downstream of this one reads:
+     * {@code ServletRequest#getParameter}, which compares the name exactly, and OpenCMIS's
+     * {@code HttpUtils.getStringParameter}, which walks that map comparing it ignoring case —
+     * reading what they read is the whole reason the map is what is read here. On a POST it would
+     * not be the same map: OpenCMIS wraps the request and parses a multipart body itself, so an
+     * action sent in a body is not in the container's map at all. A POST never reaches this method - the
+     * caller returns on it before asking - so that path is not this question's subject. The map and {@code getParameterNames()} can disagree, and this class holds a
+     * wrapper that makes them disagree (it rewrites the map alone, adding a selector and dropping
+     * the action); that wrapper is built after this question is asked, and note that for it the map
+     * is the NARROWER of the two, so it is an example of the disagreement and not an argument that
+     * the map is always the wider side. The question stops being at least as wide as the readers' if
+     * a reader of the action is added that parses the query string as it was sent instead (OpenCMIS
+     * has such a parser for the GET path, and it does not read the action); a reader added there
+     * needs this one widened with it.
+     *
+     * <p>A map that answers null gives "an action may be named", not "none is": the caller refuses
+     * on this answer, and reporting a read that failed as "no action" would let the request
+     * through. The servlet contract does not allow a null here, so that arm is unreachable through
+     * a container; it is written this way so that its answer is not the permissive one. An accessor
+     * that throws instead of answering is not turned into a refusal here — the exception leaves
+     * this method, and the request reaches no service either way.
+     */
+    private static boolean namesACmisAction(HttpServletRequest request) {
+        Map<String, String[]> parameters = request.getParameterMap();
+        if (parameters == null) {
+            return true;
+        }
+        for (String name : parameters.keySet()) {
+            if (name != null && "cmisaction".equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * CMIS Operations Router: Handle missing Browser Binding operations that cause "Unknown operation" errors.
      * This method intercepts CMIS actions that NemakiWare's Browser Binding doesn't handle properly and

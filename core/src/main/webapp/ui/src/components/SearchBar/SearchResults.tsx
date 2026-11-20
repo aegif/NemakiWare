@@ -246,7 +246,8 @@ import {
   DatePicker,
   message,
   Checkbox,
-  Tabs
+  Tabs,
+  Alert
 } from 'antd';
 import { RowActionTooltip } from '../common/RowActionTooltip';
 import {
@@ -260,6 +261,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
+import { SearchCutShortError } from '../../services/searchCutShort';
 import { CMISObject, SearchResult, TypeDefinition, PropertyDefinition } from '../../types/cmis';
 import { SemanticSearch } from '../SemanticSearch/SemanticSearch';
 import { ObjectIdSearch } from './ObjectIdSearch';
@@ -276,6 +278,17 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  // The last search was answered cut short by the ACL scan limit (R344): no result is shown, the guidance is.
+  const [cutShort, setCutShort] = useState(false);
+  // Only the last search started may write the screen (R349): an older answer arriving later is dropped.
+  const searchSeqRef = React.useRef(0);
+  // The search the address names that was started last (R349): a back or forward to another one starts that one.
+  const startedQueryRef = React.useRef<string | null>(null);
+  // A page that is gone writes nothing (R349): an answer arriving after it was left neither renders nor rewrites the address.
+  useEffect(() => () => {
+    searchSeqRef.current++;
+    startedQueryRef.current = null;
+  }, []);
   const [loading, setLoading] = useState(false);
   const [types, setTypes] = useState<TypeDefinition[]>([]);
   const [secondaryTypes, setSecondaryTypes] = useState<TypeDefinition[]>([]);
@@ -295,13 +308,29 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   useEffect(() => {
     loadTypes();
     loadSecondaryTypes();
-    const query = searchParams.get('q');
-    if (query) {
+  }, [repositoryId]);
+
+  // The page shows the search its address names (R349): opening it with q, and a back or forward to another q, start that
+  // search. The address a search writes when it is answered names the search already started, so it starts nothing.
+  const urlQuery = searchParams.get('q');
+  // The address now — what an answer compares with when it arrives, not what it was when its search started (R349).
+  const urlQueryRef = React.useRef(urlQuery);
+  urlQueryRef.current = urlQuery;
+  useEffect(() => {
+    if (urlQuery && urlQuery !== startedQueryRef.current) {
       // Don't set the CMIS query to the form - it would confuse users
       // The form is for entering search keywords, not raw CMIS SQL
-      performSearch(query);
+      performSearch(urlQuery);
+    } else if (!urlQuery && startedQueryRef.current !== null) {
+      // Back to the page with no search in its address: no search's rows, guidance or spinner stay (R349).
+      searchSeqRef.current++;
+      startedQueryRef.current = null;
+      setSearchResult(null);
+      setCutShort(false);
+      setLastExecutedQuery('');
+      setLoading(false);
     }
-  }, [repositoryId]);
+  }, [repositoryId, urlQuery]);
 
   const loadTypes = async () => {
     try {
@@ -418,19 +447,38 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
   };
 
   const performSearch = async (query: string) => {
+    startedQueryRef.current = query;
+    const mySeq = ++searchSeqRef.current;
+    const isStale = () => searchSeqRef.current !== mySeq;
     setLoading(true);
     try {
       const result = await cmisService.search(repositoryId, query);
+      if (isStale()) return;
+      setCutShort(false);
       setSearchResult(result);
-      setSearchParams({ q: query });
+      // An address that already names this search is not written again (R349): a back to it keeps the forward history.
+      if (urlQueryRef.current !== query) {
+        setSearchParams({ q: query });
+      }
       setLastExecutedQuery(query);
       // Clear the query input field after search to prevent users from
       // accidentally searching with the CMIS query string as a keyword
       form.setFieldsValue({ query: '' });
     } catch (error) {
+      if (isStale()) return;
+      // A failed search has no result: the previous one is not left on the screen as this search's (R349).
+      setSearchResult(null);
+      if (error instanceof SearchCutShortError) {
+        // A cut-short answer is not the search's result (R344, 3.4.2): neither a count, a table nor "more results" is
+        // shown — only the guidance to narrow the search.
+        setCutShort(true);
+        setLastExecutedQuery(query);
+        return;
+      }
+      setCutShort(false);
       message.error(t('searchResults.messages.searchFailed'));
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   };
 
@@ -939,6 +987,15 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ repositoryId }) =>
               )}
               </Form>
             </Card>
+
+              {cutShort && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  title={t('searchResults.messages.incompleteResults')}
+                  style={{ marginBottom: 16 }}
+                />
+              )}
 
               {searchResult && (
                 <Card

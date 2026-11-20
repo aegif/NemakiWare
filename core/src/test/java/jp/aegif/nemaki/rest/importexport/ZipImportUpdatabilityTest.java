@@ -102,6 +102,9 @@ class ZipImportUpdatabilityTest {
         ApplicationContext context = mock(ApplicationContext.class);
         when(context.getBean("TypeService", TypeService.class)).thenReturn(typeService);
         when(context.getBean("typeService", TypeService.class)).thenReturn(typeService);
+        // an administrator's import: the import asks createType's question first (R335, 3.4.2) — a stand-in that allows it
+        when(context.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
 
         previousContext = SpringContext.getApplicationContext();
         new SpringContext().setApplicationContext(context);
@@ -156,11 +159,12 @@ class ZipImportUpdatabilityTest {
         }
 
         ImportResult result = new ImportResult();
-        Method method = ZipImporter.class.getDeclaredMethod(
-                "importTypeDefinitions", String.class, ZipFile.class, ImportResult.class);
+        Method method = ZipImporter.class.getDeclaredMethod("importTypeDefinitions", String.class, ZipFile.class,
+                ImportResult.class, org.apache.chemistry.opencmis.commons.server.CallContext.class);
         method.setAccessible(true);
         try (ZipFile zf = new ZipFile(zipFile)) {
-            method.invoke(new ZipImporter(), REPO, zf, result);
+            method.invoke(new ZipImporter(), REPO, zf, result,
+                    mock(org.apache.chemistry.opencmis.commons.server.CallContext.class));
         }
         return result;
     }

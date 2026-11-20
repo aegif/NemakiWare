@@ -997,6 +997,12 @@ public class ContentDaoServiceImpl implements ContentDaoService {
 	}
 
 	@Override
+	public VersionSeries getVersionSeriesFresh(String repositoryId, String versionSeriesId) {
+		// For the non-cached implementation, the store's answer is getVersionSeries's
+		return getVersionSeries(repositoryId, versionSeriesId);
+	}
+
+	@Override
 	public List<Document> getAllVersions(String repositoryId, String versionSeriesId) {
 		try {
 			// Query allVersions view with versionSeriesId

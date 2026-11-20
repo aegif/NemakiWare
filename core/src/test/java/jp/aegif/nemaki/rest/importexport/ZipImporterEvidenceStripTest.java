@@ -152,6 +152,9 @@ class ZipImporterEvidenceStripTest {
         ContentService cs = mock(ContentService.class);
         ApplicationContext ctx = mock(ApplicationContext.class);
         when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        // the import asks whether it may create, as the CMIS create does (R333, 3.4.2) — a stand-in that allows it
+        when(ctx.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
         new SpringContext().setApplicationContext(ctx);
 
         Folder target = new Folder();
@@ -271,6 +274,9 @@ class ZipImporterEvidenceStripTest {
         ContentService cs = mock(ContentService.class);
         ApplicationContext ctx = mock(ApplicationContext.class);
         when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        // the import asks whether it may create, as the CMIS create does (R333, 3.4.2) — a stand-in that allows it
+        when(ctx.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
         new SpringContext().setApplicationContext(ctx);
         Folder target = new Folder();
         target.setId("target");
@@ -322,11 +328,23 @@ class ZipImporterEvidenceStripTest {
         ContentService cs = mock(ContentService.class);
         ApplicationContext ctx = mock(ApplicationContext.class);
         when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        // the import asks whether it may create, as the CMIS create does (R333, 3.4.2) — a stand-in that allows it
+        when(ctx.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
         new SpringContext().setApplicationContext(ctx);
         jp.aegif.nemaki.model.Relationship createdRel = new jp.aegif.nemaki.model.Relationship();
         createdRel.setId("rel-1");
         when(cs.createRelationship(any(), eq("bedroom"), any(Properties.class), any(), any(),
                 any(), any())).thenReturn(createdRel);
+        // Both ends are stored CMIS objects: the import refuses a relationship to an id that
+        // does not exist or to an internal row (R290, 3.4.2), and this lock is about the strip.
+        for (String end : List.of("old-s", "old-t")) {
+            Document stored = new Document();
+            stored.setId(end);
+            stored.setType("cmis:document");
+            stored.setObjectType("cmis:document");
+            when(cs.getContent("bedroom", end)).thenReturn(stored);
+        }
 
         ImportResult result = new ZipImporter().importCustomFormat("bedroom", "target", zip,
                 mock(org.apache.chemistry.opencmis.commons.server.CallContext.class));
@@ -360,6 +378,9 @@ class ZipImporterEvidenceStripTest {
         ContentService cs = mock(ContentService.class);
         ApplicationContext ctx = mock(ApplicationContext.class);
         when(ctx.getBean("ContentService", ContentService.class)).thenReturn(cs);
+        // the import asks whether it may create, as the CMIS create does (R333, 3.4.2) — a stand-in that allows it
+        when(ctx.getBean("ExceptionService", jp.aegif.nemaki.cmis.aspect.ExceptionService.class))
+                .thenReturn(mock(jp.aegif.nemaki.cmis.aspect.ExceptionService.class));
         new SpringContext().setApplicationContext(ctx);
 
         Folder target = new Folder();

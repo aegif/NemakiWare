@@ -494,6 +494,8 @@ public class CloudDriveServiceImpl implements CloudDriveService {
 
 			java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
 				new java.net.URL(approvalsUrl).openConnection();
+			// Not followed: the answer would come from an address the URL above does not name (3.4.2).
+			conn.setInstanceFollowRedirects(false);
 			conn.setRequestMethod("GET");
 			conn.setRequestProperty("Authorization", "Bearer " + accessToken);
 			conn.setConnectTimeout(30000);

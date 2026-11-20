@@ -25,11 +25,14 @@ import jp.aegif.nemaki.util.spring.SpringContext;
  * REST resource for downloading archived content.
  *
  * Access policy:
- * - ARCHIVED_LOCAL (archive store): Admin, System, or Owner (creator) can download.
- *   This is a recoverable area — content can be restored to live.
+ * - ARCHIVED_LOCAL (archive store): an administrator, and a user who could read the content when it was
+ *   deleted (R323, 3.4.2 — {@code ContentService.wasArchiveReadableAtDeletion}; fixed at the delete, not by the
+ *   user's groups now). Being its creator or the one who deleted it is neither enough nor needed, and an archive
+ *   that does not record it (written before 3.4.2) is answered to an administrator only. This is a recoverable
+ *   area — content can be restored to live.
  * - ARCHIVED_COLD (cold storage): Always returns 410 Gone.
  *   Cold storage content is managed outside NemakiWare (e.g. AWS S3).
- *   Admin/Owner check is performed before returning 410 to prevent
+ *   The same check is performed before returning 410 to prevent
  *   information leakage (existence of specific archive IDs).
  */
 @Path("/repo/{repositoryId}/archive/{archiveId}/content")
@@ -93,12 +96,13 @@ public class ArchiveDownloadResource extends ResourceBase {
                         .build();
             }
 
-            // Authorize before revealing any state information.
-            // Admin, original creator, or deleting user (archivedBy) can access;
-            // others get 404 to avoid leaking archive existence.
+            // Authorize before revealing any state information (R323, 3.4.2): an administrator, and a user who
+            // could read the content when it was deleted — as the permission service answered then, kept in the
+            // archive. The creator and the deleting user (archivedBy) used to be answered as such — a caller who
+            // deleted a version it could not read was answered its content. Others get 404 to avoid leaking archive
+            // existence.
             boolean adminUser = isAdmin(httpRequest);
-            if (!adminUser && !username.equals(archive.getCreator())
-                    && !username.equals(archive.getArchivedBy())) {
+            if (!adminUser && !getContentService().wasArchiveReadableAtDeletion(repositoryId, archive, username, true)) {
                 return Response.status(Response.Status.NOT_FOUND)
                         .entity("{\"status\":\"failure\",\"error\":\"Archive not found\"}")
                         .type(MediaType.APPLICATION_JSON)

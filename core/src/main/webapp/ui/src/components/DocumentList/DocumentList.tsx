@@ -257,6 +257,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
+import { SearchCutShortError } from '../../services/searchCutShort';
 import type { FolderConnector } from '../../services/cmis';
 import { CMISObject, TypeDefinition, AllowableActions } from '../../types/cmis';
 import { FolderTree } from '../FolderTree/FolderTree';
@@ -358,6 +359,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const [versionHistory, setVersionHistory] = useState<CMISObject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchMode, setIsSearchMode] = useState(false);
+  // The last name search was answered cut short by the ACL scan limit (R344, R349): the guidance stands where the table was.
+  const [searchCutShort, setSearchCutShort] = useState(false);
 
   // Error states for inline Alert components (Error Recovery test fix)
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -530,20 +533,85 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
   };
 
-  // Monotonic sequence for loadObjects() race-guarding (see loadObjects).
+  // Monotonic sequence for loadObjects() race-guarding (see loadObjects). A name search takes the next number too: only the
+  // last load or search started writes the list's rows (R349).
   const loadSeqRef = React.useRef(0);
+  // The folder's own state (path, allowable actions, connectors) belongs to the last folder load started, whatever searches
+  // start meanwhile (R349): a search does not take this number.
+  const folderLoadSeqRef = React.useRef(0);
+  // A list that is gone writes nothing (R349): a load or search answered after it was left neither renders nor rewrites
+  // the address (the 404 fallback does), and an operation that ends after it was left starts no reload.
+  const mountedRef = React.useRef(true);
+  // Another folder chosen, or the list left (R349): a path navigation that resolved meanwhile goes nowhere.
+  const folderChoiceSeqRef = React.useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadSeqRef.current++;
+      folderLoadSeqRef.current++;
+      folderChoiceSeqRef.current++;
+    };
+  }, []);
+  // A navigation (up, a breadcrumb, a path link) that resolves a path first goes nowhere if the list was left or another
+  // folder was chosen while it resolved (R349): it does not take the list away from the folder chosen meanwhile. A reload
+  // of the same folder (an operation's, another page) does not stop it.
+  const navigationSince = () => {
+    const since = folderChoiceSeqRef.current;
+    return () => folderChoiceSeqRef.current === since;
+  };
+  // Whether the list shows a search now — read when a folder load writes, not when it started (R349).
+  const searchModeRef = React.useRef(false);
+  useEffect(() => {
+    searchModeRef.current = isSearchMode;
+  }, [isSearchMode]);
+  // The folder and page shown now — what an operation's reload reads when it ends, not what was shown when it began (R349).
+  const selectedFolderIdRef = React.useRef(selectedFolderId);
+  selectedFolderIdRef.current = selectedFolderId;
+  const currentPageRef = React.useRef(currentPage);
+  currentPageRef.current = currentPage;
+
+  // The folder's rows are written (R349): they are not a search's, so the search, its guidance and a selection made in it
+  // go — whenever the load started, even before the search did (an operation begun in the folder ending after it). A load
+  // of another dataset (another folder, the folder after its search was cleared) also drops a selection made while it ran.
+  const leaveTheSearchForTheFolder = (anotherDataset: boolean) => {
+    const inTheSearch = searchModeRef.current;
+    setIsSearchMode(false);
+    setSearchCutShort(false);
+    if (inTheSearch || anotherDataset) {
+      setSelectedRowKeys([]);
+    }
+  };
+
+  // A load of another dataset began (R349): whichever folder load writes next — that one, or an operation's reload that
+  // overtook it — writes another dataset, so a selection made meanwhile goes with it.
+  const datasetChangePendingRef = React.useRef(false);
+
+  // An operation's spinner (R349): it stops the spinner only if no load or search started after it — those own it then.
+  const holdTheListSpinner = () => {
+    setLoading(true);
+    const since = loadSeqRef.current;
+    return () => {
+      if (loadSeqRef.current === since) setLoading(false);
+    };
+  };
 
   // Load objects when selectedFolderId changes (the folder displayed in list pane)
   useEffect(() => {
     if (selectedFolderId) {
+      // Another folder is another dataset (R349): the previous one's selection, search and guidance do not carry over.
+      folderChoiceSeqRef.current++;
+      setSelectedRowKeys([]);
+      setIsSearchMode(false);
+      setSearchCutShort(false);
       setCurrentPage(1);
-      loadObjects(1);
+      loadObjects(1, true);
     }
   }, [selectedFolderId]);
 
-  const loadObjects = async (page: number = currentPage) => {
+  const loadObjects = async (page: number = currentPageRef.current, anotherDataset = false) => {
     // Load objects for the selected folder (the one displayed in list pane)
-    if (!selectedFolderId) {
+    if (!selectedFolderId || !mountedRef.current) {
       return;
     }
 
@@ -551,9 +619,19 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     // calls. Capture the target folder + a sequence number and bail out of any
     // state update once a newer load has started, so a slow response for folder A
     // can never overwrite the list / path / allowableActions of folder B.
-    const requestedFolderId = selectedFolderId;
+    const requestedFolderId = selectedFolderIdRef.current;
     const mySeq = ++loadSeqRef.current;
     const isStale = () => loadSeqRef.current !== mySeq;
+    const myFolderSeq = ++folderLoadSeqRef.current;
+    const isFolderStale = () => folderLoadSeqRef.current !== myFolderSeq;
+    if (anotherDataset) {
+      datasetChangePendingRef.current = true;
+    }
+    const writesAnotherDataset = () => {
+      const changed = anotherDataset || datasetChangePendingRef.current;
+      datasetChangePendingRef.current = false;
+      return changed;
+    };
 
     setLoading(true);
     try {
@@ -562,18 +640,22 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         maxItems: pageSize,
         skipCount,
       });
-      if (isStale()) return;
-      setObjects(result.items);
-      setTotalItems(result.numItems);
-      setHasMoreItems(result.hasMoreItems);
-      setCurrentPage(page);
+      if (isFolderStale()) return;
+      // A search started after this load owns the rows; the folder's own state below is still this load's (R349).
+      if (!isStale()) {
+        leaveTheSearchForTheFolder(writesAnotherDataset());
+        setObjects(result.items);
+        setTotalItems(result.numItems);
+        setHasMoreItems(result.hasMoreItems);
+        setCurrentPage(page);
+      }
 
       // CRITICAL FIX (2025-11-26): Get selected folder's path from CMIS properties
       // This ensures currentFolderPath is always accurate, not just for root folder
       // Previous bug: Only root folder path was set, causing Up button to be disabled
       // when navigating via table clicks (currentFolderPath stuck at "/")
       const folder = await cmisService.getObject(repositoryId, requestedFolderId);
-      if (isStale()) return;
+      if (isFolderStale()) return;
       const folderPath = folder.path || '/';
       setCurrentFolderPath(folderPath);
       setFolderAllowableActions(folder.allowableActions);
@@ -581,11 +663,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       // error or empty list just hides the run button). Guard against a stale
       // response overwriting a newer folder's connectors.
       cmisService.listFolderConnectors(repositoryId, requestedFolderId)
-        .then((conns) => { if (!isStale()) setFolderConnectors(conns); })
-        .catch(() => { if (!isStale()) setFolderConnectors([]); });
+        .then((conns) => { if (!isFolderStale()) setFolderConnectors(conns); })
+        .catch(() => { if (!isFolderStale()) setFolderConnectors([]); });
     } catch (error: any) {
       // A newer folder load has superseded this one — drop its error too.
-      if (isStale()) return;
+      if (isFolderStale()) return;
       console.error('[DocumentList] loadObjects error for folder:', requestedFolderId, error);
       // Determine error type: only fallback to root on 404 (folder gone / stale sessionStorage).
       // For 401/403/network/500, keep current folder and show explicit error.
@@ -593,7 +675,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const is404 = status === 404
         || (error instanceof Error && /not found|404|objectNotFound/i.test(error.message));
 
-      if (is404 && selectedFolderId !== rootFolderId) {
+      // Judged for the folder this load read, not the one shown when an operation began (R349).
+      if (is404 && requestedFolderId !== rootFolderId) {
         console.warn('[DocumentList] Folder not found (404), clearing stale state and falling back to root');
         if (repositoryId) {
           sessionStorage.removeItem(`nemakiware_selectedFolderId_${repositoryId}`);
@@ -606,11 +689,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         setCurrentFolderPath('/');
         setSearchParams({ folderId: rootFolderId });
         return;
-      } else if (is404 && selectedFolderId === rootFolderId) {
+      } else if (is404 && requestedFolderId === rootFolderId) {
         // rootFolderId is stale (e.g., after DB re-initialization) - resolve dynamically
         console.warn('[DocumentList] rootFolderId is stale (404), attempting dynamic root resolution');
         try {
           const freshRoot = await cmisService.getRootFolder(repositoryId);
+          // Another folder load began while the root was resolved, or the list was left (R349): it is not taken back.
+          if (isFolderStale()) return;
           if (freshRoot && freshRoot.id && freshRoot.id !== rootFolderId) {
             console.info('[DocumentList] Resolved new root folder ID:', freshRoot.id);
             setRootFolderId(freshRoot.id);
@@ -631,8 +716,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         }
       }
       message.error(`${t('documentList.messages.loadObjectsError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      // Clear objects on error to show empty state
-      setObjects([]);
+      // Clear objects on error to show empty state — the folder's empty state, not a search's (R349)
+      if (!isStale()) {
+        leaveTheSearchForTheFolder(writesAnotherDataset());
+        setObjects([]);
+      }
     } finally {
       // Only the most recent load owns the loading flag.
       if (!isStale()) setLoading(false);
@@ -1007,9 +1095,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleDeleteConfirm = async () => {
     if (!deleteTargetId) return;
 
+    // Set loading state before starting deletion
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      // Set loading state before starting deletion
-      setLoading(true);
       setDeleteModalVisible(false);
 
       // NemakiWare-specific: Use cascade deletion for parentChildRelationship
@@ -1040,7 +1128,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     } catch (error) {
       message.error(t('documentList.messages.deleteError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
       setDeleteTargetId('');
       setDeleteTargetName('');
       setDeleteTargetIsFolder(false);
@@ -1072,8 +1160,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleRename = async (values: { newName: string }) => {
     if (!renameTargetId || !values.newName.trim()) return;
 
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       // Find the target object to get its changeToken for optimistic locking
       const targetObject = objects.find(obj => obj.id === renameTargetId);
       const changeToken = targetObject?.changeToken;
@@ -1088,7 +1176,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Rename error:', error);
       message.error(t('documentList.messages.renameError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
       setRenameTargetId('');
       setRenameTargetName('');
     }
@@ -1195,8 +1283,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   };
 
   const handleCheckOut = async (objectId: string) => {
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       await cmisService.checkOut(repositoryId, objectId);
       message.success(t('documentList.messages.checkoutSuccess'));
       await loadObjects();
@@ -1204,7 +1292,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Check-out error:', error);
       message.error(t('documentList.messages.checkoutError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
     }
   };
 
@@ -1221,8 +1309,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
   const handleCheckIn = async (values: any) => {
     const { file, versionType, comment } = values;
 
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       const actualFile = file?.[0]?.originFileObj || file?.[0] || file?.fileList?.[0]?.originFileObj;
 
       await cmisService.checkIn(
@@ -1243,7 +1331,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Check-in error:', error);
       message.error(t('documentList.messages.checkinError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
     }
   };
 
@@ -1253,8 +1341,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     const isPWC = record?.properties?.['cmis:isPrivateWorkingCopy'] === true ||
                   record?.properties?.['cmis:isPrivateWorkingCopy'] === 'true';
     const effectiveId = (!isPWC && pwcId) ? String(pwcId) : objectId;
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       await cmisService.cancelCheckOut(repositoryId, effectiveId);
       message.success(t('documentList.messages.cancelCheckoutSuccess'));
       await loadObjects();
@@ -1262,13 +1350,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Cancel check-out error:', error);
       message.error(t('documentList.messages.cancelCheckoutError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
     }
   };
 
   const handleViewVersionHistory = async (objectId: string) => {
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       const history = await cmisService.getVersionHistory(repositoryId, objectId);
       setVersionHistory(history.versions);
       setVersionHistoryModalVisible(true);
@@ -1276,13 +1364,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Version history error:', error);
       message.error(t('documentList.messages.versionHistoryError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
     }
   };
 
   const handleDeleteLatestVersion = async (objectId: string, versionLabel: string) => {
+    const releaseTheSpinner = holdTheListSpinner();
     try {
-      setLoading(true);
       await cmisService.deleteLatestVersion(repositoryId, objectId);
       message.success(t('documentList.messages.deleteVersionSuccess', { version: versionLabel }));
       setVersionHistoryModalVisible(false);
@@ -1291,7 +1379,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       console.error('Delete latest version error:', error);
       message.error(t('documentList.messages.deleteVersionError'));
     } finally {
-      setLoading(false);
+      releaseTheSpinner();
     }
   };
 
@@ -1302,6 +1390,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
     }
 
     setIsSearchMode(true);
+    setSearchCutShort(false);
+    // A search is a new dataset (R349): the folder's (or the previous search's) selection is not carried into it.
+    setSelectedRowKeys([]);
+    // The same sequence as loadObjects: only the last load or search started may write the list (R349).
+    const mySeq = ++loadSeqRef.current;
+    const isStale = () => loadSeqRef.current !== mySeq;
     setLoading(true);
 
     try {
@@ -1311,19 +1405,36 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       const escapedQuery = cmisLikeLiteral(searchQuery);
       const query = `SELECT * FROM cmis:document WHERE cmis:name LIKE '%${escapedQuery}%'`;
       const searchResult = await cmisService.search(repositoryId, query);
+      if (isStale()) return;
+      // The answer is a new dataset (R349): a row selected while the search ran does not carry into it.
+      setSelectedRowKeys([]);
       setObjects(searchResult.objects);
     } catch (error) {
+      if (isStale()) return;
+      // A failed search has no rows: the folder's rows (or a previous search's) are not left as its answer, nor anything
+      // tied to them (R349).
+      setObjects([]);
+      setSelectedRowKeys([]);
+      setTotalItems(-1);
+      setHasMoreItems(false);
+      if (error instanceof SearchCutShortError) {
+        // Cut short by the ACL scan limit (R344): the guidance in place of the table, not an error toast.
+        setSearchCutShort(true);
+        return;
+      }
       console.error('Search error:', error);
       message.error(`${t('documentList.messages.searchError')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   };
 
   const handleClearSearch = () => {
     setSearchQuery('');
     setIsSearchMode(false);
-    loadObjects();
+    setSearchCutShort(false);
+    setSelectedRowKeys([]);
+    loadObjects(currentPageRef.current, true);
   };
 
   // Import handler (2026-01-28)
@@ -1559,8 +1670,10 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (!isLast) {
+                          const stillWanted = navigationSince();
                           try {
                             const folderObject = await cmisService.getObjectByPath(repositoryId, segmentPath);
+                            if (!stillWanted()) return;
                             if (folderObject && folderObject.id) {
                               // Note: Path segment navigation updates both selected and current folder IDs
                               setSelectedFolderId(folderObject.id);
@@ -1765,7 +1878,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
         const targetPath = '/' + pathSegments.slice(0, index).join('/');
 
         // Use CMIS getObjectByPath to resolve folder ID
+        const stillWanted = navigationSince();
         const folderObject = await cmisService.getObjectByPath(repositoryId, targetPath);
+        if (!stillWanted()) return;
         if (folderObject && folderObject.id) {
           // Note: Breadcrumb navigation updates both selected and current folder IDs
           setSelectedFolderId(folderObject.id);
@@ -1801,7 +1916,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
       } else {
         // Parent is another subfolder - navigate up one level
         const parentPath = '/' + pathSegments.slice(0, -1).join('/');
+        const stillWanted = navigationSince();
         const parentObject = await cmisService.getObjectByPath(repositoryId, parentPath);
+        if (!stillWanted()) return;
         if (parentObject && parentObject.id) {
           // Note: Parent navigation updates both selected and current folder IDs
           setSelectedFolderId(parentObject.id);
@@ -1974,6 +2091,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                 )}
               </div>
               
+              {searchCutShort ? (
+                <Alert type="warning" showIcon title={t('searchResults.messages.incompleteResults')} />
+              ) : (
               <Table
                 // Remount the table body per folder / search view so React never
                 // reconciles a previous folder's rows into a different folder's
@@ -2010,6 +2130,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ repositoryId }) => {
                   },
                 }}
               />
+              )}
             </Space>
           </Card>
         </Col>

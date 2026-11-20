@@ -514,7 +514,7 @@ public class CmisService extends AbstractCmisService implements CallContextAware
 
 	/**
 	 * Gets the list of documents that are checked out that the user has access
-	 * to. No checkout for now, so empty.
+	 * to.
 	 */
 	@Override
 	public ObjectList getCheckedOutDocs(String repositoryId, String folderId, String filter, String orderBy,

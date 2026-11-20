@@ -123,6 +123,15 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     public void processActionEntity(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType requestFormat, ContentType responseFormat)
             throws ODataApplicationException, DeserializerException, SerializerException {
+
+        // The entity was taken from the key of the first segment: POST Documents('D')/parent/NemakiWare.CMIS.ApplyAcl
+        // replaced D's ACL (R262), and POST Objects('D')/NemakiWare.CMIS.Policy/NemakiWare.CMIS.ApplyAcl applied it to the
+        // document D (R270, 3.4.2). Refused with a 400 before the parameters are read.
+        UriResourceEntitySet target = WriteTarget.aimedAt(uriInfo, true);
+        // POST Folders('<document>')/NemakiWare.CMIS.ApplyAcl replaced the document's ACL (R271, 3.4.2). The entity is read
+        // before the parameters, and one its entity set does not hold is answered 404.
+        WriteTarget.holds(target, getKeyValue(target.getKeyPredicates(), "objectId"), objectService, callContext,
+                repositoryId, "Object not found: ");
         
         // Get the action and bound entity from the URI
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();
@@ -196,6 +205,15 @@ public class CmisActionProcessor implements ActionEntityProcessor, ActionVoidPro
     @Override
     public void processActionVoid(ODataRequest request, ODataResponse response, UriInfo uriInfo,
             ContentType requestFormat) throws ODataApplicationException, DeserializerException {
+
+        // As for an action that answers an entity: Folders('F')/children('D')/NemakiWare.CMIS.Document/
+        // NemakiWare.CMIS.CancelCheckOut cancelled F's check-out (R262, R270, 3.4.2). Refused with a 400 before the
+        // parameters are read.
+        UriResourceEntitySet target = WriteTarget.aimedAt(uriInfo, true);
+        // POST Documents('<folder>')/NemakiWare.CMIS.CancelCheckOut reached the folder (R271, 3.4.2). One its entity set
+        // does not hold is answered 404 before the parameters are read.
+        WriteTarget.holds(target, getKeyValue(target.getKeyPredicates(), "objectId"), objectService, callContext,
+                repositoryId, "Object not found: ");
         
         // Get the action and bound entity from the URI
         List<UriResource> resourcePaths = uriInfo.getUriResourceParts();

@@ -38,7 +38,6 @@ import jp.aegif.nemaki.model.Item;
 import jp.aegif.nemaki.model.Policy;
 import jp.aegif.nemaki.model.Relationship;
 import jp.aegif.nemaki.model.Rendition;
-import jp.aegif.nemaki.model.VersionSeries;
 import jp.aegif.nemaki.util.DataUtil;
 import jp.aegif.nemaki.util.cache.NemakiCachePool;
 import jp.aegif.nemaki.util.constant.DomainType;
@@ -165,16 +164,22 @@ public class ObjectServiceImpl implements ObjectService {
 			Content content = contentService.getContent(repositoryId, objectId);
 			if (log.isDebugEnabled()) log.debug(MessageFormat.format("ObjcetService#getObject getContent success: Repo={0}, Id={1}", repositoryId, objectId));
 
-			// WORK AROUND: getObject(versionSeriesId) is interpreted as
-			// getDocumentOflatestVersion
-			if (content == null) {
-				VersionSeries versionSeries = contentService.getVersionSeries(repositoryId, objectId);
-				if (versionSeries != null) {
-					content = contentService.getDocumentOfLatestVersion(repositoryId, objectId);
-				}
-			}
+			// An id with no content is an id that does not exist. It is not read as a version series id: getObject used to
+			// answer a version series id as that series' latest version (a work-around), and a version series id is not
+			// another name for an object — the latest version is read by getObjectOfLatestVersion (R275, 3.4.2). A
+			// getContent that cannot read throws, and that is thrown as it is: a read that failed is not an id that does
+			// not exist.
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
 			if (content == null) {
+				return null;
+			}
+			// getContent answers any CouchDB document by its id, and the ones that are not CMIS objects — a version series,
+			// an attachment, a change event, a type definition, a user or a group row, a passkey — were compiled as
+			// cmis:item: a document's version series id answered the version series, its content stream id the attachment
+			// with the file name (R275, 3.4.2), and a passkey's id the passkey (R277). Any content that is not a CMIS object
+			// is answered as an id that does not exist, before the permission check and before anything is compiled.
+			if (!isCmisObject(content)) {
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
 				return null;
 			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
@@ -195,6 +200,28 @@ public class ObjectServiceImpl implements ObjectService {
 		}
 	}
 
+	/**
+	 * The objectType of a passkey (a WebAuthn credential). Its writers ({@code WebAuthnResource} and the
+	 * {@code WebAuthnCredential} constructor) store a passkey with type {@code cmis:item}, so its stored type does not tell it
+	 * from an item (R277, 3.4.2).
+	 */
+	private static final String PASSKEY_OBJECT_TYPE = "nemaki:webauthnCredential";
+
+	/**
+	 * Whether {@code content} is a CMIS object: its stored type is one of the five object base types (R275), and it is not a
+	 * passkey (R277). The passkey is told by its objectType, compared exactly: no other item, no other {@code nemaki:} type and
+	 * no objectType that only begins with or resembles it is refused. The one-object readers that do not go through getObject
+	 * ask it too, right after their own {@code getContent} (R279, 3.4.2).
+	 */
+	public static boolean isCmisObject(Content content) {
+		if (PASSKEY_OBJECT_TYPE.equals(content.getObjectType())) {
+			return false;
+		}
+		return Boolean.TRUE.equals(content.isDocument()) || Boolean.TRUE.equals(content.isFolder())
+				|| Boolean.TRUE.equals(content.isRelationship()) || Boolean.TRUE.equals(content.isPolicy())
+				|| Boolean.TRUE.equals(content.isItem());
+	}
+
 	@Override
 	public ContentStream getContentStream(CallContext callContext, String repositoryId, String objectId,
 			String streamId, BigInteger offset, BigInteger length) {
@@ -209,6 +236,11 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
 					content);
 
@@ -409,6 +441,28 @@ public class ObjectServiceImpl implements ObjectService {
 		try {
 			lock.lock();
 
+			// An id that does not exist is answered with an empty list, as before. A getContent that cannot read throws, and
+			// that is thrown as it is.
+			Content content = contentService.getContent(repositoryId, objectId);
+			if (content == null) {
+				return new ArrayList<RenditionData>();
+			}
+			// Not a CMIS object (R279, 3.4.2) — a version series, an attachment, a passkey: it is answered the empty list an id
+			// that does not exist is answered, before anything is checked or read for it (getObject answers it 404, R275 and
+			// R277).
+			if (!isCmisObject(content)) {
+				return new ArrayList<RenditionData>();
+			}
+			// A CMIS object's renditions are answered only to a user getObject answers it to (R282, 3.4.2): a rendition's title
+			// is the file name of the stream it was made from. Refused before any rendition is read.
+			exceptionService.permissionDenied(callContext, repositoryId, PermissionMapping.CAN_GET_PROPERTIES_OBJECT,
+					content);
+			// Only a document and a folder carry renditions. An item, a relationship and a policy have none, and are answered
+			// with an empty list (R283, 3.4.2): contentService.getRenditions answers null for them, and that was a 500.
+			if (!Boolean.TRUE.equals(content.isDocument()) && !Boolean.TRUE.equals(content.isFolder())) {
+				return new ArrayList<RenditionData>();
+			}
+
 			List<Rendition> renditions = contentService.getRenditions(repositoryId, objectId);
 
 			List<RenditionData> results = new ArrayList<RenditionData>();
@@ -440,6 +494,11 @@ public class ObjectServiceImpl implements ObjectService {
 			// //////////////////
 			Content content = contentService.getContent(repositoryId, objectId);
 			exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+			if (content != null && !isCmisObject(content)) {
+				// Not a CMIS object (R279, 3.4.2): answered as an id that does not exist, as getObject answers it (R275, R277).
+				exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+				return null;
+			}
 			// NOTE: The permission key doesn't exist according to CMIS
 			// specification.
 
@@ -981,6 +1040,10 @@ public class ObjectServiceImpl implements ObjectService {
 			Content source = contentService.getContent(repositoryId, sourceId);
 			if (source == null) {
 				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, source, sourceId);
+			} else if (!isCmisObject(source)) {
+				// Not a CMIS object (R290, 3.4.2): a relationship to an internal row is not saved — a parentChild one made
+				// the parent's delete cascade to the row. Answered as an id that does not exist, before anything is checked.
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, sourceId);
 			} else {
 				exceptionService.constraintAllowedSourceTypes(td, source);
 				exceptionService.permissionDenied(callContext, repositoryId,
@@ -992,6 +1055,9 @@ public class ObjectServiceImpl implements ObjectService {
 			Content target = contentService.getContent(repositoryId, targetId);
 			if (target == null) {
 				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, target, targetId);
+			} else if (!isCmisObject(target)) {
+				// Not a CMIS object (R290, 3.4.2): the same as the source.
+				exceptionService.objectNotFound(jp.aegif.nemaki.util.constant.DomainType.OBJECT, null, targetId);
 			} else {
 				exceptionService.constraintAllowedTargetTypes(td, target);
 				exceptionService.permissionDenied(callContext, repositoryId,
@@ -1637,9 +1703,27 @@ public class ObjectServiceImpl implements ObjectService {
 	@Override
 	public void deleteObject(CallContext callContext, String repositoryId, String objectId, Boolean allVersions,
 			ExtensionsData extension) {
+		// The check deleteObjectInternal makes first, made before the content is read: an id that is not given is not
+		// answered as an id that does not exist.
+		exceptionService.invalidArgumentRequiredString("objectId", objectId);
 
 		// Check if the object is a folder before deletion (for cache invalidation)
 		Content content = contentService.getContent(repositoryId, objectId);
+		// An id that does not exist is answered 404 (R288, 3.4.2). deleteObjectInternal skipped a null content with a
+		// warning, so the API v1 delete answered 204 for it, while the Browser binding's answered 404. A getContent that
+		// cannot read throws, and that is thrown as it is.
+		exceptionService.objectNotFound(DomainType.OBJECT, content, objectId);
+		if (content == null) {
+			return;
+		}
+		// getContent answers any CouchDB document by its id. One that is not a CMIS object — a version series, an
+		// attachment, a passkey — was deleted as an object: an administrator's API v1 delete of a document's content
+		// stream id removed the attachment row and left the document pointing at it (R281, 3.4.2). It is answered as an
+		// id that does not exist, before the permission check and before anything is deleted — to every user.
+		if (!isCmisObject(content)) {
+			exceptionService.objectNotFound(DomainType.OBJECT, null, objectId);
+			return;
+		}
 		boolean isFolder = (content instanceof Folder);
 
 		objectServiceInternal.deleteObjectInternal(callContext, repositoryId, objectId, allVersions, false);

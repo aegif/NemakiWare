@@ -33,7 +33,10 @@ jobs:
     # keeps headroom while a hung shard dies far sooner than the old 130/180. fail-fast is
     # off so one flaky shard does not cancel the other three-quarters of the signal.
     timeout-minutes: 75
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: when ubuntu-latest became 26.04 (2026-11), "playwright install --with-deps" of the
+    # locked Playwright (1.58.2) ended with "Playwright does not support chromium on ubuntu26.04-x64" and every shard
+    # failed before a single test ran. Move this together with the Playwright version, not on its own.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

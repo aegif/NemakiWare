@@ -563,6 +563,9 @@ public class Rfc3161AnchorTarget implements AnchorTarget {
     private byte[] post(byte[] derRequest) throws IOException {
         URL url = URI.create(tsaUrl).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        // Not followed, said here rather than left to the streaming mode below (which happens to refuse to
+        // re-send): a TSA redirect is an address nobody configured. A 3xx is not 200, so it is refused (3.4.2).
+        conn.setInstanceFollowRedirects(false);
         try {
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);

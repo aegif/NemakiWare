@@ -2755,22 +2755,63 @@ class CanonicalImportServiceTest {
                         + result.errors());
     }
 
+    /** The name of the object the write is refused for — not an id, not a word of the denial. */
+    private static final String REFUSED_NAME = "Quarterly-plan-err-503";
+
+    /**
+     * The denial the product throws: the real {@code ExceptionServiceImpl.permissionDenied}, refusing a user who is not an
+     * administrator — by the ACL evaluation or by the top-level-folder rule — for a document named {@link #REFUSED_NAME}.
+     * Not a hand-written text: the classifier keys on the product's text, and the fixtures here used to write the old
+     * interpolated text by hand, so they would have stayed green when the product's text changed and every denial in an
+     * import answered 500 (R286, 3.4.2).
+     */
+    private static org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException
+            theDenialTheProductThrows(boolean atTheTopLevel) {
+        jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl exceptions =
+                new jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl();
+        ContentService contents = mock(ContentService.class);
+        jp.aegif.nemaki.cmis.aspect.PermissionService permissions =
+                mock(jp.aegif.nemaki.cmis.aspect.PermissionService.class);
+        exceptions.setContentService(contents);
+        exceptions.setPermissionService(permissions);
+        when(contents.getUserItemById("bedroom", "test-user")).thenReturn(
+                new jp.aegif.nemaki.model.UserItem("test-user", "cmis:item", "test-user", "test-user", null, false, null));
+        when(contents.calculateAcl(eq("bedroom"), any())).thenReturn(new jp.aegif.nemaki.model.Acl());
+        when(permissions.checkPermission(any(), eq("bedroom"), any(), any(), any(), any())).thenReturn(atTheTopLevel);
+        when(permissions.checkPermissionAtTopLevel(any(), eq("bedroom"), any(), any())).thenReturn(false);
+        jp.aegif.nemaki.model.Document refused = new jp.aegif.nemaki.model.Document();
+        refused.setId("d1");
+        refused.setName(REFUSED_NAME);
+        refused.setType("cmis:document");
+        refused.setObjectType("cmis:document");
+        org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denial = assertThrows(
+                org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException.class,
+                () -> exceptions.permissionDenied(testContext(), "bedroom",
+                        org.apache.chemistry.opencmis.commons.data.PermissionMapping.CAN_CREATE_DOCUMENT_FOLDER, refused),
+                "the product no longer refuses this user, so the locks below measure nothing");
+        if (atTheTopLevel) {
+            verify(permissions).checkPermissionAtTopLevel(any(), eq("bedroom"), any(), any());
+        }
+        return denial;
+    }
+
     @Test
     void aPermissionDeniedDuringTheWrite_is403NotAServerError() {
         plainProfileReachingTheWrite();
         // The THIRD checkpoint: the CMIS ACL evaluation inside the write. Revoking cmis:all
         // one millisecond after the re-check landed here, and it answered 500 where both
         // earlier checkpoints answer 403.
+        org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denial =
+                theDenialTheProductThrows(false);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 isNull(), any(), isNull(), isNull(), isNull(), isNull()))
-                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
-                        .CmisPermissionDeniedException(
-                                "Permission Denied! repositoryId=bedroom key=cmis:all"));
+                .thenThrow(denial);
 
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        assertTrue(result.errors().get(0).toLowerCase().contains("permission denied"),
+        assertTrue(result.errors().get(0).endsWith(
+                        jp.aegif.nemaki.cmis.aspect.impl.ExceptionServiceImpl.PERMISSION_DENIED_MESSAGE),
                 "a different refusal fired, so this lock is not measuring the write's own "
                         + "ACL evaluation: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
@@ -2804,53 +2845,53 @@ class CanonicalImportServiceTest {
     }
 
     @Test
-    void aDenialWhoseTextHappensToCarry503_isStill403() {
+    void aDenialOfAnObjectWhoseNameCarries503_isPermanent403AndNamesNothing() {
         plainProfileReachingTheWrite();
-        // isTransientError tests "503" against the RAW message BEFORE it tests "403", and the
-        // CMIS denial interpolates the repository id, the object id and the object NAME. So a
-        // folder called "err-503" made a denial come back marked "[transient]", and the
-        // classifier's retryable arm answered 503 for it. A denial is never a retry, so the
-        // denial arm has to be asked FIRST. A review found it in the round that added the
-        // transient arm.
+        // The denial interpolated the object's NAME, and isTransientError tests "503" against
+        // the RAW message before it tests "403": a folder called "err-503" made a denial come
+        // back marked "[transient]", and the classifier's retryable arm answered 503 for it.
+        // Since R286 (3.4.2) the product's denial names nothing — so the import's answer, which
+        // the caller reads, carries neither the name nor the verdict that name forced.
+        org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denial =
+                theDenialTheProductThrows(false);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 isNull(), any(), isNull(), isNull(), isNull(), isNull()))
-                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
-                        .CmisPermissionDeniedException(
-                                "Permission Denied! repositoryId=bedroom key=cmis:all acl=null"
-                                        + "  content={id:d1, name:err-503} "));
+                .thenThrow(denial);
 
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess(), "the denied write reported success");
-        assertTrue(result.errors().get(0).contains("[transient]"),
-                "this lock needs the product to still MIS-mark the denial for the ordering to "
-                        + "be what is measured: " + result.errors());
+        String said = result.errors().get(0);
+        assertFalse(said.contains(REFUSED_NAME) || said.contains("503") || said.contains("d1"),
+                "the import's answer names the object it was refused: " + said);
+        assertTrue(said.startsWith("[permanent] "),
+                "a denial was marked as a retry: " + said);
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
                 ExternalIngestController.classifyErrorStatus(result),
-                "a denial was answered as a retry because its text carried '503': "
-                        + result.errors());
+                "a denial was not answered 403: " + said);
     }
 
     @Test
     void aTopLevelFolderDenial_is403NotAServerError() {
         plainProfileReachingTheWrite();
-        // ExceptionServiceImpl builds TWO denial formats. Matching only the first left every
-        // top-level-folder denial on 500 — the one a delegated profile targeting the
-        // repository root produces on every single import.
+        // ExceptionServiceImpl refuses by the ACL evaluation and by the top-level-folder rule.
+        // Matching only the first left every top-level-folder denial on 500 — the one a
+        // delegated profile targeting the repository root produces on every single import.
+        // Since R286 both throw the same text; the denial here is the top-level rule's.
+        org.apache.chemistry.opencmis.commons.exceptions.CmisPermissionDeniedException denial =
+                theDenialTheProductThrows(true);
         when(objectService.createDocument(any(), eq("bedroom"), any(), eq("folder-1"),
                 isNull(), any(), isNull(), isNull(), isNull(), isNull()))
-                .thenThrow(new org.apache.chemistry.opencmis.commons.exceptions
-                        .CmisPermissionDeniedException(
-                                "Permission Denied to top level folders for non-admin user!"
-                                        + " repositoryId=bedroom key=cmis:all userId=u1"
-                                        + " content={id:d1, name:root} "));
+                .thenThrow(denial);
 
         ExternalIngestResult result = service.execute(testContext(), requestForReCheck());
 
         assertFalse(result.isSuccess());
+        assertFalse(result.errors().get(0).contains("test-user") || result.errors().get(0).contains(REFUSED_NAME),
+                "the import's answer names the user or the object: " + result.errors());
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN,
                 ExternalIngestController.classifyErrorStatus(result),
-                "the second denial format was answered as our bug: " + result.errors());
+                "the top-level-folder denial was answered as our bug: " + result.errors());
     }
 
     @Test

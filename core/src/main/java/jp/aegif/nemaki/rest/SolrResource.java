@@ -1222,6 +1222,15 @@ public class SolrResource extends ResourceBase {
 				null     // extension
 			);
 
+			// An answer the ACL scan limit cut short can tell neither the whole set's count, order nor where it continues
+			// (R344, 3.4.2): a 400, before numItems, hasMoreItems or a row is written — not a failure wrapped in a 200.
+			if (jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.isCutShort(queryResult)) {
+				JSONArray refused = new JSONArray();
+				refused.add(jp.aegif.nemaki.cmis.aspect.query.CutShortByAclScanLimit.REFUSAL);
+				throw new jakarta.ws.rs.WebApplicationException(jakarta.ws.rs.core.Response.status(400)
+						.entity(makeResult(false, new JSONObject(), refused).toString()).type(MediaType.APPLICATION_JSON).build());
+			}
+
 			result.put("simulatedAsUser", effectiveUserId);
 			result.put("statement", statement);
 			result.put("numItems", queryResult.getNumItems() != null ? queryResult.getNumItems().intValue() : 0);
@@ -1254,6 +1263,9 @@ public class SolrResource extends ResourceBase {
 			}
 			result.put("objects", docsArray);
 
+		} catch (jakarta.ws.rs.WebApplicationException e) {
+			// The refusal of a cut-short answer (R344) is its own response, not a failure to be wrapped in a 200.
+			throw e;
 		} catch (Exception e) {
 			log.error("CMIS query execution failed: " + e.getMessage(), e);
 			errMsg.add("Query failed: " + e.getMessage());

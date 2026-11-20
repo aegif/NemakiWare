@@ -399,4 +399,56 @@ class OpenTimestampsAnchorTargetTest {
     private static void assertArrayEqualsHelper(byte[] expected, byte[] actual) {
         org.junit.jupiter.api.Assertions.assertArrayEquals(expected, actual);
     }
+
+    @Nested
+    @DisplayName("redirects (3.4.2)")
+    class Redirects {
+
+        @Test
+        @DisplayName("a 3xx is not the sidecar's answer, even with an answer for its body, and is not followed")
+        void aRedirectIsNotAnAnswer() throws Exception {
+            String pending = "{\"status\":\"PENDING\",\"proofBase64\":\"" + PROOF_B64
+                    + "\",\"calendars\":[\"https://a.pool.opentimestamps.org\"]}";
+            List<String> elsewhereHeard = Collections.synchronizedList(new ArrayList<>());
+            HttpServer elsewhere = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            elsewhere.createContext("/", exchange -> {
+                elsewhereHeard.add(exchange.getRequestMethod() + " " + exchange.getRequestURI().getPath());
+                exchange.getRequestBody().readAllBytes();
+                byte[] out = pending.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, out.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(out);
+                }
+            });
+            elsewhere.start();
+            try {
+                String to = "http://127.0.0.1:" + elsewhere.getAddress().getPort() + "/stamp";
+                server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                server.createContext("/", exchange -> {
+                    paths.add(exchange.getRequestURI().getPath());
+                    exchange.getRequestBody().readAllBytes();
+                    // The body is an answer the sidecar would give: only the status says it is not one.
+                    byte[] out = pending.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Location", to);
+                    exchange.getResponseHeaders().add("Content-Type", "application/json");
+                    exchange.sendResponseHeaders(307, out.length);
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(out);
+                    }
+                });
+                server.start();
+
+                AnchorReceipt receipt = new OpenTimestampsAnchorTarget(
+                        "http://127.0.0.1:" + server.getAddress().getPort()).anchor(DIGEST);
+
+                assertEquals(List.of("/stamp"), paths, "the sidecar was asked");
+                assertEquals(AnchorStatus.FAILED, receipt.status(),
+                        "a 307 was read as the sidecar's answer: " + receipt);
+                assertEquals(List.of(), elsewhereHeard, "the redirect was followed");
+            } finally {
+                elsewhere.stop(0);
+            }
+        }
+    }
 }

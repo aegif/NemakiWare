@@ -5,7 +5,7 @@
 	<groupId>jp.aegif.nemaki.core</groupId>
 	<artifactId>core</artifactId>
 	<packaging>war</packaging>
-	<version>3.4.1</version>
+	<version>3.4.2</version>
 	<name>core</name>
 	<description>NemakiWare Core Server</description>
 	<url>https://github.com/aegif/NemakiWare</url>
@@ -13,7 +13,7 @@
 	<parent>
 		<groupId>jp.aegif.nemakiware</groupId>
 		<artifactId>nemakiware</artifactId>
-		<version>3.4.1</version>
+		<version>3.4.2</version>
 	</parent>
 
 	<properties>
@@ -367,7 +367,7 @@
 		<dependency>
 			<groupId>jp.aegif.nemaki.common</groupId>
 			<artifactId>nemakiware-common</artifactId>
-			<version>3.4.1</version>
+			<version>3.4.2</version>
 		</dependency>
 		<dependency>
 			<groupId>jp.aegif.nemaki.cloudantinit</groupId>
@@ -389,6 +389,15 @@
 			<groupId>org.junit.platform</groupId>
 			<artifactId>junit-platform-launcher</artifactId>
 			<version>6.1.2</version>
+			<scope>test</scope>
+		</dependency>
+		<!-- Tomcat, test only: TheUiIsNotKeptAcrossAnUpgradeTest drives Tomcat's own DefaultServlet (its strong ETag and
+		     conditional requests) and the SPA fallback, wired as web.xml wires them (R348). The image runs Tomcat 11.0
+		     (nb33: 11.0.24, 2026-11-15). -->
+		<dependency>
+			<groupId>org.apache.tomcat.embed</groupId>
+			<artifactId>tomcat-embed-core</artifactId>
+			<version>11.0.24</version>
 			<scope>test</scope>
 		</dependency>
 		<!-- Rhino, test only: LineageJournalViewCoverageTest executes the CouchDB map functions

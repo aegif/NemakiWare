@@ -52,6 +52,7 @@ public class StubContentDaoServiceBase implements ContentDaoService {
     @Override public Document getDocument(String r, String id) { return null; }
     @Override public List<Document> getCheckedOutDocuments(String r, String folderId) { return Collections.emptyList(); }
     @Override public VersionSeries getVersionSeries(String r, String vsId) { return null; }
+    @Override public VersionSeries getVersionSeriesFresh(String r, String vsId) { return null; }
     @Override public Document getDocumentOfLatestVersion(String r, String vsId) { return null; }
     @Override public Document getDocumentOfLatestMajorVersion(String r, String vsId) { return null; }
     @Override public List<Document> getAllVersions(String r, String vsId) { return Collections.emptyList(); }

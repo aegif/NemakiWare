@@ -155,6 +155,17 @@
 		<url-pattern>/ui/*</url-pattern>
 	</filter-mapping>
 
+	<!-- How long a browser may keep what is under /ui (R348, 3.4.2): hashed assets for a year, everything else
+	     revalidated by the content's ETag every time. See UiCacheControlFilter. -->
+	<filter>
+		<filter-name>uiCacheControlFilter</filter-name>
+		<filter-class>jp.aegif.nemaki.ui.UiCacheControlFilter</filter-class>
+	</filter>
+	<filter-mapping>
+		<filter-name>uiCacheControlFilter</filter-name>
+		<url-pattern>/ui/*</url-pattern>
+	</filter-mapping>
+
 	<!-- CORS filter mapping - must be first -->
 	<filter-mapping>
 		<filter-name>corsFilter</filter-name>
@@ -548,6 +559,13 @@
   <init-param>
    <param-name>listings</param-name>
    <param-value>false</param-value>
+  </init-param>
+  <!-- R348 (3.4.2): an ETag from a digest of the content. The WAR's entries all carry one fixed date, so the default
+       weak tag (length and date) stayed the same across versions whenever a file kept its length, and a browser
+       kept the previous UI. UiCacheControlFilter says how long what is under /ui may be kept. -->
+  <init-param>
+   <param-name>useStrongETags</param-name>
+   <param-value>true</param-value>
   </init-param>
   <load-on-startup>1</load-on-startup>
  </servlet>

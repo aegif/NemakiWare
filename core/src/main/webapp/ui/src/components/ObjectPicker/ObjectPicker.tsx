@@ -24,10 +24,11 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Modal, Tabs, Tree, Input, Table, Button, Space, Spin, message } from 'antd';
+import { Modal, Tabs, Tree, Input, Table, Button, Space, Spin, Alert, message } from 'antd';
 import { FolderOutlined, FileOutlined, SearchOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { CMISService } from '../../services/cmis';
+import { SearchCutShortError } from '../../services/searchCutShort';
 import { CMISObject } from '../../types/cmis';
 import { formatServerDate } from '../../utils/dateUtils';
 
@@ -68,22 +69,43 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
   const [searchResults, setSearchResults] = useState<CMISObject[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [currentFolderChildren, setCurrentFolderChildren] = useState<CMISObject[]>([]);
+  // The last search was answered cut short by the ACL scan limit (R344, R349): the guidance stands in the search tab.
+  const [searchCutShort, setSearchCutShort] = useState(false);
+  // Only the last search started may write the picker (R349); reopening the dialog starts afresh.
+  const searchSeqRef = React.useRef(0);
+  // Only the last root load started may write the tree (R349): one from before the dialog was reopened writes nothing.
+  const rootLoadSeqRef = React.useRef(0);
+  // Only the folder chosen last in the tree may write its children (R349); reopening the dialog starts afresh.
+  const childrenSeqRef = React.useRef(0);
 
   const cmisService = new CMISService();
 
   useEffect(() => {
     if (visible) {
       loadRootFolder();
+      // A search still in flight from the last time the dialog was open no longer writes it, nor holds its spinner.
+      searchSeqRef.current++;
+      // Nor a folder chosen in the tree then, and the rows of the folder shown then go (R349).
+      childrenSeqRef.current++;
+      setCurrentFolderChildren([]);
+      setSearchLoading(false);
       setSelectedObject(null);
       setSearchQuery('');
       setSearchResults([]);
+      setSearchCutShort(false);
     }
   }, [visible, repositoryId]);
 
   const loadRootFolder = async () => {
+    const mySeq = ++rootLoadSeqRef.current;
+    const isStale = () => rootLoadSeqRef.current !== mySeq;
+    // The tree starts afresh (R349): if this root load fails, no tree from before is left to expand or choose from.
+    setTreeData([]);
+    setExpandedKeys([]);
     try {
       setTreeLoading(true);
       const rootFolder = await cmisService.getRootFolder(repositoryId);
+      if (isStale()) return;
       const rootNode: TreeNode = {
         key: rootFolder.id,
         title: rootFolder.name || t('objectPicker.root'),
@@ -96,11 +118,13 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       setExpandedKeys([rootFolder.id]);
 
       const children = await cmisService.getChildren(repositoryId, rootFolder.id);
+      if (isStale()) return;
       setCurrentFolderChildren(filterChildren(children));
     } catch (error) {
+      if (isStale()) return;
       message.error(t('objectPicker.messages.rootLoadError'));
     } finally {
-      setTreeLoading(false);
+      if (!isStale()) setTreeLoading(false);
     }
   };
 
@@ -130,7 +154,10 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
   };
 
   const onLoadData = async ({ key }: { key: string }): Promise<void> => {
+    // An expansion asked for before the dialog was reopened writes nothing into the tree loaded since (R349).
+    const since = rootLoadSeqRef.current;
     const children = await loadChildren(key);
+    if (rootLoadSeqRef.current !== since) return;
 
     setTreeData(prevTreeData => {
       const updateNode = (nodes: TreeNode[]): TreeNode[] => {
@@ -151,10 +178,19 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
   const handleTreeSelect = async (selectedKeys: React.Key[]) => {
     if (selectedKeys.length > 0) {
       const folderId = selectedKeys[0] as string;
+      const mySeq = ++childrenSeqRef.current;
+      const isStale = () => childrenSeqRef.current !== mySeq;
+      // Another folder is another dataset (R349): the rows and the choice of the folder before go while it loads, and a
+      // choice made while it loads goes when it answers.
+      setCurrentFolderChildren([]);
+      setSelectedObject(null);
       try {
         const children = await cmisService.getChildren(repositoryId, folderId);
+        if (isStale()) return;
+        setSelectedObject(null);
         setCurrentFolderChildren(filterChildren(children));
       } catch (error) {
+        if (isStale()) return;
         message.error(t('objectPicker.messages.contentsLoadError'));
       }
     }
@@ -166,9 +202,17 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
       return;
     }
 
+    const mySeq = ++searchSeqRef.current;
+    const isStale = () => searchSeqRef.current !== mySeq;
+    setSearchCutShort(false);
+    // A search is a new dataset (R349): an object chosen before it is not confirmed while it runs, nor as its answer.
+    setSelectedObject(null);
     try {
       setSearchLoading(true);
       const result = await cmisService.search(repositoryId, searchQuery);
+      if (isStale()) return;
+      // Answered (R349): an object chosen while the search ran — in the tree, too — is not confirmed over its rows.
+      setSelectedObject(null);
       const filtered = filterType === 'all'
         ? result.objects
         : result.objects.filter(obj =>
@@ -176,9 +220,18 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
           );
       setSearchResults(filtered);
     } catch (error) {
+      if (isStale()) return;
+      // A failed search has no rows, and an object chosen from the previous rows is not confirmed as its answer (R349).
+      setSearchResults([]);
+      setSelectedObject(null);
+      if (error instanceof SearchCutShortError) {
+        // Cut short by the ACL scan limit (R344): the guidance in the search tab, not an error toast.
+        setSearchCutShort(true);
+        return;
+      }
       message.error(t('objectPicker.messages.searchError'));
     } finally {
-      setSearchLoading(false);
+      if (!isStale()) setSearchLoading(false);
     }
   };
 
@@ -281,6 +334,9 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
             </Space.Compact>
           </div>
           <div style={{ flex: 1, overflow: 'auto' }}>
+            {searchCutShort ? (
+              <Alert type="warning" showIcon title={t('searchResults.messages.incompleteResults')} />
+            ) : (
             <Table
               columns={objectColumns}
               dataSource={searchResults}
@@ -297,6 +353,7 @@ export const ObjectPicker: React.FC<ObjectPickerProps> = ({
               })}
               locale={{ emptyText: searchQuery ? t('objectPicker.noSearchResults') : t('objectPicker.enterSearchKeyword') }}
             />
+            )}
           </div>
         </div>
       ),

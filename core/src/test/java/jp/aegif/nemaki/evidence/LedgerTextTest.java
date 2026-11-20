@@ -64,6 +64,20 @@ class LedgerTextTest {
     }
 
     @Test
+    @DisplayName("an added-since-sweep count in its form is not a total, and the same figure in prose is")
+    void anAddedSinceCountInItsFormIsNotATotal() {
+        // Its figure is compared with the runner by its own locks, in the same form. Read as a total
+        // it was refused the day it reached four digits (994 to 1012, R292, 2026-11-16) — and the
+        // mask stays the form only: written any other way, the figure is the total again.
+        List<Integer> totals = LedgerText.figuresOutsideSweeps(
+                "**11 回目以後に足した control は 1012 本**（通し未実施）。11 回目以後に足した control は"
+                        + " **1012 本**（通し未実施）。総数は 3378 本。11 回目の後に足した 1012 本は未実施。")
+                .stream().map(LedgerText.Figure::value).toList();
+        assertEquals(List.of(3378, 1012), totals, "the added-since count in its form, bold either way, is"
+                + " not the total; the total and the same figure written outside the form are");
+    }
+
+    @Test
     @DisplayName("a round recorded twice with different numbers is a conflict")
     void aRoundRecordedTwiceIsAConflict() {
         String canon = "6 回目 2026-09-25〜26（1500 本、下書き）\n6 回目 2026-09-25〜26（1551 本、…）";
