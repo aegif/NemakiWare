@@ -4,7 +4,7 @@
 # lockstep with the Maven solr-solrj 10.0.0 / lucene 10.3.2 pins. This
 # Dockerfile is the source for both the dev docker-compose-simple build and the
 # published nemakiware-solr image.
-FROM solr:10.0.0-slim
+FROM solr:10.1.0-slim
 
 USER root
 
